@@ -1,0 +1,30 @@
+require 'pathname'
+
+ws_dir = Pathname.new(__dir__)
+ws_dir = ws_dir.parent until
+  File.exist?("#{ws_dir}/node_modules/react-native-macos/scripts/react_native_pods.rb") ||
+  ws_dir.expand_path.to_s == '/'
+require "#{ws_dir}/node_modules/react-native-macos/scripts/react_native_pods.rb"
+
+# New Architecture disabled on macOS — Fabric registration crashes when
+# codegen lists components (e.g. react-native-screens) with no macOS native module.
+ENV['RCT_NEW_ARCH_ENABLED'] = '0'
+
+prepare_react_native_project!
+
+target 'GumpDesktop-macOS' do
+  platform :macos, '14.0'
+  use_native_modules!
+
+  use_react_native!(
+    :path => '../node_modules/react-native-macos',
+    :fabric_enabled => ENV['RCT_NEW_ARCH_ENABLED'] == '1',
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
+  )
+
+  post_install do |installer|
+    react_native_post_install(installer)
+    system('ruby', File.join(__dir__, 'scripts', 'patch_secure_text_field.rb'))
+    system('ruby', File.join(__dir__, 'scripts', 'patch_third_party_fabric_components.rb'))
+  end
+end

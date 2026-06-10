@@ -11,6 +11,10 @@
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		0A40B797757144BF8E248ECA /* RedHatDisplay-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E076DA820DFA4C48A7A4FA11 /* RedHatDisplay-Bold.ttf */; };
+		7903BB0C619140E68C77D85B /* RedHatDisplay-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FF15A78D93D6432E8B17C3F5 /* RedHatDisplay-Medium.ttf */; };
+		0D5F388BEAF2444BA520F71D /* DMSerifDisplay-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4903C5B3747D4A40AC7CCCDB /* DMSerifDisplay-Regular.ttf */; };
+		95C6F636438E4666AD7EEC41 /* RedHatDisplay-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = EC4810C12B364CCA9787EBFA /* RedHatDisplay-Regular.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +28,10 @@
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = GumpDesktop/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = GumpDesktop/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		E076DA820DFA4C48A7A4FA11 /* RedHatDisplay-Bold.ttf */ = {isa = PBXFileReference; name = "RedHatDisplay-Bold.ttf"; path = "../src/assets/fonts/RedHatDisplay-Bold.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		FF15A78D93D6432E8B17C3F5 /* RedHatDisplay-Medium.ttf */ = {isa = PBXFileReference; name = "RedHatDisplay-Medium.ttf"; path = "../src/assets/fonts/RedHatDisplay-Medium.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		4903C5B3747D4A40AC7CCCDB /* DMSerifDisplay-Regular.ttf */ = {isa = PBXFileReference; name = "DMSerifDisplay-Regular.ttf"; path = "../src/assets/fonts/DMSerifDisplay-Regular.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		EC4810C12B364CCA9787EBFA /* RedHatDisplay-Regular.ttf */ = {isa = PBXFileReference; name = "RedHatDisplay-Regular.ttf"; path = "../src/assets/fonts/RedHatDisplay-Regular.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -74,6 +82,7 @@
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				BBD78D7AC51CEA395F1C20DB /* Pods */,
+				B34797D203174CA1AD834E29 /* Resources */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -96,6 +105,18 @@
 			);
 			path = Pods;
 			sourceTree = "<group>";
+		};
+		B34797D203174CA1AD834E29 /* Resources */ = {
+			isa = "PBXGroup";
+			children = (
+				E076DA820DFA4C48A7A4FA11 /* RedHatDisplay-Bold.ttf */,
+				FF15A78D93D6432E8B17C3F5 /* RedHatDisplay-Medium.ttf */,
+				4903C5B3747D4A40AC7CCCDB /* DMSerifDisplay-Regular.ttf */,
+				EC4810C12B364CCA9787EBFA /* RedHatDisplay-Regular.ttf */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+			path = "";
 		};
 /* End PBXGroup section */
 
@@ -159,6 +180,10 @@
 			files = (
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
+				0A40B797757144BF8E248ECA /* RedHatDisplay-Bold.ttf in Resources */,
+				7903BB0C619140E68C77D85B /* RedHatDisplay-Medium.ttf in Resources */,
+				0D5F388BEAF2444BA520F71D /* DMSerifDisplay-Regular.ttf in Resources */,
+				95C6F636438E4666AD7EEC41 /* RedHatDisplay-Regular.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
