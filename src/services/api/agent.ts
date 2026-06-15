@@ -1,6 +1,7 @@
 import {Injectable} from '@lib/di';
 import {API_BASE_URL} from '@lib/constants';
 import {APIException} from './exception';
+import {APIResponse} from './types';
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
 
@@ -70,5 +71,77 @@ export class APIAgent {
     return this.request(method, path, payload, {
       Authorization: `Bearer ${this.token}`,
     });
+  }
+
+  private transformPayloadWithCursor(
+    payload: Record<string, any> | undefined,
+  ): Record<string, any> | undefined {
+    if (
+      payload &&
+      typeof payload.cursor === 'string' &&
+      payload.cursor.startsWith('http')
+    ) {
+      return {
+        ...payload,
+        cursor: new URL(payload.cursor).searchParams.get('cursor'),
+      };
+    }
+    return payload;
+  }
+
+  private transformResponseWithCursor<T extends APIResponse.List>(res: T): T {
+    let next = res.next;
+    if (next) {
+      try {
+        next = new URL(next).searchParams.get('cursor') || null;
+      } catch {
+        // cursor is already a plain string, keep as-is
+      }
+    }
+
+    let previous = res.previous;
+    if (previous) {
+      try {
+        previous = new URL(previous).searchParams.get('cursor') || null;
+      } catch {
+        // cursor is already a plain string, keep as-is
+      }
+    }
+
+    return {
+      ...res,
+      next,
+      previous,
+    };
+  }
+
+  async requestWithCursor<T extends APIResponse.List>(
+    method: Method,
+    path: string,
+    payload?: Record<string, any>,
+    headers: Record<string, string> = {},
+  ): Promise<T> {
+    return this.transformResponseWithCursor<T>(
+      await this.request(
+        method,
+        path,
+        this.transformPayloadWithCursor(payload),
+        headers,
+      ),
+    );
+  }
+
+  async requestWithTokenAndCursor<T extends APIResponse.List>(
+    method: Method,
+    path: string,
+    payload?: Record<string, any>,
+  ): Promise<T> {
+    return this.transformResponseWithCursor<T>(
+      await this.requestWithToken(
+        method,
+        path,
+        this.transformPayloadWithCursor(payload),
+      ),
+    );
   }
 }

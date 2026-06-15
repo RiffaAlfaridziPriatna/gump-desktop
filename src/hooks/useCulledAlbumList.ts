@@ -1,5 +1,5 @@
 import {make} from '@lib/di';
-import {APIService, APIResponse} from '@services/api';
+import {APIService, APIResponse, assertAPIException} from '@services/api';
 import {useCallback, useEffect, useReducer, useState} from 'react';
 
 export type CulledAlbumListSearchValues = {
@@ -36,6 +36,7 @@ export function filterAvailableSourceAlbums(
 export function useCulledAlbumList(search: CulledAlbumListSearchValues = {}) {
   const api = make(APIService);
   const [loadingAlbums, setLoadingAlbums] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [albums, updateAlbums] = useReducer(
     (state: APIResponse.CulledAlbumList, params: UpdateAlbumsParams) => {
       if (params.action === 'append') {
@@ -72,6 +73,7 @@ export function useCulledAlbumList(search: CulledAlbumListSearchValues = {}) {
   const fetchAlbums = useCallback(
     async (cursor?: string) => {
       setLoadingAlbums(true);
+      setError(null);
       try {
         const res = await api.culledAlbum.getAll({
           cursor,
@@ -85,6 +87,9 @@ export function useCulledAlbumList(search: CulledAlbumListSearchValues = {}) {
           action: cursor ? 'append' : 'replace',
           data: res,
         });
+      } catch (err) {
+        assertAPIException(err);
+        setError(err.message);
       } finally {
         setLoadingAlbums(false);
       }
@@ -124,6 +129,7 @@ export function useCulledAlbumList(search: CulledAlbumListSearchValues = {}) {
   return {
     loadingAlbums,
     albums,
+    error,
     updateAlbums,
     loadMore,
     removeAlbum,

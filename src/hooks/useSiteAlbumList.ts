@@ -1,5 +1,5 @@
 import {make} from '@lib/di';
-import {APIService, APIResponse} from '@services/api';
+import {APIService, APIResponse, assertAPIException} from '@services/api';
 import {useCallback, useEffect, useReducer, useState} from 'react';
 
 export type SiteAlbumListSearchValues = {
@@ -24,6 +24,7 @@ const emptyAlbumList: APIResponse.AlbumList = {
 export function useSiteAlbumList(search: SiteAlbumListSearchValues = {}) {
   const api = make(APIService);
   const [loadingAlbums, setLoadingAlbums] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [albums, updateAlbums] = useReducer(
     (state: APIResponse.AlbumList, params: UpdateAlbumsParams) => {
       if (params.action === 'append') {
@@ -46,6 +47,7 @@ export function useSiteAlbumList(search: SiteAlbumListSearchValues = {}) {
   const fetchAlbums = useCallback(
     async (cursor?: string) => {
       setLoadingAlbums(true);
+      setError(null);
       try {
         const res = await api.album.getAll({
           cursor,
@@ -59,6 +61,9 @@ export function useSiteAlbumList(search: SiteAlbumListSearchValues = {}) {
           action: cursor ? 'append' : 'replace',
           data: res,
         });
+      } catch (err) {
+        assertAPIException(err);
+        setError(err.message);
       } finally {
         setLoadingAlbums(false);
       }
@@ -81,6 +86,7 @@ export function useSiteAlbumList(search: SiteAlbumListSearchValues = {}) {
   return {
     loadingAlbums,
     albums,
+    error,
     loadMore,
     refresh,
     hasMore: Boolean(albums.next),
