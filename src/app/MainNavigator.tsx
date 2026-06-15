@@ -1,5 +1,5 @@
-import { colors } from '@lib/colors';
-import { createStackNavigator } from '@react-navigation/stack';
+import {colors} from '@lib/colors';
+import {createStackNavigator} from '@react-navigation/stack';
 import HomeScreen from '@screens/HomeScreen';
 
 export type MainStackParamList = {
@@ -13,9 +13,8 @@ export function MainNavigator() {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        cardStyle: { backgroundColor: colors.background },
-      }}
-    >
+        cardStyle: {backgroundColor: colors.background},
+      }}>
       <Stack.Screen name="Home" component={HomeScreen} />
     </Stack.Navigator>
   );

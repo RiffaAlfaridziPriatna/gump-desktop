@@ -1,6 +1,7 @@
 import {Injectable, Container} from '@lib/di';
 import {API_BASE_URL} from '@lib/constants';
 import {APIAgent} from './agent';
+import {CulledAlbumResource} from './resources/culled-album';
 import {AuthResource} from './resources/auth';
 import {UserResource} from './resources/user';
 
@@ -13,6 +14,7 @@ export class APIService {
     readonly agent: APIAgent,
     readonly auth: AuthResource,
     readonly user: UserResource,
+    readonly culledAlbum: CulledAlbumResource,
   ) {}
 }
 

@@ -4,6 +4,7 @@ export const colors = {
 
   // Backgrounds — darkest to lightest
   background: '#131415',
+  cardBackground: '#FFFFFF',
 
   // Borders
   border: '#2C2D2F',
@@ -11,12 +12,24 @@ export const colors = {
 
   // Text
   text: '#FFFFFF',
+  textDark: '#131415',
   textMuted: '#737373',
   textPlaceholder: '#666666',
+  textGray: "#B7B7B7",
+
+  // Icon
+  iconMuted: "#88888A",
 
   // Semantic
-  link: '#50C3FF',
-  error: '#FF4444',
+  link: '#5B8AF5',
+  error: '#FF6E5A',
+  success: '#4CAF50',
+  white: '#FFFFFF',
+
+  // UI
+  badge: '#FFFFFF99',
+  modalOverlay: 'rgba(0,0,0,0.7)',
+  progressTrack: '#E0E0E0',
 } as const;
 
 export type AppColor = (typeof colors)[keyof typeof colors];

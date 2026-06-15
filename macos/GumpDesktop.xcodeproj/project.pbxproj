@@ -18,6 +18,7 @@
 		B1A2C3D40123456700000002 /* RedHatDisplay-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41123456700000002 /* RedHatDisplay-Regular.ttf */; };
 		B1A2C3D40123456700000003 /* RedHatDisplay-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41123456700000003 /* RedHatDisplay-Medium.ttf */; };
 		B1A2C3D40123456700000004 /* RedHatDisplay-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41123456700000004 /* RedHatDisplay-Bold.ttf */; };
+		C2B3C4D50123456700000001 /* GumpVisualEffectView.mm in Sources */ = {isa = PBXBuildFile; fileRef = C2B3C4D51123456700000001 /* GumpVisualEffectView.mm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +39,8 @@
 		B1A2C3D41123456700000002 /* RedHatDisplay-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "RedHatDisplay-Regular.ttf"; sourceTree = "<group>"; };
 		B1A2C3D41123456700000003 /* RedHatDisplay-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "RedHatDisplay-Medium.ttf"; sourceTree = "<group>"; };
 		B1A2C3D41123456700000004 /* RedHatDisplay-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "RedHatDisplay-Bold.ttf"; sourceTree = "<group>"; };
+		C2B3C4D51123456700000001 /* GumpVisualEffectView.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpVisualEffectView.mm; sourceTree = "<group>"; };
+		C2B3C4D51123456700000002 /* GumpVisualEffectView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpVisualEffectView.h; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -84,6 +87,8 @@
 			children = (
 				5142014B2437B4B30078DB4F /* AppDelegate.h */,
 				5142014C2437B4B30078DB4F /* AppDelegate.mm */,
+				C2B3C4D51123456700000002 /* GumpVisualEffectView.h */,
+				C2B3C4D51123456700000001 /* GumpVisualEffectView.mm */,
 				514201512437B4B40078DB4F /* Assets.xcassets */,
 				B1A2C3D42123456700000001 /* Fonts */,
 				514201532437B4B40078DB4F /* Main.storyboard */,
@@ -359,6 +364,7 @@
 			files = (
 				514201582437B4B40078DB4F /* main.m in Sources */,
 				5142014D2437B4B30078DB4F /* AppDelegate.mm in Sources */,
+				C2B3C4D50123456700000001 /* GumpVisualEffectView.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
