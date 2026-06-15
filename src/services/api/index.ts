@@ -8,6 +8,7 @@ import {UserResource} from './resources/user';
 
 export {APIException, assertAPIException, flattenValidationErrors} from './exception';
 export type {APIRequest, APIResponse} from './types';
+export type {FileAsset} from '@services/upload/types';
 
 @Injectable()
 export class APIService {

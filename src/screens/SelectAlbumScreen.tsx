@@ -1,10 +1,12 @@
 import {AlbumCard, AlbumGrid} from '@components/album';
+import {UploadModal} from '@components/modals/UploadModal';
 import {useAuthState} from '@context/auth';
-import {useCulledAlbumList} from '@hooks/useCulledAlbumList';
+import {useCulledAlbumList, filterAvailableSourceAlbums} from '@hooks/useCulledAlbumList';
 import {useSiteAlbumList} from '@hooks/useSiteAlbumList';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
+import {APIResponse, FileAsset} from '@services/api';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useFocusEffect} from '@react-navigation/native';
 import {useCallback, useMemo, useState} from 'react';
@@ -27,8 +29,19 @@ type Props = StackScreenProps<MainStackParamList, 'SelectAlbum'>;
 export default function SelectAlbumScreen({navigation}: Props) {
   const user = useAuthState(state => state.user);
   const {loadingAlbums, albums, loadMore, hasMore, refresh} = useSiteAlbumList();
-  const {albums: culledAlbums, refresh: refreshCulledAlbums} = useCulledAlbumList();
+  const {
+    albums: culledAlbums,
+    refresh: refreshCulledAlbums,
+    addAlbum,
+    createFromSiteAlbum,
+  } = useCulledAlbumList();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedAlbum, setSelectedAlbum] = useState<APIResponse.Album | null>(
+    null,
+  );
+  const [creatingAlbum, setCreatingAlbum] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -37,18 +50,10 @@ export default function SelectAlbumScreen({navigation}: Props) {
     }, [refresh, refreshCulledAlbums]),
   );
 
-  const culledAlbumNames = useMemo(
-    () => new Set(culledAlbums.results.map(album => album.name)),
-    [culledAlbums.results],
-  );
-
   const emptyAlbums = useMemo(
     () =>
-      albums.results.filter(
-        album =>
-          album.totalMediaCount === 0 && !culledAlbumNames.has(album.name),
-      ),
-    [albums.results, culledAlbumNames],
+      filterAvailableSourceAlbums(albums.results, culledAlbums.results),
+    [albums.results, culledAlbums.results],
   );
 
   const hasSelection = selectedIds.length > 0;
@@ -61,6 +66,39 @@ export default function SelectAlbumScreen({navigation}: Props) {
     );
   }
 
+  function handleNext() {
+    if (!hasSelection) return;
+    const album =
+      emptyAlbums.find(item => item.id === selectedIds[0]) ?? null;
+    if (!album) return;
+    setSelectedAlbum(album);
+    setShowUploadModal(true);
+  }
+
+  async function handleFilesSelected(_files: FileAsset[]) {
+    if (!selectedAlbum) return;
+    setShowUploadModal(false);
+    setCreatingAlbum(true);
+    setCreateError(null);
+    try {
+      const album = await createFromSiteAlbum(selectedAlbum);
+      addAlbum(album);
+      navigation.reset({
+        index: 0,
+        routes: [{name: 'Home'}],
+      });
+    } catch (error) {
+      setCreateError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to create culling album',
+      );
+      setShowUploadModal(true);
+    } finally {
+      setCreatingAlbum(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -68,7 +106,8 @@ export default function SelectAlbumScreen({navigation}: Props) {
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-          activeOpacity={0.7}>
+          activeOpacity={0.7}
+          disabled={creatingAlbum}>
           <IconClose width={32} height={32} color={colors.text} />
         </TouchableOpacity>
       </View>
@@ -83,14 +122,20 @@ export default function SelectAlbumScreen({navigation}: Props) {
             styles.nextButton,
             hasSelection ? styles.nextButtonEnabled : styles.nextButtonDisabled,
           ]}
-          disabled={!hasSelection}
+          onPress={handleNext}
+          disabled={!hasSelection || creatingAlbum}
           activeOpacity={0.8}>
           <Text style={styles.nextText}>Next</Text>
           <IconChevronRight width={24} height={24} color={colors.white} />
         </TouchableOpacity>
       </View>
 
-      {loadingAlbums && emptyAlbums.length === 0 ? (
+      {creatingAlbum ? (
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color={colors.accent} />
+          <Text style={styles.creatingText}>Creating culling album...</Text>
+        </View>
+      ) : loadingAlbums && emptyAlbums.length === 0 ? (
         <View style={styles.loading}>
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
@@ -136,6 +181,18 @@ export default function SelectAlbumScreen({navigation}: Props) {
           )}
         </ScrollView>
       )}
+
+      {createError && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>{createError}</Text>
+        </View>
+      )}
+
+      <UploadModal
+        visible={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onSelect={handleFilesSelected}
+      />
     </SafeAreaView>
   );
 }
@@ -214,6 +271,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 12,
+  },
+  creatingText: {
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.textMuted,
   },
   emptyText: {
     fontFamily: fonts.sans,
@@ -221,5 +284,20 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
     marginTop: 40,
+  },
+  errorBanner: {
+    position: 'absolute',
+    bottom: 32,
+    left: 24,
+    right: 24,
+    backgroundColor: colors.white,
+    borderRadius: 8,
+    padding: 12,
+  },
+  errorText: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.error,
+    textAlign: 'center',
   },
 });

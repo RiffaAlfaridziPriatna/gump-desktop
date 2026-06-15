@@ -23,6 +23,16 @@ const emptyAlbumList: APIResponse.CulledAlbumList = {
   count: 0,
 };
 
+export function filterAvailableSourceAlbums(
+  siteAlbums: APIResponse.Album[],
+  culledAlbums: APIResponse.CulledAlbum[],
+): APIResponse.Album[] {
+  const culledNames = new Set(culledAlbums.map(album => album.name));
+  return siteAlbums.filter(
+    album => album.totalMediaCount === 0 && !culledNames.has(album.name),
+  );
+}
+
 export function useCulledAlbumList(search: CulledAlbumListSearchValues = {}) {
   const api = make(APIService);
   const [loadingAlbums, setLoadingAlbums] = useState(true);
@@ -100,6 +110,15 @@ export function useCulledAlbumList(search: CulledAlbumListSearchValues = {}) {
     updateAlbums({action: 'prepend', album});
   }, []);
 
+  const createFromSiteAlbum = useCallback(
+    (siteAlbum: APIResponse.Album) =>
+      api.culledAlbum.create({
+        name: siteAlbum.name,
+        title: siteAlbum.title ?? undefined,
+      }),
+    [api],
+  );
+
   const refresh = useCallback(() => fetchAlbums(), [fetchAlbums]);
 
   return {
@@ -109,6 +128,7 @@ export function useCulledAlbumList(search: CulledAlbumListSearchValues = {}) {
     loadMore,
     removeAlbum,
     addAlbum,
+    createFromSiteAlbum,
     refresh,
     hasMore: Boolean(albums.next),
   };
