@@ -111,6 +111,20 @@ export function useCulledAlbumList(search: CulledAlbumListSearchValues = {}) {
     updateAlbums({action: 'remove', albumId});
   }, []);
 
+  const deleteAlbum = useCallback(
+    async (album: APIResponse.CulledAlbum) => {
+      updateAlbums({action: 'remove', albumId: album.id});
+
+      try {
+        await api.culledAlbum.delete(album.id);
+      } catch (err) {
+        updateAlbums({action: 'prepend', album});
+        throw err;
+      }
+    },
+    [api],
+  );
+
   const addAlbum = useCallback((album: APIResponse.CulledAlbum) => {
     updateAlbums({action: 'prepend', album});
   }, []);
@@ -133,6 +147,7 @@ export function useCulledAlbumList(search: CulledAlbumListSearchValues = {}) {
     updateAlbums,
     loadMore,
     removeAlbum,
+    deleteAlbum,
     addAlbum,
     createFromSiteAlbum,
     refresh,

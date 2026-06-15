@@ -144,4 +144,48 @@ export class APIAgent {
       ),
     );
   }
+
+  sse<T = Record<string, any>>(
+    pathOrUrl: string,
+    onMessage: (data: T) => void,
+    onError?: (error: Event) => void,
+  ): EventSource {
+    let url: URL;
+    try {
+      url = new URL(pathOrUrl);
+    } catch {
+      url = new URL(`${this.baseUrl}/${pathOrUrl.replace(/^\//, '')}`);
+    }
+
+    const eventSource = new EventSource(url.toString());
+
+    eventSource.addEventListener('message', event => {
+      try {
+        const data = JSON.parse(String(event.data));
+        onMessage(data);
+      } catch {
+        onMessage(event.data as T);
+      }
+    });
+
+    if (onError) {
+      eventSource.addEventListener('error', onError);
+    }
+
+    return eventSource;
+  }
+
+  sseWithToken<T = Record<string, any>>(
+    path: string,
+    onMessage: (data: T) => void,
+    onError?: (error: Event) => void,
+  ): EventSource {
+    if (!this.token) throw new Error('No token provided');
+
+    const url = new URL(`${this.baseUrl}/${path.replace(/^\//, '')}`);
+    url.searchParams.delete('token');
+    url.searchParams.append('token', this.token);
+
+    return this.sse(url.toString(), onMessage, onError);
+  }
 }

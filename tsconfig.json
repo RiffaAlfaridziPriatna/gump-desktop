@@ -4,6 +4,7 @@
     "strict": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
+    "lib": ["ES2022", "DOM"],
     "baseUrl": ".",
     "paths": {
       "@lib/*": ["./src/lib/*"],
