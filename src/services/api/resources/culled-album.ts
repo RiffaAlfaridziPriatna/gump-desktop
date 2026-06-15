@@ -9,13 +9,15 @@ export class CulledAlbumResource {
   getAll(
     query?: Omit<APIRequest.GetCulledAlbumList, 'forCulling'>,
   ): Promise<APIResponse.CulledAlbumList> {
-    return this.agent.requestWithToken('GET', 'albums', {
+    return this.agent.requestWithTokenAndCursor('GET', 'albums', {
       ...query,
       forCulling: true,
     });
   }
 
-  create(data: APIRequest.CreateCulledAlbum): Promise<APIResponse.CulledAlbum> {
+  create(
+    data: APIRequest.CreateCulledAlbum,
+  ): Promise<APIResponse.CulledAlbumCreateResult> {
     return this.agent.requestWithToken('POST', 'albums', {
       ...data,
       forCulling: true,
@@ -25,7 +27,7 @@ export class CulledAlbumResource {
   updateCullingStatus(
     albumId: string,
     data: APIRequest.UpdateCullingStatus,
-  ): Promise<APIResponse.CulledAlbum> {
+  ): Promise<APIResponse.CulledAlbumUpdateResult> {
     return this.agent.requestWithToken(
       'PATCH',
       `albums/${albumId}/culling-status`,

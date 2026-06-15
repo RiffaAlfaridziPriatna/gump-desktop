@@ -1,25 +1,25 @@
+import type {components, paths} from './generated-schema';
+
 export namespace APIResponse {
-  export type User = {
-    id: string;
-    email: string;
-    name: string;
+  export type UserDetails = components['schemas']['ProfileInfoFullDto'];
+
+  export type User = Omit<
+    components['schemas']['ProfileFullDto'],
+    'role' | 'details'
+  > & {
     role: 'creator' | 'customer';
-    language: 'en' | 'vi' | 'zh' | 'id' | 'ja';
-    subdomain: string;
-    details: {
-      profilePhoto: string | null;
-      coverPhoto: string | null;
-    };
+    details: UserDetails;
   };
 
-  export type Guest = {
-    id: string;
-    role: 'guest';
-  };
-
-  export type UserToken = {
-    token: string;
+  export type UserToken = Omit<
+    components['schemas']['ProfileTokenDto'],
+    'user'
+  > & {
     user: User;
+  };
+
+  export type Guest = Omit<components['schemas']['UserBasicDto'], 'role'> & {
+    role: 'guest';
   };
 
   export type List = {
@@ -27,58 +27,24 @@ export namespace APIResponse {
     previous: string | null;
   };
 
-  export type FilePreview = {
-    url: string;
-  };
+  export type FilePreview = components['schemas']['FilePreviewDto'];
+  export type AlbumCover = components['schemas']['AlbumCoverDto'] | null;
 
-  export type AlbumCover = {
-    preview: {
-      large: FilePreview;
-    };
-    focalPoint: {
-      x: number;
-      y: number;
-    };
-  } | null;
+  export type Album = components['schemas']['AlbumWithCountsDto'];
+  export type AlbumList = components['schemas']['AlbumListBasicDto'];
 
-  export type Album = {
-    id: string;
-    name: string;
-    title: string | null;
-    slug: string;
-    cover: AlbumCover;
-    totalMediaCount: number;
-    size: number;
-    createdAt: string;
-  };
+  export type CulledAlbum = components['schemas']['AlbumWithCountsDto'];
+  export type CulledAlbumList = components['schemas']['AlbumListBasicDto'];
+  export type CulledAlbumCreateResult = components['schemas']['AlbumFullDto'];
+  export type CulledAlbumUpdateResult = components['schemas']['AlbumBasicDto'];
 
-  export type AlbumList = List & {
-    results: Album[];
-    count: number;
+  export type UploadPart = components['schemas']['S3UploadPartDto'];
+  export type UploadSession = components['schemas']['S3MultipartUploadDto'];
+  export type UploadedPart = {
+    num: number;
+    eTag: string;
   };
-
-  export type CulledAlbum = {
-    id: string;
-    name: string;
-    title: string | null;
-    slug: string;
-    cover: AlbumCover;
-    totalMediaCount: number;
-    size: number;
-    createdAt: string;
-    forCulling: true;
-    cullingHasUploads: boolean;
-    cullingCompleted: boolean;
-  };
-
-  export type CulledAlbumList = List & {
-    results: CulledAlbum[];
-    count: number;
-  };
-
-  export type Status = {
-    success: boolean;
-  };
+  export type Status = components['schemas']['StatusDto'];
 }
 
 export namespace APIRequest {
@@ -87,32 +53,21 @@ export namespace APIRequest {
     password: string;
   };
 
-  export type GetAlbumList = {
-    cursor?: string;
-    keyword?: string;
-    year?: number;
-    month?: number;
-    sort?: 'default' | 'creation_time' | 'size';
-    order?: 'asc' | 'desc';
-  };
+  export type GetAlbumList = NonNullable<
+    paths['/albums']['get']['parameters']['query']
+  >;
 
-  export type GetCulledAlbumList = {
-    cursor?: string;
-    keyword?: string;
-    year?: number;
-    month?: number;
-    sort?: 'default' | 'creation_time' | 'size';
-    order?: 'asc' | 'desc';
-    forCulling?: boolean;
-  };
+  export type GetCulledAlbumList = GetAlbumList;
 
-  export type CreateCulledAlbum = {
-    name: string;
-    title?: string;
-    forCulling?: boolean;
-  };
+  export type CreateCulledAlbum =
+    paths['/albums']['post']['requestBody']['content']['application/json'];
 
-  export type UpdateCullingStatus = {
-    cullingCompleted: boolean;
-  };
+  export type UpdateCullingStatus =
+    paths['/albums/{albumId}/culling-status']['patch']['requestBody']['content']['application/json'];
+
+  export type CreateUploadSession =
+    paths['/albums/{albumId}/upload-session']['post']['requestBody']['content']['application/json'];
+
+  export type FinishUploadSession =
+    paths['/albums/{albumId}/upload-session']['put']['requestBody']['content']['application/json'];
 }

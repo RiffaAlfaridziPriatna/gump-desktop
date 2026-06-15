@@ -7,6 +7,6 @@ export class UserResource {
   constructor(private readonly agent: APIAgent) {}
 
   getAlbums(params?: {cursor?: string}): Promise<APIResponse.AlbumList> {
-    return this.agent.requestWithToken('GET', 'albums', params);
+    return this.agent.requestWithTokenAndCursor('GET', 'albums', params);
   }
 }

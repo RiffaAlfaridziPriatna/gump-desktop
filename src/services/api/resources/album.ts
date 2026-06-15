@@ -7,6 +7,6 @@ export class AlbumResource {
   constructor(private readonly agent: APIAgent) {}
 
   getAll(query?: APIRequest.GetAlbumList): Promise<APIResponse.AlbumList> {
-    return this.agent.requestWithToken('GET', 'albums', query);
+    return this.agent.requestWithTokenAndCursor('GET', 'albums', query);
   }
 }
