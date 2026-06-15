@@ -87,6 +87,15 @@ export namespace APIRequest {
     password: string;
   };
 
+  export type GetAlbumList = {
+    cursor?: string;
+    keyword?: string;
+    year?: number;
+    month?: number;
+    sort?: 'default' | 'creation_time' | 'size';
+    order?: 'asc' | 'desc';
+  };
+
   export type GetCulledAlbumList = {
     cursor?: string;
     keyword?: string;
@@ -95,5 +104,15 @@ export namespace APIRequest {
     sort?: 'default' | 'creation_time' | 'size';
     order?: 'asc' | 'desc';
     forCulling?: boolean;
+  };
+
+  export type CreateCulledAlbum = {
+    name: string;
+    title?: string;
+    forCulling?: boolean;
+  };
+
+  export type UpdateCullingStatus = {
+    cullingCompleted: boolean;
   };
 }

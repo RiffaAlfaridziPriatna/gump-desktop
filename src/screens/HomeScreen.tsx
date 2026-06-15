@@ -24,7 +24,7 @@ import GumpLogo from '../assets/images/logo.svg';
 
 type Props = StackScreenProps<MainStackParamList, 'Home'>;
 
-export default function HomeScreen(_props: Props) {
+export default function HomeScreen({navigation}: Props) {
   const user = useAuthState(state => state.user);
   const {loadingAlbums, albums, loadMore, hasMore, removeAlbum, refresh} =
     useCulledAlbumList();
@@ -73,7 +73,10 @@ export default function HomeScreen(_props: Props) {
               </View>
               <Text style={styles.subtitle}>Recently Added Albums</Text>
             </View>
-            <TouchableOpacity style={styles.cullingButton} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={styles.cullingButton}
+              onPress={() => navigation.navigate('SelectAlbum')}
+              activeOpacity={0.8}>
               <Text style={styles.cullingButtonText}>Start New Culling</Text>
               <IconChevronRight width={24} height={24} color={colors.white} />
             </TouchableOpacity>
@@ -150,7 +153,10 @@ export default function HomeScreen(_props: Props) {
               </Text>
             </View>
 
-            <TouchableOpacity style={styles.emptyCard} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={styles.emptyCard}
+              onPress={() => navigation.navigate('SelectAlbum')}
+              activeOpacity={0.7}>
               <ImageCheckIcon width={40} height={40} />
               <Text style={styles.emptyCardLabel}>Select Existing Album</Text>
             </TouchableOpacity>
