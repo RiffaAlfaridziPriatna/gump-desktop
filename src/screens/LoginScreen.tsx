@@ -13,7 +13,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import ChevronLeftWhite from '../assets/images/chevron_left_white.svg';
+import IconChevronRight from '../assets/images/icon_chevron_right.svg';
 import LoginSignupArt from '../assets/images/login_signup.svg';
 import GumpLogo from '../assets/images/logo.svg';
 
@@ -150,9 +150,7 @@ export default function LoginScreen() {
           ) : (
             <View style={styles.loginButtonContent}>
               <Text style={styles.loginButtonText}>Log In</Text>
-              <View style={styles.loginButtonIcon}>
-                <ChevronLeftWhite width={24} height={24} />
-              </View>
+              <IconChevronRight style={styles.loginButtonIcon} />
             </View>
           )}
         </Pressable>
@@ -360,7 +358,9 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   loginButtonIcon: {
-    transform: [{ rotate: '180deg' }],
+    width: 24,
+    height: 24,
+    color: colors.text,
   },
   error: {
     color: colors.error,
