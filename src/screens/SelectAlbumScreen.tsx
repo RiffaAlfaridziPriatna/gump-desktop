@@ -122,21 +122,17 @@ export default function SelectAlbumScreen({navigation}: Props) {
           style={[
             styles.nextButton,
             hasSelection ? styles.nextButtonEnabled : styles.nextButtonDisabled,
+            creatingAlbum && styles.nextButtonLoading,
           ]}
           onPress={handleNext}
           disabled={!hasSelection || creatingAlbum}
           activeOpacity={0.8}>
-          <Text style={styles.nextText}>Next</Text>
-          <IconChevronRight width={24} height={24} color={colors.white} />
+          <Text style={[styles.nextText, creatingAlbum && styles.nextTextLoading]}>{creatingAlbum ? "Creating Album..." : "Next"}</Text>
+          <IconChevronRight width={24} height={24} color={creatingAlbum ? colors.accent : colors.white} />
         </TouchableOpacity>
       </View>
 
-      {creatingAlbum ? (
-        <View style={styles.loading}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.creatingText}>Creating culling album...</Text>
-        </View>
-      ) : loadingAlbums && emptyAlbums.length === 0 ? (
+      {loadingAlbums && emptyAlbums.length === 0 ? (
         <View style={styles.loading}>
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
@@ -254,10 +250,16 @@ const styles = StyleSheet.create({
   nextButtonDisabled: {
     opacity: 0.2,
   },
+  nextButtonLoading: {
+    backgroundColor: colors.accent + '14'
+  },
   nextText: {
     fontFamily: fonts.sansBold,
     fontSize: 16,
     color: colors.white,
+  },
+  nextTextLoading: {
+    color: colors.accent,
   },
   scroll: {
     flex: 1,
