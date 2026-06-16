@@ -20,6 +20,7 @@
 		B1A2C3D40123456700000004 /* RedHatDisplay-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41123456700000004 /* RedHatDisplay-Bold.ttf */; };
 		C1A2C3D40123456700000001 /* GumpFilePicker.mm in Sources */ = {isa = PBXBuildFile; fileRef = C1A2C3D41123456700000001 /* GumpFilePicker.mm */; };
 		C2B3C4D50123456700000001 /* GumpVisualEffectView.mm in Sources */ = {isa = PBXBuildFile; fileRef = C2B3C4D51123456700000001 /* GumpVisualEffectView.mm */; };
+		C3D4E5F60123456700000001 /* GumpLocalStorage.mm in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F61123456700000001 /* GumpLocalStorage.mm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +45,8 @@
 		C1A2C3D41123456700000002 /* GumpFilePicker.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpFilePicker.h; sourceTree = "<group>"; };
 		C2B3C4D51123456700000001 /* GumpVisualEffectView.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpVisualEffectView.mm; sourceTree = "<group>"; };
 		C2B3C4D51123456700000002 /* GumpVisualEffectView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpVisualEffectView.h; sourceTree = "<group>"; };
+		C3D4E5F61123456700000001 /* GumpLocalStorage.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpLocalStorage.mm; sourceTree = "<group>"; };
+		C3D4E5F61123456700000002 /* GumpLocalStorage.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpLocalStorage.h; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -94,6 +97,8 @@
 				C1A2C3D41123456700000001 /* GumpFilePicker.mm */,
 				C2B3C4D51123456700000002 /* GumpVisualEffectView.h */,
 				C2B3C4D51123456700000001 /* GumpVisualEffectView.mm */,
+				C3D4E5F61123456700000002 /* GumpLocalStorage.h */,
+				C3D4E5F61123456700000001 /* GumpLocalStorage.mm */,
 				514201512437B4B40078DB4F /* Assets.xcassets */,
 				B1A2C3D42123456700000001 /* Fonts */,
 				514201532437B4B40078DB4F /* Main.storyboard */,
@@ -371,6 +376,7 @@
 				5142014D2437B4B30078DB4F /* AppDelegate.mm in Sources */,
 				C1A2C3D40123456700000001 /* GumpFilePicker.mm in Sources */,
 				C2B3C4D50123456700000001 /* GumpVisualEffectView.mm in Sources */,
+				C3D4E5F60123456700000001 /* GumpLocalStorage.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

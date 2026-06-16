@@ -2,12 +2,16 @@ import {AlbumCard, AlbumGrid} from '@components/album';
 import {DeleteAlbumModal} from '@components/modals/DeleteAlbumModal';
 import {useAuthState} from '@context/auth';
 import {useCulledAlbumList} from '@hooks/useCulledAlbumList';
+import {useCulledAlbumLocalStats} from '@hooks/useCulledAlbumLocalStats';
+import {removePhotosByAlbum} from '@lib/culledAlbumLocal';
+import {deleteLocalAlbumFiles} from '@lib/localStorage';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {APIResponse} from '@services/api';
 import {StackScreenProps} from '@react-navigation/stack';
-import {useState} from 'react';
+import {useFocusEffect} from '@react-navigation/native';
+import {useCallback, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -32,17 +36,49 @@ export default function HomeScreen({navigation}: Props) {
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [albumToDelete, setAlbumToDelete] =
     useState<APIResponse.CulledAlbum | null>(null);
+  const albumIds = useMemo(
+    () => albums.results.map(album => album.id),
+    [albums.results],
+  );
+  const {counts: localCounts, sizesGb: localSizesGb} =
+    useCulledAlbumLocalStats(albumIds);
   const hasAlbums = albums.results.length > 0;
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
+
+  function handlePressAlbum(album: APIResponse.CulledAlbum) {
+    if (expandedCardId === album.id) {
+      return;
+    }
+    navigation.navigate('AlbumDetail', {
+      albumId: album.id,
+      albumName: album.title ?? album.name,
+      ownerName: user && user.role !== 'guest' ? user.name : album.name,
+    });
+  }
 
   function handlePressMore(albumId: string) {
     setExpandedCardId(current => (current === albumId ? null : albumId));
   }
 
-  function handleDeleted() {
-    if (albumToDelete) {
-      removeAlbum(albumToDelete.id);
-      setExpandedCardId(null);
+  async function handleDeleted() {
+    if (!albumToDelete) return;
+    const albumId = albumToDelete.id;
+    try {
+      await Promise.all([
+        removePhotosByAlbum(albumId),
+        deleteLocalAlbumFiles(albumId),
+      ]);
+    } catch (error) {
+      console.error('[HomeScreen] Failed to delete local album files', error);
     }
+    removeAlbum(albumId);
+    setExpandedCardId(null);
+    setAlbumToDelete(null);
   }
 
   return (
@@ -117,7 +153,14 @@ export default function HomeScreen({navigation}: Props) {
                     variant="homepage"
                     album={album}
                     ownerName={user && user.role !== 'guest' ? user.name : undefined}
+                    mediaCount={localCounts[album.id] ?? album.totalMediaCount}
+                    storageSizeGb={
+                      localSizesGb[album.id] > 0
+                        ? localSizesGb[album.id]
+                        : album.size
+                    }
                     isExpanded={expandedCardId === album.id}
+                    onPress={() => handlePressAlbum(album)}
                     onPressMore={() => handlePressMore(album.id)}
                     onPressDelete={() => setAlbumToDelete(album)}
                   />

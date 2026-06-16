@@ -1,11 +1,15 @@
-import { AuthProvider, useAuthState } from '@context/auth';
-import { colors } from '@lib/colors';
-import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import {AuthProvider, useAuthState} from '@context/auth';
+import {ErrorProvider} from '@context/error';
+import {UploaderProvider} from '@context/uploader';
+import {ErrorToast} from '@components/error';
+import {UploadToast} from '@components/upload/UploadToast';
+import {colors} from '@lib/colors';
+import {DefaultTheme, NavigationContainer} from '@react-navigation/native';
+import {ActivityIndicator, StyleSheet, View} from 'react-native';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import 'reflect-metadata';
-import { AuthNavigator } from './AuthNavigator';
-import { MainNavigator } from './MainNavigator';
+import {AuthNavigator} from './AuthNavigator';
+import {MainNavigator} from './MainNavigator';
 
 const DarkTheme = {
   ...DefaultTheme,
@@ -38,11 +42,17 @@ function RootNavigator() {
 export default function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
-      <AuthProvider>
-        <NavigationContainer theme={DarkTheme}>
-          <RootNavigator />
-        </NavigationContainer>
-      </AuthProvider>
+      <ErrorProvider>
+        <AuthProvider>
+          <UploaderProvider>
+            <NavigationContainer theme={DarkTheme}>
+              <RootNavigator />
+            </NavigationContainer>
+            <UploadToast />
+            <ErrorToast />
+          </UploaderProvider>
+        </AuthProvider>
+      </ErrorProvider>
     </GestureHandlerRootView>
   );
 }

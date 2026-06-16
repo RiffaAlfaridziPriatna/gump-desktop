@@ -32,7 +32,6 @@ export default function SelectAlbumScreen({navigation}: Props) {
   const {
     albums: culledAlbums,
     refresh: refreshCulledAlbums,
-    addAlbum,
     createFromSiteAlbum,
   } = useCulledAlbumList();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -75,17 +74,19 @@ export default function SelectAlbumScreen({navigation}: Props) {
     setShowUploadModal(true);
   }
 
-  async function handleFilesSelected(_files: FileAsset[]) {
-    if (!selectedAlbum) return;
+  async function handleFilesSelected(files: FileAsset[]) {
+    if (!selectedAlbum || files.length === 0) return;
     setShowUploadModal(false);
     setCreatingAlbum(true);
     setCreateError(null);
     try {
       const album = await createFromSiteAlbum(selectedAlbum);
-      addAlbum(album);
-      navigation.reset({
-        index: 0,
-        routes: [{name: 'Home'}],
+      navigation.replace('AlbumDetail', {
+        albumId: album.id,
+        albumName: album.title ?? album.name,
+        ownerName:
+          user && user.role !== 'guest' ? user.name : selectedAlbum.name,
+        files,
       });
     } catch (error) {
       setCreateError(

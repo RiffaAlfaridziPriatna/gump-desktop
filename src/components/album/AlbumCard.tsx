@@ -30,6 +30,7 @@ type HomepageAlbumCardProps = AlbumCardBaseProps & {
   variant: 'homepage';
   isExpanded?: boolean;
   mediaCount?: number;
+  storageSizeGb?: number;
   onPress?: () => void;
   onPressMore?: () => void;
   onPressDelete?: () => void;
@@ -142,6 +143,7 @@ export function AlbumCard(props: AlbumCardProps) {
   }, [coverUrl]);
 
   const mediaCount = props.mediaCount ?? props.album.totalMediaCount;
+  const storageSizeGb = props.storageSizeGb ?? props.album.size;
   const CardWrapper = props.onPress ? TouchableOpacity : View;
   const cardWrapperProps = props.onPress
     ? {activeOpacity: 0.85, onPress: props.onPress}
@@ -207,7 +209,7 @@ export function AlbumCard(props: AlbumCardProps) {
           <View style={styles.storageRow}>
             <IconCloud width={14} height={14} color={colors.textGray} />
             <Text style={styles.storageText}>
-              {props.album.size.toFixed(1)} GB
+              {storageSizeGb.toFixed(1)} GB
             </Text>
           </View>
         </View>

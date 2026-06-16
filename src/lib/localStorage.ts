@@ -1,0 +1,34 @@
+import {FileAsset} from '@services/upload/types';
+import {NativeModules, Platform} from 'react-native';
+
+type NativeLocalStorageModule = {
+  copyPhoto: (
+    albumId: string,
+    sourceUri: string,
+    fileName: string,
+  ) => Promise<FileAsset>;
+  deleteAlbum: (albumId: string) => Promise<boolean>;
+};
+
+const NativeLocalStorage = NativeModules.GumpLocalStorage as
+  | NativeLocalStorageModule
+  | undefined;
+
+export async function copyPhotoToAlbum(
+  albumId: string,
+  file: FileAsset,
+): Promise<FileAsset> {
+  if (Platform.OS === 'macos' && NativeLocalStorage?.copyPhoto) {
+    return NativeLocalStorage.copyPhoto(albumId, file.uri, file.name);
+  }
+
+  throw new Error(
+    'Local photo storage is not available. Build the macOS app with GumpLocalStorage native module.',
+  );
+}
+
+export async function deleteLocalAlbumFiles(albumId: string): Promise<void> {
+  if (Platform.OS === 'macos' && NativeLocalStorage?.deleteAlbum) {
+    await NativeLocalStorage.deleteAlbum(albumId);
+  }
+}

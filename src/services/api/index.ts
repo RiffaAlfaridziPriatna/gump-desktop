@@ -4,9 +4,11 @@ import {APIAgent} from './agent';
 import {AlbumResource} from './resources/album';
 import {CulledAlbumResource} from './resources/culled-album';
 import {AuthResource} from './resources/auth';
+import {MediaResource} from './resources/media';
 import {UserResource} from './resources/user';
 
 export {APIException, assertAPIException, flattenValidationErrors} from './exception';
+export {MultipartUploadError} from '@services/upload/multipart';
 export type {APIRequest, APIResponse} from './types';
 export type {FileAsset} from '@services/upload/types';
 
@@ -18,6 +20,7 @@ export class APIService {
     readonly user: UserResource,
     readonly album: AlbumResource,
     readonly culledAlbum: CulledAlbumResource,
+    readonly media: MediaResource,
   ) {}
 }
 

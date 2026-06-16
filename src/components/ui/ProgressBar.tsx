@@ -12,7 +12,7 @@ type ProgressBarProps = {
 
 export function ProgressBar({
   progress,
-  height = 4,
+  height = 12,
   trackColor = colors.progressTrack,
   fillColor = colors.accent,
   style,
@@ -33,7 +33,7 @@ export function ProgressBar({
     <View
       style={[
         styles.track,
-        {height, borderRadius: height / 2, backgroundColor: trackColor},
+        {height, backgroundColor: trackColor},
         style,
       ]}>
       <Animated.View
@@ -41,7 +41,6 @@ export function ProgressBar({
           styles.fill,
           {
             height,
-            borderRadius: height / 2,
             backgroundColor: fillColor,
             width: animatedWidth.interpolate({
               inputRange: [0, 1],

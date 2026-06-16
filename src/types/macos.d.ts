@@ -16,5 +16,18 @@ declare module 'react-native' {
         }>
       >;
     };
+    GumpLocalStorage?: {
+      copyPhoto: (
+        albumId: string,
+        sourceUri: string,
+        fileName: string,
+      ) => Promise<{
+        uri: string;
+        name: string;
+        size: number;
+        type: string;
+      }>;
+      deleteAlbum: (albumId: string) => Promise<boolean>;
+    };
   }
 }
