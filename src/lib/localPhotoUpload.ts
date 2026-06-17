@@ -12,7 +12,7 @@ export async function uploadPhotoLocally(
     albumId: data.albumId,
     fileName: localFile.name,
     filePath: localFile.uri,
-    fileSize: localFile.size,
+    fileSize: data.file.size > 0 ? data.file.size : localFile.size,
   });
   onProgress(100);
   return localFile;

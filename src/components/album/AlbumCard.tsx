@@ -1,4 +1,5 @@
 import {Badge} from '@components/ui';
+import {formatStorageSizeGb} from '@lib/culledAlbumLocal';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {APIResponse} from '@services/api';
@@ -209,7 +210,7 @@ export function AlbumCard(props: AlbumCardProps) {
           <View style={styles.storageRow}>
             <IconCloud width={14} height={14} color={colors.textGray} />
             <Text style={styles.storageText}>
-              {storageSizeGb.toFixed(1)} GB
+              {formatStorageSizeGb(storageSizeGb)}
             </Text>
           </View>
         </View>

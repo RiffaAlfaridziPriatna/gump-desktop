@@ -155,8 +155,8 @@ export default function HomeScreen({navigation}: Props) {
                     ownerName={user && user.role !== 'guest' ? user.name : undefined}
                     mediaCount={localCounts[album.id] ?? album.totalMediaCount}
                     storageSizeGb={
-                      localSizesGb[album.id] > 0
-                        ? localSizesGb[album.id]
+                      (localCounts[album.id] ?? 0) > 0
+                        ? (localSizesGb[album.id] ?? 0)
                         : album.size
                     }
                     isExpanded={expandedCardId === album.id}
