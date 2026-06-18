@@ -37,25 +37,29 @@ function buildLayoutItems(
   dimensions: Map<string, {width: number; height: number}>,
   placeholderCount: number,
 ): MasonryPhotoItem[] {
-  if (items.length > 0) {
-    return items.map(item => {
-      const size = dimensions.get(item.uri);
-      return {
-        id: item.uri,
-        uri: item.uri,
-        width: size?.width ?? DEFAULT_ASPECT_WIDTH,
-        height: size?.height ?? DEFAULT_ASPECT_HEIGHT,
-      };
-    });
+  const photoItems = items.map(item => {
+    const size = dimensions.get(item.uri);
+    return {
+      id: item.uri,
+      uri: item.uri,
+      width: size?.width ?? DEFAULT_ASPECT_WIDTH,
+      height: size?.height ?? DEFAULT_ASPECT_HEIGHT,
+    };
+  });
+
+  if (placeholderCount <= 0) {
+    return photoItems;
   }
 
-  return Array.from({length: placeholderCount}, (_, index) => ({
+  const placeholders = Array.from({length: placeholderCount}, (_, index) => ({
     id: `placeholder-${index}`,
     uri: '',
     width: DEFAULT_ASPECT_WIDTH,
     height: DEFAULT_ASPECT_HEIGHT,
     isPlaceholder: true,
   }));
+
+  return [...photoItems, ...placeholders];
 }
 
 export function PhotoMasonryGrid({
