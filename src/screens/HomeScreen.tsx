@@ -204,7 +204,7 @@ export default function HomeScreen({navigation}: Props) {
               style={styles.emptyCard}
               onPress={() => navigation.navigate('SelectAlbum')}
               activeOpacity={0.7}>
-              <ImageCheckIcon width={40} height={40} />
+              <ImageCheckIcon width={40} height={40} color={colors.accent} />
               <Text style={styles.emptyCardLabel}>Select Existing Album</Text>
             </TouchableOpacity>
           </View>
