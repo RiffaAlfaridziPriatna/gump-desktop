@@ -123,10 +123,10 @@ export function AlbumCard(props: AlbumCardProps) {
     );
   }
 
-  const cullingAlbum =
-    'cullingHasUploads' in props.album ? props.album : null;
-  const showUploaded = cullingAlbum?.cullingHasUploads ?? false;
-  const showCulled = cullingAlbum?.cullingCompleted ?? false;
+  const showUploaded =
+    'cullingHasUploads' in props.album && props.album.cullingHasUploads === true;
+  const showCulled =
+    'cullingCompleted' in props.album && props.album.cullingCompleted === true;
   const coverUrl = props.album.cover?.preview?.large?.url;
   const coverRef = useRef<View>(null);
   const [coverBackdrop, setCoverBackdrop] = useState<FrostedBackdrop | undefined>();
