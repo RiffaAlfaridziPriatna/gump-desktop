@@ -147,7 +147,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingVertical: 24,
+    paddingTop: 16,
+    paddingBottom: 32,
   },
   row: {
     flexDirection: 'row',
