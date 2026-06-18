@@ -1,9 +1,7 @@
-import {listAlbumPhotos} from '@lib/localStorage';
 import {createStateStore} from '@lib/state';
-import {FileAsset} from '@services/upload/types';
 import {
+  getPhotosByAlbum,
   LocalPhotoRecord,
-  readAllPhotos,
 } from './culledAlbumLocalStorage';
 
 export type CulledAlbumLocalStatsState = {
@@ -39,19 +37,13 @@ export async function loadStatsForAlbums(albumIds: string[]): Promise<void> {
     return;
   }
 
-  const {counts} = culledAlbumLocalStatsStore.getState();
-  const missingAlbumIds = albumIds.filter(id => counts[id] === undefined);
-  if (missingAlbumIds.length === 0) {
-    return;
-  }
-
   try {
     const {counts: loadedCounts, sizeBytes: loadedSizeBytes} =
-      await computeStatsFromStorage(missingAlbumIds);
+      await computeStatsFromStorage(albumIds);
 
     culledAlbumLocalStatsStore.setState(state => {
       state.error = null;
-      for (const albumId of missingAlbumIds) {
+      for (const albumId of albumIds) {
         state.counts[albumId] = loadedCounts[albumId] ?? 0;
         state.sizeBytes[albumId] = loadedSizeBytes[albumId] ?? 0;
       }
@@ -91,51 +83,19 @@ async function computeStatsFromStorage(albumIds: string[]): Promise<{
   counts: Record<string, number>;
   sizeBytes: Record<string, number>;
 }> {
-  const ids = new Set(albumIds);
   const counts = Object.fromEntries(albumIds.map(id => [id, 0]));
   const sizeBytes = Object.fromEntries(albumIds.map(id => [id, 0]));
-  const records = await readAllPhotos();
-  const albumsNeedingDiskLookup = new Set<string>();
 
-  for (const record of records) {
-    if (!ids.has(record.albumId)) {
-      continue;
-    }
-    counts[record.albumId] = (counts[record.albumId] ?? 0) + 1;
-    if (record.fileSize > 0) {
-      sizeBytes[record.albumId] += record.fileSize;
-    } else {
-      albumsNeedingDiskLookup.add(record.albumId);
-    }
-  }
-
-  if (albumsNeedingDiskLookup.size === 0) {
-    return {counts, sizeBytes};
-  }
-
-  const diskSizesByAlbum = Object.fromEntries(
-    await Promise.all(
-      [...albumsNeedingDiskLookup].map(async albumId => [
-        albumId,
-        await getDiskSizeByFileName(albumId),
-      ]),
-    ),
+  await Promise.all(
+    albumIds.map(async albumId => {
+      const photos = await getPhotosByAlbum(albumId);
+      counts[albumId] = photos.length;
+      sizeBytes[albumId] = photos.reduce(
+        (total, photo) => total + photo.fileSize,
+        0,
+      );
+    }),
   );
 
-  for (const record of records) {
-    if (!ids.has(record.albumId) || record.fileSize > 0) {
-      continue;
-    }
-    sizeBytes[record.albumId] +=
-      diskSizesByAlbum[record.albumId]?.[record.fileName] ?? 0;
-  }
-
   return {counts, sizeBytes};
-}
-
-async function getDiskSizeByFileName(
-  albumId: string,
-): Promise<Record<string, number>> {
-  const files = await listAlbumPhotos(albumId);
-  return Object.fromEntries(files.map((file: FileAsset) => [file.name, file.size]));
 }

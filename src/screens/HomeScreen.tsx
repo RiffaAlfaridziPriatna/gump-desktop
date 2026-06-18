@@ -4,6 +4,7 @@ import {useAuthState} from '@context/auth';
 import {useCulledAlbumList} from '@hooks/useCulledAlbumList';
 import {useCulledAlbumLocalStats} from '@hooks/useCulledAlbumLocalStats';
 import {removePhotosByAlbum} from '@lib/culledAlbumLocal';
+import {loadStatsForAlbums} from '@lib/culledAlbumLocalStats';
 import {deleteLocalAlbumFiles} from '@lib/localStorage';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
@@ -11,7 +12,7 @@ import {MainStackParamList} from '../app/MainNavigator';
 import {APIResponse} from '@services/api';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useFocusEffect} from '@react-navigation/native';
-import {useCallback, useMemo, useState} from 'react';
+import {useCallback, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -42,11 +43,14 @@ export default function HomeScreen({navigation}: Props) {
   );
   const {counts: localCounts, sizesGb: localSizesGb} =
     useCulledAlbumLocalStats(albumIds);
+  const albumIdsRef = useRef(albumIds);
+  albumIdsRef.current = albumIds;
   const hasAlbums = albums.results.length > 0;
 
   useFocusEffect(
     useCallback(() => {
       refresh();
+      loadStatsForAlbums(albumIdsRef.current);
     }, [refresh]),
   );
 

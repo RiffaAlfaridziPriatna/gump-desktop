@@ -4,14 +4,20 @@ import {
   toSizesGb,
 } from '@lib/culledAlbumLocalStats';
 import {useStateStore} from '@lib/state';
-import {useEffect, useMemo} from 'react';
+import {useCallback, useEffect, useMemo, useRef} from 'react';
 
 export function useCulledAlbumLocalStats(albumIds: string[]) {
   const idsKey = useMemo(() => albumIds.join(','), [albumIds]);
+  const albumIdsRef = useRef(albumIds);
+  albumIdsRef.current = albumIds;
+
+  const refresh = useCallback(() => {
+    loadStatsForAlbums(albumIdsRef.current);
+  }, [idsKey]);
 
   useEffect(() => {
-    loadStatsForAlbums(albumIds);
-  }, [albumIds, idsKey]);
+    refresh();
+  }, [refresh, idsKey]);
 
   const counts = useStateStore(
     culledAlbumLocalStatsStore,
@@ -27,5 +33,5 @@ export function useCulledAlbumLocalStats(albumIds: string[]) {
   );
   const sizesGb = useMemo(() => toSizesGb(sizeBytes), [sizeBytes]);
 
-  return {counts, sizesGb, error};
+  return {counts, sizesGb, error, refresh};
 }
