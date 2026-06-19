@@ -11,6 +11,7 @@ export function FrostedView({
   style,
   fallbackColor = colors.badge,
   backdrop,
+  blurAmount = BACKDROP_BLUR_RADIUS,
   ...rest
 }: FrostedViewProps) {
   const viewRef = useRef<View>(null);
@@ -38,7 +39,7 @@ export function FrostedView({
       {hasBlurBackdrop && backdrop && selfOrigin ? (
         <Image
           source={{uri: backdrop.uri}}
-          blurRadius={BACKDROP_BLUR_RADIUS}
+          blurRadius={blurAmount}
           resizeMode="cover"
           style={{
             position: 'absolute',

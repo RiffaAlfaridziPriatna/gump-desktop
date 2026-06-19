@@ -4,5 +4,6 @@ export {Modal} from './Modal';
 export {Badge} from './Badge';
 export {ProgressBar} from './ProgressBar';
 export {Checkbox} from './Checkbox';
+export {Accordion} from './Accordion';
 export {FrostedView} from './frosted';
 export type {FrostedBackdrop, FrostedViewProps} from './frosted';

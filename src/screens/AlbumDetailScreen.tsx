@@ -99,19 +99,13 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     if (!cullingActive || !isAnalysisComplete || !hasAnalyzedPhotos) {
       return;
     }
-    navigation.replace('CulledAlbumDetail', {
-      albumId,
-      albumName,
-      ownerName,
-    });
+    navigation.replace('CulledAlbumDetail', {albumId});
   }, [
     albumId,
-    albumName,
     cullingActive,
     hasAnalyzedPhotos,
     isAnalysisComplete,
     navigation,
-    ownerName,
   ]);
 
   async function handleStartCulling() {
@@ -128,7 +122,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         <GumpLogo width={112} height={40} />
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.navigate('Home')}
+          onPress={() => navigation.goBack()}
           activeOpacity={0.7}>
           <IconChevronLeft width={24} height={24} color={colors.accent} />
           <Text style={styles.backText}>Back</Text>

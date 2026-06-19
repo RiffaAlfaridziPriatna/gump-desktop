@@ -5,6 +5,7 @@ export const colors = {
   // Backgrounds — darkest to lightest
   background: '#131415',
   cardBackground: '#FFFFFF',
+  cardBackgroundSecondary: '#1E1E1E',
 
   // Borders
   border: '#2C2D2F',
@@ -25,6 +26,9 @@ export const colors = {
   error: '#FF6E5A',
   success: '#4CAF50',
   white: '#FFFFFF',
+
+  // Divider
+  divider: '#303030',
 
   // UI
   badge: '#FFFFFF99',

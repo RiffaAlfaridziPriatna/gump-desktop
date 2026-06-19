@@ -2,6 +2,7 @@ import {colors} from '@lib/colors';
 import {FileAsset} from '@services/api';
 import {createStackNavigator, TransitionPresets} from '@react-navigation/stack';
 import AlbumDetailScreen from '@screens/AlbumDetailScreen';
+import CulledAlbumDetailScreen from '@screens/CulledAlbumDetailScreen';
 import HomeScreen from '@screens/HomeScreen';
 import SelectAlbumScreen from '@screens/SelectAlbumScreen';
 
@@ -13,6 +14,9 @@ export type MainStackParamList = {
     albumName: string;
     ownerName: string;
     files?: FileAsset[];
+  };
+  CulledAlbumDetail: {
+    albumId: string;
   };
 };
 
@@ -37,6 +41,16 @@ export function MainNavigator() {
         }}
       />
       <Stack.Screen name="AlbumDetail" component={AlbumDetailScreen} />
+      <Stack.Screen
+        name="CulledAlbumDetail"
+        component={CulledAlbumDetailScreen}
+        options={{
+          animation: 'slide_from_bottom',
+          ...TransitionPresets.ModalSlideFromBottomIOS,
+          cardOverlayEnabled: true,
+          gestureEnabled: true,
+        }}
+      />
     </Stack.Navigator>
   );
 }
