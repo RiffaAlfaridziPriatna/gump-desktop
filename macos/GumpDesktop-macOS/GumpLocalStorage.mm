@@ -1,6 +1,7 @@
 #import "GumpLocalStorage.h"
 
 #import <AppKit/AppKit.h>
+#import <Vision/Vision.h>
 
 @implementation GumpLocalStorage
 
@@ -20,11 +21,16 @@ RCT_EXPORT_MODULE();
 
 - (NSString *)pathFromUri:(NSString *)uri
 {
+  if (uri.length == 0) {
+    return @"";
+  }
   if ([uri hasPrefix:@"file://"]) {
     NSURL *url = [NSURL URLWithString:uri];
-    if (url.path.length > 0) {
-      return url.path;
+    if (url == nil || url.path.length == 0) {
+      NSString *rawPath = [uri substringFromIndex:7];
+      url = [NSURL fileURLWithPath:rawPath isDirectory:NO];
     }
+    return url.path ?: @"";
   }
   return uri;
 }
@@ -38,6 +44,136 @@ RCT_EXPORT_MODULE();
     return [NSString stringWithFormat:@"%@_%@.%@", base, uuid, ext];
   }
   return [NSString stringWithFormat:@"%@_%@", base, uuid];
+}
+
+- (NSArray *)landmarksFromObservation:(VNFaceObservation *)face
+{
+  VNFaceLandmarks2D *landmarks = face.landmarks;
+  if (landmarks == nil) {
+    return @[];
+  }
+
+  NSMutableArray *items = [NSMutableArray array];
+  void (^addRegion)(VNFaceLandmarkRegion2D *, NSString *) = ^(VNFaceLandmarkRegion2D *region,
+                                                              NSString *type) {
+    if (region == nil || region.pointCount == 0) {
+      return;
+    }
+    CGPoint inFace = region.normalizedPoints[0];
+    CGRect bbox = face.boundingBox;
+    CGFloat x = bbox.origin.x + inFace.x * bbox.size.width;
+    CGFloat y = bbox.origin.y + inFace.y * bbox.size.height;
+    [items addObject:@{
+      @"type" : type,
+      @"x" : @(x),
+      @"y" : @(1.0 - y),
+    }];
+  };
+
+  addRegion(landmarks.leftEye, @"eyeLeft");
+  addRegion(landmarks.rightEye, @"eyeRight");
+  addRegion(landmarks.nose, @"nose");
+  addRegion(landmarks.outerLips, @"mouth");
+
+  return items;
+}
+
+- (NSDictionary *)faceDictionaryFromObservation:(VNFaceObservation *)face
+                                          index:(NSInteger)index
+                                captureQuality:(NSNumber *)captureQuality
+{
+  CGRect box = face.boundingBox;
+  CGFloat left = box.origin.x;
+  CGFloat top = 1.0 - box.origin.y - box.size.height;
+  CGFloat width = box.size.width;
+  CGFloat height = box.size.height;
+
+  CGFloat sharpness = captureQuality != nil
+                          ? captureQuality.floatValue * 100.0f
+                          : face.confidence * 100.0f;
+
+  BOOL hasBothEyes = face.landmarks.leftEye != nil && face.landmarks.rightEye != nil;
+  BOOL eyesOpen = hasBothEyes;
+  CGFloat eyeConfidence = hasBothEyes ? 92.0f : 60.0f;
+
+  return @{
+    @"boundingBox" : @{
+      @"left" : @(left),
+      @"top" : @(top),
+      @"width" : @(width),
+      @"height" : @(height),
+    },
+    @"eyesOpen" : @{
+      @"value" : @(eyesOpen),
+      @"confidence" : @(eyeConfidence),
+    },
+    @"sharpness" : @(sharpness),
+    @"brightness" : @(60),
+    @"landmarks" : [self landmarksFromObservation:face],
+    @"pose" : @{
+      @"pitch" : @(face.pitch != nil ? face.pitch.floatValue : 0),
+      @"roll" : @(face.roll != nil ? face.roll.floatValue : 0),
+      @"yaw" : @(face.yaw != nil ? face.yaw.floatValue : 0),
+    },
+    @"faceId" : [NSString stringWithFormat:@"local-face-%ld", (long)index],
+  };
+}
+
+RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      NSString *path = [self pathFromUri:uri];
+      if (path.length == 0 ||
+          ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"ENOENT", @"Photo file not found", nil);
+        });
+        return;
+      }
+
+      NSURL *url = [NSURL fileURLWithPath:path isDirectory:NO];
+      VNDetectFaceLandmarksRequest *landmarksRequest =
+          [[VNDetectFaceLandmarksRequest alloc] init];
+
+      VNImageRequestHandler *handler =
+          [[VNImageRequestHandler alloc] initWithURL:url options:@{}];
+      NSError *error = nil;
+      BOOL performed = [handler performRequests:@[ landmarksRequest ] error:&error];
+      if (!performed) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"EDETECT", error.localizedDescription ?: @"Face detection failed", error);
+        });
+        return;
+      }
+
+      NSArray<VNFaceObservation *> *landmarkFaces = landmarksRequest.results;
+      if (landmarkFaces.count == 0) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          resolve(@[]);
+        });
+        return;
+      }
+
+      NSMutableArray *faces = [NSMutableArray arrayWithCapacity:landmarkFaces.count];
+      for (NSInteger index = 0; index < (NSInteger)landmarkFaces.count; index++) {
+        VNFaceObservation *face = landmarkFaces[index];
+        [faces addObject:[self faceDictionaryFromObservation:face
+                                                       index:index
+                                             captureQuality:nil]];
+      }
+
+      dispatch_async(dispatch_get_main_queue(), ^{
+        resolve(faces);
+      });
+    } @catch (NSException *exception) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        reject(@"EDETECT", exception.reason ?: @"Face detection failed", nil);
+      });
+    }
+  });
 }
 
 RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
