@@ -1,4 +1,4 @@
-import {getCullingPhotoId} from '@lib/cullingPhotoId';
+import {photoIdFromStoredFile} from '@lib/cullingPhotoId';
 import {listAlbumPhotos} from '@lib/localStorage';
 import {saveAlbum} from './storage';
 import {
@@ -33,7 +33,7 @@ export async function syncAlbumWithDisk(album: CulledAlbum): Promise<CulledAlbum
     }
 
     const photo: CulledAlbumPhoto = {
-      ...createCulledAlbumPhoto(file, getCullingPhotoId(file)),
+      ...createCulledAlbumPhoto(file, photoIdFromStoredFile(file)),
       status: 'uploaded',
       progress: 100,
     };

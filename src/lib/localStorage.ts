@@ -6,6 +6,7 @@ type NativeLocalStorageModule = {
     albumId: string,
     sourceUri: string,
     fileName: string,
+    photoId: string,
   ) => Promise<FileAsset>;
   listPhotos: (albumId: string) => Promise<FileAsset[]>;
   deleteAlbum: (albumId: string) => Promise<boolean>;
@@ -18,9 +19,15 @@ const NativeLocalStorage = NativeModules.GumpLocalStorage as
 export async function copyPhotoToAlbum(
   albumId: string,
   file: FileAsset,
+  photoId: string,
 ): Promise<FileAsset> {
   if (Platform.OS === 'macos' && NativeLocalStorage?.copyPhoto) {
-    return NativeLocalStorage.copyPhoto(albumId, file.uri, file.name);
+    return NativeLocalStorage.copyPhoto(
+      albumId,
+      file.uri,
+      file.name,
+      photoId,
+    );
   }
 
   throw new Error(

@@ -35,17 +35,6 @@ RCT_EXPORT_MODULE();
   return uri;
 }
 
-- (NSString *)uniqueFileName:(NSString *)fileName
-{
-  NSString *base = [fileName stringByDeletingPathExtension];
-  NSString *ext = [fileName pathExtension];
-  NSString *uuid = [[NSUUID UUID] UUIDString];
-  if (ext.length > 0) {
-    return [NSString stringWithFormat:@"%@_%@.%@", base, uuid, ext];
-  }
-  return [NSString stringWithFormat:@"%@_%@", base, uuid];
-}
-
 - (NSArray *)landmarksFromObservation:(VNFaceObservation *)face
 {
   VNFaceLandmarks2D *landmarks = face.landmarks;
@@ -179,6 +168,7 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
 RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
                   sourceUri:(NSString *)sourceUri
                   fileName:(NSString *)fileName
+                  photoId:(NSString *)photoId
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 {
@@ -202,7 +192,11 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
         return;
       }
 
-      NSString *destName = [self uniqueFileName:fileName ?: @"photo.jpg"];
+      NSString *ext = [(fileName ?: @"photo.jpg") pathExtension];
+      NSString *destId = photoId.length > 0 ? photoId : [[NSUUID UUID] UUIDString];
+      NSString *destName =
+          ext.length > 0 ? [NSString stringWithFormat:@"%@.%@", destId, ext]
+                         : destId;
       NSString *destPath = [albumDir stringByAppendingPathComponent:destName];
       NSError *copyError = nil;
       [[NSFileManager defaultManager] copyItemAtPath:sourcePath

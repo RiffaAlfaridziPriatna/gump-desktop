@@ -1,4 +1,4 @@
-import {getCullingPhotoId} from '@lib/cullingPhotoId';
+import {createCullingPhotoId} from '@lib/cullingPhotoId';
 import {createStateStore} from '@lib/state';
 import {FileAsset} from '@services/upload/types';
 import {mergeAlbumPhotos, mergeWithMemoryAlbum} from './merge';
@@ -252,20 +252,7 @@ export function addPhotosToAlbum(
     const album = state.albums[albumId]!;
 
     for (const file of files) {
-      const photoId = getCullingPhotoId(file);
-      const existing = album.photos.find(entry => entry.photoId === photoId);
-      if (existing) {
-        if (existing.status === 'failed') {
-          existing.status = 'pending';
-          existing.progress = 0;
-          existing.error = undefined;
-          existing.file = file;
-          added.push(existing);
-        }
-        continue;
-      }
-
-      const photo = createCulledAlbumPhoto(file, photoId);
+      const photo = createCulledAlbumPhoto(file, createCullingPhotoId());
       if (options?.simulatedMinDurationMs) {
         photo.simulatedMinDurationMs = options.simulatedMinDurationMs;
       }
