@@ -1,18 +1,17 @@
 import {AlbumCard, AlbumGrid} from '@components/album';
 import {DeleteAlbumModal} from '@components/modals/DeleteAlbumModal';
 import {useAuthState} from '@context/auth';
-import {useCulledAlbumList} from '@hooks/useCulledAlbumList';
-import {useCulledAlbumLocalStats} from '@hooks/useCulledAlbumLocalStats';
-import {removePhotosByAlbum} from '@lib/culledAlbumLocal';
-import {loadStatsForAlbums} from '@lib/culledAlbumLocalStats';
-import {deleteLocalAlbumFiles} from '@lib/localStorage';
+import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
+import {useDeleteCulledAlbum} from '@hooks/useDeleteCulledAlbum';
+import {bytesToGigabytes, toAlbumCardModel} from '@lib/culledAlbum/format';
+import {resolveCulledAlbumRoute} from '@lib/culledAlbum/service';
+import {CulledAlbum} from '@lib/culledAlbum/types';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
-import {APIResponse} from '@services/api';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useFocusEffect} from '@react-navigation/native';
-import {useCallback, useMemo, useRef, useState} from 'react';
+import {useCallback, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -31,58 +30,51 @@ type Props = StackScreenProps<MainStackParamList, 'Home'>;
 
 export default function HomeScreen({navigation}: Props) {
   const user = useAuthState(state => state.user);
-  const {loadingAlbums, albums, loadMore, hasMore, removeAlbum, refresh} =
-    useCulledAlbumList();
+  const {loadingAlbums, albums, refresh, count} = useLocalCulledAlbumList();
+  const deleteCulledAlbum = useDeleteCulledAlbum();
 
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
-  const [albumToDelete, setAlbumToDelete] =
-    useState<APIResponse.CulledAlbum | null>(null);
-  const albumIds = useMemo(
-    () => albums.results.map(album => album.id),
-    [albums.results],
+  const [albumToDelete, setAlbumToDelete] = useState<CulledAlbum | null>(null);
+  const cardModels = useMemo(
+    () => albums.map(album => toAlbumCardModel(album)),
+    [albums],
   );
-  const {counts: localCounts, sizesGb: localSizesGb} =
-    useCulledAlbumLocalStats(albumIds);
-  const albumIdsRef = useRef(albumIds);
-  albumIdsRef.current = albumIds;
-  const hasAlbums = albums.results.length > 0;
+  const hasAlbums = albums.length > 0;
 
   useFocusEffect(
     useCallback(() => {
       refresh();
-      loadStatsForAlbums(albumIdsRef.current);
     }, [refresh]),
   );
 
-  function handlePressAlbum(album: APIResponse.CulledAlbum) {
-    if (expandedCardId === album.id) {
+  async function handlePressAlbum(album: CulledAlbum) {
+    if (expandedCardId === album.albumId) {
       return;
     }
-    navigation.navigate('AlbumDetail', {
-      albumId: album.id,
+
+    const params = {
+      albumId: album.albumId,
       albumName: album.title ?? album.name,
       ownerName: user && user.role !== 'guest' ? user.name : album.name,
-    });
+    };
+
+    const route = await resolveCulledAlbumRoute(album.albumId);
+    navigation.navigate(route, params);
   }
 
   function handlePressMore(albumId: string) {
     setExpandedCardId(current => (current === albumId ? null : albumId));
   }
 
-  async function handleDeleted() {
-    if (!albumToDelete) return;
-    const albumId = albumToDelete.id;
-    try {
-      await Promise.all([
-        removePhotosByAlbum(albumId),
-        deleteLocalAlbumFiles(albumId),
-      ]);
-    } catch (error) {
-      console.error('[HomeScreen] Failed to delete local album files', error);
+  async function handleDeleteAlbum() {
+    if (!albumToDelete) {
+      return;
     }
-    removeAlbum(albumId);
+
+    await deleteCulledAlbum(albumToDelete);
     setExpandedCardId(null);
     setAlbumToDelete(null);
+    await refresh();
   }
 
   return (
@@ -108,7 +100,7 @@ export default function HomeScreen({navigation}: Props) {
               <View style={styles.titleLine}>
                 <Text style={styles.title}>Album</Text>
                 {!loadingAlbums && (
-                  <Text style={styles.count}> ({albums.count})</Text>
+                  <Text style={styles.count}> ({count})</Text>
                 )}
               </View>
               <Text style={styles.subtitle}>Recently Added Albums</Text>
@@ -122,62 +114,36 @@ export default function HomeScreen({navigation}: Props) {
             </TouchableOpacity>
           </View>
 
-          {loadingAlbums && albums.results.length === 0 ? (
-            <View style={styles.loading}>
-              <ActivityIndicator size="large" color={colors.accent} />
-            </View>
-          ) : (
-            <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
-              scrollEnabled={!loadingAlbums}
-              refreshControl={
-                <RefreshControl
-                  refreshing={loadingAlbums}
-                  onRefresh={refresh}
-                  colors={[colors.accent]}
-                  tintColor={colors.accent}
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            scrollEnabled={!loadingAlbums}
+            refreshControl={
+              <RefreshControl
+                refreshing={loadingAlbums}
+                onRefresh={refresh}
+                colors={[colors.accent]}
+                tintColor={colors.accent}
+              />
+            }
+            scrollEventThrottle={200}>
+            <AlbumGrid columns={4} gap={16}>
+              {albums.map((album, index) => (
+                <AlbumCard
+                  key={album.albumId}
+                  variant="homepage"
+                  album={cardModels[index]!}
+                  ownerName={user && user.role !== 'guest' ? user.name : undefined}
+                  mediaCount={album.totalPhotos}
+                  storageSizeGb={bytesToGigabytes(album.totalStorage)}
+                  isExpanded={expandedCardId === album.albumId}
+                  onPress={() => handlePressAlbum(album)}
+                  onPressMore={() => handlePressMore(album.albumId)}
+                  onPressDelete={() => setAlbumToDelete(album)}
                 />
-              }
-              onScroll={({nativeEvent}) => {
-                const {layoutMeasurement, contentOffset, contentSize} =
-                  nativeEvent;
-                const isNearBottom =
-                  layoutMeasurement.height + contentOffset.y >=
-                  contentSize.height - 120;
-                if (isNearBottom && hasMore) {
-                  loadMore();
-                }
-              }}
-              scrollEventThrottle={200}>
-              <AlbumGrid columns={4} gap={16}>
-                {albums.results.map(album => (
-                  <AlbumCard
-                    key={album.id}
-                    variant="homepage"
-                    album={album}
-                    ownerName={user && user.role !== 'guest' ? user.name : undefined}
-                    mediaCount={localCounts[album.id] ?? album.totalMediaCount}
-                    storageSizeGb={
-                      (localCounts[album.id] ?? 0) > 0
-                        ? (localSizesGb[album.id] ?? 0)
-                        : album.size
-                    }
-                    isExpanded={expandedCardId === album.id}
-                    onPress={() => handlePressAlbum(album)}
-                    onPressMore={() => handlePressMore(album.id)}
-                    onPressDelete={() => setAlbumToDelete(album)}
-                  />
-                ))}
-              </AlbumGrid>
-              {loadingAlbums && albums.results.length > 0 && (
-                <ActivityIndicator
-                  style={styles.loadMore}
-                  color={colors.accent}
-                />
-              )}
-            </ScrollView>
-          )}
+              ))}
+            </AlbumGrid>
+          </ScrollView>
         </>
       ) : (
         <ScrollView
@@ -215,7 +181,7 @@ export default function HomeScreen({navigation}: Props) {
         visible={albumToDelete !== null}
         album={albumToDelete}
         onClose={() => setAlbumToDelete(null)}
-        onDeleted={handleDeleted}
+        onDelete={handleDeleteAlbum}
       />
     </SafeAreaView>
   );
@@ -312,9 +278,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  loadMore: {
-    marginTop: 16,
   },
   emptyState: {
     flex: 1,

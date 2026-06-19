@@ -1,5 +1,5 @@
 import {Badge} from '@components/ui';
-import {formatStorageSizeGb} from '@lib/culledAlbum/format';
+import {formatStorageSizeGb, LocalAlbumCardModel} from '@lib/culledAlbum/format';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {APIResponse} from '@services/api';
@@ -20,7 +20,7 @@ import {Checkbox} from '@components/ui';
 import type {FrostedBackdrop} from '@components/ui/frosted';
 import {useAlbumGridItemWidth} from './AlbumGrid';
 
-type AlbumCardAlbum = APIResponse.Album | APIResponse.CulledAlbum;
+type AlbumCardAlbum = APIResponse.Album | LocalAlbumCardModel;
 
 type AlbumCardBaseProps = {
   album: AlbumCardAlbum;

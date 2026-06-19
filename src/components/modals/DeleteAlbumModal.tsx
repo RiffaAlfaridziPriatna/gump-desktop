@@ -1,33 +1,33 @@
 import {Modal} from '@components/ui';
 import {colors} from '@lib/colors';
-import {make} from '@lib/di';
 import {fonts} from '@lib/typography';
-import {APIService, APIResponse} from '@services/api';
+import {CulledAlbum} from '@lib/culledAlbum/types';
 import {useState} from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import DecorativeDeleteAlbum from '../../assets/images/modal_decorative_delete_album.svg';
 
 type DeleteAlbumModalProps = {
   visible: boolean;
-  album: APIResponse.CulledAlbum | null;
+  album: CulledAlbum | null;
   onClose: () => void;
-  onDeleted: () => void;
+  onDelete: () => Promise<void>;
 };
 
 export function DeleteAlbumModal({
   visible,
   album,
   onClose,
-  onDeleted,
+  onDelete,
 }: DeleteAlbumModalProps) {
   const [deleting, setDeleting] = useState(false);
 
   async function handleDelete() {
-    if (!album || deleting) return;
+    if (!album || deleting) {
+      return;
+    }
     setDeleting(true);
     try {
-      await make(APIService).culledAlbum.delete(album.id);
-      onDeleted();
+      await onDelete();
       onClose();
     } catch (error) {
       console.error('[DeleteAlbumModal] Failed to delete album', error);

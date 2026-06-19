@@ -1,11 +1,9 @@
 import {PhotoMasonryGrid} from '@components/photo/PhotoMasonryGrid';
 import {
-  useCullingAnalyzerActions,
-  useCullingAnalyzerState,
-} from '@context/cullingAnalyzer';
-import {useUploaderActions, useUploaderState} from '@context/uploader';
+  useCulledAlbumActions,
+  useCulledAlbumPhotosState,
+} from '@context/culledAlbum';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
-import {markCullingStarted} from '@lib/cullingStarted';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
@@ -27,68 +25,62 @@ type Props = StackScreenProps<MainStackParamList, 'AlbumDetail'>;
 
 export default function AlbumDetailScreen({navigation, route}: Props) {
   const {albumId, albumName, ownerName, files} = route.params;
-  const uploads = useUploaderState(state => state.uploads);
-  const {addItems} = useUploaderActions();
-  const analyzeItems = useCullingAnalyzerState(state => state.items);
-  const {startAnalysis} = useCullingAnalyzerActions();
+  const albumPhotos = useCulledAlbumPhotosState(albumId);
+  const {addPhotos, startAnalysis} = useCulledAlbumActions();
   const startedRef = useRef(false);
   const [cullingActive, setCullingActive] = useState(false);
   const {photos, loadingPhotos, loadError, reloadPhotos} =
-    useCulledAlbumPhotos(albumId);
+    useCulledAlbumPhotos(albumId, {skipInitialLoad: Boolean(files?.length)});
 
-  const albumUploads = useMemo(
-    () => uploads.filter(item => item.albumId === albumId),
-    [albumId, uploads],
+  const isUploading = albumPhotos.some(
+    photo => photo.status === 'pending' || photo.status === 'uploading',
   );
-
-  const albumAnalyzeItems = useMemo(
-    () => analyzeItems.filter(item => item.albumId === albumId),
-    [albumId, analyzeItems],
-  );
-
-  const isAnalysisComplete =
-    albumAnalyzeItems.length > 0 &&
-    albumAnalyzeItems.every(
-      item => item.status === 'analyzed' || item.status === 'failed',
-    );
-
-  const hasAnalyzedPhotos = albumAnalyzeItems.some(
-    item => item.status === 'analyzed',
-  );
-
-  const isUploading = albumUploads.some(
-    item => item.status === 'pending' || item.status === 'uploading',
-  );
-  const uploadedCount = albumUploads.filter(
-    item => item.status === 'uploaded',
+  const uploadedCount = albumPhotos.filter(
+    photo => photo.status === 'uploaded',
   ).length;
+  const analyzePhotos = useMemo(
+    () => albumPhotos.filter(photo => photo.analysisStatus !== 'idle'),
+    [albumPhotos],
+  );
+  const isAnalysisComplete =
+    analyzePhotos.length > 0 &&
+    analyzePhotos.every(
+      photo =>
+        photo.analysisStatus === 'analyzed' ||
+        photo.analysisStatus === 'failed',
+    );
+  const hasAnalyzedPhotos = analyzePhotos.some(
+    photo => photo.analysisStatus === 'analyzed',
+  );
+
   const displayPhotos = useMemo(() => {
-    if (albumUploads.length > 0) {
-      return albumUploads
-        .filter(item => item.status === 'uploaded' && item.localFile)
-        .map(item => item.localFile!);
+    const uploaded = albumPhotos
+      .filter(photo => photo.status === 'uploaded')
+      .map(photo => photo.file);
+    if (uploaded.length > 0) {
+      return uploaded;
     }
     return photos;
-  }, [albumUploads, photos]);
+  }, [albumPhotos, photos]);
 
   const placeholderCount = useMemo(
     () =>
-      albumUploads.filter(
-        item => item.status === 'pending' || item.status === 'uploading',
+      albumPhotos.filter(
+        photo => photo.status === 'pending' || photo.status === 'uploading',
       ).length,
-    [albumUploads],
+    [albumPhotos],
   );
 
   const totalPhotos =
-    albumUploads.length > 0 ? albumUploads.length : photos.length;
+    albumPhotos.length > 0 ? albumPhotos.length : photos.length;
   const isCullingInProgress = cullingActive && !isAnalysisComplete;
 
   useEffect(() => {
     if (files && files.length > 0 && !startedRef.current) {
       startedRef.current = true;
-      addItems(files, albumId);
+      addPhotos(albumId, files);
     }
-  }, [addItems, albumId, files]);
+  }, [addPhotos, albumId, files]);
 
   useEffect(() => {
     if (!isUploading && uploadedCount > 0) {
@@ -127,8 +119,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
       return;
     }
     setCullingActive(true);
-    await markCullingStarted(albumId);
-    startAnalysis(albumId, displayPhotos);
+    startAnalysis(albumId);
   }
 
   return (
@@ -185,7 +176,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         </View>
       </View>
 
-      {loadingPhotos && photos.length === 0 && albumUploads.length === 0 ? (
+      {loadingPhotos && photos.length === 0 && albumPhotos.length === 0 ? (
         <View style={styles.loading}>
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
