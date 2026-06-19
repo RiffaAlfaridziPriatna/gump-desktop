@@ -1,6 +1,6 @@
 import {AuthProvider, useAuthState} from '@context/auth';
+import {CulledAlbumProvider} from '@context/culledAlbum';
 import {ErrorProvider} from '@context/error';
-import {UploaderProvider} from '@context/uploader';
 import {ErrorToast} from '@components/error';
 import {UploadToast} from '@components/upload/UploadToast';
 import {colors} from '@lib/colors';
@@ -44,13 +44,14 @@ export default function App() {
     <GestureHandlerRootView style={styles.root}>
       <ErrorProvider>
         <AuthProvider>
-          <UploaderProvider>
+          <CulledAlbumProvider>
             <NavigationContainer theme={DarkTheme}>
               <RootNavigator />
             </NavigationContainer>
-            <UploadToast />
+            <UploadToast mode="upload" />
+            <UploadToast mode="analyze" />
             <ErrorToast />
-          </UploaderProvider>
+          </CulledAlbumProvider>
         </AuthProvider>
       </ErrorProvider>
     </GestureHandlerRootView>
