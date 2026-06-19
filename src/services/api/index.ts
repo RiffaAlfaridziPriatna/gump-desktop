@@ -2,7 +2,6 @@ import {Injectable, Container} from '@lib/di';
 import {API_BASE_URL} from '@lib/constants';
 import {APIAgent} from './agent';
 import {AlbumResource} from './resources/album';
-import {CulledAlbumResource} from './resources/culled-album';
 import {AuthResource} from './resources/auth';
 import {MediaResource} from './resources/media';
 import {UserResource} from './resources/user';
@@ -19,7 +18,6 @@ export class APIService {
     readonly auth: AuthResource,
     readonly user: UserResource,
     readonly album: AlbumResource,
-    readonly culledAlbum: CulledAlbumResource,
     readonly media: MediaResource,
   ) {}
 }

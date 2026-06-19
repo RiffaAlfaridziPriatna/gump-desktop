@@ -33,10 +33,68 @@ export namespace APIResponse {
   export type Album = components['schemas']['AlbumWithCountsDto'];
   export type AlbumList = components['schemas']['AlbumListBasicDto'];
 
-  export type CulledAlbum = components['schemas']['AlbumWithCountsDto'];
-  export type CulledAlbumList = components['schemas']['AlbumListBasicDto'];
-  export type CulledAlbumCreateResult = components['schemas']['AlbumFullDto'];
-  export type CulledAlbumUpdateResult = components['schemas']['AlbumBasicDto'];
+  export type CullingEyeStatus = 'open' | 'closed' | 'partial';
+  export type CullingFocusLevel = 'good' | 'soft' | 'blurred';
+
+  export type CullingFace = {
+    boundingBox: {
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+    };
+    eyeStatus: CullingEyeStatus;
+    eyeConfidence: number;
+    focusLevel: CullingFocusLevel;
+    sharpness: number;
+    brightness: number;
+    landmarks: Array<{type: string; x: number; y: number}>;
+    pose: {pitch: number; roll: number; yaw: number};
+    rekognitionFaceId?: string;
+  };
+
+  export type CullingPhoto = {
+    photoId: string;
+    fileName: string;
+    faces: CullingFace[];
+    selected: boolean;
+    aiSelected: boolean;
+    maybe: boolean;
+    blurred: boolean;
+    closedEyes: boolean;
+    duplicated: boolean;
+    starRating: number | null;
+  };
+
+  export type CullingPhotoList = {
+    results: CullingPhoto[];
+  };
+
+  export type CullingStats = {
+    totalPhotos: number;
+    mySelections: number;
+    aiSelected: number;
+    maybe: number;
+    blurred: number;
+    closedEyes: number;
+    duplicated: number;
+  };
+
+  export type CullingKeyFace = {
+    faceId: string;
+    photoIds: string[];
+    eyeStatus: CullingEyeStatus;
+    focusLevel: CullingFocusLevel;
+    occurrenceCount: number;
+  };
+
+  export type CullingKeyFaceList = {
+    results: CullingKeyFace[];
+  };
+
+  export type CullingFinalizeResult = {
+    selectedPhotoIds: string[];
+  };
 
   export type UploadPart = components['schemas']['S3UploadPartDto'];
   export type UploadSession = components['schemas']['S3MultipartUploadDto'];
@@ -56,14 +114,6 @@ export namespace APIRequest {
   export type GetAlbumList = NonNullable<
     paths['/albums']['get']['parameters']['query']
   >;
-
-  export type GetCulledAlbumList = GetAlbumList;
-
-  export type CreateCulledAlbum =
-    paths['/albums']['post']['requestBody']['content']['application/json'];
-
-  export type UpdateCullingStatus =
-    paths['/albums/{albumId}/culling-status']['patch']['requestBody']['content']['application/json'];
 
   export type CreateUploadSession =
     paths['/albums/{albumId}/upload-session']['post']['requestBody']['content']['application/json'];

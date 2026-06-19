@@ -50,10 +50,6 @@ export interface paths {
     /** @description Add existing album to list */
     post: operations["Album_AlbumController_addToList"];
   };
-  "/albums/{albumId}/culling-status": {
-    /** @description Update culling workflow status for a culling album */
-    patch: operations["Album_AlbumController_updateCullingStatus"];
-  };
   "/albums/{albumId}/auto-expiry": {
     /** @description Enable auto expiry for album */
     post: operations["Album_AlbumController_enableAutoExpiry"];
@@ -938,9 +934,6 @@ export interface components {
       autoExpiryDays: number | null;
       messageCount: number;
       messageRating: number;
-      forCulling: boolean;
-      cullingHasUploads: boolean;
-      cullingCompleted: boolean;
       /** @enum {string|null} */
       defaultMediaSort: "creation_time" | "last_upload" | "filename" | null;
       totalMediaCount: number;
@@ -1033,9 +1026,6 @@ export interface components {
       autoExpiryDays: number | null;
       messageCount: number;
       messageRating: number;
-      forCulling: boolean;
-      cullingHasUploads: boolean;
-      cullingCompleted: boolean;
       /** @enum {string|null} */
       defaultMediaSort: "creation_time" | "last_upload" | "filename" | null;
       totalMediaCount: number;
@@ -1123,9 +1113,6 @@ export interface components {
       autoExpiryDays: number | null;
       messageCount: number;
       messageRating: number;
-      forCulling: boolean;
-      cullingHasUploads: boolean;
-      cullingCompleted: boolean;
       /** @enum {string|null} */
       defaultMediaSort: "creation_time" | "last_upload" | "filename" | null;
       totalMediaCount: number;
@@ -1232,9 +1219,6 @@ export interface components {
       autoExpiryDays: number | null;
       messageCount: number;
       messageRating: number;
-      forCulling: boolean;
-      cullingHasUploads: boolean;
-      cullingCompleted: boolean;
       /** @enum {string|null} */
       defaultMediaSort: "creation_time" | "last_upload" | "filename" | null;
     };
@@ -2252,7 +2236,6 @@ export interface operations {
         month?: number;
         sort?: "default" | "creation_time" | "size";
         order?: "asc" | "desc";
-        forCulling?: boolean;
         text?: string;
         face?: string;
         ids?: string;
@@ -2291,7 +2274,6 @@ export interface operations {
           showProfile?: boolean;
           subdomain?: string;
           consentEnabled?: boolean;
-          forCulling?: boolean;
           watermarkEnabled?: boolean;
           watermark?: {
             /** @description S3 Key */
@@ -2580,28 +2562,6 @@ export interface operations {
       201: {
         content: {
           "application/json": components["schemas"]["StatusDto"];
-        };
-      };
-    };
-  };
-  /** @description Update culling workflow status for a culling album */
-  Album_AlbumController_updateCullingStatus: {
-    parameters: {
-      path: {
-        albumId: string;
-      };
-    };
-    requestBody: {
-      content: {
-        "application/json": {
-          cullingCompleted: boolean;
-        };
-      };
-    };
-    responses: {
-      200: {
-        content: {
-          "application/json": components["schemas"]["AlbumBasicDto"];
         };
       };
     };
