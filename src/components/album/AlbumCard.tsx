@@ -1,5 +1,5 @@
 import {Badge} from '@components/ui';
-import {formatStorageSizeGb} from '@lib/culledAlbumLocal';
+import {formatStorageSizeGb} from '@lib/culledAlbum/format';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {APIResponse} from '@services/api';
