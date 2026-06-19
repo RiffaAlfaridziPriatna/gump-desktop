@@ -67,6 +67,67 @@ RCT_EXPORT_MODULE();
   return items;
 }
 
+- (CGFloat)eyeAspectRatioFromRegion:(VNFaceLandmarkRegion2D *)region
+{
+  if (region == nil || region.pointCount < 3) {
+    return -1;
+  }
+
+  const CGPoint *points = region.normalizedPoints;
+  CGFloat minX = points[0].x;
+  CGFloat maxX = points[0].x;
+  CGFloat minY = points[0].y;
+  CGFloat maxY = points[0].y;
+  for (NSUInteger i = 1; i < region.pointCount; i++) {
+    minX = MIN(minX, points[i].x);
+    maxX = MAX(maxX, points[i].x);
+    minY = MIN(minY, points[i].y);
+    maxY = MAX(maxY, points[i].y);
+  }
+
+  CGFloat width = maxX - minX;
+  CGFloat height = maxY - minY;
+  if (width < 1e-5) {
+    return -1;
+  }
+  return height / width;
+}
+
+- (CGFloat)sharpnessFromCaptureQuality:(CGFloat)quality
+{
+  return fminf(100.0f, fmaxf(0.0f, 8.0f + quality * 92.0f));
+}
+
+- (NSDictionary *)eyesOpenFromLandmarks:(VNFaceLandmarks2D *)landmarks
+{
+  static const CGFloat kOpenThreshold = 0.22f;
+  static const CGFloat kClosedThreshold = 0.14f;
+
+  CGFloat leftRatio = [self eyeAspectRatioFromRegion:landmarks.leftEye];
+  CGFloat rightRatio = [self eyeAspectRatioFromRegion:landmarks.rightEye];
+  BOOL hasLeft = leftRatio >= 0;
+  BOOL hasRight = rightRatio >= 0;
+
+  if (!hasLeft && !hasRight) {
+    return @{@"value" : @NO, @"confidence" : @(50.0f)};
+  }
+
+  CGFloat minRatio = hasLeft && hasRight ? MIN(leftRatio, rightRatio)
+                                         : hasLeft ? leftRatio
+                                                   : rightRatio;
+
+  if (minRatio >= kOpenThreshold) {
+    CGFloat confidence = MIN(98.0f, 86.0f + (minRatio - kOpenThreshold) * 200.0f);
+    return @{@"value" : @YES, @"confidence" : @(confidence)};
+  }
+  if (minRatio <= kClosedThreshold) {
+    CGFloat confidence = MIN(98.0f, 86.0f + (kClosedThreshold - minRatio) * 400.0f);
+    return @{@"value" : @NO, @"confidence" : @(confidence)};
+  }
+
+  return @{@"value" : @NO, @"confidence" : @(70.0f)};
+}
+
 - (NSDictionary *)faceDictionaryFromObservation:(VNFaceObservation *)face
                                           index:(NSInteger)index
                                 captureQuality:(NSNumber *)captureQuality
@@ -77,13 +138,14 @@ RCT_EXPORT_MODULE();
   CGFloat width = box.size.width;
   CGFloat height = box.size.height;
 
-  CGFloat sharpness = captureQuality != nil
-                          ? captureQuality.floatValue * 100.0f
-                          : face.confidence * 100.0f;
+  CGFloat sharpness = 50.0f;
+  if (captureQuality != nil) {
+    sharpness = [self sharpnessFromCaptureQuality:captureQuality.floatValue];
+  } else if (face.faceCaptureQuality != nil) {
+    sharpness = [self sharpnessFromCaptureQuality:face.faceCaptureQuality.floatValue];
+  }
 
-  BOOL hasBothEyes = face.landmarks.leftEye != nil && face.landmarks.rightEye != nil;
-  BOOL eyesOpen = hasBothEyes;
-  CGFloat eyeConfidence = hasBothEyes ? 92.0f : 60.0f;
+  NSDictionary *eyesOpen = [self eyesOpenFromLandmarks:face.landmarks];
 
   return @{
     @"boundingBox" : @{
@@ -92,10 +154,7 @@ RCT_EXPORT_MODULE();
       @"width" : @(width),
       @"height" : @(height),
     },
-    @"eyesOpen" : @{
-      @"value" : @(eyesOpen),
-      @"confidence" : @(eyeConfidence),
-    },
+    @"eyesOpen" : eyesOpen,
     @"sharpness" : @(sharpness),
     @"brightness" : @(60),
     @"landmarks" : [self landmarksFromObservation:face],
@@ -126,6 +185,8 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
       NSURL *url = [NSURL fileURLWithPath:path isDirectory:NO];
       VNDetectFaceLandmarksRequest *landmarksRequest =
           [[VNDetectFaceLandmarksRequest alloc] init];
+      VNDetectFaceCaptureQualityRequest *qualityRequest =
+          [[VNDetectFaceCaptureQualityRequest alloc] init];
 
       VNImageRequestHandler *handler =
           [[VNImageRequestHandler alloc] initWithURL:url options:@{}];
@@ -146,12 +207,34 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
         return;
       }
 
+      qualityRequest.inputFaceObservations = landmarkFaces;
+      performed = [handler performRequests:@[ qualityRequest ] error:&error];
+      if (!performed) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"EDETECT", error.localizedDescription ?: @"Face quality analysis failed", error);
+        });
+        return;
+      }
+
+      NSMutableDictionary<NSUUID *, NSNumber *> *qualityByFaceId =
+          [NSMutableDictionary dictionary];
+      for (VNFaceObservation *qualityFace in qualityRequest.results) {
+        if (qualityFace.faceCaptureQuality != nil) {
+          qualityByFaceId[qualityFace.uuid] = qualityFace.faceCaptureQuality;
+        }
+      }
+
       NSMutableArray *faces = [NSMutableArray arrayWithCapacity:landmarkFaces.count];
+      NSArray<VNFaceObservation *> *qualityFaces = qualityRequest.results;
       for (NSInteger index = 0; index < (NSInteger)landmarkFaces.count; index++) {
         VNFaceObservation *face = landmarkFaces[index];
+        NSNumber *captureQuality = qualityByFaceId[face.uuid];
+        if (captureQuality == nil && index < (NSInteger)qualityFaces.count) {
+          captureQuality = qualityFaces[index].faceCaptureQuality;
+        }
         [faces addObject:[self faceDictionaryFromObservation:face
                                                        index:index
-                                             captureQuality:nil]];
+                                             captureQuality:captureQuality]];
       }
 
       dispatch_async(dispatch_get_main_queue(), ^{

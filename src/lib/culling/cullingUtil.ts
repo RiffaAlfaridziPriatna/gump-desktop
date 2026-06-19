@@ -4,8 +4,8 @@ export type CullingFace = APIResponse.CullingFace;
 export type CullingPhoto = APIResponse.CullingPhoto;
 
 const EYE_CONFIDENCE_THRESHOLD = 85;
-const FOCUS_GOOD_THRESHOLD = 70;
-const FOCUS_SOFT_THRESHOLD = 30;
+const FOCUS_GOOD_THRESHOLD = 50;
+const FOCUS_SOFT_THRESHOLD = 22;
 
 export function classifyEyeStatus(eyesOpen?: {
   value?: boolean;

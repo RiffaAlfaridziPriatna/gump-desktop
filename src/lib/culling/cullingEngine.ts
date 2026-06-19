@@ -119,10 +119,10 @@ class FallbackDetector implements PlatformDetector {
     return [
       {
         boundingBox: {left: 0.35, top: 0.1, width: 0.3, height: 0.4},
-        eyeStatus: 'open',
-        eyeConfidence: 95,
-        focusLevel: 'good',
-        sharpness: 80,
+        eyeStatus: 'partial',
+        eyeConfidence: 60,
+        focusLevel: 'soft',
+        sharpness: 50,
         brightness: 60,
         landmarks: [{type: 'eyeLeft', x: 0.4, y: 0.3}],
         pose: {pitch: 0, roll: 0, yaw: 0},
