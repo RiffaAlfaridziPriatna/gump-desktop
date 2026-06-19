@@ -210,7 +210,7 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
       NSDictionary *attributes =
           [[NSFileManager defaultManager] attributesOfItemAtPath:destPath error:nil];
       NSNumber *fileSize = attributes[NSFileSize];
-      NSString *ext = destPath.pathExtension.lowercaseString;
+      ext = destPath.pathExtension.lowercaseString;
       NSString *type = ext.length > 0
                            ? [NSString stringWithFormat:@"public.%@", ext]
                            : @"image/jpeg";
