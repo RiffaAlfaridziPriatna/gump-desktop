@@ -1,3 +1,6 @@
+import {APIResponse} from '@services/api';
+import {CulledAlbum} from './types';
+
 export function bytesToGigabytes(bytes: number): number {
   return bytes / 1024 ** 3;
 }
@@ -19,4 +22,25 @@ export function toSizesGb(
   return Object.fromEntries(
     Object.entries(sizeBytes).map(([id, bytes]) => [id, bytesToGigabytes(bytes)]),
   );
+}
+
+export type LocalAlbumCardModel = Pick<
+  APIResponse.Album,
+  'id' | 'name' | 'title' | 'cover' | 'totalMediaCount' | 'size'
+> & {
+  cullingCompleted: boolean;
+  cullingHasUploads: boolean;
+};
+
+export function toAlbumCardModel(album: CulledAlbum): LocalAlbumCardModel {
+  return {
+    id: album.albumId,
+    name: album.name,
+    title: album.title,
+    cover: album.cover,
+    totalMediaCount: album.totalPhotos,
+    size: bytesToGigabytes(album.totalStorage),
+    cullingCompleted: album.cullingCompleted,
+    cullingHasUploads: album.cullingHasUploads,
+  };
 }
