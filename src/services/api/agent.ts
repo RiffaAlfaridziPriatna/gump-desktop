@@ -48,18 +48,33 @@ export class APIAgent {
     }
 
     const response = await fetch(url.toString(), options);
-    const content = await response.json();
+    const content = await this.parseResponseBody(response);
 
     if (response.status >= 400) {
       throw new APIException(
         response.status,
-        content.error,
-        content.message,
+        typeof content.error === 'string' ? content.error : `HTTP_${response.status}`,
+        typeof content.message === 'string'
+          ? content.message
+          : response.statusText || 'Request failed',
         content.details,
       );
     }
 
-    return content;
+    return content as T;
+  }
+
+  private async parseResponseBody(response: Response): Promise<Record<string, any>> {
+    const text = await response.text();
+    if (!text) {
+      return {};
+    }
+
+    try {
+      return JSON.parse(text) as Record<string, any>;
+    } catch {
+      return { message: text };
+    }
   }
 
   async requestWithToken<T = Record<string, any>>(
