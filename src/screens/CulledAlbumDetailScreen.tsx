@@ -118,9 +118,13 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
 
   const [mainContentWidth, setMainContentWidth] = useState(0);
   const cardWidth = useMemo(() => {
+    if (mainContentWidth <= 0) {
+      return 0;
+    }
+
     const minWidth = 320;
     const gap = 16;
-    const columns = Math.floor(mainContentWidth / minWidth);
+    const columns = Math.max(1, Math.floor(mainContentWidth / minWidth));
     const paddingRight = 24;
 
     return (mainContentWidth - gap * (columns - 1)) / columns - paddingRight;
@@ -363,7 +367,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
               setMainContentWidth(event.nativeEvent.layout.width)
             }
           >
-            {loadingPhotos || loadingDetail ? (
+            {loadingPhotos || loadingDetail || cardWidth <= 0 ? (
               <View style={styles.loading}>
                 <ActivityIndicator size="large" color={colors.accent} />
               </View>
