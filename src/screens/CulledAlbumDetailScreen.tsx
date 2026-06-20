@@ -39,6 +39,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import IconCheckCircle from '../assets/images/icon_check_circle.svg';
 import IconCheckCircleOutlined from '../assets/images/icon_check_circle_outlined.svg';
 import IconChevronLeft from '../assets/images/icon_chevron_left.svg';
+import IconNoPhoto from '../assets/images/icon_no_photo.svg';
 import IconStar from '../assets/images/icon_star.svg';
 import IconStarOutlined from '../assets/images/icon_star_outlined.svg';
 import GumpLogo from '../assets/images/logo.svg';
@@ -344,6 +345,11 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
               <View style={styles.loading}>
                 <Text style={styles.errorText}>{loadError}</Text>
               </View>
+            ) : filteredPhotos.length === 0 ? (
+              <View style={styles.emptyState}>
+                <IconNoPhoto width={40} height={40} />
+                <Text style={styles.emptyStateText}>No photos to show.</Text>
+              </View>
             ) : (
               <ScrollView
                 style={styles.scroll}
@@ -632,6 +638,19 @@ const styles = StyleSheet.create({
   errorText: {
     fontFamily: fonts.sans,
     fontSize: 14,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 24,
+  },
+  emptyStateText: {
+    fontFamily: fonts.sans,
+    fontSize: 16,
     color: colors.textMuted,
     textAlign: 'center',
   },
