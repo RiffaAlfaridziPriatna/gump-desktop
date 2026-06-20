@@ -74,13 +74,15 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
   const cullingCompleted = useCulledAlbumStore(
     state => state.albums[albumId]?.cullingCompleted ?? false,
   );
+  const cullingHasUploads = useCulledAlbumStore(
+    state => state.albums[albumId]?.cullingHasUploads ?? false,
+  );
 
   const isAnalyzing = albumPhotos.some(
     photo =>
       photo.analysisStatus === 'pending' ||
       photo.analysisStatus === 'analyzing',
   );
-  const isUploaded = albumPhotos.some(photo => photo.status === 'uploaded');
   const canDeletePhoto = cullingCompleted && !isAnalyzing;
 
   const [analyzedPhotos, setAnalyzedPhotos] = useState<
@@ -355,7 +357,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
             onSelectionFilterChange={setSelectionFilter}
             onStarRatingFilterChange={setStarRatingFilter}
             onUploadSelected={handleUploadSelected}
-            uploaded={isUploaded}
+            uploaded={cullingHasUploads}
             uploadDisabled={selectedCount === 0}
           />
         </View>
