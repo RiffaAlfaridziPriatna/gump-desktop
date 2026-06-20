@@ -876,7 +876,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingRight: 20,
-    paddingBottom: 60,
     gap: 16,
   },
   keyFacesAccordion: {
