@@ -254,6 +254,25 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     setStats(await cullingEngine.getStats(albumId));
   }
 
+  async function updateStarRating(
+    photoId: string,
+    starIndex: number,
+    currentRating: number,
+  ) {
+    const targetRating = starIndex + 1;
+    const nextRating = currentRating === targetRating ? 0 : targetRating;
+    const updated = await cullingEngine.updateStarRating(
+      albumId,
+      photoId,
+      nextRating,
+    );
+    setAnalyzedPhotos(current =>
+      current.map(photo =>
+        photo.photoId === photoId ? { ...photo, ...updated } : photo,
+      ),
+    );
+  }
+
   async function handleUploadSelected() {
     // TODO: Add finalizing state
     try {
@@ -361,15 +380,35 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
                         <View style={styles.otherInfoContainer}>
                           <View style={styles.starRatingContainer}>
                             {[...Array(5)].map((_, i) => {
-                              const filled = (analysis?.starRating ?? 0) > i;
+                              const currentRating = analysis?.starRating ?? 0;
+                              const filled = currentRating > i;
                               const Icon = filled ? IconStar : IconStarOutlined;
                               return (
-                                <Icon
+                                <Pressable
                                   key={i}
-                                  width={16}
-                                  height={16}
-                                  color={colors.accent}
-                                />
+                                  onPress={event => {
+                                    event.stopPropagation();
+                                    if (analysis) {
+                                      updateStarRating(
+                                        photoId,
+                                        i,
+                                        currentRating,
+                                      );
+                                    }
+                                  }}
+                                  style={styles.starButton}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`Rate ${i + 1} stars`}
+                                  accessibilityState={{
+                                    selected: currentRating === i + 1,
+                                  }}
+                                >
+                                  <Icon
+                                    width={16}
+                                    height={16}
+                                    color={colors.accent}
+                                  />
+                                </Pressable>
                               );
                             })}
                           </View>
@@ -629,12 +668,20 @@ const styles = StyleSheet.create({
   otherInfoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 4,
   },
   starRatingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
+  },
+  starButton: {
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    userSelect: 'none',
   },
   starRating: {
     fontFamily: fonts.sans,
