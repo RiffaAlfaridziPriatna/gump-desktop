@@ -9,6 +9,7 @@ type NativeLocalStorageModule = {
     photoId: string,
   ) => Promise<FileAsset>;
   listPhotos: (albumId: string) => Promise<FileAsset[]>;
+  deletePhoto: (uri: string) => Promise<boolean>;
   deleteAlbum: (albumId: string) => Promise<boolean>;
 };
 
@@ -38,6 +39,12 @@ export async function copyPhotoToAlbum(
 export async function deleteLocalAlbumFiles(albumId: string): Promise<void> {
   if (Platform.OS === 'macos' && NativeLocalStorage?.deleteAlbum) {
     await NativeLocalStorage.deleteAlbum(albumId);
+  }
+}
+
+export async function deleteLocalPhotoFile(uri: string): Promise<void> {
+  if (Platform.OS === 'macos' && NativeLocalStorage?.deletePhoto) {
+    await NativeLocalStorage.deletePhoto(uri);
   }
 }
 

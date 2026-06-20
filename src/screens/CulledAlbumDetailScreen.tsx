@@ -1,4 +1,5 @@
 import { CulledAlbumFilterBar } from '@components/culling/CulledAlbumFilterBar';
+import { DeletePhotoModal } from '@components/modals/DeletePhotoModal';
 import { UploadToast } from '@components/upload/UploadToast';
 import {
   FaceStatusTooltip,
@@ -9,6 +10,7 @@ import { Accordion } from '@components/ui/Accordion';
 import {
   useCulledAlbumActions,
   useCulledAlbumPhotosState,
+  useCulledAlbumStore,
 } from '@context/culledAlbum';
 import { useCulledAlbumPhotos } from '@hooks/useCulledAlbumPhotos';
 import { resolveKeyFaceSource } from '@lib/cullingFaceCrop';
@@ -42,6 +44,7 @@ import IconChevronLeft from '../assets/images/icon_chevron_left.svg';
 import IconNoPhoto from '../assets/images/icon_no_photo.svg';
 import IconStar from '../assets/images/icon_star.svg';
 import IconStarOutlined from '../assets/images/icon_star_outlined.svg';
+import IconTrash from '../assets/images/icon_trash.svg';
 import GumpLogo from '../assets/images/logo.svg';
 import { Checkbox } from '@components/ui/Checkbox';
 
@@ -68,6 +71,9 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
 
   const { photos, loadingPhotos, loadError } = useCulledAlbumPhotos(albumId);
   const albumPhotos = useCulledAlbumPhotosState(albumId);
+  const cullingCompleted = useCulledAlbumStore(
+    state => state.albums[albumId]?.cullingCompleted ?? false,
+  );
 
   const isAnalyzing = albumPhotos.some(
     photo =>
@@ -75,6 +81,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
       photo.analysisStatus === 'analyzing',
   );
   const isUploaded = albumPhotos.some(photo => photo.status === 'uploaded');
+  const canDeletePhoto = cullingCompleted && !isAnalyzing;
 
   const [analyzedPhotos, setAnalyzedPhotos] = useState<
     APIResponse.CullingPhoto[]
@@ -95,6 +102,10 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     useState<StarRatingFilter>(null);
 
   const [hoveredPhotoId, setHoveredPhotoId] = useState<string | null>(null);
+  const [photoToDelete, setPhotoToDelete] = useState<{
+    photoId: string;
+    fileName: string;
+  } | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(true);
 
   const [cullFiltersExpanded, setCullFiltersExpanded] = useState(true);
@@ -274,6 +285,21 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     );
   }
 
+  async function handleDeletePhoto() {
+    if (!photoToDelete) {
+      return;
+    }
+
+    await cullingEngine.deletePhoto(albumId, photoToDelete.photoId);
+    setAnalyzedPhotos(current =>
+      current.filter(photo => photo.photoId !== photoToDelete.photoId),
+    );
+    setHoveredPhotoId(current =>
+      current === photoToDelete.photoId ? null : current,
+    );
+    await refreshDetail();
+  }
+
   async function handleUploadSelected() {
     // TODO: Add finalizing state
     try {
@@ -373,11 +399,33 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
                         analysis && toggleSelection(photoId, !analysis.selected)
                       }
                     >
-                      <Image
-                        source={{ uri: file.uri }}
-                        style={[styles.thumbnail, { width: cardWidth }]}
-                        resizeMode="cover"
-                      />
+                      <View style={styles.thumbnailWrapper}>
+                        <Image
+                          source={{ uri: file.uri }}
+                          style={[styles.thumbnail, { width: cardWidth }]}
+                          resizeMode="cover"
+                        />
+                        {canDeletePhoto && isHovered && (
+                          <Pressable
+                            style={styles.deletePhotoButton}
+                            onPress={event => {
+                              event.stopPropagation();
+                              setPhotoToDelete({
+                                photoId,
+                                fileName: file.name,
+                              });
+                            }}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Delete ${file.name}`}
+                          >
+                            <IconTrash
+                              width={24}
+                              height={24}
+                              color={colors.text}
+                            />
+                          </Pressable>
+                        )}
+                      </View>
                       <View style={styles.photoInfoContainer}>
                         <Text style={styles.fileName} numberOfLines={1}>
                           {file.name}
@@ -586,6 +634,12 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
             />
           </View>
         )}
+
+        <DeletePhotoModal
+          visible={photoToDelete !== null}
+          onClose={() => setPhotoToDelete(null)}
+          onDelete={handleDeletePhoto}
+        />
       </View>
     </SafeAreaView>
   );
@@ -667,9 +721,24 @@ const styles = StyleSheet.create({
   photoCard: {
     gap: 8,
   },
+  thumbnailWrapper: {
+    position: 'relative',
+  },
   thumbnail: {
     aspectRatio: 4 / 3,
     backgroundColor: colors.cardBackgroundSecondary,
+  },
+  deletePhotoButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 36,
+    backgroundColor: colors.background + '66',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
   },
   photoInfoContainer: {
     flexDirection: 'row',

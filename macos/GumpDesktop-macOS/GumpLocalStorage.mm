@@ -360,6 +360,28 @@ RCT_EXPORT_METHOD(listPhotos:(NSString *)albumId
   });
 }
 
+RCT_EXPORT_METHOD(deletePhoto:(NSString *)uri
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    NSString *path = [self pathFromUri:uri];
+    if (path.length == 0) {
+      resolve(@(YES));
+      return;
+    }
+    if ([[NSFileManager defaultManager] fileExistsAtPath:path]) {
+      NSError *error = nil;
+      [[NSFileManager defaultManager] removeItemAtPath:path error:&error];
+      if (error != nil) {
+        reject(@"EDELETE", error.localizedDescription, error);
+        return;
+      }
+    }
+    resolve(@(YES));
+  });
+}
+
 RCT_EXPORT_METHOD(deleteAlbum:(NSString *)albumId
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

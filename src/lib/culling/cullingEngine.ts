@@ -1,3 +1,4 @@
+import {deleteLocalPhotoFile} from '@lib/localStorage';
 import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
 import {
   ensureAlbumLoaded,
@@ -279,11 +280,24 @@ export const cullingEngine = {
 
   async deletePhoto(albumId: string, photoId: string): Promise<void> {
     await ensureAlbumLoaded(albumId);
+    const photo = getPhotoById(albumId, photoId);
+    if (!photo) {
+      throw new Error('Photo not found');
+    }
+
     const removed = removePhotoFromAlbum(albumId, photoId);
     if (!removed) {
       throw new Error('Photo analysis not found');
     }
+
+    await deleteLocalPhotoFile(photo.file.uri);
     await persistAlbum(albumId);
+
+    const remaining = await getAnalyzedPhotos(albumId);
+    if (remaining.length > 0) {
+      applyDuplicateFlags(albumId);
+      await persistAlbum(albumId);
+    }
   },
 
   async completeAnalysis(albumId: string): Promise<void> {

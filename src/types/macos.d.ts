@@ -28,6 +28,7 @@ declare module 'react-native' {
         type: string;
       }>;
       deleteAlbum: (albumId: string) => Promise<boolean>;
+      deletePhoto: (uri: string) => Promise<boolean>;
     };
   }
 }
