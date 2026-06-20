@@ -100,8 +100,9 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     duplicated: false,
   });
   const [selectionFilter, setSelectionFilter] = useState<SelectionFilter>(null);
-  const [starRatingFilter, setStarRatingFilter] =
-    useState<StarRatingFilter>(null);
+  const [starRatingFilter, setStarRatingFilter] = useState<StarRatingFilter>(
+    [],
+  );
 
   const [hoveredPhotoId, setHoveredPhotoId] = useState<string | null>(null);
   const [photoToDelete, setPhotoToDelete] = useState<{
@@ -190,7 +191,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
       ([, enabled]) => enabled,
     ) as Array<[FilterKey, boolean]>;
     const hasGridFilters =
-      selectionFilter !== null || starRatingFilter !== null;
+      selectionFilter !== null || starRatingFilter.length > 0;
 
     return gridPhotos.filter(({ analysis }) => {
       if (

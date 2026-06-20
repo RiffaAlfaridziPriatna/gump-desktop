@@ -1,7 +1,8 @@
 import {APIResponse} from '@services/api';
 
 export type SelectionFilter = 'selected' | 'unselected' | null;
-export type StarRatingFilter = 0 | 1 | 2 | 3 | 4 | 5 | null;
+export type StarRating = 0 | 1 | 2 | 3 | 4 | 5;
+export type StarRatingFilter = ReadonlyArray<StarRating>;
 
 export type CulledAlbumGridFilters = {
   selection: SelectionFilter;
@@ -23,9 +24,9 @@ export function matchesCulledAlbumGridFilters(
     return false;
   }
 
-  if (filters.starRating !== null) {
+  if (filters.starRating.length > 0) {
     const rating = analysis.starRating ?? 0;
-    if (rating !== filters.starRating) {
+    if (!filters.starRating.includes(rating as StarRating)) {
       return false;
     }
   }

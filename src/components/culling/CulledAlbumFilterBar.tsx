@@ -1,5 +1,6 @@
 import {
   SelectionFilter,
+  StarRating,
   StarRatingFilter,
 } from '@lib/culling/culledAlbumPhotoFilters';
 import {colors} from '@lib/colors';
@@ -99,8 +100,12 @@ export function CulledAlbumFilterBar({
     onSelectionFilterChange(selectionFilter === next ? null : next);
   }
 
-  function toggleStarRatingFilter(next: Exclude<StarRatingFilter, null>) {
-    onStarRatingFilterChange(starRatingFilter === next ? null : next);
+  function toggleStarRatingFilter(next: StarRating) {
+    if (starRatingFilter.includes(next)) {
+      onStarRatingFilterChange(starRatingFilter.filter(rating => rating !== next));
+    } else {
+      onStarRatingFilterChange([...starRatingFilter, next]);
+    }
   }
 
   return (
@@ -126,7 +131,7 @@ export function CulledAlbumFilterBar({
             <StarFilterButton
               key={rating}
               rating={rating}
-              active={starRatingFilter === rating}
+              active={starRatingFilter.includes(rating)}
               onPress={() => toggleStarRatingFilter(rating)}
             />
           ))}
