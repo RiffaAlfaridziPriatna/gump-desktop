@@ -11,6 +11,9 @@ type NativeLocalStorageModule = {
   listPhotos: (albumId: string) => Promise<FileAsset[]>;
   deletePhoto: (uri: string) => Promise<boolean>;
   deleteAlbum: (albumId: string) => Promise<boolean>;
+  getImageDimensions: (
+    uri: string,
+  ) => Promise<{width: number; height: number}>;
 };
 
 const NativeLocalStorage = NativeModules.GumpLocalStorage as

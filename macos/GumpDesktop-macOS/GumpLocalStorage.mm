@@ -1,6 +1,7 @@
 #import "GumpLocalStorage.h"
 
 #import <AppKit/AppKit.h>
+#import <ImageIO/ImageIO.h>
 #import <Vision/Vision.h>
 
 @implementation GumpLocalStorage
@@ -397,6 +398,104 @@ RCT_EXPORT_METHOD(deleteAlbum:(NSString *)albumId
       }
     }
     resolve(@(YES));
+  });
+}
+
+- (NSDictionary *)orientedImageDimensionsAtPath:(NSString *)path
+{
+  NSURL *url = [NSURL fileURLWithPath:path isDirectory:NO];
+  CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL);
+  if (source == NULL) {
+    return nil;
+  }
+
+  CFDictionaryRef properties = CGImageSourceCopyPropertiesAtIndex(source, 0, NULL);
+  CFRelease(source);
+  if (properties == NULL) {
+    return nil;
+  }
+
+  NSNumber *pixelWidth =
+      (__bridge NSNumber *)CFDictionaryGetValue(properties, kCGImagePropertyPixelWidth);
+  NSNumber *pixelHeight =
+      (__bridge NSNumber *)CFDictionaryGetValue(properties, kCGImagePropertyPixelHeight);
+  NSNumber *orientation =
+      (__bridge NSNumber *)CFDictionaryGetValue(properties, kCGImagePropertyOrientation);
+  CFRelease(properties);
+
+  if (pixelWidth == nil || pixelHeight == nil) {
+    return nil;
+  }
+
+  CGFloat width = pixelWidth.doubleValue;
+  CGFloat height = pixelHeight.doubleValue;
+  NSInteger orientationValue = orientation != nil ? orientation.integerValue : 1;
+
+  if (orientationValue >= 5 && orientationValue <= 8) {
+    CGFloat tmp = width;
+    width = height;
+    height = tmp;
+  }
+
+  return @{
+    @"width" : @(width),
+    @"height" : @(height),
+  };
+}
+
+RCT_EXPORT_METHOD(getImageDimensions:(NSString *)uri
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      NSString *path = [self pathFromUri:uri];
+      if (path.length == 0 ||
+          ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"ENOENT", @"Photo file not found", nil);
+        });
+        return;
+      }
+
+      NSURL *url = [NSURL fileURLWithPath:path isDirectory:NO];
+      NSDictionary *dimensions = [self orientedImageDimensionsAtPath:path];
+      if (dimensions == nil) {
+        NSImage *image = [[NSImage alloc] initWithContentsOfURL:url];
+        if (image == nil) {
+          dispatch_async(dispatch_get_main_queue(), ^{
+            reject(@"EIMAGE", @"Unable to read image", nil);
+          });
+          return;
+        }
+
+        NSSize size = image.size;
+        dimensions = @{
+          @"width" : @(size.width),
+          @"height" : @(size.height),
+        };
+      }
+
+      NSNumber *width = dimensions[@"width"];
+      NSNumber *height = dimensions[@"height"];
+      if (width.doubleValue <= 0 || height.doubleValue <= 0) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"EIMAGE", @"Invalid image dimensions", nil);
+        });
+        return;
+      }
+
+      dispatch_async(dispatch_get_main_queue(), ^{
+        resolve(@{
+          @"width" : width,
+          @"height" : height,
+        });
+      });
+    } @catch (NSException *exception) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        reject(@"EUNKNOWN", exception.reason, nil);
+      });
+    }
   });
 }
 

@@ -1,4 +1,5 @@
 import { CulledAlbumFilterBar } from '@components/culling/CulledAlbumFilterBar';
+import { CulledAlbumPhotoThumbnail } from '@components/culling/CulledAlbumPhotoThumbnail';
 import { DeletePhotoModal } from '@components/modals/DeletePhotoModal';
 import { UploadToast } from '@components/upload/UploadToast';
 import {
@@ -29,7 +30,6 @@ import { StackScreenProps } from '@react-navigation/stack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -407,10 +407,9 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
                       }
                     >
                       <View style={styles.thumbnailWrapper}>
-                        <Image
-                          source={{ uri: file.uri }}
-                          style={[styles.thumbnail, { width: cardWidth }]}
-                          resizeMode="cover"
+                        <CulledAlbumPhotoThumbnail
+                          uri={file.uri}
+                          width={cardWidth}
                         />
                         {canDeletePhoto && isHovered && (
                           <Pressable
@@ -730,10 +729,6 @@ const styles = StyleSheet.create({
   },
   thumbnailWrapper: {
     position: 'relative',
-  },
-  thumbnail: {
-    aspectRatio: 4 / 3,
-    backgroundColor: colors.cardBackgroundSecondary,
   },
   deletePhotoButton: {
     position: 'absolute',
