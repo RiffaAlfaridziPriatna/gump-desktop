@@ -11,7 +11,8 @@ export function formatStorageSizeGb(gb: number): string {
   }
   if (gb < 1) {
     const mb = gb * 1024;
-    return mb >= 100 ? `${gb.toFixed(2)} GB` : `${Math.round(mb)} MB`;
+    const displayGb = Math.max(0.01, Math.floor((mb + 5) / 10) * 0.01);
+    return `${displayGb.toFixed(2)} GB`;
   }
   return `${gb.toFixed(1)} GB`;
 }
