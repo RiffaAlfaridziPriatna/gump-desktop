@@ -45,12 +45,12 @@ function StatusBadge({
 }
 
 function StatusTooltipRow({ meta }: { meta: FaceStatusMeta }) {
-  const { Icon, label, color } = meta;
+  const { Icon, label } = meta;
 
   return (
     <View style={styles.tooltipRow}>
       <Icon width={10} height={10} />
-      <Text style={[styles.tooltipLabel, { color }]} numberOfLines={1}>
+      <Text style={styles.tooltipLabel} numberOfLines={1}>
         {label}
       </Text>
     </View>
@@ -60,14 +60,18 @@ function StatusTooltipRow({ meta }: { meta: FaceStatusMeta }) {
 export function FaceStatusTooltip({
   eyeMeta,
   focusMeta,
+  backgroundColor = colors.divider + 'E5',
 }: {
   eyeMeta: FaceStatusMeta;
   focusMeta: FaceStatusMeta;
+  backgroundColor?: string;
 }) {
   return (
     <View style={styles.tooltipWrap}>
-      <View style={styles.tooltipPointer} />
-      <View style={styles.tooltip}>
+      <View
+        style={[styles.tooltipPointer, {borderBottomColor: backgroundColor}]}
+      />
+      <View style={[styles.tooltip, {backgroundColor}]}>
         <StatusTooltipRow meta={eyeMeta} />
         <StatusTooltipRow meta={focusMeta} />
       </View>
@@ -80,6 +84,7 @@ export type KeyFaceTooltipAnchor = {
   bottomY: number;
   eyeMeta: FaceStatusMeta;
   focusMeta: FaceStatusMeta;
+  backgroundColor?: string;
 };
 
 export function KeyFaceSidebarItem({
@@ -197,22 +202,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tooltip: {
-    backgroundColor: colors.divider + 'E5',
     borderRadius: 4,
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 8,
-    gap: 6,
+    gap: 4,
   },
   tooltipRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     flexShrink: 0,
   },
   tooltipLabel: {
     fontFamily: fonts.sans,
     fontSize: 10,
-    lineHeight: 12,
+    lineHeight: 14,
     flexShrink: 0,
   },
   tooltipPointer: {
@@ -223,7 +227,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 6,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderBottomColor: colors.divider + 'E5',
     marginBottom: -1,
   },
 });
