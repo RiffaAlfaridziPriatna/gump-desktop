@@ -3,6 +3,7 @@ import {FileAsset} from '@services/api';
 import {createStackNavigator, TransitionPresets} from '@react-navigation/stack';
 import AlbumDetailScreen from '@screens/AlbumDetailScreen';
 import CulledAlbumDetailScreen from '@screens/CulledAlbumDetailScreen';
+import CulledAlbumPhotoDetailScreen from '@screens/CulledAlbumPhotoDetailScreen';
 import HomeScreen from '@screens/HomeScreen';
 import SelectAlbumScreen from '@screens/SelectAlbumScreen';
 
@@ -17,6 +18,10 @@ export type MainStackParamList = {
   };
   CulledAlbumDetail: {
     albumId: string;
+  };
+  CulledAlbumPhotoDetail: {
+    albumId: string;
+    photoId: string;
   };
 };
 
@@ -40,10 +45,29 @@ export function MainNavigator() {
           gestureEnabled: true,
         }}
       />
-      <Stack.Screen name="AlbumDetail" component={AlbumDetailScreen} />
+      <Stack.Screen
+        name="AlbumDetail"
+        component={AlbumDetailScreen}
+        options={{
+          animation: 'slide_from_bottom',
+          ...TransitionPresets.ModalSlideFromBottomIOS,
+          cardOverlayEnabled: true,
+          gestureEnabled: true,
+        }}
+      />
       <Stack.Screen
         name="CulledAlbumDetail"
         component={CulledAlbumDetailScreen}
+        options={{
+          animation: 'slide_from_bottom',
+          ...TransitionPresets.ModalSlideFromBottomIOS,
+          cardOverlayEnabled: true,
+          gestureEnabled: true,
+        }}
+      />
+      <Stack.Screen
+        name="CulledAlbumPhotoDetail"
+        component={CulledAlbumPhotoDetailScreen}
         options={{
           animation: 'slide_from_bottom',
           ...TransitionPresets.ModalSlideFromBottomIOS,

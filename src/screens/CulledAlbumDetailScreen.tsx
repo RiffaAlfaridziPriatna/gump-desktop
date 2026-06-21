@@ -2,11 +2,8 @@ import { CulledAlbumFilterBar } from '@components/culling/CulledAlbumFilterBar';
 import { CulledAlbumPhotoThumbnail } from '@components/culling/CulledAlbumPhotoThumbnail';
 import { DeletePhotoModal } from '@components/modals/DeletePhotoModal';
 import { UploadToast } from '@components/upload/UploadToast';
-import {
-  FaceStatusTooltip,
-  KeyFaceSidebarItem,
-  type KeyFaceTooltipAnchor,
-} from '@components/culling/KeyFaceSidebarItem';
+import {FaceStatusTooltip, type KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
+import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
 import { Accordion } from '@components/ui/Accordion';
 import {
   useCulledAlbumActions,
@@ -26,7 +23,9 @@ import { colors } from '@lib/colors';
 import { fonts } from '@lib/typography';
 import { MainStackParamList } from '../app/MainNavigator';
 import { APIResponse } from '@services/api';
+import { FileAsset } from '@services/upload/types';
 import { StackScreenProps } from '@react-navigation/stack';
+import { useDoublePress } from '@hooks/useDoublePress';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -64,6 +63,114 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   closedEyes: 'Closed Eyes',
   duplicated: 'Duplicated',
 };
+
+type CulledAlbumPhotoCardProps = {
+  file: FileAsset;
+  analysis?: APIResponse.CullingPhoto;
+  cardWidth: number;
+  canDeletePhoto: boolean;
+  isHovered: boolean;
+  onHoverIn: () => void;
+  onHoverOut: () => void;
+  onOpenDetail: () => void;
+  onToggleSelection: () => void;
+  onDeletePress: () => void;
+  onStarPress: (starIndex: number, currentRating: number) => void;
+};
+
+function CulledAlbumPhotoCard({
+  file,
+  analysis,
+  cardWidth,
+  canDeletePhoto,
+  isHovered,
+  onHoverIn,
+  onHoverOut,
+  onOpenDetail,
+  onToggleSelection,
+  onDeletePress,
+  onStarPress,
+}: CulledAlbumPhotoCardProps) {
+  const isSelected = analysis?.selected ?? false;
+  const handlePhotoPress = useDoublePress(onToggleSelection, onOpenDetail);
+
+  return (
+    <Pressable
+      style={[styles.photoCard, { width: cardWidth }]}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
+      onPress={handlePhotoPress}
+    >
+      <View style={styles.thumbnailWrapper}>
+        <CulledAlbumPhotoThumbnail uri={file.uri} width={cardWidth} />
+        {canDeletePhoto && isHovered && (
+          <Pressable
+            style={styles.deletePhotoButton}
+            onPress={event => {
+              event.stopPropagation();
+              onDeletePress();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${file.name}`}
+          >
+            <IconTrash width={24} height={24} color={colors.text} />
+          </Pressable>
+        )}
+      </View>
+      <View style={styles.photoInfoContainer}>
+        <Text style={styles.fileName} numberOfLines={1}>
+          {file.name}
+        </Text>
+
+        <View style={styles.otherInfoContainer}>
+          <View style={styles.starRatingContainer}>
+            {[...Array(5)].map((_, i) => {
+              const currentRating = analysis?.starRating ?? 0;
+              const filled = currentRating > i;
+              const Icon = filled ? IconStar : IconStarOutlined;
+              return (
+                <Pressable
+                  key={i}
+                  onPress={event => {
+                    event.stopPropagation();
+                    if (analysis) {
+                      onStarPress(i, currentRating);
+                    }
+                  }}
+                  style={styles.starButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Rate ${i + 1} stars`}
+                  accessibilityState={{
+                    selected: currentRating === i + 1,
+                  }}
+                >
+                  <Icon width={16} height={16} color={colors.accent} />
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Pressable
+            onPress={onToggleSelection}
+            style={styles.selectionButton}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isSelected }}
+          >
+            {isSelected ? (
+              <IconCheckCircle width={16} height={16} color={colors.text} />
+            ) : (
+              <IconCheckCircleOutlined
+                width={16}
+                height={16}
+                color={colors.text}
+              />
+            )}
+          </Pressable>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
 
 export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
   const { albumId } = route.params;
@@ -388,139 +495,44 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
                 style={styles.scroll}
                 contentContainerStyle={styles.grid}
               >
-                {filteredPhotos.map(({ file, photoId, analysis }) => {
-                  const isSelected = analysis?.selected ?? false;
-                  const isHovered = hoveredPhotoId === photoId;
-
-                  return (
-                    <Pressable
-                      key={photoId}
-                      style={[styles.photoCard, { width: cardWidth }]}
-                      onHoverIn={() => setHoveredPhotoId(photoId)}
-                      onHoverOut={() =>
-                        setHoveredPhotoId(current =>
-                          current === photoId ? null : current,
-                        )
+                {filteredPhotos.map(({ file, photoId, analysis }) => (
+                  <CulledAlbumPhotoCard
+                    key={photoId}
+                    file={file}
+                    analysis={analysis}
+                    cardWidth={cardWidth}
+                    canDeletePhoto={canDeletePhoto}
+                    isHovered={hoveredPhotoId === photoId}
+                    onHoverIn={() => setHoveredPhotoId(photoId)}
+                    onHoverOut={() =>
+                      setHoveredPhotoId(current =>
+                        current === photoId ? null : current,
+                      )
+                    }
+                    onOpenDetail={() =>
+                      navigation.navigate('CulledAlbumPhotoDetail', {
+                        albumId,
+                        photoId,
+                      })
+                    }
+                    onToggleSelection={() => {
+                      if (analysis) {
+                        toggleSelection(photoId, !analysis.selected);
                       }
-                      onPress={() =>
-                        analysis && toggleSelection(photoId, !analysis.selected)
+                    }}
+                    onDeletePress={() =>
+                      setPhotoToDelete({
+                        photoId,
+                        fileName: file.name,
+                      })
+                    }
+                    onStarPress={(starIndex, currentRating) => {
+                      if (analysis) {
+                        updateStarRating(photoId, starIndex, currentRating);
                       }
-                    >
-                      <View style={styles.thumbnailWrapper}>
-                        <CulledAlbumPhotoThumbnail
-                          uri={file.uri}
-                          width={cardWidth}
-                        />
-                        {canDeletePhoto && isHovered && (
-                          <Pressable
-                            style={styles.deletePhotoButton}
-                            onPress={event => {
-                              event.stopPropagation();
-                              setPhotoToDelete({
-                                photoId,
-                                fileName: file.name,
-                              });
-                            }}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Delete ${file.name}`}
-                          >
-                            <IconTrash
-                              width={24}
-                              height={24}
-                              color={colors.text}
-                            />
-                          </Pressable>
-                        )}
-                      </View>
-                      <View style={styles.photoInfoContainer}>
-                        <Text style={styles.fileName} numberOfLines={1}>
-                          {file.name}
-                        </Text>
-
-                        <View style={styles.otherInfoContainer}>
-                          <View style={styles.starRatingContainer}>
-                            {[...Array(5)].map((_, i) => {
-                              const currentRating = analysis?.starRating ?? 0;
-                              const filled = currentRating > i;
-                              const Icon = filled ? IconStar : IconStarOutlined;
-                              return (
-                                <Pressable
-                                  key={i}
-                                  onPress={event => {
-                                    event.stopPropagation();
-                                    if (analysis) {
-                                      updateStarRating(
-                                        photoId,
-                                        i,
-                                        currentRating,
-                                      );
-                                    }
-                                  }}
-                                  style={styles.starButton}
-                                  accessibilityRole="button"
-                                  accessibilityLabel={`Rate ${i + 1} stars`}
-                                  accessibilityState={{
-                                    selected: currentRating === i + 1,
-                                  }}
-                                >
-                                  <Icon
-                                    width={16}
-                                    height={16}
-                                    color={colors.accent}
-                                  />
-                                </Pressable>
-                              );
-                            })}
-                          </View>
-
-                          <Pressable
-                            onPress={() =>
-                              analysis
-                                ? toggleSelection(photoId, !analysis.selected)
-                                : {}
-                            }
-                            style={styles.selectionButton}
-                            accessibilityRole="button"
-                            accessibilityState={{ selected: isSelected }}
-                          >
-                            {isSelected ? (
-                              <IconCheckCircle
-                                width={16}
-                                height={16}
-                                color={colors.text}
-                              />
-                            ) : (
-                              <IconCheckCircleOutlined
-                                width={16}
-                                height={16}
-                                color={colors.text}
-                              />
-                            )}
-                          </Pressable>
-                        </View>
-                      </View>
-                      {/* <Checkbox
-                        checked={isSelected}
-                        onToggle={() =>
-                          analysis &&
-                          toggleSelection(photoId, !analysis.selected)
-                        }
-                        size={20}
-                        color={isSelected ? colors.accent : colors.text}
-                      /> */}
-                      {/* <Text style={styles.fileName} numberOfLines={1}>
-                        {file.name}
-                      </Text>
-                      <Text style={styles.starRating}>
-                        {'★'.repeat(Math.max(0, analysis?.starRating ?? 0))}
-                        {'☆'.repeat(
-                          5 -
-                            Math.max(0, Math.min(5, analysis?.starRating ?? 0)),
-                        )}
-                      </Text> */}
-                    </Pressable>
-                  );
-                })}
+                    }}
+                  />
+                ))}
               </ScrollView>
             )}
           </View>
