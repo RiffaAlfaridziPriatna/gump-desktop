@@ -6,12 +6,12 @@ import {
   Modal as RNModal,
   Platform,
   StyleSheet,
-  TouchableOpacity,
   TouchableWithoutFeedback,
   useWindowDimensions,
   View,
   ViewStyle,
 } from 'react-native';
+import {TouchableOpacity} from './TouchableOpacity';
 import IconClose from '../../assets/images/icon_close.svg';
 
 export type ModalDecorativeProps = {

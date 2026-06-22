@@ -10,7 +10,8 @@ import {
 import { colors } from '@lib/colors';
 import { APIResponse } from '@services/api';
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import {Pressable} from '@components/ui';
+import { StyleSheet, View } from 'react-native';
 
 type KeyFaceSidebarItemProps = {
   uri?: string;
@@ -78,11 +79,7 @@ export function KeyFaceSidebarItem({
 
   return (
     <Pressable
-      style={[
-        styles.container,
-        {width, height: width},
-        onPress ? styles.pressable : null,
-      ]}
+      style={[styles.container, {width, height: width}]}
       onPress={onPress}
       onHoverIn={handleHoverIn}
       onHoverOut={handleHoverOut}
@@ -128,9 +125,6 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     overflow: 'visible',
-  },
-  pressable: {
-    cursor: 'pointer',
   },
   root: {
     position: 'relative',

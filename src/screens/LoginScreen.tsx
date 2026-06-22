@@ -3,9 +3,9 @@ import { colors } from '@lib/colors';
 import { fonts } from '@lib/typography';
 import { APIException, flattenValidationErrors } from '@services/api';
 import { useState } from 'react';
+import {Pressable} from '@components/ui';
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,

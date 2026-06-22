@@ -4,7 +4,8 @@ import {fonts} from '@lib/typography';
 import {pickImages} from '@lib/filePicker';
 import {FileAsset} from '@services/upload/types';
 import {useMemo} from 'react';
-import {StyleSheet, Text, TouchableOpacity, useWindowDimensions} from 'react-native';
+import {TouchableOpacity} from '@components/ui';
+import {StyleSheet, Text, useWindowDimensions} from 'react-native';
 import DecorativeAddPhoto from '../../assets/images/modal_decorative_add_photos.svg';
 import IconPlus from '../../assets/images/icon_plus.svg';
 

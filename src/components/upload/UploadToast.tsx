@@ -9,12 +9,12 @@ import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {CulledAlbumPhoto} from '@lib/culledAlbum/types';
 import {useEffect, useMemo, useRef, useState} from 'react';
+import {TouchableOpacity} from '@components/ui';
 import {
   Animated,
   Easing,
   StyleSheet,
   Text,
-  TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';

@@ -1,6 +1,7 @@
 import {FrostedView, type FrostedBackdrop} from '@components/ui/frosted';
 import {FaceStatusMeta} from '@lib/culling/faceStatus';
-import {Pressable, StyleSheet, View} from 'react-native';
+import {Pressable} from '@components/ui';
+import {StyleSheet, View} from 'react-native';
 
 export type FaceStatusIconBadgeSize = 'small' | 'large';
 

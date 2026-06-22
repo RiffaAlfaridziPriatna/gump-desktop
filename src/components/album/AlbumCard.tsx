@@ -3,12 +3,12 @@ import {formatStorageSizeGb, LocalAlbumCardModel} from '@lib/culledAlbum/format'
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {APIResponse} from '@services/api';
+import {TouchableOpacity} from '@components/ui';
 import {
   Animated,
   Image,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import {useCallback, useEffect, useRef, useState} from 'react';

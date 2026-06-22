@@ -4,12 +4,12 @@ import {ReactNode, useEffect, useRef, useState} from 'react';
 import {
   Animated,
   Easing,
-  Pressable,
   StyleSheet,
   Text,
   View,
   ViewStyle,
 } from 'react-native';
+import {Pressable} from './Pressable';
 import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
 
 const ANIMATION_DURATION_MS = 300;

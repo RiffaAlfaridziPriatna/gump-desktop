@@ -12,13 +12,13 @@ import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useFocusEffect} from '@react-navigation/native';
 import {useCallback, useMemo, useState} from 'react';
+import {TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';

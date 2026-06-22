@@ -1,9 +1,9 @@
 import {useEffect, useRef} from 'react';
+import {TouchableOpacity} from '@components/ui';
 import {
   Animated,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import {useErrorState, useErrorActions} from '@context/error';

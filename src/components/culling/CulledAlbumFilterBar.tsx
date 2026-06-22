@@ -5,9 +5,9 @@ import {
 } from '@lib/culling/culledAlbumPhotoFilters';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
+import {Pressable} from '@components/ui';
 import {
   ActivityIndicator,
-  Pressable,
   StyleSheet,
   Text,
   View,

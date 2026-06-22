@@ -5,5 +5,7 @@ export {Badge} from './Badge';
 export {ProgressBar} from './ProgressBar';
 export {Checkbox} from './Checkbox';
 export {Accordion} from './Accordion';
+export {Pressable} from './Pressable';
+export {TouchableOpacity} from './TouchableOpacity';
 export {FrostedView} from './frosted';
 export type {FrostedBackdrop, FrostedViewProps} from './frosted';

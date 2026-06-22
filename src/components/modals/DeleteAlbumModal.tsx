@@ -3,7 +3,8 @@ import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {CulledAlbum} from '@lib/culledAlbum/types';
 import {useState} from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {TouchableOpacity} from '@components/ui';
+import {StyleSheet, Text, View} from 'react-native';
 import DecorativeDeleteAlbum from '../../assets/images/modal_decorative_delete_album.svg';
 
 type DeleteAlbumModalProps = {

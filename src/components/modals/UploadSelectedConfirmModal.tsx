@@ -2,7 +2,8 @@ import {Modal} from '@components/ui';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {useState} from 'react';
-import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {TouchableOpacity} from '@components/ui';
+import {StyleSheet, Text, View} from 'react-native';
 
 type UploadSelectedConfirmModalProps = {
   visible: boolean;

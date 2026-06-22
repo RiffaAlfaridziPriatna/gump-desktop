@@ -1,6 +1,11 @@
 import 'react-native';
 
 declare module 'react-native' {
+  interface ViewStyle {
+    cursor?: 'auto' | 'pointer';
+    userSelect?: 'none' | 'auto' | 'text' | 'all';
+  }
+
   interface TextInputProps {
     enableFocusRing?: boolean;
   }

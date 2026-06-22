@@ -9,11 +9,11 @@ import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useEffect, useMemo, useRef, useState} from 'react';
+import {TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';

@@ -1,4 +1,5 @@
-import {StyleSheet, TouchableOpacity, ViewStyle} from 'react-native';
+import {StyleSheet, ViewStyle} from 'react-native';
+import {TouchableOpacity} from './TouchableOpacity';
 import CheckboxChecked from '../../assets/images/checkbox_checked.svg';
 import CheckboxUnchecked from '../../assets/images/checkbox_unchecked.svg';
 import { colors } from '@lib/colors';
@@ -41,7 +42,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    cursor: 'pointer',
-    userSelect: 'none',
   },
 });
