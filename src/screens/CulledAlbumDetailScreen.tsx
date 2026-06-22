@@ -19,7 +19,7 @@ import {
   StarRatingFilter,
 } from '@lib/culling/culledAlbumPhotoFilters';
 import { cullingEngine } from '@lib/culling/cullingEngine';
-import { toCullingPhoto } from '@lib/culledAlbum/types';
+import { toCullingPhoto, isCulledPhotoDisabled } from '@lib/culledAlbum/types';
 import { colors } from '@lib/colors';
 import { fonts } from '@lib/typography';
 import { MainStackParamList } from '../app/MainNavigator';
@@ -70,6 +70,7 @@ type CulledAlbumPhotoCardProps = {
   analysis?: APIResponse.CullingPhoto;
   cardWidth: number;
   canDeletePhoto: boolean;
+  disabled: boolean;
   isHovered: boolean;
   onHoverIn: () => void;
   onHoverOut: () => void;
@@ -84,6 +85,7 @@ function CulledAlbumPhotoCard({
   analysis,
   cardWidth,
   canDeletePhoto,
+  disabled,
   isHovered,
   onHoverIn,
   onHoverOut,
@@ -93,7 +95,10 @@ function CulledAlbumPhotoCard({
   onStarPress,
 }: CulledAlbumPhotoCardProps) {
   const isSelected = analysis?.selected ?? false;
-  const handlePhotoPress = useDoublePress(onToggleSelection, onOpenDetail);
+  const handlePhotoPress = useDoublePress(
+    disabled ? onOpenDetail : onToggleSelection,
+    onOpenDetail,
+  );
 
   return (
     <Pressable
@@ -134,11 +139,15 @@ function CulledAlbumPhotoCard({
                   key={i}
                   onPress={event => {
                     event.stopPropagation();
-                    if (analysis) {
+                    if (analysis && !disabled) {
                       onStarPress(i, currentRating);
                     }
                   }}
-                  style={styles.starButton}
+                  style={[
+                    styles.starButton,
+                    disabled && styles.starButtonDisabled,
+                  ]}
+                  disabled={disabled}
                   accessibilityRole="button"
                   accessibilityLabel={`Rate ${i + 1} stars`}
                   accessibilityState={{
@@ -152,8 +161,12 @@ function CulledAlbumPhotoCard({
           </View>
 
           <Pressable
-            onPress={onToggleSelection}
-            style={styles.selectionButton}
+            onPress={disabled ? undefined : onToggleSelection}
+            style={[
+              styles.selectionButton,
+              disabled && styles.selectionButtonDisabled,
+            ]}
+            disabled={disabled}
             accessibilityRole="button"
             accessibilityState={{ selected: isSelected }}
           >
@@ -286,12 +299,13 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
       .map(photo => ({
         file: photo.file,
         photoId: photo.photoId,
+        disabled: isCulledPhotoDisabled(photo, cullingHasUploads),
         analysis:
           photo.analysisStatus === 'analyzed'
             ? toCullingPhoto(photo)
             : photoMap.get(photo.photoId),
       }));
-  }, [albumPhotos, photoMap]);
+  }, [albumPhotos, cullingHasUploads, photoMap]);
 
   const gridFilters = useMemo(
     () => ({
@@ -509,13 +523,14 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
                 style={styles.scroll}
                 contentContainerStyle={styles.grid}
               >
-                {filteredPhotos.map(({ file, photoId, analysis }) => (
+                {filteredPhotos.map(({ file, photoId, analysis, disabled }) => (
                   <CulledAlbumPhotoCard
                     key={photoId}
                     file={file}
                     analysis={analysis}
                     cardWidth={cardWidth}
-                    canDeletePhoto={canDeletePhoto}
+                    canDeletePhoto={canDeletePhoto && !disabled}
+                    disabled={disabled}
                     isHovered={hoveredPhotoId === photoId}
                     onHoverIn={() => setHoveredPhotoId(photoId)}
                     onHoverOut={() =>
@@ -774,7 +789,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background + '66',
     alignItems: 'center',
     justifyContent: 'center',
-    cursor: 'pointer',
   },
   photoInfoContainer: {
     flexDirection: 'row',
@@ -804,8 +818,9 @@ const styles = StyleSheet.create({
     height: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    cursor: 'pointer',
-    userSelect: 'none',
+  },
+  starButtonDisabled: {
+    opacity: 0.5,
   },
   starRating: {
     fontFamily: fonts.sans,
@@ -817,8 +832,9 @@ const styles = StyleSheet.create({
     height: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    cursor: 'pointer',
-    userSelect: 'none',
+  },
+  selectionButtonDisabled: {
+    opacity: 0.5,
   },
 
   sidebar: {
@@ -856,7 +872,6 @@ const styles = StyleSheet.create({
     gap: 8,
     opacity: 0.2,
     paddingLeft: 12,
-    cursor: 'pointer',
   },
   mySelectionsRowSelected: {
     opacity: 1,

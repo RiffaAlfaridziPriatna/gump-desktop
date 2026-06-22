@@ -2,13 +2,14 @@ import {deleteLocalPhotoFile} from '@lib/localStorage';
 import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
 import {
   ensureAlbumLoaded,
+  getAlbum,
   getPhotoById,
   getPhotosForAlbum,
   persistAlbum,
   removePhotoFromAlbum,
   updatePhoto,
 } from '@lib/culledAlbum/store';
-import {toCullingPhoto} from '@lib/culledAlbum/types';
+import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 import {NativeModules, Platform} from 'react-native';
@@ -251,6 +252,14 @@ export const cullingEngine = {
     data: {selected?: boolean; starRating?: number | null},
   ): Promise<APIResponse.CullingPhoto> {
     await ensureAlbumLoaded(albumId);
+    const existing = getPhotoById(albumId, photoId);
+    if (!existing) {
+      throw new Error('Photo analysis not found');
+    }
+    const album = getAlbum(albumId);
+    if (isCulledPhotoDisabled(existing, album?.cullingHasUploads ?? false)) {
+      throw new Error('Cannot modify uploaded photo');
+    }
     const updated = updatePhoto(albumId, photoId, photo => {
       if (data.selected !== undefined) {
         photo.selected = data.selected;
@@ -283,6 +292,10 @@ export const cullingEngine = {
     const photo = getPhotoById(albumId, photoId);
     if (!photo) {
       throw new Error('Photo not found');
+    }
+    const album = getAlbum(albumId);
+    if (isCulledPhotoDisabled(photo, album?.cullingHasUploads ?? false)) {
+      throw new Error('Cannot delete uploaded photo');
     }
 
     const removed = removePhotoFromAlbum(albumId, photoId);

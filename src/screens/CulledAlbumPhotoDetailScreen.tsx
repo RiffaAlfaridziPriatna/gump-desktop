@@ -1,9 +1,9 @@
 import {FaceStatusTooltip, type KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
 import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
 import {PhotoDetailImageViewer} from '@components/culling/PhotoDetailImageViewer';
-import {useCulledAlbumPhotosState} from '@context/culledAlbum';
+import {useCulledAlbumPhotosState, useCulledAlbumStore} from '@context/culledAlbum';
 import {cullingEngine} from '@lib/culling/cullingEngine';
-import {toCullingPhoto} from '@lib/culledAlbum/types';
+import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
@@ -32,6 +32,9 @@ export default function CulledAlbumPhotoDetailScreen({
 }: Props) {
   const {albumId, photoId} = route.params;
   const albumPhotos = useCulledAlbumPhotosState(albumId);
+  const cullingHasUploads = useCulledAlbumStore(
+    state => state.albums[albumId]?.cullingHasUploads ?? false,
+  );
   const photo = useMemo(
     () => albumPhotos.find(entry => entry.photoId === photoId),
     [albumPhotos, photoId],
@@ -75,9 +78,10 @@ export default function CulledAlbumPhotoDetailScreen({
   const uri = photo?.file.uri ?? '';
   const isSelected = analysis?.selected ?? false;
   const starRating = analysis?.starRating ?? 0;
+  const disabled = photo ? isCulledPhotoDisabled(photo, cullingHasUploads) : false;
 
   async function toggleSelection() {
-    if (!analysis) {
+    if (!analysis || disabled) {
       return;
     }
 
@@ -88,7 +92,7 @@ export default function CulledAlbumPhotoDetailScreen({
   }
 
   async function updateStarRating(starIndex: number) {
-    if (!analysis) {
+    if (!analysis || disabled) {
       return;
     }
 
@@ -138,7 +142,11 @@ export default function CulledAlbumPhotoDetailScreen({
                     <Pressable
                       key={index}
                       onPress={() => updateStarRating(index)}
-                      style={styles.starButton}
+                      style={[
+                        styles.starButton,
+                        disabled && styles.controlDisabled,
+                      ]}
+                      disabled={disabled}
                       accessibilityRole="button"
                       accessibilityLabel={`Rate ${index + 1} stars`}
                     >
@@ -150,7 +158,11 @@ export default function CulledAlbumPhotoDetailScreen({
 
               <Pressable
                 onPress={toggleSelection}
-                style={styles.selectionButton}
+                style={[
+                  styles.selectionButton,
+                  disabled && styles.controlDisabled,
+                ]}
+                disabled={disabled}
                 accessibilityRole="button"
                 accessibilityState={{selected: isSelected}}
               >
@@ -289,23 +301,21 @@ const styles = StyleSheet.create({
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    cursor: 'pointer',
-    userSelect: 'none',
   },
   selectionButton: {
     width: 24,
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    cursor: 'pointer',
-    userSelect: 'none',
+  },
+  controlDisabled: {
+    opacity: 0.5,
   },
   closeButton: {
     width: 40,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    cursor: 'pointer',
   },
   content: {
     flex: 1,

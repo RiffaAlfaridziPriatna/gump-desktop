@@ -136,6 +136,16 @@ export function recomputeAlbumTotals(album: CulledAlbum): CulledAlbum {
   return album;
 }
 
+export function isCulledPhotoDisabled(
+  photo: CulledAlbumPhoto,
+  cullingHasUploads: boolean,
+): boolean {
+  if (!cullingHasUploads) {
+    return false;
+  }
+  return photo.serverUploadStatus === 'uploaded';
+}
+
 export function isUploadInFlight(photo: CulledAlbumPhoto): boolean {
   return photo.status === 'pending' || photo.status === 'uploading';
 }
