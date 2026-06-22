@@ -9,12 +9,11 @@ import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {Pressable, TouchableOpacity} from '@components/ui';
 import {
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -208,7 +207,7 @@ export default function CulledAlbumPhotoDetailScreen({
             >
               {faces.map((face, index) => (
                 <KeyFaceSidebarItem
-                  key={face.rekognitionFaceId ?? `${index}`}
+                  key={index}
                   uri={uri}
                   boundingBox={face.boundingBox}
                   eyeStatus={face.eyeStatus}

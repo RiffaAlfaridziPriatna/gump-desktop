@@ -30,11 +30,9 @@ import { useDoublePress } from '@hooks/useDoublePress';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -46,7 +44,7 @@ import IconStar from '../assets/images/icon_star.svg';
 import IconStarOutlined from '../assets/images/icon_star_outlined.svg';
 import IconTrash from '../assets/images/icon_trash.svg';
 import GumpLogo from '../assets/images/logo.svg';
-import { Checkbox } from '@components/ui/Checkbox';
+import { Checkbox, Pressable, TouchableOpacity } from '@components/ui';
 
 type Props = StackScreenProps<MainStackParamList, 'CulledAlbumDetail'>;
 
