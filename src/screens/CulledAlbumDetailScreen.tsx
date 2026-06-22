@@ -335,7 +335,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
       if (!analysis) {
         return false;
       }
-      return enabledCullFilters.every(([key]) => analysis[key]);
+      return enabledCullFilters.some(([key]) => analysis[key]);
     });
   }, [
     activeFilters,
