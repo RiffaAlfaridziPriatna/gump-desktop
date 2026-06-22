@@ -1,4 +1,5 @@
 import {FileAsset} from '@services/upload/types';
+import {filterSupportedCullingImages} from '@lib/supportedImageFormats';
 import {NativeModules, Platform} from 'react-native';
 
 type NativeFilePickerModule = {
@@ -18,7 +19,8 @@ const NativeFilePicker = NativeModules.GumpFilePicker as
 
 export async function pickImages(): Promise<FileAsset[]> {
   if (Platform.OS === 'macos' && NativeFilePicker?.pickImages) {
-    return NativeFilePicker.pickImages();
+    const files = await NativeFilePicker.pickImages();
+    return filterSupportedCullingImages(files);
   }
 
   throw new Error(

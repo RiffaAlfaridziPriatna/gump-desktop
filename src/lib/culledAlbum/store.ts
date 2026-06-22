@@ -1,4 +1,9 @@
 import {createCullingPhotoId} from '@lib/cullingPhotoId';
+import {
+  filterSupportedCullingImages,
+  partitionUploadablePhotoIds,
+  UNSUPPORTED_UPLOAD_FORMAT_ERROR,
+} from '@lib/supportedImageFormats';
 import {createStateStore} from '@lib/state';
 import {FileAsset} from '@services/upload/types';
 import {mergeAlbumPhotos, mergeWithMemoryAlbum} from './merge';
@@ -211,13 +216,38 @@ export function startServerUploadBatch(
       throw new Error(`Album ${albumId} is not registered locally`);
     }
 
-    album.uploadBatchPhotoIds = photoIds;
+    const {uploadablePhotoIds, unsupportedPhotoIds} = partitionUploadablePhotoIds(
+      album.photos,
+      photoIds,
+    );
+
+    if (uploadablePhotoIds.length === 0) {
+      throw new Error('No supported photos to upload');
+    }
+
+    album.uploadBatchPhotoIds = uploadablePhotoIds;
+
+    const uploadableIds = new Set(uploadablePhotoIds);
     for (const photoId of photoIds) {
       const photo = album.photos.find(entry => entry.photoId === photoId);
-      if (photo) {
+      if (!photo) {
+        continue;
+      }
+
+      if (uploadableIds.has(photoId)) {
         photo.serverUploadStatus = 'pending';
         photo.serverUploadError = undefined;
+        continue;
       }
+
+      photo.serverUploadStatus = 'failed';
+      photo.serverUploadError = UNSUPPORTED_UPLOAD_FORMAT_ERROR;
+    }
+
+    if (unsupportedPhotoIds.length > 0) {
+      console.warn(
+        `[startServerUploadBatch] Skipped ${unsupportedPhotoIds.length} unsupported photo(s)`,
+      );
     }
   });
 }
@@ -246,12 +276,16 @@ export function addPhotosToAlbum(
     throw new Error(`Album ${albumId} is not registered locally`);
   }
 
+  const supportedFiles = filterSupportedCullingImages(files);
   const added: CulledAlbumPhoto[] = [];
+  if (supportedFiles.length === 0) {
+    return added;
+  }
 
   culledAlbumStore.setState(state => {
     const album = state.albums[albumId]!;
 
-    for (const file of files) {
+    for (const file of supportedFiles) {
       const photo = createCulledAlbumPhoto(file, createCullingPhotoId());
       if (options?.simulatedMinDurationMs) {
         photo.simulatedMinDurationMs = options.simulatedMinDurationMs;

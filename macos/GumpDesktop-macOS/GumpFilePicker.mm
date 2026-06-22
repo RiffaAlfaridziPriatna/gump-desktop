@@ -15,12 +15,12 @@ RCT_EXPORT_METHOD(pickImages:(RCTPromiseResolveBlock)resolve
     panel.canChooseFiles = YES;
     panel.canChooseDirectories = NO;
     panel.allowsMultipleSelection = YES;
+    panel.allowsOtherFileTypes = NO;
     panel.allowedContentTypes = @[
       UTTypeJPEG,
       UTTypePNG,
       UTTypeGIF,
       UTTypeHEIC,
-      UTTypeWebP,
       UTTypeTIFF,
     ];
 
@@ -34,6 +34,11 @@ RCT_EXPORT_METHOD(pickImages:(RCTPromiseResolveBlock)resolve
       for (NSURL *url in panel.URLs) {
         NSString *path = url.path;
         if (path == nil) {
+          continue;
+        }
+
+        NSString *ext = url.pathExtension.lowercaseString;
+        if ([ext isEqualToString:@"webp"]) {
           continue;
         }
 
