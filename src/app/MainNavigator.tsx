@@ -4,6 +4,8 @@ import {createStackNavigator, TransitionPresets} from '@react-navigation/stack';
 import AlbumDetailScreen from '@screens/AlbumDetailScreen';
 import CulledAlbumDetailScreen from '@screens/CulledAlbumDetailScreen';
 import CulledAlbumPhotoDetailScreen from '@screens/CulledAlbumPhotoDetailScreen';
+import CulledAlbumUploadProgressScreen from '@screens/CulledAlbumUploadProgressScreen';
+import CulledAlbumUploadSuccessScreen from '@screens/CulledAlbumUploadSuccessScreen';
 import HomeScreen from '@screens/HomeScreen';
 import SelectAlbumScreen from '@screens/SelectAlbumScreen';
 
@@ -22,6 +24,17 @@ export type MainStackParamList = {
   CulledAlbumPhotoDetail: {
     albumId: string;
     photoId: string;
+  };
+  CulledAlbumUploadProgress: {
+    albumId: string;
+    photoCount: number;
+    albumName: string;
+    albumLink: string;
+  };
+  CulledAlbumUploadSuccess: {
+    albumId: string;
+    albumName: string;
+    albumLink: string;
   };
 };
 
@@ -68,6 +81,26 @@ export function MainNavigator() {
       <Stack.Screen
         name="CulledAlbumPhotoDetail"
         component={CulledAlbumPhotoDetailScreen}
+        options={{
+          animation: 'slide_from_bottom',
+          ...TransitionPresets.ModalSlideFromBottomIOS,
+          cardOverlayEnabled: true,
+          gestureEnabled: true,
+        }}
+      />
+      <Stack.Screen
+        name="CulledAlbumUploadProgress"
+        component={CulledAlbumUploadProgressScreen}
+        options={{
+          animation: 'slide_from_bottom',
+          ...TransitionPresets.ModalSlideFromBottomIOS,
+          cardOverlayEnabled: true,
+          gestureEnabled: true,
+        }}
+      />
+      <Stack.Screen
+        name="CulledAlbumUploadSuccess"
+        component={CulledAlbumUploadSuccessScreen}
         options={{
           animation: 'slide_from_bottom',
           ...TransitionPresets.ModalSlideFromBottomIOS,

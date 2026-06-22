@@ -1,6 +1,7 @@
 import { CulledAlbumFilterBar } from '@components/culling/CulledAlbumFilterBar';
 import { CulledAlbumPhotoThumbnail } from '@components/culling/CulledAlbumPhotoThumbnail';
 import { DeletePhotoModal } from '@components/modals/DeletePhotoModal';
+import { UploadSelectedConfirmModal } from '@components/modals/UploadSelectedConfirmModal';
 import { UploadToast } from '@components/upload/UploadToast';
 import {FaceStatusTooltip, type KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
 import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
@@ -184,6 +185,12 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
   const cullingHasUploads = useCulledAlbumStore(
     state => state.albums[albumId]?.cullingHasUploads ?? false,
   );
+  const albumName = useCulledAlbumStore(
+    state => state.albums[albumId]?.title ?? state.albums[albumId]?.name ?? 'Album',
+  );
+  const albumLink = useCulledAlbumStore(
+    state => state.albums[albumId]?.link ?? '',
+  );
 
   const isAnalyzing = albumPhotos.some(
     photo =>
@@ -225,6 +232,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     useState<KeyFaceTooltipAnchor | null>(null);
   const [keyFaceTooltipWidth, setKeyFaceTooltipWidth] = useState(0);
   const [screenOrigin, setScreenOrigin] = useState({ x: 0, y: 0 });
+  const [showUploadConfirm, setShowUploadConfirm] = useState(false);
 
   const [mainContentWidth, setMainContentWidth] = useState(0);
   const cardWidth = useMemo(() => {
@@ -414,20 +422,26 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     await refreshDetail();
   }
 
-  async function handleUploadSelected() {
-    // TODO: Add finalizing state
+  async function handleStartUpload() {
     try {
       const { selectedPhotoIds } = await cullingEngine.finalize(albumId);
       if (selectedPhotoIds.length === 0) {
         return;
       }
       await startSelectedUpload(albumId, selectedPhotoIds);
-      navigation.navigate('Home');
+      setShowUploadConfirm(false);
+      navigation.replace('CulledAlbumUploadProgress', {
+        albumId,
+        photoCount: selectedPhotoIds.length,
+        albumName,
+        albumLink,
+      });
     } catch (error) {
       console.error(
         '[CulledAlbumDetailScreen] Failed to upload selected',
         error,
       );
+      throw error;
     }
   }
 
@@ -464,7 +478,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
             starRatingFilter={starRatingFilter}
             onSelectionFilterChange={setSelectionFilter}
             onStarRatingFilterChange={setStarRatingFilter}
-            onUploadSelected={handleUploadSelected}
+            onUploadSelected={() => setShowUploadConfirm(true)}
             uploaded={cullingHasUploads}
             uploadDisabled={selectedCount === 0}
           />
@@ -657,6 +671,14 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
           visible={photoToDelete !== null}
           onClose={() => setPhotoToDelete(null)}
           onDelete={handleDeletePhoto}
+        />
+
+        <UploadSelectedConfirmModal
+          visible={showUploadConfirm}
+          photoCount={selectedCount}
+          albumName={albumName}
+          onClose={() => setShowUploadConfirm(false)}
+          onStartUpload={handleStartUpload}
         />
       </View>
     </SafeAreaView>
