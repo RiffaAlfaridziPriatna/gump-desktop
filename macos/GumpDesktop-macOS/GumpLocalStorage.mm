@@ -361,6 +361,154 @@ RCT_EXPORT_METHOD(listPhotos:(NSString *)albumId
   });
 }
 
+RCT_EXPORT_METHOD(readFileSlice:(NSString *)uri
+                  start:(nonnull NSNumber *)start
+                  end:(nonnull NSNumber *)end
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      NSString *path = [self pathFromUri:uri];
+      if (path.length == 0 ||
+          ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        reject(@"ENOENT", @"File not found", nil);
+        return;
+      }
+
+      unsigned long long startOffset = start.unsignedLongLongValue;
+      unsigned long long endOffset = end.unsignedLongLongValue;
+      if (endOffset < startOffset) {
+        reject(@"EINVAL", @"Invalid slice range", nil);
+        return;
+      }
+
+      NSUInteger length = (NSUInteger)(endOffset - startOffset);
+      NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
+      if (handle == nil) {
+        reject(@"EOPEN", @"Unable to open file", nil);
+        return;
+      }
+
+      [handle seekToFileOffset:startOffset];
+      NSData *data = [handle readDataOfLength:length];
+      [handle closeFile];
+
+      if (data.length != length) {
+        reject(@"EREAD", @"Unexpected end of file while reading slice", nil);
+        return;
+      }
+
+      resolve(@{
+        @"data" : [data base64EncodedStringWithOptions:0],
+        @"size" : @(data.length),
+      });
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(uploadFilePart:(NSString *)uri
+                  start:(nonnull NSNumber *)start
+                  end:(nonnull NSNumber *)end
+                  uploadUrl:(NSString *)uploadUrl
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      NSString *path = [self pathFromUri:uri];
+      if (path.length == 0 ||
+          ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        reject(@"ENOENT", @"File not found", nil);
+        return;
+      }
+
+      unsigned long long startOffset = start.unsignedLongLongValue;
+      unsigned long long endOffset = end.unsignedLongLongValue;
+      if (endOffset < startOffset) {
+        reject(@"EINVAL", @"Invalid slice range", nil);
+        return;
+      }
+
+      NSUInteger length = (NSUInteger)(endOffset - startOffset);
+      NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
+      if (handle == nil) {
+        reject(@"EOPEN", @"Unable to open file", nil);
+        return;
+      }
+
+      [handle seekToFileOffset:startOffset];
+      NSData *data = [handle readDataOfLength:length];
+      [handle closeFile];
+
+      if (data.length != length) {
+        reject(@"EREAD", @"Unexpected end of file while reading slice", nil);
+        return;
+      }
+
+      NSURL *url = [NSURL URLWithString:uploadUrl];
+      if (url == nil) {
+        reject(@"EINVAL", @"Invalid upload URL", nil);
+        return;
+      }
+
+      NSMutableURLRequest *request =
+          [NSMutableURLRequest requestWithURL:url
+                                  cachePolicy:NSURLRequestUseProtocolCachePolicy
+                              timeoutInterval:60.0];
+      request.HTTPMethod = @"PUT";
+      request.HTTPBody = data;
+
+      dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+      __block NSHTTPURLResponse *httpResponse = nil;
+      __block NSError *requestError = nil;
+
+      NSURLSessionDataTask *task = [[NSURLSession sharedSession]
+          dataTaskWithRequest:request
+            completionHandler:^(__unused NSData *responseData,
+                                NSURLResponse *response,
+                                NSError *error) {
+              requestError = error;
+              if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+                httpResponse = (NSHTTPURLResponse *)response;
+              }
+              dispatch_semaphore_signal(sema);
+            }];
+      [task resume];
+      dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+
+      if (requestError != nil) {
+        reject(@"ENETWORK", requestError.localizedDescription, requestError);
+        return;
+      }
+
+      if (httpResponse == nil || httpResponse.statusCode < 200 ||
+          httpResponse.statusCode >= 300) {
+        NSInteger status = httpResponse != nil ? httpResponse.statusCode : 0;
+        reject(@"EUPLOAD",
+               [NSString stringWithFormat:@"Upload part failed with HTTP %ld",
+                                          (long)status],
+               nil);
+        return;
+      }
+
+      NSString *rawETag = httpResponse.allHeaderFields[@"ETag"];
+      if (rawETag == nil || rawETag.length == 0) {
+        reject(@"EUPLOAD", @"Missing ETag header", nil);
+        return;
+      }
+
+      NSString *eTag =
+          [rawETag stringByReplacingOccurrencesOfString:@"\"" withString:@""];
+      resolve(@{@"eTag" : eTag});
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
 RCT_EXPORT_METHOD(deletePhoto:(NSString *)uri
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

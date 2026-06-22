@@ -1,10 +1,6 @@
 import {Injectable} from '@lib/di';
-import {
-  FileAsset,
-  getFileContentType,
-  readFileSlice,
-} from '@services/upload/types';
-import {uploadPart} from '@services/upload/multipart';
+import {FileAsset, getFileContentType} from '@services/upload/types';
+import {uploadPartFromFile} from '@services/upload/multipart';
 import {APIAgent} from '../agent';
 import {APIRequest, APIResponse} from '../types';
 
@@ -35,34 +31,22 @@ export class MediaResource {
       } satisfies APIRequest.CreateUploadSession,
     );
 
-    let progress = 0;
-    const batchSize = 4;
     const uploadedParts: APIResponse.UploadedPart[] = [];
 
-    for (let i = 0; i < session.parts.length; i += batchSize) {
-      const batch = session.parts.slice(i, i + batchSize);
-
-      const batchResults = await Promise.all(
-        batch.map(async part => {
-          const body = await readFileSlice(
-            data.file.uri,
-            part.start,
-            part.end,
-          );
-          const uploaded = await uploadPart(part, body);
-          progress++;
-          onProgress(Math.floor((progress / session.parts.length) * 100));
-          return uploaded;
-        }),
-      );
-
-      uploadedParts.push(...batchResults);
+    for (let index = 0; index < session.parts.length; index++) {
+      const part = session.parts[index];
+      uploadedParts.push(await uploadPartFromFile(data.file.uri, part));
+      onProgress(Math.floor(((index + 1) / session.parts.length) * 100));
     }
 
-    await this.agent.requestWithToken('PUT', `albums/${data.albumId}/upload-session`, {
-      uploadId: session.uploadId,
-      key: session.key,
-      parts: uploadedParts,
-    } satisfies APIRequest.FinishUploadSession);
+    await this.agent.requestWithToken(
+      'PUT',
+      `albums/${data.albumId}/upload-session`,
+      {
+        uploadId: session.uploadId,
+        key: session.key,
+        parts: uploadedParts.sort((a, b) => a.num - b.num),
+      } satisfies APIRequest.FinishUploadSession,
+    );
   }
 }

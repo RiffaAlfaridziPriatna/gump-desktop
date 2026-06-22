@@ -1,3 +1,6 @@
+import {NativeModules} from 'react-native';
+import {readFileSlice} from '@services/upload/types';
+
 const MAX_ATTEMPTS = 4;
 const BASE_DELAY_MS = 500;
 const MULTIPLIER = 2;
@@ -8,6 +11,19 @@ const RETRYABLE_STATUSES: readonly number[] = [408, 429, 500, 502, 503, 504];
 
 type UploadPart = {url: string; num: number; start: number; end: number};
 type UploadedPart = {num: number; eTag: string};
+
+type NativeFileUploader = {
+  uploadFilePart: (
+    uri: string,
+    start: number,
+    end: number,
+    uploadUrl: string,
+  ) => Promise<{eTag: string}>;
+};
+
+const NativeFileUploader = NativeModules.GumpLocalStorage as
+  | NativeFileUploader
+  | undefined;
 
 type RetryCategory = 'network' | 'http' | 'timeout';
 
@@ -169,4 +185,34 @@ export async function uploadPart(
     requestId,
     hostId,
   });
+}
+
+export async function uploadPartFromFile(
+  fileUri: string,
+  part: UploadPart,
+): Promise<UploadedPart> {
+  if (NativeFileUploader?.uploadFilePart) {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        const result = await NativeFileUploader.uploadFilePart(
+          fileUri,
+          part.start,
+          part.end,
+          part.url,
+        );
+        return {num: part.num, eTag: result.eTag};
+      } catch (err) {
+        if (attempt === MAX_ATTEMPTS - 1) {
+          throw err;
+        }
+        await delay(
+          Math.random() *
+            Math.min(MAX_DELAY_MS, BASE_DELAY_MS * MULTIPLIER ** attempt),
+        );
+      }
+    }
+  }
+
+  const body = await readFileSlice(fileUri, part.start, part.end);
+  return uploadPart(part, body);
 }

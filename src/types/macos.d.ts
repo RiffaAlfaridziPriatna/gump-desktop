@@ -29,6 +29,11 @@ declare module 'react-native' {
       }>;
       deleteAlbum: (albumId: string) => Promise<boolean>;
       deletePhoto: (uri: string) => Promise<boolean>;
+      readFileSlice: (
+        uri: string,
+        start: number,
+        end: number,
+      ) => Promise<{data: string; size: number}>;
     };
   }
 }
