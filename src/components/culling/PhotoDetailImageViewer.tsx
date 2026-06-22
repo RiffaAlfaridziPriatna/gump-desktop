@@ -258,7 +258,7 @@ export function PhotoDetailImageViewer({
           <View pointerEvents="box-none" style={styles.overlayLayer}>
             {isZoomed && visibleFaces[0] ? (
               <FaceStatusOverlay
-                key={`zoom-${visibleFaces[0].face.rekognitionFaceId ?? visibleFaces[0].index}`}
+                key={`zoom-${visibleFaces[0].index}`}
                 face={visibleFaces[0].face}
                 mode="fixedBottom"
                 imageBackdrop={imageBackdrop}
@@ -267,7 +267,7 @@ export function PhotoDetailImageViewer({
             ) : (
               faceDisplayRects.map(({face, index, displayRect}) => (
                 <FaceStatusOverlay
-                  key={`${face.rekognitionFaceId ?? index}`}
+                  key={index}
                   face={face}
                   displayRect={displayRect}
                   mode="attached"
