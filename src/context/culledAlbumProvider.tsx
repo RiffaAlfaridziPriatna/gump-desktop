@@ -1,4 +1,3 @@
-import {useContextOrThrow} from '@lib/context';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {createAnalysisQueue} from '@lib/culledAlbum/analysisQueue';
 import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
@@ -14,51 +13,24 @@ import {
 } from '@lib/culledAlbum/store';
 import {
   createServerUploadQueue,
-  stubServerUploadPhoto,
 } from '@lib/culledAlbum/serverUploadQueue';
+import {uploadServerPhoto} from '@lib/culledAlbum/serverUpload';
 import {createUploadQueue} from '@lib/culledAlbum/uploadQueue';
 import {createStateStore, StateStore} from '@lib/state';
 import {getSimulatedUploadPerItemMinDurationMs} from '@lib/uploadToast';
 import {FileAsset} from '@services/upload/types';
+import {PropsWithChildren, useCallback, useRef} from 'react';
 import {
-  createContext,
-  PropsWithChildren,
-  useCallback,
-  useRef,
-} from 'react';
-
-export type CulledAlbumToastMode = 'upload' | 'analyze';
-
-export type CulledAlbumUiState = {
-  uploadVisible: boolean;
-  analyzeVisible: boolean;
-  uploadError: string | null;
-  analyzeError: string | null;
-  activeUploadAlbumId: string | null;
-  activeAnalyzeAlbumId: string | null;
-};
-
-type CulledAlbumActions = {
-  addPhotos: (albumId: string, files: FileAsset[]) => void;
-  startAnalysis: (albumId: string) => void;
-  startSelectedUpload: (albumId: string, photoIds: string[]) => Promise<void>;
-  purgeAlbum: (albumId: string) => Promise<void>;
-  hideToast: (mode: CulledAlbumToastMode) => void;
-  clearCompleted: (mode: CulledAlbumToastMode) => void;
-  failNotUploadedItems: (error?: string) => void;
-  failNotAnalyzedItems: (error?: string) => void;
-};
+  CulledAlbumActions,
+  CulledAlbumActionsContext,
+  CulledAlbumToastMode,
+  CulledAlbumUiContext,
+  CulledAlbumUiState,
+} from './culledAlbumContext';
 
 const MAX_CONCURRENT_UPLOADS = 4;
-const MAX_CONCURRENT_SERVER_UPLOADS = 4;
+const MAX_CONCURRENT_SERVER_UPLOADS = 1;
 const MAX_CONCURRENT_ANALYSIS = 2;
-
-export const CulledAlbumUiContext =
-  createContext<StateStore<CulledAlbumUiState> | null>(null);
-CulledAlbumUiContext.displayName = 'CulledAlbumUiContext';
-
-const CulledAlbumActionsContext = createContext<CulledAlbumActions | null>(null);
-CulledAlbumActionsContext.displayName = 'CulledAlbumActionsContext';
 
 export function CulledAlbumProvider({children}: PropsWithChildren) {
   const uiStoreRef = useRef<StateStore<CulledAlbumUiState>>(null);
@@ -95,7 +67,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       getPhoto: getPhotoById,
       updatePhoto,
       persistAlbum,
-      uploadPhoto: stubServerUploadPhoto,
+      uploadPhoto: uploadServerPhoto,
     });
   }
 
@@ -248,8 +220,4 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       </CulledAlbumActionsContext.Provider>
     </CulledAlbumUiContext.Provider>
   );
-}
-
-export function useCulledAlbumActions(): CulledAlbumActions {
-  return useContextOrThrow(CulledAlbumActionsContext);
 }
