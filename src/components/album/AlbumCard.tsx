@@ -1,5 +1,9 @@
 import {Badge} from '@components/ui';
 import {formatStorageSizeGb, LocalAlbumCardModel} from '@lib/culledAlbum/format';
+import {
+  getCoverImageLayout,
+  loadImageDimensions,
+} from '@lib/imageDimensions';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {APIResponse} from '@services/api';
@@ -11,7 +15,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import AlbumPlaceholder from '../../assets/images/album_placeholder.svg';
 import IconCloud from '../../assets/images/icon_cloud.svg';
 import IconMore from '../../assets/images/icon_more.svg';
@@ -45,16 +49,65 @@ type SelectAlbumCardProps = AlbumCardBaseProps & {
 
 export type AlbumCardProps = HomepageAlbumCardProps | SelectAlbumCardProps;
 
+const COVER_HEIGHT = 200;
+
 function AlbumCover({album, width}: {album: AlbumCardAlbum; width: number}) {
   const coverUrl = album.cover?.preview?.large?.url;
+  const [imageSize, setImageSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!coverUrl) {
+      return;
+    }
+
+    let cancelled = false;
+    setImageSize(null);
+
+    loadImageDimensions(coverUrl).then(dimensions => {
+      if (!cancelled && dimensions) {
+        setImageSize(dimensions);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [coverUrl]);
+
+  const imageLayout = useMemo(() => {
+    if (!imageSize) {
+      return null;
+    }
+
+    return getCoverImageLayout(
+      width,
+      COVER_HEIGHT,
+      imageSize.width,
+      imageSize.height,
+    );
+  }, [imageSize, width]);
 
   if (coverUrl) {
     return (
-      <Image
-        source={{uri: coverUrl}}
-        style={{width, height: 200}}
-        resizeMode="cover"
-      />
+      <View style={[styles.cover, {width}]}>
+        {imageLayout ? (
+          <Image
+            source={{uri: coverUrl}}
+            style={[
+              styles.coverImage,
+              {
+                width: imageLayout.width,
+                height: imageLayout.height,
+                left: imageLayout.left,
+                top: imageLayout.top,
+              },
+            ]}
+          />
+        ) : null}
+      </View>
     );
   }
 
@@ -62,7 +115,7 @@ function AlbumCover({album, width}: {album: AlbumCardAlbum; width: number}) {
     <View style={[styles.placeholder, {width}]}>
       <AlbumPlaceholder
         width={width}
-        height={200}
+        height={COVER_HEIGHT}
         preserveAspectRatio="xMidYMid slice"
       />
     </View>
@@ -237,10 +290,17 @@ const styles = StyleSheet.create({
   cardSelected: {
     borderColor: colors.accent,
   },
-  placeholder: {
-    height: 200,
+  cover: {
+    height: COVER_HEIGHT,
     overflow: 'hidden',
-    position: 'relative'
+  },
+  coverImage: {
+    position: 'absolute',
+  },
+  placeholder: {
+    height: COVER_HEIGHT,
+    overflow: 'hidden',
+    position: 'relative',
   },
   checkbox: {
     position: 'absolute',

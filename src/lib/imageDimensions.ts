@@ -50,6 +50,27 @@ export async function loadImageDimensions(
 
 export const CULLED_ALBUM_THUMBNAIL_ASPECT_RATIO = 4 / 3;
 
+export function getCoverImageLayout(
+  containerWidth: number,
+  containerHeight: number,
+  imageWidth: number,
+  imageHeight: number,
+): {width: number; height: number; left: number; top: number} {
+  const scale = Math.max(
+    containerWidth / imageWidth,
+    containerHeight / imageHeight,
+  );
+  const width = imageWidth * scale;
+  const height = imageHeight * scale;
+
+  return {
+    width,
+    height,
+    left: (containerWidth - width) / 2,
+    top: (containerHeight - height) / 2,
+  };
+}
+
 export function getCulledAlbumThumbnailLayout(
   containerWidth: number,
   imageWidth: number,
