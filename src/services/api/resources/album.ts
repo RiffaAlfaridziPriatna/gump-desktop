@@ -9,4 +9,18 @@ export class AlbumResource {
   getAll(query?: APIRequest.GetAlbumList): Promise<APIResponse.AlbumList> {
     return this.agent.requestWithTokenAndCursor('GET', 'albums', query);
   }
+
+  getByIds(ids: string[]): Promise<APIResponse.AlbumList> {
+    if (ids.length === 0) {
+      return Promise.resolve({
+        next: null,
+        previous: null,
+        results: [],
+        count: 0,
+      });
+    }
+    return this.agent.requestWithTokenAndCursor('GET', 'albums', {
+      ids: ids.join(','),
+    });
+  }
 }

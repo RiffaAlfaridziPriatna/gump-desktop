@@ -3,7 +3,7 @@ import {DeleteAlbumModal} from '@components/modals/DeleteAlbumModal';
 import {useAuthState} from '@context/auth';
 import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useDeleteCulledAlbum} from '@hooks/useDeleteCulledAlbum';
-import {bytesToGigabytes, toAlbumCardModel} from '@lib/culledAlbum/format';
+import {toAlbumCardModel} from '@lib/culledAlbum/format';
 import {resolveCulledAlbumRoute} from '@lib/culledAlbum/service';
 import {CulledAlbum} from '@lib/culledAlbum/types';
 import {colors} from '@lib/colors';
@@ -134,8 +134,6 @@ export default function HomeScreen({navigation}: Props) {
                   variant="homepage"
                   album={cardModels[index]!}
                   ownerName={user && user.role !== 'guest' ? user.name : undefined}
-                  mediaCount={album.totalPhotos}
-                  storageSizeGb={bytesToGigabytes(album.totalStorage)}
                   isExpanded={expandedCardId === album.albumId}
                   onPress={() => handlePressAlbum(album)}
                   onPressMore={() => handlePressMore(album.albumId)}

@@ -80,6 +80,8 @@ export type CulledAlbum = {
   createdAt: string;
   totalPhotos: number;
   totalStorage: number;
+  syncedMediaCount?: number;
+  syncedStorageGb?: number;
   photos: CulledAlbumPhoto[];
 };
 

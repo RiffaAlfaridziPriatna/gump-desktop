@@ -1,5 +1,9 @@
 import {useCulledAlbumStore} from '@context/culledAlbum';
-import {loadAllLocalAlbumsIntoStore} from '@lib/culledAlbum/store';
+import {syncCulledAlbumsWithServer} from '@lib/culledAlbum/serverSync';
+import {
+  culledAlbumStore,
+  loadAllLocalAlbumsIntoStore,
+} from '@lib/culledAlbum/store';
 import {CulledAlbum} from '@lib/culledAlbum/types';
 import {useCallback, useEffect, useMemo, useState} from 'react';
 
@@ -18,6 +22,20 @@ export function useLocalCulledAlbumList() {
     sortAlbums(Object.values(state.albums)),
   );
 
+  const syncWithServerInBackground = useCallback(() => {
+    const albumIds = Object.keys(culledAlbumStore.getState().albums);
+    if (albumIds.length === 0) {
+      return;
+    }
+
+    void syncCulledAlbumsWithServer(albumIds).catch(err => {
+      console.warn(
+        '[useLocalCulledAlbumList] Background server sync failed:',
+        err,
+      );
+    });
+  }, []);
+
   const refresh = useCallback(async () => {
     setLoadingAlbums(true);
     setError(null);
@@ -29,8 +47,9 @@ export function useLocalCulledAlbumList() {
       );
     } finally {
       setLoadingAlbums(false);
+      syncWithServerInBackground();
     }
-  }, []);
+  }, [syncWithServerInBackground]);
 
   useEffect(() => {
     refresh();
