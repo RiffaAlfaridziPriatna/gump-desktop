@@ -19,6 +19,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -32,6 +33,9 @@ export default function HomeScreen({navigation}: Props) {
   const user = useAuthState(state => state.user);
   const {loadingAlbums, albums, refresh, count} = useLocalCulledAlbumList();
   const deleteCulledAlbum = useDeleteCulledAlbum();
+
+  const {height: windowHeight} = useWindowDimensions();
+  const [headerHeight, setHeaderHeight] = useState(0);
 
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [albumToDelete, setAlbumToDelete] = useState<CulledAlbum | null>(null);
@@ -79,7 +83,7 @@ export default function HomeScreen({navigation}: Props) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      <View style={styles.header} onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
         <GumpLogo width={112} height={40} />
         {hasAlbums && (
           <View style={styles.breadcrumbContainer}>
@@ -156,7 +160,13 @@ export default function HomeScreen({navigation}: Props) {
             />
           }
           scrollEventThrottle={200}>
-          <View style={[styles.emptyState, {paddingTop: 40}]}>
+          <View style={[
+            styles.emptyState,
+            {
+              height: windowHeight - headerHeight * 2,
+              paddingBottom: headerHeight
+            }
+          ]}>
             <View style={styles.emptyContent}>
               <Text style={styles.emptyTitle}>Clean Up Your Photo Albums</Text>
               <Text style={styles.emptySubtitle}>
