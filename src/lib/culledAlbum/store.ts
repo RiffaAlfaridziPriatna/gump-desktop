@@ -10,12 +10,15 @@ import {mergeAlbumPhotos, mergeWithMemoryAlbum} from './merge';
 import {readAlbum, readAllAlbums, removeAlbum, saveAlbum} from './storage';
 import {syncAlbumWithDisk} from './sync';
 import {
+  isServerUploadBatchFinished,
+  isServerUploadBatchSuccessful,
+} from './serverUploadProgress';
+import {
   createCulledAlbumPhoto,
   CulledAlbum,
   CulledAlbumPhoto,
   hasInFlightAnalysis,
   hasInFlightUploads,
-  isServerUploadBatchComplete,
   normalizePersistedAlbum,
   recomputeAlbumTotals,
 } from './types';
@@ -236,6 +239,7 @@ export function startServerUploadBatch(
 
       if (uploadableIds.has(photoId)) {
         photo.serverUploadStatus = 'pending';
+        photo.serverUploadProgress = 0;
         photo.serverUploadError = undefined;
         continue;
       }
@@ -256,10 +260,16 @@ export async function checkServerUploadBatchComplete(
   albumId: string,
 ): Promise<void> {
   const album = getAlbumFromState(albumId);
-  if (!isServerUploadBatchComplete(album)) {
+  if (
+    !album ||
+    !isServerUploadBatchFinished(album.photos, album.uploadBatchPhotoIds)
+  ) {
     return;
   }
-  await markCullingHasUploads(albumId);
+
+  if (isServerUploadBatchSuccessful(album.photos, album.uploadBatchPhotoIds)) {
+    await markCullingHasUploads(albumId);
+  }
   await persistAlbum(albumId);
 }
 

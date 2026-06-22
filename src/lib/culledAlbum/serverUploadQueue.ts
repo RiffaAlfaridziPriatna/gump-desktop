@@ -4,6 +4,7 @@ import {
   persistAlbum,
   updatePhoto,
 } from './store';
+import {formatUploadError} from './formatUploadError';
 import {CulledAlbumPhoto} from './types';
 
 export type ServerUploadQueueDeps = {
@@ -29,27 +30,20 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
     updatePhoto(albumId, photoId, photo => {
       if (photo.serverUploadStatus !== 'uploaded') {
         photo.serverUploadStatus = 'failed';
-        if (error) {
-          photo.serverUploadError = error;
-        }
+        photo.serverUploadError = error;
       }
     });
   }
 
-  function getBatchPhotoIds(albumId: string): string[] {
-    return getAlbum(albumId)?.uploadBatchPhotoIds ?? [];
-  }
-
   function processPending(albumId: string): void {
-    const batchPhotoIds = new Set(getBatchPhotoIds(albumId));
-    if (batchPhotoIds.size === 0) {
+    const batchPhotoIds = getAlbum(albumId)?.uploadBatchPhotoIds ?? [];
+    if (batchPhotoIds.length === 0) {
       return;
     }
 
     let uploadingCount = 0;
     for (const photoId of batchPhotoIds) {
-      const photo = getPhoto(albumId, photoId);
-      if (photo?.serverUploadStatus === 'uploading') {
+      if (getPhoto(albumId, photoId)?.serverUploadStatus === 'uploading') {
         uploadingCount++;
       }
     }
@@ -70,9 +64,13 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
           processPending(albumId);
         })
         .catch(err => {
-          const message =
-            err instanceof Error && err.message ? err.message : undefined;
-          failPhoto(albumId, photoId, message);
+          console.error('[serverUploadQueue] Upload failed', {
+            albumId,
+            photoId,
+            filename: getPhoto(albumId, photoId)?.file.name,
+            err,
+          });
+          failPhoto(albumId, photoId, formatUploadError(err));
           void persistAlbum(albumId);
           processPending(albumId);
         });
@@ -81,19 +79,4 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
   }
 
   return {processPending, failPhoto};
-}
-
-export async function stubServerUploadPhoto(
-  albumId: string,
-  photoId: string,
-): Promise<void> {
-  updatePhoto(albumId, photoId, photo => {
-    photo.serverUploadStatus = 'uploading';
-    photo.serverUploadError = undefined;
-  });
-  // Backend S3 upload will replace this stub.
-  updatePhoto(albumId, photoId, photo => {
-    photo.serverUploadStatus = 'uploaded';
-  });
-  await persistAlbum(albumId);
 }

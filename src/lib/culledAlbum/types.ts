@@ -46,6 +46,7 @@ export type CulledAlbumPhoto = {
   status: CulledAlbumPhotoUploadStatus;
   error?: string;
   serverUploadStatus: CulledAlbumPhotoServerUploadStatus;
+  serverUploadProgress: number;
   serverUploadError?: string;
   simulatedMinDurationMs?: number;
   analysisProgress: number;
@@ -63,7 +64,7 @@ export type CulledAlbumPhoto = {
 
 export type CulledAlbumSource = Pick<
   APIResponse.Album,
-  'id' | 'name' | 'title' | 'cover' | 'coverMobile'
+  'id' | 'name' | 'title' | 'cover' | 'coverMobile' | 'link'
 >;
 
 export type CulledAlbum = {
@@ -74,6 +75,7 @@ export type CulledAlbum = {
   coverMobile: APIResponse.AlbumCover;
   cullingCompleted: boolean;
   cullingHasUploads: boolean;
+  link: string;
   uploadBatchPhotoIds: string[];
   createdAt: string;
   totalPhotos: number;
@@ -91,6 +93,7 @@ export function createCulledAlbumPhoto(
     progress: 0,
     status: 'pending',
     serverUploadStatus: 'idle',
+    serverUploadProgress: 0,
     analysisProgress: 0,
     analysisStatus: 'idle',
     faces: [],
@@ -115,6 +118,7 @@ export function createCulledAlbumFromSelection(
     coverMobile: source.coverMobile,
     cullingCompleted: false,
     cullingHasUploads: false,
+    link: source.link,
     uploadBatchPhotoIds: [],
     createdAt: new Date().toISOString(),
     totalPhotos: 0,
@@ -168,19 +172,6 @@ export function countByAnalysisStatus(
   return photos.filter(photo => photo.analysisStatus === status).length;
 }
 
-export function isServerUploadBatchComplete(
-  album: CulledAlbum | null | undefined,
-): boolean {
-  if (!album?.uploadBatchPhotoIds.length) {
-    return false;
-  }
-
-  return album.uploadBatchPhotoIds.every(photoId => {
-    const photo = album.photos.find(entry => entry.photoId === photoId);
-    return photo?.serverUploadStatus === 'uploaded';
-  });
-}
-
 export function hasStartedCulling(album: CulledAlbum | null | undefined): boolean {
   if (!album) {
     return false;
@@ -218,6 +209,11 @@ export function normalizePersistedPhoto(
     photo.analysisProgress = photo.faces.length > 0 ? 100 : 0;
   }
   photo.serverUploadStatus ??= 'idle';
+  photo.serverUploadProgress ??= 0;
+  if (photo.serverUploadStatus === 'uploading') {
+    photo.serverUploadStatus = 'pending';
+    photo.serverUploadProgress = 0;
+  }
   return photo;
 }
 
@@ -228,6 +224,7 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.coverMobile ??= null;
   album.cullingCompleted ??= false;
   album.cullingHasUploads ??= false;
+  album.link ??= '';
   album.uploadBatchPhotoIds ??= [];
   album.createdAt ??= new Date(0).toISOString();
   album.totalPhotos ??= album.photos.length;
