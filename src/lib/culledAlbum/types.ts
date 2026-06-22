@@ -226,6 +226,13 @@ export function normalizePersistedPhoto(
     photo.serverUploadStatus = 'pending';
     photo.serverUploadProgress = 0;
   }
+  if (
+    photo.analysisStatus === 'analyzed' &&
+    !photo.aiSelected &&
+    photo.starRating === 5
+  ) {
+    photo.aiSelected = true;
+  }
   return photo;
 }
 
