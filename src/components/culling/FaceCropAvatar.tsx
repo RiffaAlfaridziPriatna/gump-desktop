@@ -2,20 +2,15 @@ import {
   CullingBoundingBox,
   getFaceCropImageStyle,
 } from '@lib/cullingFaceCrop';
+import { loadImageDimensions } from '@lib/imageDimensions';
 import { colors } from '@lib/colors';
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Image, ImageLoadEvent, StyleSheet, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Image, StyleSheet, View } from 'react-native';
 
 type FaceCropAvatarProps = {
   uri: string;
   boundingBox: CullingBoundingBox;
   size: number;
-};
-
-// Inline utility for extracting image dimensions from event
-const getImageDimensions = (event: ImageLoadEvent) => {
-  const { width, height } = event.nativeEvent.source ?? {};
-  return width && height ? { width, height } : null;
 };
 
 export const FaceCropAvatar = React.memo(function FaceCropAvatar({
@@ -32,15 +27,11 @@ export const FaceCropAvatar = React.memo(function FaceCropAvatar({
     let cancelled = false;
     setImageSize(null);
 
-    Image.getSize(
-      uri,
-      (width, height) => {
-        if (!cancelled) setImageSize({ width, height });
-      },
-      () => {
-        // getSize often fails on macOS file:// URIs; fallback to onLoad
-      },
-    );
+    loadImageDimensions(uri).then(dimensions => {
+      if (!cancelled && dimensions) {
+        setImageSize(dimensions);
+      }
+    });
 
     return () => {
       cancelled = true;
@@ -60,12 +51,6 @@ export const FaceCropAvatar = React.memo(function FaceCropAvatar({
     [imageSize, boundingBox, size],
   );
 
-  // Stable callback
-  const handleLoad = useCallback((event: ImageLoadEvent) => {
-    const dim = getImageDimensions(event);
-    if (dim) setImageSize(dim);
-  }, []);
-
   return (
     <View
       style={[
@@ -77,12 +62,12 @@ export const FaceCropAvatar = React.memo(function FaceCropAvatar({
         },
       ]}
     >
-      <Image
-        source={{ uri }}
-        style={cropStyle ?? styles.hiddenMeasure}
-        onLoad={handleLoad}
-        onError={() => setImageSize(null)}
-      />
+      {cropStyle ? (
+        <Image
+          source={{ uri }}
+          style={[styles.cropImage, cropStyle]}
+        />
+      ) : null}
     </View>
   );
 });
@@ -92,9 +77,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.border,
   },
-  hiddenMeasure: {
-    width: 1,
-    height: 1,
-    opacity: 0,
+  cropImage: {
+    position: 'absolute',
   },
 });

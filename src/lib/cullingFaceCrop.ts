@@ -136,8 +136,8 @@ export function getFaceCropImageStyle(
   return {
     width: imageWidth * scale,
     height: imageHeight * scale,
-    marginLeft: containerSize / 2 - viewCenterX * scale,
-    marginTop: containerSize / 2 - anchorCenterY * scale,
+    left: containerSize / 2 - viewCenterX * scale,
+    top: containerSize / 2 - anchorCenterY * scale,
   };
 }
 
