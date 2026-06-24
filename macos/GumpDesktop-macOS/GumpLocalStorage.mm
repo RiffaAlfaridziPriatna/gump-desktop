@@ -101,8 +101,8 @@ RCT_EXPORT_MODULE();
 
 - (NSDictionary *)eyesOpenFromLandmarks:(VNFaceLandmarks2D *)landmarks
 {
-  static const CGFloat kOpenThreshold = 0.22f;
-  static const CGFloat kClosedThreshold = 0.14f;
+  static const CGFloat kOpenThreshold = 0.25f;
+  static const CGFloat kClosedThreshold = 0.17f;
 
   CGFloat leftRatio = [self eyeAspectRatioFromRegion:landmarks.leftEye];
   CGFloat rightRatio = [self eyeAspectRatioFromRegion:landmarks.rightEye];
@@ -126,7 +126,8 @@ RCT_EXPORT_MODULE();
     return @{@"value" : @NO, @"confidence" : @(confidence)};
   }
 
-  return @{@"value" : @NO, @"confidence" : @(70.0f)};
+  // Partially open / squinting — between fully closed and fully open.
+  return @{@"value" : @NO, @"confidence" : @(72.0f)};
 }
 
 - (NSDictionary *)faceDictionaryFromObservation:(VNFaceObservation *)face
@@ -184,15 +185,35 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
       }
 
       NSURL *url = [NSURL fileURLWithPath:path isDirectory:NO];
-      VNDetectFaceLandmarksRequest *landmarksRequest =
-          [[VNDetectFaceLandmarksRequest alloc] init];
-      VNDetectFaceCaptureQualityRequest *qualityRequest =
-          [[VNDetectFaceCaptureQualityRequest alloc] init];
+      VNDetectFaceRectanglesRequest *rectRequest =
+          [[VNDetectFaceRectanglesRequest alloc] init];
+      rectRequest.revision = VNDetectFaceRectanglesRequestRevision3;
 
       VNImageRequestHandler *handler =
           [[VNImageRequestHandler alloc] initWithURL:url options:@{}];
       NSError *error = nil;
-      BOOL performed = [handler performRequests:@[ landmarksRequest ] error:&error];
+      BOOL performed = [handler performRequests:@[ rectRequest ] error:&error];
+      if (!performed) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"EDETECT", error.localizedDescription ?: @"Face detection failed", error);
+        });
+        return;
+      }
+
+      NSArray<VNFaceObservation *> *rectFaces = rectRequest.results;
+      if (rectFaces.count == 0) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          resolve(@[]);
+        });
+        return;
+      }
+
+      VNDetectFaceLandmarksRequest *landmarksRequest =
+          [[VNDetectFaceLandmarksRequest alloc] init];
+      landmarksRequest.revision = VNDetectFaceLandmarksRequestRevision3;
+      landmarksRequest.inputFaceObservations = rectFaces;
+
+      performed = [handler performRequests:@[ landmarksRequest ] error:&error];
       if (!performed) {
         dispatch_async(dispatch_get_main_queue(), ^{
           reject(@"EDETECT", error.localizedDescription ?: @"Face detection failed", error);
@@ -208,6 +229,8 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
         return;
       }
 
+      VNDetectFaceCaptureQualityRequest *qualityRequest =
+          [[VNDetectFaceCaptureQualityRequest alloc] init];
       qualityRequest.inputFaceObservations = landmarkFaces;
       performed = [handler performRequests:@[ qualityRequest ] error:&error];
       if (!performed) {

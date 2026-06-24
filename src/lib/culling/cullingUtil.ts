@@ -1,4 +1,4 @@
-import {APIResponse} from '@services/api';
+import { APIResponse } from '@services/api';
 
 export type CullingFace = APIResponse.CullingFace;
 export type CullingPhoto = APIResponse.CullingPhoto;
@@ -20,7 +20,9 @@ export function classifyEyeStatus(eyesOpen?: {
   return 'partial';
 }
 
-export function classifyFocus(sharpness?: number | null): APIResponse.CullingFocusLevel {
+export function classifyFocus(
+  sharpness?: number | null,
+): APIResponse.CullingFocusLevel {
   const value = sharpness ?? 0;
   if (value >= FOCUS_GOOD_THRESHOLD) return 'good';
   if (value >= FOCUS_SOFT_THRESHOLD) return 'soft';
@@ -148,32 +150,39 @@ export function computeKeyFaces(
     .sort((a, b) => b.occurrenceCount - a.occurrenceCount);
 }
 
-const FACE_CLUSTER_THRESHOLD = 0.12;
+const FACE_CLUSTER_THRESHOLD = 0.05;
+
+function photoIdFromFaceKey(key: string): string {
+  const colonIndex = key.lastIndexOf(':');
+  return colonIndex >= 0 ? key.slice(0, colonIndex) : key;
+}
 
 function faceFingerprint(face: CullingFace): number[] {
-  const {boundingBox: box, landmarks, pose} = face;
+  const { boundingBox: box, landmarks, pose } = face;
   const eyeLeft = landmarks.find(landmark => landmark.type === 'eyeLeft');
   const eyeRight = landmarks.find(landmark => landmark.type === 'eyeRight');
   const nose = landmarks.find(landmark => landmark.type === 'nose');
+  const mouth = landmarks.find(landmark => landmark.type === 'mouth');
 
   if (eyeLeft && eyeRight) {
     const eyeMidX = (eyeLeft.x + eyeRight.x) / 2;
     const eyeMidY = (eyeLeft.y + eyeRight.y) / 2;
-    const eyeDist = Math.hypot(
-      eyeRight.x - eyeLeft.x,
-      eyeRight.y - eyeLeft.y,
-    );
+    const eyeDist = Math.hypot(eyeRight.x - eyeLeft.x, eyeRight.y - eyeLeft.y);
     const safeEyeDist = Math.max(eyeDist, 1e-6);
     const aspect = box.width / Math.max(box.height, 1e-6);
     const eyeSpan = eyeDist / Math.max(box.width, 1e-6);
     const noseX = nose ? (nose.x - eyeMidX) / safeEyeDist : 0;
     const noseY = nose ? (nose.y - eyeMidY) / safeEyeDist : 0;
+    const mouthX = mouth ? (mouth.x - eyeMidX) / safeEyeDist : 0;
+    const mouthY = mouth ? (mouth.y - eyeMidY) / safeEyeDist : 0;
 
     return [
       aspect,
       eyeSpan,
       noseX,
       noseY,
+      mouthX,
+      mouthY,
       pose.yaw / 90,
       pose.pitch / 90,
     ];
@@ -200,7 +209,7 @@ class UnionFind {
   private parent: number[];
 
   constructor(size: number) {
-    this.parent = Array.from({length: size}, (_, index) => index);
+    this.parent = Array.from({ length: size }, (_, index) => index);
   }
 
   find(index: number): number {
@@ -222,7 +231,7 @@ class UnionFind {
 export function clusterFacesAcrossPhotos(
   photos: CullingPhoto[],
 ): Map<string, string> {
-  type FaceEntry = {key: string; fingerprint: number[]};
+  type FaceEntry = { key: string; fingerprint: number[] };
   const entries: FaceEntry[] = [];
 
   for (const photo of photos) {
@@ -242,10 +251,15 @@ export function clusterFacesAcrossPhotos(
   for (let i = 0; i < entries.length; i++) {
     for (let j = i + 1; j < entries.length; j++) {
       if (
-        fingerprintDistance(
-          entries[i]!.fingerprint,
-          entries[j]!.fingerprint,
-        ) < FACE_CLUSTER_THRESHOLD
+        photoIdFromFaceKey(entries[i]!.key) ===
+        photoIdFromFaceKey(entries[j]!.key)
+      ) {
+        continue;
+      }
+
+      if (
+        fingerprintDistance(entries[i]!.fingerprint, entries[j]!.fingerprint) <
+        FACE_CLUSTER_THRESHOLD
       ) {
         unionFind.union(i, j);
       }
