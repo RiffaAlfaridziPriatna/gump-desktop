@@ -1,4 +1,6 @@
 const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
+const fs = require('fs');
+const path = require('path');
 
 const defaultConfig = getDefaultConfig(__dirname);
 
@@ -12,10 +14,22 @@ defaultConfig.resolver = {
   sourceExts: [...defaultConfig.resolver.sourceExts, 'svg'],
 };
 
+const rnwPath = fs.realpathSync(
+  path.resolve(require.resolve('react-native-windows/package.json'), '..'),
+);
+
 const config = {
   resolver: {
     ...defaultConfig.resolver,
-    platforms: ['macos', 'ios', 'android'],
+    platforms: ['macos', 'ios', 'android', 'windows'],
+    blockList: [
+      new RegExp(
+        `${path.resolve(__dirname, 'windows').replace(/[/\\]/g, '/')}.*`,
+      ),
+      new RegExp(`${rnwPath.replace(/[/\\]/g, '/')}/build/.*`),
+      new RegExp(`${rnwPath.replace(/[/\\]/g, '/')}/target/.*`),
+      /.*\.ProjectImports\.zip/,
+    ],
     resolveRequest: (context, moduleName, platform) => {
       if (platform === 'macos') {
         const macosModuleName =
@@ -25,7 +39,6 @@ const config = {
               ? `react-native-macos/${moduleName.slice('react-native/'.length)}`
               : moduleName;
 
-        // Try resolving with macOS platform first, fall back to iOS
         try {
           return context.resolveRequest(context, macosModuleName, platform);
         } catch {
@@ -39,6 +52,14 @@ const config = {
 
       return context.resolveRequest(context, moduleName, platform);
     },
+  },
+  transformer: {
+    getTransformOptions: async () => ({
+      transform: {
+        experimentalImportSupport: false,
+        inlineRequires: true,
+      },
+    }),
   },
 };
 

@@ -11,7 +11,19 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "jest",
-    "generate-schema": "node scripts/generate-schema.mjs"
+    "generate-schema": "node scripts/generate-schema.mjs",
+    "build": "bash scripts/build.sh",
+    "build:android": "bash scripts/build.sh android apk",
+    "build:android:aab": "bash scripts/build.sh android aab",
+    "build:ios": "bash scripts/build.sh ios ipa",
+    "build:ios:archive": "bash scripts/build.sh ios archive",
+    "build:macos": "bash scripts/build.sh macos app",
+    "build:macos:zip": "bash scripts/build.sh macos zip",
+    "build:windows": "bash scripts/build.sh windows exe",
+    "build:windows:msix": "bash scripts/build.sh windows msix",
+    "build:all": "bash scripts/build.sh all",
+    "windows": "npx @react-native-community/cli run-windows",
+    "test:windows": "jest --config jest.config.windows.js"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",
@@ -28,6 +40,7 @@
     "react-native-screens": "^4.25.2",
     "react-native-svg": "^15.15.5",
     "react-native-svg-transformer": "^1.5.3",
+    "react-native-windows": "^0.81.4",
     "reflect-metadata": "^0.2.2",
     "tsyringe": "^4.10.0",
     "zustand": "^5.0.14"
@@ -50,13 +63,21 @@
     "babel-plugin-module-resolver": "^5.0.3",
     "babel-plugin-transform-typescript-metadata": "^0.4.0",
     "eslint": "^8.19.0",
-    "openapi-typescript": "^6.7.6",
     "jest": "^29.6.3",
+    "openapi-typescript": "^6.7.6",
     "prettier": "2.8.8",
     "react-test-renderer": "19.1.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "@rnx-kit/jest-preset": "^0.1.17"
   },
   "engines": {
     "node": ">=20"
+  },
+  "react-native-windows": {
+    "init-windows": {
+      "name": "GumpDesktop",
+      "namespace": "GumpDesktop",
+      "template": "cpp-app"
+    }
   }
 }
