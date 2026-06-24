@@ -97,7 +97,7 @@ class MacOSDetector implements PlatformDetector {
 class IOSDetector implements PlatformDetector {
   async detectFaces(uri: string, photoId: string): Promise<CullingFace[]> {
     if (!NativeLocalStorage?.detectFacesForCulling) {
-      return new FallbackDetector().detectFaces(uri, photoId);
+      throw new Error('iOS native module not available');
     }
     const faces = await NativeLocalStorage.detectFacesForCulling(uri);
     return faces.map((face, index) => mapNativeFace(face, photoId, index));
@@ -106,13 +106,21 @@ class IOSDetector implements PlatformDetector {
 
 class AndroidDetector implements PlatformDetector {
   async detectFaces(uri: string, photoId: string): Promise<CullingFace[]> {
-    return new FallbackDetector().detectFaces(uri, photoId);
+    if (!NativeLocalStorage?.detectFacesForCulling) {
+      throw new Error('Android native module not available');
+    }
+    const faces = await NativeLocalStorage.detectFacesForCulling(uri);
+    return faces.map((face, index) => mapNativeFace(face, photoId, index));
   }
 }
 
 class WindowsDetector implements PlatformDetector {
   async detectFaces(uri: string, photoId: string): Promise<CullingFace[]> {
-    return new FallbackDetector().detectFaces(uri, photoId);
+    if (!NativeLocalStorage?.detectFacesForCulling) {
+      throw new Error('Windows native module not available');
+    }
+    const faces = await NativeLocalStorage.detectFacesForCulling(uri);
+    return faces.map((face, index) => mapNativeFace(face, photoId, index));
   }
 }
 

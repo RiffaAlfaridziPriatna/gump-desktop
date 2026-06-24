@@ -15,6 +15,8 @@ const NativeLocalStorage = NativeModules.GumpLocalStorage as
 
 const dimensionCache = new Map<string, ImageDimensions>();
 
+const NATIVE_DIMENSION_PLATFORMS = new Set(['macos', 'ios', 'android', 'windows']);
+
 export async function loadImageDimensions(
   uri: string,
 ): Promise<ImageDimensions | null> {
@@ -23,7 +25,10 @@ export async function loadImageDimensions(
     return cached;
   }
 
-  if (Platform.OS === 'macos' && NativeLocalStorage?.getImageDimensions) {
+  if (
+    NATIVE_DIMENSION_PLATFORMS.has(Platform.OS) &&
+    NativeLocalStorage?.getImageDimensions
+  ) {
     try {
       const dimensions = await NativeLocalStorage.getImageDimensions(uri);
       if (dimensions.width > 0 && dimensions.height > 0) {

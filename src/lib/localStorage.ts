@@ -20,13 +20,22 @@ const NativeLocalStorage = NativeModules.GumpLocalStorage as
   | NativeLocalStorageModule
   | undefined;
 
+const NATIVE_STORAGE_PLATFORMS = new Set(['macos', 'ios', 'android', 'windows']);
+
+function hasNativeLocalStorage(): boolean {
+  return (
+    NATIVE_STORAGE_PLATFORMS.has(Platform.OS) &&
+    NativeLocalStorage?.copyPhoto != null
+  );
+}
+
 export async function copyPhotoToAlbum(
   albumId: string,
   file: FileAsset,
   photoId: string,
 ): Promise<FileAsset> {
-  if (Platform.OS === 'macos' && NativeLocalStorage?.copyPhoto) {
-    return NativeLocalStorage.copyPhoto(
+  if (hasNativeLocalStorage()) {
+    return NativeLocalStorage!.copyPhoto(
       albumId,
       file.uri,
       file.name,
@@ -35,24 +44,24 @@ export async function copyPhotoToAlbum(
   }
 
   throw new Error(
-    'Local photo storage is not available. Build the macOS app with GumpLocalStorage native module.',
+    'Local photo storage is not available. Build the app with GumpLocalStorage native module.',
   );
 }
 
 export async function deleteLocalAlbumFiles(albumId: string): Promise<void> {
-  if (Platform.OS === 'macos' && NativeLocalStorage?.deleteAlbum) {
+  if (hasNativeLocalStorage() && NativeLocalStorage?.deleteAlbum) {
     await NativeLocalStorage.deleteAlbum(albumId);
   }
 }
 
 export async function deleteLocalPhotoFile(uri: string): Promise<void> {
-  if (Platform.OS === 'macos' && NativeLocalStorage?.deletePhoto) {
+  if (hasNativeLocalStorage() && NativeLocalStorage?.deletePhoto) {
     await NativeLocalStorage.deletePhoto(uri);
   }
 }
 
 export async function listAlbumPhotos(albumId: string): Promise<FileAsset[]> {
-  if (Platform.OS === 'macos' && NativeLocalStorage?.listPhotos) {
+  if (hasNativeLocalStorage() && NativeLocalStorage?.listPhotos) {
     return NativeLocalStorage.listPhotos(albumId);
   }
   return [];

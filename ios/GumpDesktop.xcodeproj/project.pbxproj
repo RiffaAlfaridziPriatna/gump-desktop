@@ -7,14 +7,17 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		054C34C91828231549EED991 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		0A40B797757144BF8E248ECA /* RedHatDisplay-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E076DA820DFA4C48A7A4FA11 /* RedHatDisplay-Bold.ttf */; };
 		0C80B921A6F3F58F76C31292 /* libPods-GumpDesktop.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-GumpDesktop.a */; };
+		0D5F388BEAF2444BA520F71D /* DMSerifDisplay-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4903C5B3747D4A40AC7CCCDB /* DMSerifDisplay-Regular.ttf */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
-		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
-		0A40B797757144BF8E248ECA /* RedHatDisplay-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E076DA820DFA4C48A7A4FA11 /* RedHatDisplay-Bold.ttf */; };
 		7903BB0C619140E68C77D85B /* RedHatDisplay-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FF15A78D93D6432E8B17C3F5 /* RedHatDisplay-Medium.ttf */; };
-		0D5F388BEAF2444BA520F71D /* DMSerifDisplay-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4903C5B3747D4A40AC7CCCDB /* DMSerifDisplay-Regular.ttf */; };
+		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		95C6F636438E4666AD7EEC41 /* RedHatDisplay-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = EC4810C12B364CCA9787EBFA /* RedHatDisplay-Regular.ttf */; };
+		C3D4E5F60123456700000001 /* GumpLocalStorage.mm in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F61123456700000001 /* GumpLocalStorage.mm */; };
+		C3D4E5F70123456700000001 /* Vision.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3D4E5F71123456700000003 /* Vision.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,15 +26,18 @@
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = GumpDesktop/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = GumpDesktop/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		3B4392A12AC88292D35C810B /* Pods-GumpDesktop.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-GumpDesktop.debug.xcconfig"; path = "Target Support Files/Pods-GumpDesktop/Pods-GumpDesktop.debug.xcconfig"; sourceTree = "<group>"; };
+		4903C5B3747D4A40AC7CCCDB /* DMSerifDisplay-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "DMSerifDisplay-Regular.ttf"; path = "../src/assets/fonts/DMSerifDisplay-Regular.ttf"; sourceTree = "<group>"; };
 		5709B34CF0A7D63546082F79 /* Pods-GumpDesktop.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-GumpDesktop.release.xcconfig"; path = "Target Support Files/Pods-GumpDesktop/Pods-GumpDesktop.release.xcconfig"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-GumpDesktop.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-GumpDesktop.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = GumpDesktop/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = GumpDesktop/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		C3D4E5F61123456700000001 /* GumpLocalStorage.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = GumpLocalStorage.mm; path = GumpDesktop/GumpLocalStorage.mm; sourceTree = "<group>"; };
+		C3D4E5F61123456700000002 /* GumpLocalStorage.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = GumpLocalStorage.h; path = GumpDesktop/GumpLocalStorage.h; sourceTree = "<group>"; };
+		E076DA820DFA4C48A7A4FA11 /* RedHatDisplay-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "RedHatDisplay-Bold.ttf"; path = "../src/assets/fonts/RedHatDisplay-Bold.ttf"; sourceTree = "<group>"; };
+		EC4810C12B364CCA9787EBFA /* RedHatDisplay-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "RedHatDisplay-Regular.ttf"; path = "../src/assets/fonts/RedHatDisplay-Regular.ttf"; sourceTree = "<group>"; };
+		C3D4E5F71123456700000003 /* Vision.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Vision.framework; path = System/Library/Frameworks/Vision.framework; sourceTree = SDKROOT; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
-		E076DA820DFA4C48A7A4FA11 /* RedHatDisplay-Bold.ttf */ = {isa = PBXFileReference; name = "RedHatDisplay-Bold.ttf"; path = "../src/assets/fonts/RedHatDisplay-Bold.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
-		FF15A78D93D6432E8B17C3F5 /* RedHatDisplay-Medium.ttf */ = {isa = PBXFileReference; name = "RedHatDisplay-Medium.ttf"; path = "../src/assets/fonts/RedHatDisplay-Medium.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
-		4903C5B3747D4A40AC7CCCDB /* DMSerifDisplay-Regular.ttf */ = {isa = PBXFileReference; name = "DMSerifDisplay-Regular.ttf"; path = "../src/assets/fonts/DMSerifDisplay-Regular.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
-		EC4810C12B364CCA9787EBFA /* RedHatDisplay-Regular.ttf */ = {isa = PBXFileReference; name = "RedHatDisplay-Regular.ttf"; path = "../src/assets/fonts/RedHatDisplay-Regular.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
+		FF15A78D93D6432E8B17C3F5 /* RedHatDisplay-Medium.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = "RedHatDisplay-Medium.ttf"; path = "../src/assets/fonts/RedHatDisplay-Medium.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -40,6 +46,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0C80B921A6F3F58F76C31292 /* libPods-GumpDesktop.a in Frameworks */,
+				C3D4E5F70123456700000001 /* Vision.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -50,6 +57,8 @@
 			isa = PBXGroup;
 			children = (
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
+				C3D4E5F61123456700000002 /* GumpLocalStorage.h */,
+				C3D4E5F61123456700000001 /* GumpLocalStorage.mm */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
@@ -62,6 +71,7 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
+				C3D4E5F71123456700000003 /* Vision.framework */,
 				5DCACB8F33CDC322A6C60F78 /* libPods-GumpDesktop.a */,
 			);
 			name = Frameworks;
@@ -97,6 +107,18 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		B34797D203174CA1AD834E29 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				E076DA820DFA4C48A7A4FA11 /* RedHatDisplay-Bold.ttf */,
+				FF15A78D93D6432E8B17C3F5 /* RedHatDisplay-Medium.ttf */,
+				4903C5B3747D4A40AC7CCCDB /* DMSerifDisplay-Regular.ttf */,
+				EC4810C12B364CCA9787EBFA /* RedHatDisplay-Regular.ttf */,
+			);
+			name = Resources;
+			path = "";
+			sourceTree = "<group>";
+		};
 		BBD78D7AC51CEA395F1C20DB /* Pods */ = {
 			isa = PBXGroup;
 			children = (
@@ -105,18 +127,6 @@
 			);
 			path = Pods;
 			sourceTree = "<group>";
-		};
-		B34797D203174CA1AD834E29 /* Resources */ = {
-			isa = "PBXGroup";
-			children = (
-				E076DA820DFA4C48A7A4FA11 /* RedHatDisplay-Bold.ttf */,
-				FF15A78D93D6432E8B17C3F5 /* RedHatDisplay-Medium.ttf */,
-				4903C5B3747D4A40AC7CCCDB /* DMSerifDisplay-Regular.ttf */,
-				EC4810C12B364CCA9787EBFA /* RedHatDisplay-Regular.ttf */,
-			);
-			name = Resources;
-			sourceTree = "<group>";
-			path = "";
 		};
 /* End PBXGroup section */
 
@@ -184,6 +194,7 @@
 				7903BB0C619140E68C77D85B /* RedHatDisplay-Medium.ttf in Resources */,
 				0D5F388BEAF2444BA520F71D /* DMSerifDisplay-Regular.ttf in Resources */,
 				95C6F636438E4666AD7EEC41 /* RedHatDisplay-Regular.ttf in Resources */,
+				054C34C91828231549EED991 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -270,6 +281,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				C3D4E5F60123456700000001 /* GumpLocalStorage.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -399,7 +411,10 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				USE_HERMES = true;
 			};
 			name = Debug;
 		};
@@ -464,7 +479,9 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
+				USE_HERMES = true;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
