@@ -27,9 +27,7 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
-  const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(
-    null,
-  );
+  const [focusedField, setFocusedField] = useState<'email' | null>(null);
 
   const isFormValid = email.trim() && password.trim();
 
@@ -79,7 +77,6 @@ export default function LoginScreen() {
           <TextInput
             style={[
               styles.input,
-              focusedField === 'email' && styles.inputFocused,
               focusedField !== 'email' && email && styles.inputFilled,
               !isDesktopLayout && styles.inputStacked,
             ]}
@@ -112,7 +109,6 @@ export default function LoginScreen() {
           <TextInput
             style={[
               styles.input,
-              focusedField === 'password' && styles.inputFocused,
               !isDesktopLayout && styles.inputStacked,
             ]}
             value={password}
@@ -122,12 +118,6 @@ export default function LoginScreen() {
             onSubmitEditing={handleLogin}
             placeholderTextColor={colors.textPlaceholder}
             enableFocusRing={false}
-            onFocus={() => setFocusedField('password')}
-            onBlur={() =>
-              setFocusedField(current =>
-                current === 'password' ? null : current,
-              )
-            }
           />
         </View>
       </View>
@@ -301,9 +291,6 @@ const styles = StyleSheet.create({
   inputFilled: {
     paddingTop: 12,
     lineHeight: 18,
-  },
-  inputFocused: {
-    borderColor: colors.link,
   },
   inputStacked: {
     width: '100%',

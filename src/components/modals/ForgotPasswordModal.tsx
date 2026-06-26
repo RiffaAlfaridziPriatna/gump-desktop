@@ -127,11 +127,7 @@ export function ForgotPasswordModal({
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <View style={styles.inputGroup}>
-          <View
-            style={[
-              styles.inputShell,
-              isEmailFocused && styles.inputShellFocused,
-            ]}>
+          <View style={styles.inputShell}>
             <TextInput
               ref={inputRef}
               style={[
@@ -224,9 +220,6 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     paddingRight: 72,
     justifyContent: 'center',
-  },
-  inputShellFocused: {
-    borderColor: colors.link,
   },
   emailInput: {
     height: 42,
