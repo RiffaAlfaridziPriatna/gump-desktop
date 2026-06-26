@@ -11,6 +11,7 @@ import {
   getEyeStatusMeta,
   getFocusStatusMeta,
 } from '@lib/culling/faceStatus';
+import {isScrollAwareTooltipLocked, useScrollAwareTooltipStore} from '@lib/scrollAwareTooltip';
 import {loadImageDimensions} from '@lib/imageDimensions';
 import {colors} from '@lib/colors';
 import {APIResponse} from '@services/api';
@@ -42,10 +43,15 @@ function FaceStatusOverlay({
   onTooltipAnchorChange,
 }: FaceOverlayProps) {
   const overlayRef = useRef<View>(null);
+  const scrollAwareTooltipStore = useScrollAwareTooltipStore();
   const eyeMeta = getEyeStatusMeta(face.eyeStatus);
   const focusMeta = getFocusStatusMeta(face.focusLevel);
 
   const showTooltip = useCallback(() => {
+    if (isScrollAwareTooltipLocked(scrollAwareTooltipStore)) {
+      return;
+    }
+
     overlayRef.current?.measureInWindow((x, y, measuredWidth, measuredHeight) => {
       onTooltipAnchorChange?.({
         centerX: x + measuredWidth / 2,
@@ -55,11 +61,15 @@ function FaceStatusOverlay({
         backgroundColor: `${colors.textDark}E5`,
       });
     });
-  }, [eyeMeta, focusMeta, onTooltipAnchorChange]);
+  }, [eyeMeta, focusMeta, onTooltipAnchorChange, scrollAwareTooltipStore]);
 
   const hideTooltip = useCallback(() => {
+    if (isScrollAwareTooltipLocked(scrollAwareTooltipStore)) {
+      return;
+    }
+
     onTooltipAnchorChange?.(null);
-  }, [onTooltipAnchorChange]);
+  }, [onTooltipAnchorChange, scrollAwareTooltipStore]);
 
   const tooltipEnabled = mode === 'attached';
 

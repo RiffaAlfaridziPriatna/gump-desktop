@@ -140,6 +140,10 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     [syncScreenOrigin],
   );
 
+  const dismissKeyFaceTooltip = useCallback(() => {
+    handleKeyFaceTooltipChange(null);
+  }, [handleKeyFaceTooltipChange]);
+
   const photoMap = useMemo(() => {
     const map = new Map<string, APIResponse.CullingPhoto>();
     for (const photo of analyzedPhotos) {
@@ -433,6 +437,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
         onToggleSelection={toggleSelection}
         onDeletePress={handleDeletePhotoPress}
         onStarPress={updateStarRating}
+        onScrollInteractionStart={dismissKeyFaceTooltip}
       />
     );
 

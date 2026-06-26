@@ -44,6 +44,7 @@ type CulledAlbumPhotoGridProps = {
   onToggleSelection: CulledAlbumPhotoCardProps['onToggleSelection'];
   onDeletePress: CulledAlbumPhotoCardProps['onDeletePress'];
   onStarPress: CulledAlbumPhotoCardProps['onStarPress'];
+  onScrollInteractionStart?: () => void;
 };
 
 const SCROLL_END_DELAY_MS = 150;
@@ -62,9 +63,13 @@ export function CulledAlbumPhotoGrid({
   onToggleSelection,
   onDeletePress,
   onStarPress,
+  onScrollInteractionStart,
 }: CulledAlbumPhotoGridProps) {
   const hoverStoreRef = useRef(createCulledAlbumPhotoHoverStore());
   const scrollEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isScrollActiveRef = useRef(false);
+  const onScrollInteractionStartRef = useRef(onScrollInteractionStart);
+  onScrollInteractionStartRef.current = onScrollInteractionStart;
 
   const thumbnailUriKey = useMemo(
     () => photos.map(photo => photo.file.uri).join('\0'),
@@ -101,21 +106,30 @@ export function CulledAlbumPhotoGrid({
     clearScrollEndTimer();
     scrollEndTimerRef.current = setTimeout(() => {
       hoverStoreRef.current.setScrolling(false);
+      isScrollActiveRef.current = false;
       scrollEndTimerRef.current = null;
     }, SCROLL_END_DELAY_MS);
   }, [clearScrollEndTimer]);
 
-  const handleScrollBegin = useCallback(() => {
+  const beginScrollInteraction = useCallback(() => {
+    if (!isScrollActiveRef.current) {
+      isScrollActiveRef.current = true;
+      onScrollInteractionStartRef.current?.();
+    }
     hoverStoreRef.current.setScrolling(true);
+  }, []);
+
+  const handleScrollBegin = useCallback(() => {
+    beginScrollInteraction();
     clearScrollEndTimer();
-  }, [clearScrollEndTimer]);
+  }, [beginScrollInteraction, clearScrollEndTimer]);
 
   const handleScroll = useCallback(
     (_event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      hoverStoreRef.current.setScrolling(true);
+      beginScrollInteraction();
       scheduleScrollEnd();
     },
-    [scheduleScrollEnd],
+    [beginScrollInteraction, scheduleScrollEnd],
   );
 
   const handleScrollEnd = useCallback(() => {

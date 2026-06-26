@@ -7,9 +7,14 @@ import {SelectionFilter} from '@lib/culling/culledAlbumPhotoFilters';
 import {CullFilterKey} from '@lib/culling/cullingUtil';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
+import {
+  ScrollAwareTooltipContext,
+  createScrollAwareTooltipStore,
+  useScrollAwareTooltipHandlers,
+} from '@lib/scrollAwareTooltip';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
-import {memo, useCallback} from 'react';
+import {memo, useCallback, useRef} from 'react';
 import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 
@@ -58,6 +63,12 @@ function CulledAlbumDetailSidebarComponent({
   filesByPhotoId,
   onKeyFaceTooltipChange,
 }: CulledAlbumDetailSidebarProps) {
+  const scrollStoreRef = useRef(createScrollAwareTooltipStore());
+  const keyFaceScrollHandlers = useScrollAwareTooltipHandlers(
+    scrollStoreRef.current,
+    () => onKeyFaceTooltipChange(null),
+  );
+
   const handleSelectionFilterPress = useCallback(() => {
     onSelectionFilterChange(selectionFilter === 'selected' ? null : 'selected');
   }, [onSelectionFilterChange, selectionFilter]);
@@ -108,35 +119,38 @@ function CulledAlbumDetailSidebarComponent({
         fill={!isMobileLayout}
         minContentHeight={isMobileLayout ? 120 : 200}
         style={styles.keyFacesAccordion}>
-        <ScrollView
-          horizontal={isMobileLayout}
-          style={styles.keyFaceScroll}
-          contentContainerStyle={[
-            styles.keyFaceGrid,
-            isMobileLayout && styles.keyFaceGridMobile,
-          ]}
-          showsVerticalScrollIndicator={!isMobileLayout}
-          showsHorizontalScrollIndicator={isMobileLayout}>
-          {keyFaces.map(face => {
-            const source = resolveKeyFaceSource(
-              face,
-              analyzedPhotoList,
-              filesByPhotoId,
-            );
+        <ScrollAwareTooltipContext.Provider value={scrollStoreRef.current}>
+          <ScrollView
+            {...keyFaceScrollHandlers}
+            horizontal={isMobileLayout}
+            style={styles.keyFaceScroll}
+            contentContainerStyle={[
+              styles.keyFaceGrid,
+              isMobileLayout && styles.keyFaceGridMobile,
+            ]}
+            showsVerticalScrollIndicator={!isMobileLayout}
+            showsHorizontalScrollIndicator={isMobileLayout}>
+            {keyFaces.map(face => {
+              const source = resolveKeyFaceSource(
+                face,
+                analyzedPhotoList,
+                filesByPhotoId,
+              );
 
-            return (
-              <KeyFaceSidebarItem
-                key={face.faceId}
-                uri={source?.uri}
-                boundingBox={source?.boundingBox}
-                eyeStatus={face.eyeStatus}
-                focusLevel={face.focusLevel}
-                width={64}
-                onTooltipAnchorChange={onKeyFaceTooltipChange}
-              />
-            );
-          })}
-        </ScrollView>
+              return (
+                <KeyFaceSidebarItem
+                  key={face.faceId}
+                  uri={source?.uri}
+                  boundingBox={source?.boundingBox}
+                  eyeStatus={face.eyeStatus}
+                  focusLevel={face.focusLevel}
+                  width={64}
+                  onTooltipAnchorChange={onKeyFaceTooltipChange}
+                />
+              );
+            })}
+          </ScrollView>
+        </ScrollAwareTooltipContext.Provider>
       </Accordion>
     </View>
   );

@@ -6,6 +6,11 @@ import {cullingEngine} from '@lib/culling/cullingEngine';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
+import {
+  ScrollAwareTooltipContext,
+  createScrollAwareTooltipStore,
+  useScrollAwareTooltipHandlers,
+} from '@lib/scrollAwareTooltip';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
@@ -72,6 +77,12 @@ export default function CulledAlbumPhotoDetailScreen({
       }
     },
     [syncScreenOrigin],
+  );
+
+  const scrollStoreRef = useRef(createScrollAwareTooltipStore());
+  const keyFaceScrollHandlers = useScrollAwareTooltipHandlers(
+    scrollStoreRef.current,
+    () => handleTooltipChange(null),
   );
 
   const faces = analysis?.faces ?? [];
@@ -199,61 +210,63 @@ export default function CulledAlbumPhotoDetailScreen({
           </Pressable>
         </View>
 
-        <View
-          style={[
-            styles.content,
-            {paddingHorizontal: screenPaddingHorizontal},
-            isMobileLayout && styles.contentMobile,
-          ]}>
+        <ScrollAwareTooltipContext.Provider value={scrollStoreRef.current}>
           <View
             style={[
-              styles.mainColumn,
-              isMobileLayout && styles.mainColumnMobile,
+              styles.content,
+              {paddingHorizontal: screenPaddingHorizontal},
+              isMobileLayout && styles.contentMobile,
             ]}>
-            <PhotoDetailImageViewer
-              uri={uri}
-              faces={faces}
-              zoomFaceIndex={zoomFaceIndex}
-              onTooltipAnchorChange={handleTooltipChange}
-            />
-          </View>
+            <View
+              style={[
+                styles.mainColumn,
+                isMobileLayout && styles.mainColumnMobile,
+              ]}>
+              <PhotoDetailImageViewer
+                uri={uri}
+                faces={faces}
+                zoomFaceIndex={zoomFaceIndex}
+                onTooltipAnchorChange={handleTooltipChange}
+              />
+            </View>
 
-          <View
-            style={[
-              styles.sidebar,
-              isMobileLayout && styles.sidebarMobile,
-            ]}>
-            <Text style={styles.sidebarTitle}>Key Faces ({faces.length})</Text>
-            <ScrollView
-              horizontal={isMobileLayout}
-              style={styles.keyFaceScroll}
-              contentContainerStyle={[
-                styles.keyFaceGrid,
-                isMobileLayout && styles.keyFaceGridMobile,
-              ]}
-              showsVerticalScrollIndicator={!isMobileLayout}
-              showsHorizontalScrollIndicator={isMobileLayout}
-            >
-              {faces.map((face, index) => (
-                <KeyFaceSidebarItem
-                  key={index}
-                  uri={uri}
-                  boundingBox={face.boundingBox}
-                  eyeStatus={face.eyeStatus}
-                  focusLevel={face.focusLevel}
-                  width={64}
-                  selected={zoomFaceIndex === index}
-                  onPress={() =>
-                    setZoomFaceIndex(current =>
-                      current === index ? null : index,
-                    )
-                  }
-                  onTooltipAnchorChange={handleTooltipChange}
-                />
-              ))}
-            </ScrollView>
+            <View
+              style={[
+                styles.sidebar,
+                isMobileLayout && styles.sidebarMobile,
+              ]}>
+              <Text style={styles.sidebarTitle}>Key Faces ({faces.length})</Text>
+              <ScrollView
+                {...keyFaceScrollHandlers}
+                horizontal={isMobileLayout}
+                style={styles.keyFaceScroll}
+                contentContainerStyle={[
+                  styles.keyFaceGrid,
+                  isMobileLayout && styles.keyFaceGridMobile,
+                ]}
+                showsVerticalScrollIndicator={!isMobileLayout}
+                showsHorizontalScrollIndicator={isMobileLayout}>
+                {faces.map((face, index) => (
+                  <KeyFaceSidebarItem
+                    key={index}
+                    uri={uri}
+                    boundingBox={face.boundingBox}
+                    eyeStatus={face.eyeStatus}
+                    focusLevel={face.focusLevel}
+                    width={64}
+                    selected={zoomFaceIndex === index}
+                    onPress={() =>
+                      setZoomFaceIndex(current =>
+                        current === index ? null : index,
+                      )
+                    }
+                    onTooltipAnchorChange={handleTooltipChange}
+                  />
+                ))}
+              </ScrollView>
+            </View>
           </View>
-        </View>
+        </ScrollAwareTooltipContext.Provider>
 
         {tooltip && (
           <View

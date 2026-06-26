@@ -7,6 +7,7 @@ import {
   getEyeStatusMeta,
   getFocusStatusMeta,
 } from '@lib/culling/faceStatus';
+import {isScrollAwareTooltipLocked, useScrollAwareTooltipStore} from '@lib/scrollAwareTooltip';
 import { colors } from '@lib/colors';
 import { APIResponse } from '@services/api';
 import { useCallback, useRef, useState } from 'react';
@@ -38,6 +39,7 @@ export function KeyFaceSidebarItem({
     FrostedBackdrop | undefined
   >();
   const avatarRef = useRef<View>(null);
+  const scrollAwareTooltipStore = useScrollAwareTooltipStore();
   const eyeMeta = getEyeStatusMeta(eyeStatus);
   const focusMeta = getFocusStatusMeta(focusLevel);
 
@@ -61,6 +63,10 @@ export function KeyFaceSidebarItem({
   }, [uri]);
 
   const handleHoverIn = useCallback(() => {
+    if (isScrollAwareTooltipLocked(scrollAwareTooltipStore)) {
+      return;
+    }
+
     avatarRef.current?.measureInWindow(
       (x, y, measuredWidth, measuredHeight) => {
         onTooltipAnchorChange?.({
@@ -71,11 +77,15 @@ export function KeyFaceSidebarItem({
         });
       },
     );
-  }, [eyeMeta, focusMeta, onTooltipAnchorChange]);
+  }, [eyeMeta, focusMeta, onTooltipAnchorChange, scrollAwareTooltipStore]);
 
   const handleHoverOut = useCallback(() => {
+    if (isScrollAwareTooltipLocked(scrollAwareTooltipStore)) {
+      return;
+    }
+
     onTooltipAnchorChange?.(null);
-  }, [onTooltipAnchorChange]);
+  }, [onTooltipAnchorChange, scrollAwareTooltipStore]);
 
   return (
     <Pressable
