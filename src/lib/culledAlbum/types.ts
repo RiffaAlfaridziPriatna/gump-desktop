@@ -1,3 +1,4 @@
+import {derivePhotoFlags} from '@lib/culling/cullingUtil';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 
@@ -244,12 +245,12 @@ export function normalizePersistedPhoto(
     photo.serverUploadStatus = 'pending';
     photo.serverUploadProgress = 0;
   }
-  if (
-    photo.analysisStatus === 'analyzed' &&
-    !photo.aiSelected &&
-    photo.starRating === 5
-  ) {
-    photo.aiSelected = true;
+  if (photo.analysisStatus === 'analyzed') {
+    const flags = derivePhotoFlags(photo.faces);
+    photo.aiSelected = flags.aiSelected;
+    photo.maybe = flags.maybe;
+    photo.blurred = flags.blurred;
+    photo.closedEyes = flags.closedEyes;
   }
   return photo;
 }

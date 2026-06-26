@@ -29,14 +29,28 @@ export function classifyFocus(
   return 'blurred';
 }
 
+export type CullFilterKey =
+  | 'aiSelected'
+  | 'maybe'
+  | 'blurred'
+  | 'closedEyes'
+  | 'duplicated';
+
+export function matchesCullFilterKey(
+  photo: CullingPhoto,
+  key: CullFilterKey,
+): boolean {
+  return photo[key];
+}
+
 export function derivePhotoFlags(faces: CullingFace[]) {
   if (!faces.length) {
     return {
-      aiSelected: true,
+      aiSelected: false,
       maybe: false,
       blurred: false,
       closedEyes: false,
-      selected: true,
+      selected: false,
     };
   }
 

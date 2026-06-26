@@ -189,21 +189,16 @@ export const cullingEngine = {
     const isFirstAnalysis = existing.faces.length === 0;
     const initialStarRating =
       existing.starRating ?? deriveStarRating(faces);
-    const aiSelected = isFirstAnalysis
-      ? initialStarRating === 5
-      : existing.aiSelected;
 
     updatePhoto(albumId, photoId, photo => {
       photo.faces = faces;
-      photo.aiSelected = aiSelected;
+      photo.aiSelected = flags.aiSelected;
       photo.maybe = flags.maybe;
       photo.blurred = flags.blurred;
       photo.closedEyes = flags.closedEyes;
       photo.duplicated = existing.duplicated ?? false;
       photo.starRating = initialStarRating;
-      photo.selected = isFirstAnalysis
-        ? initialStarRating === 5
-        : existing.selected;
+      photo.selected = isFirstAnalysis ? flags.selected : existing.selected;
     });
 
     await persistAlbum(albumId);
