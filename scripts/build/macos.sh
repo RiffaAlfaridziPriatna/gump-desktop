@@ -10,7 +10,7 @@ VARIANT="${1:-app}"
 MACOS_WORKSPACE="${ROOT_DIR}/macos/GumpDesktop.xcworkspace"
 MACOS_SCHEME="GumpDesktop-macOS"
 DERIVED_DATA_PATH="${BUILD_DIR}/macos"
-APP_PATH="${DERIVED_DATA_PATH}/Build/Products/Release/GumpDesktop.app"
+APP_PATH="${DERIVED_DATA_PATH}/Build/Products/Release/GUMP - Cull Your Photos.app"
 
 require_command xcodebuild
 

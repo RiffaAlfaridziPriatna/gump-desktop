@@ -60,7 +60,7 @@ static void RegisterCustomFonts(void)
   }
 
   [window setMinSize:NSMakeSize(900, 600)];
-  [window setTitle:@"Gump"];
+  [window setTitle:@"GUMP - Cull Your Photos"];
   [window setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
 
   NSRect frame = [window frame];
