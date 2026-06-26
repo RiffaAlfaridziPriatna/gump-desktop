@@ -10,6 +10,7 @@
 
 PATCH_MARKER = 'GUMP_SECURE_TEXT_FIELD_PATCH_V3'
 FOCUS_RING_PATCH_MARKER = 'GUMP_SECURE_TEXT_FIELD_FOCUS_RING_PATCH'
+CURSOR_COLOR_PATCH_MARKER = 'GUMP_TEXT_FIELD_CURSOR_COLOR_PATCH'
 
 def rn_macos_root
   File.expand_path('../../node_modules/react-native-macos', __dir__)
@@ -24,6 +25,56 @@ end
 def write_patch(path, contents)
   File.write(path, contents)
   puts "[macos] Patched #{path} (#{PATCH_MARKER})"
+end
+
+def apply_text_field_cursor_color_patch!(text_field_impl_path)
+  contents = read_file(text_field_impl_path)
+  return false if contents.nil?
+
+  if contents.include?(CURSOR_COLOR_PATCH_MARKER)
+    puts '[macos] RCTUITextField.mm already patched for text field cursor color'
+    return false
+  end
+
+  patched = contents.sub(
+    "- (void)setCursorColor:(NSColor *)cursorColor\n{\n    RCTUI_TEXT_FIELD_CELL(self.cell).insertionPointColor = cursorColor;\n}",
+    <<~PATCH.chomp
+      - (void)setCursorColor:(NSColor *)cursorColor
+      {
+          RCTUI_TEXT_FIELD_CELL(self.cell).insertionPointColor = cursorColor;
+          // [#{CURSOR_COLOR_PATCH_MARKER}] Keep the active field editor in sync for light surfaces.
+          NSText *editor = self.currentEditor;
+          if ([editor isKindOfClass:[NSTextView class]]) {
+            ((NSTextView *)editor).insertionPointColor = cursorColor;
+          }
+      }
+    PATCH
+  )
+
+  patched = patched.sub(
+    "      [delegate textFieldBeginEditing:self];\n    }\n\n    NSScrollView *scrollView = [self enclosingScrollView];",
+    <<~PATCH.chomp
+          [delegate textFieldBeginEditing:self];
+        }
+
+        // [#{CURSOR_COLOR_PATCH_MARKER}] Re-apply configured caret color after focus.
+        RCTUIColor *insertionPointColor = RCTUI_TEXT_FIELD_CELL(self.cell).insertionPointColor;
+        NSText *editor = self.currentEditor;
+        if (insertionPointColor != nil && [editor isKindOfClass:[NSTextView class]]) {
+          ((NSTextView *)editor).insertionPointColor = insertionPointColor;
+        }
+
+        NSScrollView *scrollView = [self enclosingScrollView];
+    PATCH
+  )
+
+  if patched == contents
+    warn '[macos] RCTUITextField.mm did not match expected cursor color patch targets'
+    exit 1
+  end
+
+  write_patch(text_field_impl_path, patched)
+  true
 end
 
 def cell_cast_macro
@@ -316,6 +367,10 @@ else
   end
 
   write_patch(text_field_impl, patched)
+  changed = true
+end
+
+if apply_text_field_cursor_color_patch!(text_field_impl)
   changed = true
 end
 

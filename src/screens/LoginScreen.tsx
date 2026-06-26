@@ -1,3 +1,4 @@
+import {ForgotPasswordModal} from '@components/modals/ForgotPasswordModal';
 import { useAuthActions } from '@context/auth';
 import { colors } from '@lib/colors';
 import { fonts } from '@lib/typography';
@@ -25,6 +26,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(
     null,
   );
@@ -131,7 +133,9 @@ export default function LoginScreen() {
       </View>
 
       <View style={styles.buttonContainer}>
-        <Pressable onPress={() => {}} hitSlop={8}>
+        <Pressable
+          onPress={() => setShowForgotPasswordModal(true)}
+          hitSlop={8}>
           <Text style={styles.forgotPassword}>Forgot Your Password?</Text>
         </Pressable>
 
@@ -157,50 +161,64 @@ export default function LoginScreen() {
     </View>
   );
 
+  const forgotPasswordModal = (
+    <ForgotPasswordModal
+      visible={showForgotPasswordModal}
+      onClose={() => setShowForgotPasswordModal(false)}
+      initialEmail={email}
+    />
+  );
+
   if (isDesktopLayout) {
     return (
-      <View style={styles.container}>
-        <View style={styles.leftHalf}>
-          <View style={styles.artFrame}>
-            <LoginSignupArt
-              width="100%"
-              height="100%"
-              preserveAspectRatio="xMinYMax meet"
-            />
+      <>
+        <View style={styles.container}>
+          <View style={styles.leftHalf}>
+            <View style={styles.artFrame}>
+              <LoginSignupArt
+                width="100%"
+                height="100%"
+                preserveAspectRatio="xMinYMax meet"
+              />
+            </View>
           </View>
-        </View>
 
-        <View style={styles.rightHalf}>
-          <View style={styles.formPanel}>
-            <GumpLogo width={115} height={40} />
-            {formFields}
-            <View />
+          <View style={styles.rightHalf}>
+            <View style={styles.formPanel}>
+              <GumpLogo width={115} height={40} />
+              {formFields}
+              <View />
+            </View>
           </View>
         </View>
-      </View>
+        {forgotPasswordModal}
+      </>
     );
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.stackedScrollContent}
-      keyboardShouldPersistTaps="handled"
-    >
-      <View style={styles.logoHeaderStacked}>
-        <GumpLogo width={115} height={40} />
-      </View>
+    <>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.stackedScrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.logoHeaderStacked}>
+          <GumpLogo width={115} height={40} />
+        </View>
 
-      <View style={styles.artFrameStacked}>
-        <LoginSignupArt
-          width="100%"
-          height="100%"
-          preserveAspectRatio="xMidYMid meet"
-        />
-      </View>
+        <View style={styles.artFrameStacked}>
+          <LoginSignupArt
+            width="100%"
+            height="100%"
+            preserveAspectRatio="xMidYMid meet"
+          />
+        </View>
 
-      <View style={styles.formColumnStacked}>{formFields}</View>
-    </ScrollView>
+        <View style={styles.formColumnStacked}>{formFields}</View>
+      </ScrollView>
+      {forgotPasswordModal}
+    </>
   );
 }
 
