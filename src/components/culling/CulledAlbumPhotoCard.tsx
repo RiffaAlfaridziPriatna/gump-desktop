@@ -1,8 +1,13 @@
 import {CulledAlbumPhotoThumbnail} from '@components/culling/CulledAlbumPhotoThumbnail';
 import {Pressable} from '@components/ui';
 import {useDoublePress} from '@hooks/useDoublePress';
+import {
+  useCulledAlbumPhotoHovered,
+  useCulledAlbumPhotoHoverStore,
+} from '@lib/culledAlbumPhotoHover';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
+import {ImageDimensions} from '@lib/imageDimensions';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 import {memo, useCallback} from 'react';
@@ -20,10 +25,9 @@ export type CulledAlbumPhotoCardProps = {
   cardWidth: number;
   canDeletePhoto: boolean;
   disabled: boolean;
-  isHovered: boolean;
   isMobileLayout: boolean;
-  onHoverIn: (photoId: string) => void;
-  onHoverOut: (photoId: string) => void;
+  imageSize?: ImageDimensions;
+  usePreloadedDimensions?: boolean;
   onOpenDetail: (photoId: string) => void;
   onToggleSelection: (photoId: string, selected: boolean) => void;
   onDeletePress: (photoId: string, fileName: string) => void;
@@ -41,15 +45,16 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
   cardWidth,
   canDeletePhoto,
   disabled,
-  isHovered,
   isMobileLayout,
-  onHoverIn,
-  onHoverOut,
+  imageSize,
+  usePreloadedDimensions = false,
   onOpenDetail,
   onToggleSelection,
   onDeletePress,
   onStarPress,
 }: CulledAlbumPhotoCardProps) {
+  const hoverStore = useCulledAlbumPhotoHoverStore();
+  const isHovered = useCulledAlbumPhotoHovered(photoId);
   const isSelected = analysis?.selected ?? false;
   const showDeleteButton = canDeletePhoto && (isMobileLayout || isHovered);
 
@@ -68,18 +73,27 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
     handleOpenDetail,
   );
 
+  const handleHoverIn = useCallback(() => {
+    hoverStore.hoverIn(photoId);
+  }, [hoverStore, photoId]);
+
+  const handleHoverOut = useCallback(() => {
+    hoverStore.hoverOut(photoId);
+  }, [hoverStore, photoId]);
+
   return (
     <Pressable
       style={[styles.photoCard, {width: cardWidth}]}
-      onHoverIn={
-        isMobileLayout ? undefined : () => onHoverIn(photoId)
-      }
-      onHoverOut={
-        isMobileLayout ? undefined : () => onHoverOut(photoId)
-      }
+      onHoverIn={isMobileLayout ? undefined : handleHoverIn}
+      onHoverOut={isMobileLayout ? undefined : handleHoverOut}
       onPress={isMobileLayout ? handleOpenDetail : handlePhotoPress}>
       <View style={styles.thumbnailWrapper}>
-        <CulledAlbumPhotoThumbnail uri={file.uri} width={cardWidth} />
+        <CulledAlbumPhotoThumbnail
+          uri={file.uri}
+          width={cardWidth}
+          imageSize={imageSize}
+          usePreloadedDimensions={usePreloadedDimensions}
+        />
         {showDeleteButton && (
           <Pressable
             style={styles.deletePhotoButton}

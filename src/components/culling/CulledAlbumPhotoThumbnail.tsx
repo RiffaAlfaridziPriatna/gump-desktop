@@ -1,6 +1,7 @@
 import {
   CULLED_ALBUM_THUMBNAIL_ASPECT_RATIO,
   getCulledAlbumThumbnailLayout,
+  ImageDimensions,
   loadImageDimensions,
 } from '@lib/imageDimensions';
 import {colors} from '@lib/colors';
@@ -10,37 +11,47 @@ import {Image, StyleSheet, View} from 'react-native';
 type CulledAlbumPhotoThumbnailProps = {
   uri: string;
   width: number;
+  imageSize?: ImageDimensions;
+  usePreloadedDimensions?: boolean;
 };
 
 export const CulledAlbumPhotoThumbnail = React.memo(
   function CulledAlbumPhotoThumbnail({
     uri,
     width,
+    imageSize,
+    usePreloadedDimensions = false,
   }: CulledAlbumPhotoThumbnailProps) {
-    const [imageSize, setImageSize] = useState<{
-      width: number;
-      height: number;
-    } | null>(null);
+    const [loadedImageSize, setLoadedImageSize] =
+      useState<ImageDimensions | null>(null);
 
     useEffect(() => {
+      if (usePreloadedDimensions) {
+        return;
+      }
+
       let cancelled = false;
-      setImageSize(null);
+      setLoadedImageSize(null);
 
       loadImageDimensions(uri).then(dimensions => {
         if (!cancelled && dimensions) {
-          setImageSize(dimensions);
+          setLoadedImageSize(dimensions);
         }
       });
 
       return () => {
         cancelled = true;
       };
-    }, [uri]);
+    }, [uri, usePreloadedDimensions]);
+
+    const resolvedImageSize = usePreloadedDimensions
+      ? imageSize ?? null
+      : loadedImageSize;
 
     const imageLayout = useMemo(() => {
       const containerHeight = width / CULLED_ALBUM_THUMBNAIL_ASPECT_RATIO;
 
-      if (!imageSize) {
+      if (!resolvedImageSize) {
         return {
           width,
           height: containerHeight,
@@ -51,10 +62,10 @@ export const CulledAlbumPhotoThumbnail = React.memo(
 
       return getCulledAlbumThumbnailLayout(
         width,
-        imageSize.width,
-        imageSize.height,
+        resolvedImageSize.width,
+        resolvedImageSize.height,
       );
-    }, [imageSize, width]);
+    }, [resolvedImageSize, width]);
 
     if (width <= 0) {
       return null;

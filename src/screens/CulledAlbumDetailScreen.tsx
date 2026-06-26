@@ -1,25 +1,25 @@
 import { CulledAlbumFilterBar } from '@components/culling/CulledAlbumFilterBar';
-import { CulledAlbumPhotoGrid } from '@components/culling/CulledAlbumPhotoGrid';
+import { CulledAlbumDetailSidebar } from '@components/culling/CulledAlbumDetailSidebar';
+import { CulledAlbumPhotoGrid, CulledAlbumGridPhoto } from '@components/culling/CulledAlbumPhotoGrid';
 import { DeletePhotoModal } from '@components/modals/DeletePhotoModal';
 import { UploadSelectedConfirmModal } from '@components/modals/UploadSelectedConfirmModal';
 import { UploadToast } from '@components/upload/UploadToast';
 import {FaceStatusTooltip, type KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
-import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
-import { Accordion } from '@components/ui/Accordion';
 import {
   useCulledAlbumActions,
   useCulledAlbumPhotosState,
   useCulledAlbumStore,
 } from '@context/culledAlbum';
 import { useCulledAlbumPhotos } from '@hooks/useCulledAlbumPhotos';
-import { resolveKeyFaceSource } from '@lib/cullingFaceCrop';
 import {
   matchesCulledAlbumGridFilters,
   SelectionFilter,
   StarRatingFilter,
 } from '@lib/culling/culledAlbumPhotoFilters';
 import { cullingEngine } from '@lib/culling/cullingEngine';
+import { CullFilterKey, matchesCullFilterKey } from '@lib/culling/cullingUtil';
 import { getCulledAlbumGridLayout } from '@lib/culledAlbumGridLayout';
+import { stabilizeGridPhotos } from '@lib/stableCulledAlbumGridPhotos';
 import { toCullingPhoto, isCulledPhotoDisabled } from '@lib/culledAlbum/types';
 import { colors } from '@lib/colors';
 import { fonts } from '@lib/typography';
@@ -30,35 +30,27 @@ import { useLayout } from '@hooks/useLayout';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import IconCheckCircle from '../assets/images/icon_check_circle.svg';
-import IconCheckCircleOutlined from '../assets/images/icon_check_circle_outlined.svg';
 import IconChevronLeft from '../assets/images/icon_chevron_left.svg';
 import IconNoPhoto from '../assets/images/icon_no_photo.svg';
 import GumpLogo from '../assets/images/logo.svg';
-import { Checkbox, Pressable, TouchableOpacity } from '@components/ui';
+import { TouchableOpacity } from '@components/ui';
 
 type Props = StackScreenProps<MainStackParamList, 'CulledAlbumDetail'>;
 
-type FilterKey =
-  | 'aiSelected'
-  | 'maybe'
-  | 'blurred'
-  | 'closedEyes'
-  | 'duplicated';
+type FilterKey = CullFilterKey;
 
-const FILTER_LABELS: Record<FilterKey, string> = {
-  aiSelected: 'AI Selected',
-  maybe: 'Maybe',
-  blurred: 'Blurred',
-  closedEyes: 'Closed Eyes',
-  duplicated: 'Duplicated',
-};
+const FILTER_KEYS = Object.keys({
+  aiSelected: true,
+  maybe: true,
+  blurred: true,
+  closedEyes: true,
+  duplicated: true,
+}) as FilterKey[];
 
 export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
   const { albumId } = route.params;
@@ -106,7 +98,6 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     [],
   );
 
-  const [hoveredPhotoId, setHoveredPhotoId] = useState<string | null>(null);
   const [photoToDelete, setPhotoToDelete] = useState<{
     photoId: string;
     fileName: string;
@@ -130,6 +121,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
   const { cardWidth, columnCount, gap, itemHeight, rowHeight } = gridLayout;
 
   const screenRootRef = useRef<View>(null);
+  const gridPhotosCacheRef = useRef(new Map<string, CulledAlbumGridPhoto>());
 
   const syncScreenOrigin = useCallback(() => {
     screenRootRef.current?.measureInWindow((x, y) => {
@@ -161,7 +153,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     return map;
   }, [albumPhotos, analyzedPhotos]);
 
-  const gridPhotos = useMemo(() => {
+  const rawGridPhotos = useMemo(() => {
     return albumPhotos
       .filter(photo => photo.status === 'uploaded')
       .map(photo => ({
@@ -174,6 +166,11 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
             : photoMap.get(photo.photoId),
       }));
   }, [albumPhotos, cullingHasUploads, photoMap]);
+
+  const gridPhotos = useMemo(
+    () => stabilizeGridPhotos(gridPhotosCacheRef.current, rawGridPhotos),
+    [rawGridPhotos],
+  );
 
   const gridFilters = useMemo(
     () => ({
@@ -203,7 +200,9 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
       if (!analysis) {
         return false;
       }
-      return enabledCullFilters.some(([key]) => analysis[key]);
+      return enabledCullFilters.some(([key]) =>
+        matchesCullFilterKey(analysis, key),
+      );
     });
   }, [
     activeFilters,
@@ -291,14 +290,6 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     [albumId],
   );
 
-  const handlePhotoHoverIn = useCallback((photoId: string) => {
-    setHoveredPhotoId(photoId);
-  }, []);
-
-  const handlePhotoHoverOut = useCallback((photoId: string) => {
-    setHoveredPhotoId(current => (current === photoId ? null : current));
-  }, []);
-
   const handleOpenPhotoDetail = useCallback(
     (photoId: string) => {
       navigation.navigate('CulledAlbumPhotoDetail', { albumId, photoId });
@@ -321,9 +312,6 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     await cullingEngine.deletePhoto(albumId, photoToDelete.photoId);
     setAnalyzedPhotos(current =>
       current.filter(photo => photo.photoId !== photoToDelete.photoId),
-    );
-    setHoveredPhotoId(current =>
-      current === photoToDelete.photoId ? null : current,
     );
     await refreshDetail();
   }
@@ -351,105 +339,66 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     }
   }
 
-  function toggleFilter(key: FilterKey) {
+  const toggleFilter = useCallback((key: FilterKey) => {
     setActiveFilters(current => ({ ...current, [key]: !current[key] }));
-  }
+  }, []);
+
+  const handleCullFiltersToggle = useCallback(() => {
+    setCullFiltersExpanded(current => !current);
+  }, []);
+
+  const handleKeyFacesToggle = useCallback(() => {
+    setKeyFacesExpanded(current => !current);
+  }, []);
 
   const selectedCount =
     stats?.mySelections ??
     gridPhotos.filter(photo => photo.analysis?.selected).length;
 
+  const filterCounts = useMemo(() => {
+    const counts = Object.fromEntries(
+      FILTER_KEYS.map(key => [key, 0]),
+    ) as Record<FilterKey, number>;
+
+    for (const photo of gridPhotos) {
+      if (!photo.analysis) {
+        continue;
+      }
+      for (const key of FILTER_KEYS) {
+        if (matchesCullFilterKey(photo.analysis, key)) {
+          counts[key] += 1;
+        }
+      }
+    }
+
+    for (const key of FILTER_KEYS) {
+      if (stats?.[key] !== undefined) {
+        counts[key] = stats[key] as number;
+      }
+    }
+
+    return counts;
+  }, [gridPhotos, stats]);
+
   const sidebar = (
-    <View style={[styles.sidebar, isMobileLayout && styles.sidebarMobile]}>
-      <Accordion
-        title="Cull Filters"
-        expanded={cullFiltersExpanded}
-        onToggle={() => setCullFiltersExpanded(current => !current)}
-      >
-        <View style={styles.accordionContent}>
-          <View style={styles.totalPhotosBadge}>
-            <Text style={styles.totalPhotosLabel}>Total Photos</Text>
-            <Text style={styles.totalPhotosValue}>
-              {stats?.totalPhotos ?? photos.length}
-            </Text>
-          </View>
-          <Pressable
-            style={[
-              styles.mySelectionsRow,
-              selectionFilter === 'selected' && styles.mySelectionsRowSelected,
-            ]}
-            onPress={() =>
-              setSelectionFilter(current =>
-                current === 'selected' ? null : 'selected',
-              )
-            }
-          >
-            <IconCheckCircle width={20} height={20} color={colors.text} />
-            <Text style={styles.mySelectionsLabel}>My Selections</Text>
-            <Text style={styles.mySelectionsCount}>{selectedCount}</Text>
-          </Pressable>
-          <View style={styles.sidebarDivider} />
-          <View style={styles.filterRowContainer}>
-            {(Object.keys(FILTER_LABELS) as FilterKey[]).map(key => (
-              <Checkbox
-                key={key}
-                checked={activeFilters[key]}
-                onToggle={() => toggleFilter(key)}
-                size={20}
-                style={styles.filterRow}
-                color={activeFilters[key] ? colors.accent : colors.text}
-              >
-                <Text style={styles.filterLabel}>{FILTER_LABELS[key]}</Text>
-                <Text style={styles.filterCount}>
-                  {stats?.[key] ??
-                    gridPhotos.filter(photo => photo.analysis?.[key]).length}
-                </Text>
-              </Checkbox>
-            ))}
-          </View>
-        </View>
-      </Accordion>
-
-      <Accordion
-        title={`Key Faces (${keyFaces.length})`}
-        expanded={keyFacesExpanded}
-        onToggle={() => setKeyFacesExpanded(current => !current)}
-        fill={!isMobileLayout}
-        minContentHeight={isMobileLayout ? 120 : 200}
-        style={styles.keyFacesAccordion}
-      >
-        <ScrollView
-          horizontal={isMobileLayout}
-          style={styles.keyFaceScroll}
-          contentContainerStyle={[
-            styles.keyFaceGrid,
-            isMobileLayout && styles.keyFaceGridMobile,
-          ]}
-          showsVerticalScrollIndicator={!isMobileLayout}
-          showsHorizontalScrollIndicator={isMobileLayout}
-        >
-          {keyFaces.map(face => {
-            const source = resolveKeyFaceSource(
-              face,
-              analyzedPhotoList,
-              filesByPhotoId,
-            );
-
-            return (
-              <KeyFaceSidebarItem
-                key={face.faceId}
-                uri={source?.uri}
-                boundingBox={source?.boundingBox}
-                eyeStatus={face.eyeStatus}
-                focusLevel={face.focusLevel}
-                width={64}
-                onTooltipAnchorChange={handleKeyFaceTooltipChange}
-              />
-            );
-          })}
-        </ScrollView>
-      </Accordion>
-    </View>
+    <CulledAlbumDetailSidebar
+      isMobileLayout={isMobileLayout}
+      totalPhotos={stats?.totalPhotos ?? photos.length}
+      selectedCount={selectedCount}
+      selectionFilter={selectionFilter}
+      onSelectionFilterChange={setSelectionFilter}
+      activeFilters={activeFilters}
+      onToggleFilter={toggleFilter}
+      filterCounts={filterCounts}
+      cullFiltersExpanded={cullFiltersExpanded}
+      onCullFiltersToggle={handleCullFiltersToggle}
+      keyFaces={keyFaces}
+      keyFacesExpanded={keyFacesExpanded}
+      onKeyFacesToggle={handleKeyFacesToggle}
+      analyzedPhotoList={analyzedPhotoList}
+      filesByPhotoId={filesByPhotoId}
+      onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
+    />
   );
 
   const photoGrid =
@@ -476,13 +425,10 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
         rowHeight={rowHeight}
         isMobileLayout={isMobileLayout}
         canDeletePhoto={canDeletePhoto}
-        hoveredPhotoId={hoveredPhotoId}
         contentContainerStyle={[
           styles.grid,
           isMobileLayout && styles.gridMobile,
         ]}
-        onHoverIn={handlePhotoHoverIn}
-        onHoverOut={handlePhotoHoverOut}
         onOpenDetail={handleOpenPhotoDetail}
         onToggleSelection={toggleSelection}
         onDeletePress={handleDeletePhotoPress}
@@ -665,103 +611,6 @@ const styles = StyleSheet.create({
   gridMobile: {
     paddingRight: 0,
     paddingVertical: 12,
-  },
-  sidebar: {
-    width: 246,
-    flexDirection: 'column',
-    gap: 20,
-    minHeight: 0,
-    paddingVertical: 24,
-  },
-  sidebarMobile: {
-    width: '100%',
-    paddingVertical: 12,
-    flex: undefined,
-  },
-  accordionContent: {
-    gap: 16,
-  },
-  totalPhotosBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.cardBackgroundSecondary,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  totalPhotosLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.text,
-  },
-  totalPhotosValue: {
-    fontFamily: fonts.sansBold,
-    fontSize: 14,
-    color: colors.text,
-  },
-  mySelectionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    opacity: 0.2,
-    paddingLeft: 12,
-  },
-  mySelectionsRowSelected: {
-    opacity: 1,
-  },
-  mySelectionsLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.text,
-  },
-  mySelectionsCount: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textMuted,
-  },
-  sidebarDivider: {
-    height: 1,
-    backgroundColor: colors.divider,
-    marginVertical: 4,
-  },
-  filterRowContainer: {
-    paddingLeft: 12,
-    gap: 4,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 4,
-  },
-  filterLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.text,
-  },
-  filterCount: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textMuted,
-  },
-
-  keyFaceScroll: {
-    flex: 1,
-    overflow: 'visible',
-  },
-  keyFaceGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingRight: 20,
-    gap: 16,
-  },
-  keyFaceGridMobile: {
-    flexWrap: 'nowrap',
-    paddingRight: 0,
-  },
-  keyFacesAccordion: {
-    overflow: 'visible',
   },
   keyFaceTooltipHost: {
     position: 'absolute',
