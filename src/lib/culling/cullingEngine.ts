@@ -84,40 +84,10 @@ interface PlatformDetector {
   detectFaces(uri: string, photoId: string): Promise<CullingFace[]>;
 }
 
-class MacOSDetector implements PlatformDetector {
+class NativeDetector implements PlatformDetector {
   async detectFaces(uri: string, photoId: string): Promise<CullingFace[]> {
     if (!NativeLocalStorage?.detectFacesForCulling) {
-      throw new Error('macOS native module not available');
-    }
-    const faces = await NativeLocalStorage.detectFacesForCulling(uri);
-    return faces.map((face, index) => mapNativeFace(face, photoId, index));
-  }
-}
-
-class IOSDetector implements PlatformDetector {
-  async detectFaces(uri: string, photoId: string): Promise<CullingFace[]> {
-    if (!NativeLocalStorage?.detectFacesForCulling) {
-      throw new Error('iOS native module not available');
-    }
-    const faces = await NativeLocalStorage.detectFacesForCulling(uri);
-    return faces.map((face, index) => mapNativeFace(face, photoId, index));
-  }
-}
-
-class AndroidDetector implements PlatformDetector {
-  async detectFaces(uri: string, photoId: string): Promise<CullingFace[]> {
-    if (!NativeLocalStorage?.detectFacesForCulling) {
-      throw new Error('Android native module not available');
-    }
-    const faces = await NativeLocalStorage.detectFacesForCulling(uri);
-    return faces.map((face, index) => mapNativeFace(face, photoId, index));
-  }
-}
-
-class WindowsDetector implements PlatformDetector {
-  async detectFaces(uri: string, photoId: string): Promise<CullingFace[]> {
-    if (!NativeLocalStorage?.detectFacesForCulling) {
-      throw new Error('Windows native module not available');
+      throw new Error('Native module not available');
     }
     const faces = await NativeLocalStorage.detectFacesForCulling(uri);
     return faces.map((face, index) => mapNativeFace(face, photoId, index));
@@ -145,13 +115,10 @@ class FallbackDetector implements PlatformDetector {
 function createPlatformDetector(): PlatformDetector {
   switch (Platform.OS) {
     case 'macos':
-      return new MacOSDetector();
     case 'ios':
-      return new IOSDetector();
     case 'android':
-      return new AndroidDetector();
     case 'windows':
-      return new WindowsDetector();
+      return new NativeDetector();
     default:
       return new FallbackDetector();
   }

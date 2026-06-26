@@ -1,6 +1,5 @@
 import {FileAsset} from '@services/upload/types';
 
-/** Formats allowed in the macOS picker — mirrors web `accept="image/jpeg,image/png,..."` (no WebP). */
 export const SUPPORTED_CULLING_IMAGE_MIME_TYPES = [
   'image/jpeg',
   'image/png',
