@@ -15,6 +15,12 @@ const NativeLocalStorage = NativeModules.GumpLocalStorage as
 
 const dimensionCache = new Map<string, ImageDimensions>();
 
+export function getCachedImageDimensions(
+  uri: string,
+): ImageDimensions | undefined {
+  return dimensionCache.get(uri);
+}
+
 const NATIVE_DIMENSION_PLATFORMS = new Set(['macos', 'ios', 'android', 'windows']);
 
 export async function loadImageDimensions(

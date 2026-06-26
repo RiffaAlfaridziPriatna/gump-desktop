@@ -8,6 +8,7 @@ import {fonts} from '@lib/typography';
 import {Pressable} from '@components/ui';
 import {
   ActivityIndicator,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -27,6 +28,7 @@ type CulledAlbumFilterBarProps = {
   onUploadSelected: () => void;
   uploaded?: boolean;
   uploadDisabled?: boolean;
+  isMobileLayout?: boolean;
 };
 
 function SelectionFilterButton({
@@ -95,6 +97,7 @@ export function CulledAlbumFilterBar({
   onUploadSelected,
   uploaded = false,
   uploadDisabled = false,
+  isMobileLayout = false,
 }: CulledAlbumFilterBarProps) {
   function toggleSelectionFilter(next: Exclude<SelectionFilter, null>) {
     onSelectionFilterChange(selectionFilter === next ? null : next);
@@ -108,35 +111,48 @@ export function CulledAlbumFilterBar({
     }
   }
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.filters}>
-        <View style={styles.selectionButtons}>
-          <SelectionFilterButton
-            variant="selected"
-            active={selectionFilter === 'selected'}
-            onPress={() => toggleSelectionFilter('selected')}
-          />
-          <SelectionFilterButton
-            variant="unselected"
-            active={selectionFilter === 'unselected'}
-            onPress={() => toggleSelectionFilter('unselected')}
-          />
-        </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.starRow}>
-          {STAR_RATINGS.map(rating => (
-            <StarFilterButton
-              key={rating}
-              rating={rating}
-              active={starRatingFilter.includes(rating)}
-              onPress={() => toggleStarRatingFilter(rating)}
-            />
-          ))}
-        </View>
+  const filterControls = (
+    <View style={[styles.filters, isMobileLayout && styles.filtersMobile]}>
+      <View style={styles.selectionButtons}>
+        <SelectionFilterButton
+          variant="selected"
+          active={selectionFilter === 'selected'}
+          onPress={() => toggleSelectionFilter('selected')}
+        />
+        <SelectionFilterButton
+          variant="unselected"
+          active={selectionFilter === 'unselected'}
+          onPress={() => toggleSelectionFilter('unselected')}
+        />
       </View>
+
+      <View style={styles.divider} />
+
+      <View style={styles.starRow}>
+        {STAR_RATINGS.map(rating => (
+          <StarFilterButton
+            key={rating}
+            rating={rating}
+            active={starRatingFilter.includes(rating)}
+            onPress={() => toggleStarRatingFilter(rating)}
+          />
+        ))}
+      </View>
+    </View>
+  );
+
+  return (
+    <View style={[styles.container, isMobileLayout && styles.containerMobile]}>
+      {isMobileLayout ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filtersScrollContent}>
+          {filterControls}
+        </ScrollView>
+      ) : (
+        filterControls
+      )}
 
       <Pressable
         onPress={onUploadSelected}
@@ -174,11 +190,22 @@ const styles = StyleSheet.create({
     gap: 16,
     marginBottom: 16,
   },
+  containerMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 12,
+  },
+  filtersScrollContent: {
+    flexGrow: 1,
+  },
   filters: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
+  },
+  filtersMobile: {
+    flex: undefined,
   },
   selectionButtons: {
     flexDirection: 'row',
