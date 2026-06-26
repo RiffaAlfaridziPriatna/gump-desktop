@@ -4,6 +4,7 @@ import {useAuthState} from '@context/auth';
 import {useCulledAlbumActions} from '@context/culledAlbum';
 import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useSiteAlbumList} from '@hooks/useSiteAlbumList';
+import {useLayout} from '@hooks/useLayout';
 import {filterAvailableSourceAlbums} from '@lib/culledAlbum/selectAlbum';
 import {registerLocalAlbum} from '@lib/culledAlbum/store';
 import {createCulledAlbumFromSelection} from '@lib/culledAlbum/types';
@@ -32,6 +33,11 @@ type Props = StackScreenProps<MainStackParamList, 'SelectAlbum'>;
 
 export default function SelectAlbumScreen({navigation}: Props) {
   const user = useAuthState(state => state.user);
+  const {
+    isMobileLayout,
+    screenPaddingHorizontal,
+    albumGridColumns,
+  } = useLayout();
   const {loadingAlbums, albums, loadMore, hasMore, refresh} = useSiteAlbumList();
   const {localAlbumIds, refresh: refreshLocalAlbums} = useLocalCulledAlbumList();
   const {addPhotos} = useCulledAlbumActions();
@@ -103,7 +109,12 @@ export default function SelectAlbumScreen({navigation}: Props) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          {paddingHorizontal: screenPaddingHorizontal},
+          isMobileLayout && styles.headerMobile,
+        ]}>
         <GumpLogo width={112} height={40} />
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -114,7 +125,12 @@ export default function SelectAlbumScreen({navigation}: Props) {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.titleRow}>
+      <View
+        style={[
+          styles.titleRow,
+          {paddingHorizontal: screenPaddingHorizontal},
+          isMobileLayout && styles.titleRowMobile,
+        ]}>
         <View style={styles.titleColumn}>
           <Text style={styles.title}>Select Your Album</Text>
           <Text style={styles.subtitle}>Showing albums with no photos yet.</Text>
@@ -146,7 +162,10 @@ export default function SelectAlbumScreen({navigation}: Props) {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {paddingHorizontal: screenPaddingHorizontal},
+          ]}
           scrollEnabled={!loadingAlbums}
           refreshControl={
             <RefreshControl
@@ -166,7 +185,7 @@ export default function SelectAlbumScreen({navigation}: Props) {
             }
           }}
           scrollEventThrottle={200}>
-          <AlbumGrid columns={4} gap={12}>
+          <AlbumGrid columns={albumGridColumns} gap={12}>
             {emptyAlbums.map(album => (
               <AlbumCard
                 key={album.id}
@@ -210,17 +229,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 48,
     paddingTop: 40,
     paddingBottom: 24,
+  },
+  headerMobile: {
+    paddingTop: 16,
   },
   titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    paddingHorizontal: 48,
     paddingTop: 20,
     gap: 10,
+  },
+  titleRowMobile: {
+    flexDirection: 'column',
+    paddingTop: 12,
+    gap: 16,
   },
   titleColumn: {
     flex: 1,
@@ -272,7 +297,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 48,
     paddingTop: 24,
     paddingBottom: 32,
     gap: 16,

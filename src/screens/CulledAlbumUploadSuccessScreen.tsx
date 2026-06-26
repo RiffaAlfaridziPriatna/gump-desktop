@@ -9,6 +9,7 @@ import IconClose from '../assets/images/icon_close.svg';
 import GumpLogo from '../assets/images/logo.svg';
 import GumpLogoOnly from '../assets/images/logo_icon_only.svg';
 import { useState } from 'react';
+import { useLayout } from '@hooks/useLayout';
 
 type Props = StackScreenProps<MainStackParamList, 'CulledAlbumUploadSuccess'>;
 
@@ -17,6 +18,7 @@ export default function CulledAlbumUploadSuccessScreen({
   route,
 }: Props) {
   const {albumLink} = route.params;
+  const {screenPaddingHorizontal, isMobileLayout} = useLayout();
   const [headerHeight, setHeaderHeight] = useState(0);
 
   function handleClose() {
@@ -36,7 +38,13 @@ export default function CulledAlbumUploadSuccessScreen({
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header} onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
+      <View
+        style={[
+          styles.header,
+          {paddingHorizontal: screenPaddingHorizontal},
+          isMobileLayout && styles.headerMobile,
+        ]}
+        onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
         <GumpLogo width={112} height={40} />
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -45,7 +53,14 @@ export default function CulledAlbumUploadSuccessScreen({
           <IconClose width={32} height={32} color={colors.text} />
         </TouchableOpacity>
       </View>
-      <View style={[styles.body, {paddingBottom: headerHeight}]}>
+      <View
+        style={[
+          styles.body,
+          {
+            paddingBottom: headerHeight,
+            paddingHorizontal: screenPaddingHorizontal,
+          },
+        ]}>
         <View style={styles.content}>
           <View style={styles.titleIconContainer}>
             <GumpLogoOnly width={48} height={48} />
@@ -76,15 +91,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 48,
     paddingTop: 40,
     paddingBottom: 24,
+  },
+  headerMobile: {
+    paddingTop: 16,
   },
   body: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 48,
   },
   content: {
     width: '100%',

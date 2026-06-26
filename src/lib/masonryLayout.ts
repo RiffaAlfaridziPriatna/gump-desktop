@@ -1,5 +1,6 @@
+import {BREAKPOINTS} from './platform';
+
 export const MASONRY_GAP = 12;
-export const MASONRY_BREAKPOINT = 768;
 export const DEFAULT_ASPECT_HEIGHT_RATIO = 0.7;
 export const DEFAULT_ASPECT_WIDTH = 10;
 export const DEFAULT_ASPECT_HEIGHT = 7;
@@ -11,7 +12,9 @@ export type MasonryLayoutItem = {
 };
 
 export function getColumnCount(containerWidth: number): number {
-  return containerWidth >= MASONRY_BREAKPOINT ? 3 : 2;
+  if (containerWidth < BREAKPOINTS.mobile) return 1;
+  if (containerWidth < BREAKPOINTS.tablet) return 2;
+  return 3;
 }
 
 export function getColumnWidth(

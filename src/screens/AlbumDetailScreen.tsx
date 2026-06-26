@@ -4,6 +4,7 @@ import {
   useCulledAlbumPhotosState,
 } from '@context/culledAlbum';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
+import {useLayout} from '@hooks/useLayout';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
@@ -25,6 +26,7 @@ type Props = StackScreenProps<MainStackParamList, 'AlbumDetail'>;
 
 export default function AlbumDetailScreen({navigation, route}: Props) {
   const {albumId, albumName, ownerName, files} = route.params;
+  const {isMobileLayout, screenPaddingHorizontal} = useLayout();
   const albumPhotos = useCulledAlbumPhotosState(albumId);
   const {addPhotos, startAnalysis} = useCulledAlbumActions();
   const startedRef = useRef(false);
@@ -118,7 +120,12 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          {paddingHorizontal: screenPaddingHorizontal},
+          isMobileLayout && styles.headerMobile,
+        ]}>
         <GumpLogo width={112} height={40} />
         <TouchableOpacity
           style={styles.backButton}
@@ -129,12 +136,21 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.titleRow}>
+      <View
+        style={[
+          styles.titleRow,
+          {paddingHorizontal: screenPaddingHorizontal},
+          isMobileLayout && styles.titleRowMobile,
+        ]}>
         <View style={styles.titleColumn}>
           <Text style={styles.title}>{ownerName}</Text>
           <Text style={styles.subtitle}>{albumName}</Text>
         </View>
-        <View style={styles.actionsColumn}>
+        <View
+          style={[
+            styles.actionsColumn,
+            isMobileLayout && styles.actionsColumnMobile,
+          ]}>
           <Text style={styles.totalPhotos}>
             Total Photos{' '}
             <Text style={styles.totalPhotosValue}>{totalPhotos}</Text>
@@ -182,6 +198,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         <PhotoMasonryGrid
           items={displayPhotos}
           placeholderCount={Math.min(placeholderCount, 12)}
+          horizontalPadding={screenPaddingHorizontal}
         />
       )}
     </SafeAreaView>
@@ -196,10 +213,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 48,
     paddingTop: 40,
     paddingBottom: 24,
     gap: 40,
+  },
+  headerMobile: {
+    paddingTop: 16,
+    gap: 16,
   },
   backButton: {
     flexDirection: 'row',
@@ -217,10 +237,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    paddingHorizontal: 48,
     paddingTop: 20,
     paddingBottom: 16,
     gap: 10,
+  },
+  titleRowMobile: {
+    flexDirection: 'column',
+    paddingTop: 12,
+    gap: 16,
   },
   titleColumn: {
     flex: 1,
@@ -230,6 +254,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 24,
+  },
+  actionsColumnMobile: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 12,
+    width: '100%',
   },
   title: {
     fontFamily: fonts.serif,
@@ -285,7 +315,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 48,
   },
   errorText: {
     fontFamily: fonts.sans,

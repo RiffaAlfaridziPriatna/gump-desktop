@@ -10,6 +10,7 @@ import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useEffect, useState} from 'react';
+import {useLayout} from '@hooks/useLayout';
 import {TouchableOpacity} from '@components/ui';
 import {StyleSheet, Text, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -23,6 +24,7 @@ export default function CulledAlbumUploadProgressScreen({
   route,
 }: Props) {
   const {albumId, photoCount, albumName, albumLink} = route.params;
+  const {screenPaddingHorizontal, isMobileLayout} = useLayout();
   const {batchPhotoIds, photos} = useCulledAlbumServerUploadBatch(albumId);
 
   const progress = computeServerUploadBatchProgress(photos, batchPhotoIds);
@@ -50,7 +52,13 @@ export default function CulledAlbumUploadProgressScreen({
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header} onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
+      <View
+        style={[
+          styles.header,
+          {paddingHorizontal: screenPaddingHorizontal},
+          isMobileLayout && styles.headerMobile,
+        ]}
+        onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
         <GumpLogo width={112} height={40} />
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -60,7 +68,14 @@ export default function CulledAlbumUploadProgressScreen({
         </TouchableOpacity>
       </View>
 
-      <View style={[styles.body, {paddingBottom: headerHeight}]}>
+      <View
+        style={[
+          styles.body,
+          {
+            paddingBottom: headerHeight,
+            paddingHorizontal: screenPaddingHorizontal,
+          },
+        ]}>
         <View style={styles.content}>
           <View style={styles.infoContainer}>
             <Text style={styles.title}>Uploading {photoCount} Photos</Text>
@@ -97,15 +112,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 48,
     paddingTop: 40,
     paddingBottom: 24,
+  },
+  headerMobile: {
+    paddingTop: 16,
   },
   body: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 48,
   },
   content: {
     width: '100%',

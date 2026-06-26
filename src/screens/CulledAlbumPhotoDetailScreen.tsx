@@ -9,6 +9,7 @@ import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useLayout} from '@hooks/useLayout';
 import {Pressable, TouchableOpacity} from '@components/ui';
 import {
   ScrollView,
@@ -30,6 +31,7 @@ export default function CulledAlbumPhotoDetailScreen({
   route,
 }: Props) {
   const {albumId, photoId} = route.params;
+  const {isMobileLayout, screenPaddingHorizontal} = useLayout();
   const albumPhotos = useCulledAlbumPhotosState(albumId);
   const cullingHasUploads = useCulledAlbumStore(
     state => state.albums[albumId]?.cullingHasUploads ?? false,
@@ -125,8 +127,17 @@ export default function CulledAlbumPhotoDetailScreen({
         style={styles.screenRoot}
         onLayout={syncScreenOrigin}
       >
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
+        <View
+          style={[
+            styles.header,
+            {paddingHorizontal: screenPaddingHorizontal},
+            isMobileLayout && styles.headerMobile,
+          ]}>
+          <View
+            style={[
+              styles.headerLeft,
+              isMobileLayout && styles.headerLeftMobile,
+            ]}>
             <Text style={styles.fileName} numberOfLines={1}>
               {fileName}
             </Text>
@@ -188,8 +199,17 @@ export default function CulledAlbumPhotoDetailScreen({
           </Pressable>
         </View>
 
-        <View style={styles.content}>
-          <View style={styles.mainColumn}>
+        <View
+          style={[
+            styles.content,
+            {paddingHorizontal: screenPaddingHorizontal},
+            isMobileLayout && styles.contentMobile,
+          ]}>
+          <View
+            style={[
+              styles.mainColumn,
+              isMobileLayout && styles.mainColumnMobile,
+            ]}>
             <PhotoDetailImageViewer
               uri={uri}
               faces={faces}
@@ -198,12 +218,21 @@ export default function CulledAlbumPhotoDetailScreen({
             />
           </View>
 
-          <View style={styles.sidebar}>
+          <View
+            style={[
+              styles.sidebar,
+              isMobileLayout && styles.sidebarMobile,
+            ]}>
             <Text style={styles.sidebarTitle}>Key Faces ({faces.length})</Text>
             <ScrollView
+              horizontal={isMobileLayout}
               style={styles.keyFaceScroll}
-              contentContainerStyle={styles.keyFaceGrid}
-              showsVerticalScrollIndicator
+              contentContainerStyle={[
+                styles.keyFaceGrid,
+                isMobileLayout && styles.keyFaceGridMobile,
+              ]}
+              showsVerticalScrollIndicator={!isMobileLayout}
+              showsHorizontalScrollIndicator={isMobileLayout}
             >
               {faces.map((face, index) => (
                 <KeyFaceSidebarItem
@@ -266,10 +295,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 48,
     paddingTop: 40,
     paddingBottom: 24,
     gap: 16,
+  },
+  headerMobile: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    paddingTop: 16,
+    gap: 12,
   },
   headerLeft: {
     flex: 1,
@@ -277,6 +311,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 24,
     minWidth: 0,
+  },
+  headerLeftMobile: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 12,
+    width: '100%',
   },
   fileName: {
     flexShrink: 1,
@@ -320,18 +360,31 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     gap: 24,
-    paddingHorizontal: 48,
     paddingBottom: 24,
     minHeight: 0,
+  },
+  contentMobile: {
+    flexDirection: 'column',
+    gap: 16,
   },
   mainColumn: {
     width: '70%',
     minHeight: 0,
   },
+  mainColumnMobile: {
+    width: '100%',
+    minHeight: 280,
+  },
   sidebar: {
     flex: 1,
     minHeight: 0,
     gap: 24,
+  },
+  sidebarMobile: {
+    flex: undefined,
+    width: '100%',
+    minHeight: undefined,
+    gap: 12,
   },
   sidebarTitle: {
     fontFamily: fonts.sans,
@@ -348,6 +401,10 @@ const styles = StyleSheet.create({
     gap: 16,
     paddingRight: 20,
     overflow: 'visible',
+  },
+  keyFaceGridMobile: {
+    flexWrap: 'nowrap',
+    paddingRight: 0,
   },
   tooltipHost: {
     position: 'absolute',

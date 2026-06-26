@@ -10,17 +10,16 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from 'react-native';
+import {useLayout} from '@hooks/useLayout';
 import IconChevronRight from '../assets/images/icon_chevron_right.svg';
 import LoginSignupArt from '../assets/images/login_signup.svg';
 import GumpLogo from '../assets/images/logo.svg';
 
 export default function LoginScreen() {
   const { login } = useAuthActions();
-  const { width } = useWindowDimensions();
-  const isWideLayout = width >= 900;
+  const { isDesktopLayout } = useLayout();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -65,12 +64,12 @@ export default function LoginScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <View
-          style={[styles.inputRow, !isWideLayout && styles.inputRowStacked]}
+          style={[styles.inputRow, !isDesktopLayout && styles.inputRowStacked]}
         >
           <Text
             style={[
               styles.fieldLabel,
-              !isWideLayout && styles.fieldLabelStacked,
+              !isDesktopLayout && styles.fieldLabelStacked,
             ]}
           >
             Email
@@ -80,7 +79,7 @@ export default function LoginScreen() {
               styles.input,
               focusedField === 'email' && styles.inputFocused,
               focusedField !== 'email' && email && styles.inputFilled,
-              !isWideLayout && styles.inputStacked,
+              !isDesktopLayout && styles.inputStacked,
             ]}
             value={email}
             onChangeText={setEmail}
@@ -98,12 +97,12 @@ export default function LoginScreen() {
         </View>
 
         <View
-          style={[styles.inputRow, !isWideLayout && styles.inputRowStacked]}
+          style={[styles.inputRow, !isDesktopLayout && styles.inputRowStacked]}
         >
           <Text
             style={[
               styles.fieldLabel,
-              !isWideLayout && styles.fieldLabelStacked,
+              !isDesktopLayout && styles.fieldLabelStacked,
             ]}
           >
             Password
@@ -112,7 +111,7 @@ export default function LoginScreen() {
             style={[
               styles.input,
               focusedField === 'password' && styles.inputFocused,
-              !isWideLayout && styles.inputStacked,
+              !isDesktopLayout && styles.inputStacked,
             ]}
             value={password}
             onChangeText={setPassword}
@@ -158,7 +157,7 @@ export default function LoginScreen() {
     </View>
   );
 
-  if (isWideLayout) {
+  if (isDesktopLayout) {
     return (
       <View style={styles.container}>
         <View style={styles.leftHalf}>

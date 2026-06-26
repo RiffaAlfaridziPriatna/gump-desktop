@@ -3,6 +3,7 @@ import {DeleteAlbumModal} from '@components/modals/DeleteAlbumModal';
 import {useAuthState} from '@context/auth';
 import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useDeleteCulledAlbum} from '@hooks/useDeleteCulledAlbum';
+import {useLayout} from '@hooks/useLayout';
 import {toAlbumCardModel} from '@lib/culledAlbum/format';
 import {resolveCulledAlbumRoute} from '@lib/culledAlbum/service';
 import {CulledAlbum} from '@lib/culledAlbum/types';
@@ -19,7 +20,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -33,12 +33,15 @@ export default function HomeScreen({navigation}: Props) {
   const user = useAuthState(state => state.user);
   const {loadingAlbums, albums, refresh, count} = useLocalCulledAlbumList();
   const deleteCulledAlbum = useDeleteCulledAlbum();
-
-  const {height: windowHeight} = useWindowDimensions();
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const {
+    isMobileLayout,
+    screenPaddingHorizontal,
+    albumGridColumns,
+  } = useLayout();
 
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [albumToDelete, setAlbumToDelete] = useState<CulledAlbum | null>(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
   const cardModels = useMemo(
     () => albums.map(album => toAlbumCardModel(album)),
     [albums],
@@ -83,7 +86,13 @@ export default function HomeScreen({navigation}: Props) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header} onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
+      <View
+        style={[
+          styles.header,
+          {paddingHorizontal: screenPaddingHorizontal},
+          isMobileLayout && styles.headerMobile,
+        ]}
+        onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
         <GumpLogo width={112} height={40} />
         {hasAlbums && (
           <View style={styles.breadcrumbContainer}>
@@ -99,7 +108,12 @@ export default function HomeScreen({navigation}: Props) {
         </View>
       ) : hasAlbums ? (
         <>
-          <View style={styles.titleRow}>
+          <View
+            style={[
+              styles.titleRow,
+              {paddingHorizontal: screenPaddingHorizontal},
+              isMobileLayout && styles.titleRowMobile,
+            ]}>
             <View style={styles.titleColumn}>
               <View style={styles.titleLine}>
                 <Text style={styles.title}>Album</Text>
@@ -120,7 +134,10 @@ export default function HomeScreen({navigation}: Props) {
 
           <ScrollView
             style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[
+              styles.scrollContent,
+              {paddingHorizontal: screenPaddingHorizontal},
+            ]}
             scrollEnabled={!loadingAlbums}
             refreshControl={
               <RefreshControl
@@ -131,7 +148,7 @@ export default function HomeScreen({navigation}: Props) {
               />
             }
             scrollEventThrottle={200}>
-            <AlbumGrid columns={4} gap={16}>
+            <AlbumGrid columns={albumGridColumns} gap={16}>
               {albums.map((album, index) => (
                 <AlbumCard
                   key={album.albumId}
@@ -150,7 +167,10 @@ export default function HomeScreen({navigation}: Props) {
       ) : (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.emptyScrollContent,
+            {paddingHorizontal: screenPaddingHorizontal},
+          ]}
           refreshControl={
             <RefreshControl
               refreshing={loadingAlbums}
@@ -160,13 +180,11 @@ export default function HomeScreen({navigation}: Props) {
             />
           }
           scrollEventThrottle={200}>
-          <View style={[
-            styles.emptyState,
-            {
-              height: windowHeight - headerHeight * 2,
-              paddingBottom: headerHeight
-            }
-          ]}>
+          <View
+            style={[
+              styles.emptyState,
+              headerHeight > 0 && {paddingBottom: headerHeight},
+            ]}>
             <View style={styles.emptyContent}>
               <Text style={styles.emptyTitle}>Clean Up Your Photo Albums</Text>
               <Text style={styles.emptySubtitle}>
@@ -203,10 +221,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 48,
     paddingTop: 40,
     paddingBottom: 24,
     gap: 40,
+  },
+  headerMobile: {
+    paddingTop: 16,
+    gap: 16,
   },
   breadcrumbContainer: {
     gap: 8,
@@ -227,8 +248,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    paddingHorizontal: 48,
     paddingTop: 32,
+  },
+  titleRowMobile: {
+    flexDirection: 'column',
+    gap: 16,
+    paddingTop: 16,
   },
   titleColumn: {
     gap: 8,
@@ -279,8 +304,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 48,
     paddingVertical: 24,
+  },
+  emptyScrollContent: {
+    flexGrow: 1,
   },
   loading: {
     flex: 1,
