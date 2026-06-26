@@ -4,6 +4,10 @@ module.exports = {
     'babel-plugin-transform-typescript-metadata',
     ['@babel/plugin-proposal-decorators', {legacy: true}],
     [
+      'transform-inline-environment-variables',
+      {include: ['API_BASE_URL']},
+    ],
+    [
       'module-resolver',
       {
         root: ['./src'],

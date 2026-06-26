@@ -2,6 +2,8 @@ const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
 const fs = require('fs');
 const path = require('path');
 
+require('dotenv').config({path: path.resolve(__dirname, '.env')});
+
 const defaultConfig = getDefaultConfig(__dirname);
 
 defaultConfig.transformer = {
