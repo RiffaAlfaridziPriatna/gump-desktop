@@ -39,8 +39,14 @@ export function toAlbumCardModel(album: CulledAlbum): LocalAlbumCardModel {
     name: album.name,
     title: album.title,
     cover: album.cover,
-    totalMediaCount: album.syncedMediaCount ?? album.totalPhotos,
-    size: album.syncedStorageGb ?? bytesToGigabytes(album.totalStorage),
+    totalMediaCount: Math.max(
+      album.totalPhotos,
+      album.syncedMediaCount ?? 0,
+    ),
+    size: Math.max(
+      bytesToGigabytes(album.totalStorage),
+      album.syncedStorageGb ?? 0,
+    ),
     cullingCompleted: album.cullingCompleted,
     cullingHasUploads: album.cullingHasUploads,
   };
