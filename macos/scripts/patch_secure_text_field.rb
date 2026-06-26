@@ -9,6 +9,7 @@
 # from NSSecureTextField (the approach from react-native-macos PR #612).
 
 PATCH_MARKER = 'GUMP_SECURE_TEXT_FIELD_PATCH_V3'
+FOCUS_RING_PATCH_MARKER = 'GUMP_SECURE_TEXT_FIELD_FOCUS_RING_PATCH'
 
 def rn_macos_root
   File.expand_path('../../node_modules/react-native-macos', __dir__)
@@ -252,6 +253,69 @@ if current_secure_impl&.include?(PATCH_MARKER)
   end
 else
   write_patch(secure_text_field_impl, secure_text_field_impl_contents)
+  changed = true
+end
+
+# --- RCTSinglelineTextInputView.mm: preserve enableFocusRing after secure-field swap ---
+singleline_view = File.join(
+  rn_macos_root,
+  'Libraries/Text/TextInput/Singleline/RCTSinglelineTextInputView.mm'
+)
+singleline_contents = read_file(singleline_view)
+
+if singleline_contents.nil?
+  warn '[macos] RCTSinglelineTextInputView.mm not found, skipping focus ring patch'
+elsif singleline_contents.include?(FOCUS_RING_PATCH_MARKER)
+  puts '[macos] RCTSinglelineTextInputView.mm already patched for secure text field focus ring'
+else
+  focus_ring_swap_patch = [
+    '    _backedTextInputView.text = previousTextField.text;',
+    '    // [GUMP_SECURE_TEXT_FIELD_FOCUS_RING_PATCH] NSSecureTextField defaults to a rectangular system focus ring.',
+    '    if ([_backedTextInputView respondsToSelector:@selector(setEnableFocusRing:)]) {',
+    '      [_backedTextInputView setEnableFocusRing:self.enableFocusRing];',
+    '    }',
+    '    [self replaceSubview:previousTextField with:_backedTextInputView];',
+  ].join("\n")
+
+  patched = singleline_contents.sub(
+    "    _backedTextInputView.text = previousTextField.text;\n    [self replaceSubview:previousTextField with:_backedTextInputView];",
+    focus_ring_swap_patch
+  )
+
+  if patched == singleline_contents
+    warn '[macos] RCTSinglelineTextInputView.mm did not match expected focus ring patch targets'
+    exit 1
+  end
+
+  write_patch(singleline_view, patched)
+  changed = true
+end
+
+# --- RCTUITextField.mm: disable system focus ring on NSSecureTextField by default ---
+text_field_impl_for_focus_ring = read_file(text_field_impl)
+
+if text_field_impl_for_focus_ring.nil?
+  warn '[macos] RCTUITextField.mm not found, skipping focus ring patch'
+elsif text_field_impl_for_focus_ring.include?(FOCUS_RING_PATCH_MARKER)
+  puts '[macos] RCTUITextField.mm already patched for secure text field focus ring'
+else
+  patched = text_field_impl_for_focus_ring.sub(
+    "    [self setBordered:NO];\n    [self setAllowsEditingTextAttributes:YES];",
+    <<~PATCH.chomp
+          [self setBordered:NO];
+      #if defined(RCT_SUBCLASS_SECURETEXTFIELD) && RCT_SUBCLASS_SECURETEXTFIELD // #{FOCUS_RING_PATCH_MARKER}
+          [self setFocusRingType:NSFocusRingTypeNone];
+      #endif // RCT_SUBCLASS_SECURETEXTFIELD
+          [self setAllowsEditingTextAttributes:YES];
+    PATCH
+  )
+
+  if patched == text_field_impl_for_focus_ring
+    warn '[macos] RCTUITextField.mm did not match expected focus ring patch targets'
+    exit 1
+  end
+
+  write_patch(text_field_impl, patched)
   changed = true
 end
 
