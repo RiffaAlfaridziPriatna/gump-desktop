@@ -42,6 +42,8 @@ export type CulledAlbumPhotoAnalysisStatus =
 export type CulledAlbumPhoto = {
   photoId: string;
   file: FileAsset;
+  /** Unix timestamp (ms) when the photo was added locally; used for display order. */
+  uploadedAt: number;
   progress: number;
   status: CulledAlbumPhotoUploadStatus;
   error?: string;
@@ -88,10 +90,12 @@ export type CulledAlbum = {
 export function createCulledAlbumPhoto(
   file: FileAsset,
   photoId: string,
+  uploadedAt: number = Date.now(),
 ): CulledAlbumPhoto {
   return {
     photoId,
     file,
+    uploadedAt,
     progress: 0,
     status: 'pending',
     serverUploadStatus: 'idle',
@@ -127,6 +131,19 @@ export function createCulledAlbumFromSelection(
     totalStorage: 0,
     photos: [],
   };
+}
+
+export function comparePhotosByUploadedAtDesc(
+  a: CulledAlbumPhoto,
+  b: CulledAlbumPhoto,
+): number {
+  return (b.uploadedAt ?? 0) - (a.uploadedAt ?? 0);
+}
+
+export function sortPhotosByUploadedAt(
+  photos: CulledAlbumPhoto[],
+): CulledAlbumPhoto[] {
+  return [...photos].sort(comparePhotosByUploadedAtDesc);
 }
 
 export function recomputeAlbumTotals(album: CulledAlbum): CulledAlbum {
@@ -212,6 +229,7 @@ export function toCullingPhoto(photo: CulledAlbumPhoto): APIResponse.CullingPhot
 export function normalizePersistedPhoto(
   photo: CulledAlbumPhoto,
 ): CulledAlbumPhoto {
+  photo.uploadedAt ??= 0;
   if (photo.status === 'uploading') {
     photo.status = 'pending';
     photo.progress = 0;
@@ -248,7 +266,9 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.createdAt ??= new Date(0).toISOString();
   album.totalPhotos ??= album.photos.length;
   album.totalStorage ??= 0;
-  album.photos = (album.photos ?? []).map(normalizePersistedPhoto);
+  album.photos = sortPhotosByUploadedAt(
+    (album.photos ?? []).map(normalizePersistedPhoto),
+  );
   recomputeAlbumTotals(album);
   return album;
 }

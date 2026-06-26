@@ -21,6 +21,7 @@ import {
   hasInFlightUploads,
   normalizePersistedAlbum,
   recomputeAlbumTotals,
+  sortPhotosByUploadedAt,
 } from './types';
 
 export type CulledAlbumStoreState = {
@@ -295,8 +296,14 @@ export function addPhotosToAlbum(
   culledAlbumStore.setState(state => {
     const album = state.albums[albumId]!;
 
-    for (const file of supportedFiles) {
-      const photo = createCulledAlbumPhoto(file, createCullingPhotoId());
+    const baseUploadedAt = Date.now();
+    for (let index = 0; index < supportedFiles.length; index++) {
+      const file = supportedFiles[index]!;
+      const photo = createCulledAlbumPhoto(
+        file,
+        createCullingPhotoId(),
+        baseUploadedAt + index,
+      );
       if (options?.simulatedMinDurationMs) {
         photo.simulatedMinDurationMs = options.simulatedMinDurationMs;
       }
@@ -304,6 +311,7 @@ export function addPhotosToAlbum(
       added.push(photo);
     }
 
+    album.photos = sortPhotosByUploadedAt(album.photos);
     recomputeAlbumTotals(album);
   });
 
@@ -333,7 +341,8 @@ export function updatePhoto(
 }
 
 export function getPhotosForAlbum(albumId: string): CulledAlbumPhoto[] {
-  return getAlbumFromState(albumId)?.photos ?? [];
+  const photos = getAlbumFromState(albumId)?.photos;
+  return photos ? sortPhotosByUploadedAt(photos) : [];
 }
 
 export async function ensureAlbumLoaded(albumId: string): Promise<CulledAlbum> {
