@@ -1,10 +1,10 @@
 import {colors} from '@lib/colors';
+import {isDesktopPlatform} from '@lib/platform';
 import {ReactNode, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Animated,
   Easing,
   Modal as RNModal,
-  Platform,
   StyleSheet,
   TouchableWithoutFeedback,
   useWindowDimensions,
@@ -106,7 +106,7 @@ function ModalContent(props: ModalCardProps) {
   );
 }
 
-function MacosModal(props: ModalProps) {
+function DesktopModal(props: ModalProps) {
   const {visible, onClose} = props;
   const {height: windowHeight} = useWindowDimensions();
   const [mounted, setMounted] = useState(visible);
@@ -200,8 +200,8 @@ function MacosModal(props: ModalProps) {
 }
 
 export function Modal(props: ModalProps) {
-  if (Platform.OS === 'macos') {
-    return <MacosModal {...props} />;
+  if (isDesktopPlatform()) {
+    return <DesktopModal {...props} />;
   }
 
   const {visible, onClose, ...contentProps} = props;
