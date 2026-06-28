@@ -19,8 +19,8 @@
     "build:ios:archive": "bash scripts/build.sh ios archive",
     "build:macos": "bash scripts/build.sh macos app",
     "build:macos:zip": "bash scripts/build.sh macos zip",
-    "build:windows": "bash scripts/build.sh windows exe",
-    "build:windows:msix": "bash scripts/build.sh windows msix",
+    "build:windows": "node scripts/build-windows.mjs exe",
+    "build:windows:msix": "node scripts/build-windows.mjs msix",
     "build:all": "bash scripts/build.sh all",
     "windows": "npx @react-native-community/cli run-windows",
     "test:windows": "jest --config jest.config.windows.js"
