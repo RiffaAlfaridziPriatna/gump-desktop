@@ -476,6 +476,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
             onSelectionFilterChange={setSelectionFilter}
             onStarRatingFilterChange={setStarRatingFilter}
             onUploadSelected={() => setShowUploadConfirm(true)}
+            selectedCount={selectedCount}
             uploaded={cullingHasUploads}
             uploadDisabled={selectedCount === 0}
             isMobileLayout={isMobileLayout}

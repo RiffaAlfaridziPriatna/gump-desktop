@@ -26,6 +26,7 @@ type CulledAlbumFilterBarProps = {
   onSelectionFilterChange: (filter: SelectionFilter) => void;
   onStarRatingFilterChange: (filter: StarRatingFilter) => void;
   onUploadSelected: () => void;
+  selectedCount?: number;
   uploaded?: boolean;
   uploadDisabled?: boolean;
   isMobileLayout?: boolean;
@@ -95,6 +96,7 @@ export function CulledAlbumFilterBar({
   onSelectionFilterChange,
   onStarRatingFilterChange,
   onUploadSelected,
+  selectedCount = 0,
   uploaded = false,
   uploadDisabled = false,
   isMobileLayout = false,
@@ -175,7 +177,11 @@ export function CulledAlbumFilterBar({
             uploaded && styles.uploadButtonTextUploaded,
           ]}
         >
-          {uploaded ? 'Uploaded' : 'Upload Selected'}
+          {uploaded
+            ? 'Uploaded'
+            : selectedCount > 0
+              ? `Upload Selected (${selectedCount})`
+              : 'Upload Selected'}
         </Text>
    
       </Pressable>
