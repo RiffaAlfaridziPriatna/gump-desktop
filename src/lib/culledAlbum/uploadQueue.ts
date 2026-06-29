@@ -1,24 +1,45 @@
-import {copyPhotoToAlbum} from '@lib/localStorage';
-import {FileAsset} from '@services/upload/types';
-import {
-  countByUploadStatus,
-  CulledAlbumPhoto,
-} from './types';
+import { copyPhotoToAlbum } from '@lib/localStorage';
+import { FileAsset } from '@services/upload/types';
+import { countByUploadStatus, CulledAlbumPhoto } from './types';
 
 const FAKE_PROGRESS_CAP = 95;
 const FAKE_PROGRESS_TICK_MS = 120;
+const MIN_VISUAL_PROGRESS_MS = 150;
+const PERSIST_BATCH_SIZE = 10;
+const COPY_TIMEOUT_MS = 120_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
+      ms,
+    );
+    promise.then(
+      value => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      error => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export type UploadQueueDeps = {
   maxConcurrent: number;
   getPhotos: (albumId: string) => CulledAlbumPhoto[];
-  getPhoto: (
-    albumId: string,
-    photoId: string,
-  ) => CulledAlbumPhoto | undefined;
+  getPhoto: (albumId: string, photoId: string) => CulledAlbumPhoto | undefined;
   updatePhoto: (
     albumId: string,
     photoId: string,
@@ -28,7 +49,32 @@ export type UploadQueueDeps = {
 };
 
 export function createUploadQueue(deps: UploadQueueDeps) {
-  const {maxConcurrent, getPhotos, getPhoto, updatePhoto, persistAlbum} = deps;
+  const { maxConcurrent, getPhotos, getPhoto, updatePhoto, persistAlbum } =
+    deps;
+  const completedSincePersistByAlbum = new Map<string, number>();
+
+  function isUploadQueueIdle(albumId: string): boolean {
+    return !getPhotos(albumId).some(
+      photo => photo.status === 'pending' || photo.status === 'uploading',
+    );
+  }
+
+  function scheduleAlbumPersist(albumId: string): void {
+    const completedSincePersist =
+      (completedSincePersistByAlbum.get(albumId) ?? 0) + 1;
+    completedSincePersistByAlbum.set(albumId, completedSincePersist);
+
+    const shouldFlush =
+      completedSincePersist >= PERSIST_BATCH_SIZE || isUploadQueueIdle(albumId);
+    if (!shouldFlush) {
+      return;
+    }
+
+    completedSincePersistByAlbum.set(albumId, 0);
+    void persistAlbum(albumId).catch(error => {
+      console.error('[uploadQueue] Failed to persist album', albumId, error);
+    });
+  }
 
   function setProgress(albumId: string, photoId: string, progress: number) {
     updatePhoto(albumId, photoId, photo => {
@@ -56,6 +102,7 @@ export function createUploadQueue(deps: UploadQueueDeps) {
 
     const sourceFile = photo.file;
     const minDurationMs = photo.simulatedMinDurationMs ?? 0;
+    const progressDurationMs = Math.max(minDurationMs, MIN_VISUAL_PROGRESS_MS);
 
     updatePhoto(albumId, photoId, entry => {
       entry.progress = 0;
@@ -69,11 +116,8 @@ export function createUploadQueue(deps: UploadQueueDeps) {
 
     return new Promise<void>((resolve, reject) => {
       interval = setInterval(() => {
-        if (minDurationMs <= 0) {
-          return;
-        }
         const elapsed = Date.now() - startedAt;
-        const t = Math.min(1, elapsed / minDurationMs);
+        const t = Math.min(1, elapsed / progressDurationMs);
         const eased = 1 - Math.pow(1 - t, 2);
         const target = Math.floor(eased * FAKE_PROGRESS_CAP);
         fakeProgress = Math.max(
@@ -85,14 +129,18 @@ export function createUploadQueue(deps: UploadQueueDeps) {
         }
       }, FAKE_PROGRESS_TICK_MS);
 
-      copyPhotoToAlbum(albumId, sourceFile, photoId)
+      withTimeout(
+        copyPhotoToAlbum(albumId, sourceFile, photoId),
+        COPY_TIMEOUT_MS,
+        'Local photo copy',
+      )
         .then(async (localFile: FileAsset) => {
           if (interval) {
             clearInterval(interval);
           }
 
           const elapsed = Date.now() - startedAt;
-          const remaining = Math.max(0, minDurationMs - elapsed);
+          const remaining = Math.max(0, progressDurationMs - elapsed);
           if (remaining > 0) {
             await sleep(remaining);
           }
@@ -102,12 +150,15 @@ export function createUploadQueue(deps: UploadQueueDeps) {
             entry.progress = 100;
             entry.status = 'uploaded';
           });
-          await persistAlbum(albumId);
+          scheduleAlbumPersist(albumId);
           resolve();
         })
         .catch(err => {
           if (interval) {
             clearInterval(interval);
+          }
+          if (isUploadQueueIdle(albumId)) {
+            scheduleAlbumPersist(albumId);
           }
           reject(err);
         });
@@ -137,5 +188,5 @@ export function createUploadQueue(deps: UploadQueueDeps) {
     }
   }
 
-  return {processPending, failPhoto};
+  return { processPending, failPhoto };
 }

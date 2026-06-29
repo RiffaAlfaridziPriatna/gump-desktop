@@ -95,17 +95,18 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
   }
 
   const addPhotos = useCallback((albumId: string, files: FileAsset[]) => {
+    const perItemMinDurationMs = getSimulatedUploadPerItemMinDurationMs(
+      files.length,
+      MAX_CONCURRENT_UPLOADS,
+    );
+    addPhotosToAlbum(albumId, files, {simulatedMinDurationMs: perItemMinDurationMs});
+
     uiStoreRef.current!.setState({
       uploadError: null,
       uploadVisible: true,
       activeUploadAlbumId: albumId,
     });
 
-    const perItemMinDurationMs = getSimulatedUploadPerItemMinDurationMs(
-      files.length,
-      MAX_CONCURRENT_UPLOADS,
-    );
-    addPhotosToAlbum(albumId, files, {simulatedMinDurationMs: perItemMinDurationMs});
     queueMicrotask(() => uploadQueueRef.current!.processPending(albumId));
   }, []);
 

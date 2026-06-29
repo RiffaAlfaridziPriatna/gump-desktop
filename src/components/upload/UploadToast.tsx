@@ -131,8 +131,8 @@ export function UploadToast({mode = 'upload'}: UploadToastProps) {
 
   const inProgressLabel =
     mode === 'upload'
-      ? `Uploading ${renderItems.length} photos`
-      : `Analyzing ${renderItems.length} photos`;
+      ? `Uploading ${renderItems.length - counts.completed} photos`
+      : `Analyzing ${renderItems.length - counts.completed} photos`;
   const completedLabel =
     mode === 'upload'
       ? `Uploaded ${counts.completed} photos`
