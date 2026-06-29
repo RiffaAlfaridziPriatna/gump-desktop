@@ -1,6 +1,5 @@
 import {CulledAlbumPhotoThumbnail} from '@components/culling/CulledAlbumPhotoThumbnail';
 import {Pressable} from '@components/ui';
-import {useDoublePress} from '@hooks/useDoublePress';
 import {
   useCulledAlbumPhotoHovered,
   useCulledAlbumPhotoHoverStore,
@@ -68,11 +67,6 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
     }
   }, [analysis, onToggleSelection, photoId]);
 
-  const handlePhotoPress = useDoublePress(
-    disabled ? handleOpenDetail : handleToggleSelection,
-    handleOpenDetail,
-  );
-
   const handleHoverIn = useCallback(() => {
     hoverStore.hoverIn(photoId);
   }, [hoverStore, photoId]);
@@ -86,7 +80,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
       style={[styles.photoCard, {width: cardWidth}]}
       onHoverIn={isMobileLayout ? undefined : handleHoverIn}
       onHoverOut={isMobileLayout ? undefined : handleHoverOut}
-      onPress={isMobileLayout ? handleOpenDetail : handlePhotoPress}>
+      onPress={handleOpenDetail}>
       <View style={styles.thumbnailWrapper}>
         <CulledAlbumPhotoThumbnail
           uri={file.uri}
