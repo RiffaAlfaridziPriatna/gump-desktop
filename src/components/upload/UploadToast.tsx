@@ -30,26 +30,6 @@ type UploadToastProps = {
   mode?: ToastMode;
 };
 
-function itemProgress(photo: CulledAlbumPhoto, mode: ToastMode): number {
-  if (mode === 'upload') {
-    if (photo.status === 'uploaded' || photo.status === 'failed') {
-      return 1;
-    }
-    if (photo.status === 'uploading') {
-      return Math.max(0.05, photo.progress / 100);
-    }
-    return 0;
-  }
-
-  if (photo.analysisStatus === 'analyzed' || photo.analysisStatus === 'failed') {
-    return 1;
-  }
-  if (photo.analysisStatus === 'analyzing') {
-    return Math.max(0.05, photo.analysisProgress / 100);
-  }
-  return 0;
-}
-
 function countItems(photos: CulledAlbumPhoto[], mode: ToastMode) {
   const counts = {pending: 0, completed: 0, inProgress: 0, failed: 0};
   for (const photo of photos) {
@@ -121,18 +101,20 @@ export function UploadToast({mode = 'upload'}: UploadToastProps) {
     completed &&
     counts.completed === 0 &&
     counts.failed > 0;
-  const totalProgress =
-    renderItems.length > 0
-      ? renderItems.reduce(
-          (sum, photo) => sum + itemProgress(photo, mode),
-          0,
-        ) / renderItems.length
-      : 0;
+  const totalProgress = useMemo(() => {
+    const totalItems = renderItems.length;
+    if (totalItems === 0) {
+      return 0;
+    }
+    const progressCount = counts.pending + counts.inProgress;
+    const totalProgress = progressCount / totalItems;
+    return 1 - (+totalProgress.toFixed(2));
+  }, [counts, renderItems]);
 
   const inProgressLabel =
     mode === 'upload'
-      ? `Uploading ${renderItems.length - counts.completed} photos`
-      : `Analyzing ${renderItems.length - counts.completed} photos`;
+      ? `Uploading ${counts.pending + counts.inProgress} photos`
+      : `Analyzing ${counts.pending + counts.inProgress} photos`;
   const completedLabel =
     mode === 'upload'
       ? `Uploaded ${counts.completed} photos`
