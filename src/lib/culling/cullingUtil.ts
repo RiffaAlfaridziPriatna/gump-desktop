@@ -1,4 +1,5 @@
 import { APIResponse } from '@services/api';
+import { hammingDistance } from '@lib/perceptualHash';
 
 export type CullingFace = APIResponse.CullingFace;
 export type CullingPhoto = APIResponse.CullingPhoto;
@@ -88,13 +89,51 @@ export function deriveStarRating(faces: CullingFace[]): number {
   return Math.min(5, Math.max(1, Math.round(average)));
 }
 
-function areLikelyBurstPhotos(fileNameA: string, fileNameB: string) {
-  const baseA = fileNameA.replace(/\.[^.]+$/, '').replace(/\d+$/, '');
-  const baseB = fileNameB.replace(/\.[^.]+$/, '').replace(/\d+$/, '');
-  return baseA === baseB;
+const FACE_DUPLICATE_THRESHOLD = 0.06;
+export const PERCEPTUAL_HASH_DUPLICATE_THRESHOLD = 4;
+
+export type DuplicateDetectionPhoto = CullingPhoto & {
+  capturedAt?: number | null;
+  perceptualHash?: string | null;
+};
+
+export function arePerceptualHashesSimilar(
+  hashA: string | null | undefined,
+  hashB: string | null | undefined,
+): boolean {
+  if (!hashA || !hashB) {
+    return false;
+  }
+  return hammingDistance(hashA, hashB) <= PERCEPTUAL_HASH_DUPLICATE_THRESHOLD;
 }
 
-export function detectDuplicates(photos: Record<string, CullingPhoto>) {
+export function areFacesSimilar(facesA: CullingFace[], facesB: CullingFace[]): boolean {
+  if (facesA.length === 0 || facesB.length === 0) {
+    return false;
+  }
+  if (facesA.length !== facesB.length) {
+    return false;
+  }
+
+  const fingerprintsA = facesA.map(faceFingerprint);
+  const fingerprintsB = facesB.map(faceFingerprint);
+
+  let totalDistance = 0;
+
+  for (const fpA of fingerprintsA) {
+    let minDistance = Infinity;
+    for (const fpB of fingerprintsB) {
+      const dist = fingerprintDistance(fpA, fpB);
+      minDistance = Math.min(minDistance, dist);
+    }
+    totalDistance += minDistance;
+  }
+
+  const avgDistance = totalDistance / fingerprintsA.length;
+  return avgDistance < FACE_DUPLICATE_THRESHOLD;
+}
+
+export function detectDuplicates(photos: Record<string, DuplicateDetectionPhoto>) {
   const records = Object.values(photos);
   for (const record of records) {
     record.duplicated = false;
@@ -104,11 +143,16 @@ export function detectDuplicates(photos: Record<string, CullingPhoto>) {
     for (let j = i + 1; j < records.length; j++) {
       const a = records[i]!;
       const b = records[j]!;
-      if (a.faces.length !== b.faces.length || a.faces.length === 0) {
-        continue;
-      }
 
-      if (areLikelyBurstPhotos(a.fileName, b.fileName)) {
+      const hasSimilarFaces = areFacesSimilar(a.faces, b.faces);
+      const hasSimilarPerceptualHash = arePerceptualHashesSimilar(
+        a.perceptualHash,
+        b.perceptualHash,
+      );
+
+      const isDuplicate = hasSimilarPerceptualHash || hasSimilarFaces;
+
+      if (isDuplicate) {
         a.duplicated = true;
         b.duplicated = true;
       }
@@ -164,7 +208,7 @@ export function computeKeyFaces(
     .sort((a, b) => b.occurrenceCount - a.occurrenceCount);
 }
 
-const FACE_CLUSTER_THRESHOLD = 0.05;
+const FACE_CLUSTER_THRESHOLD = 0.12;
 
 function photoIdFromFaceKey(key: string): string {
   const colonIndex = key.lastIndexOf(':');
