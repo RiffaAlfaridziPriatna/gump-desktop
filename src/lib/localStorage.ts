@@ -14,6 +14,8 @@ type NativeLocalStorageModule = {
   getImageDimensions: (
     uri: string,
   ) => Promise<{width: number; height: number}>;
+  readImageCaptureTime: (uri: string) => Promise<number | null>;
+  computePerceptualHash: (uri: string) => Promise<string | null>;
 };
 
 const NativeLocalStorage = NativeModules.GumpLocalStorage as
@@ -65,4 +67,18 @@ export async function listAlbumPhotos(albumId: string): Promise<FileAsset[]> {
     return NativeLocalStorage.listPhotos(albumId);
   }
   return [];
+}
+
+export async function readImageCaptureTime(uri: string): Promise<number | null> {
+  if (hasNativeLocalStorage() && NativeLocalStorage?.readImageCaptureTime) {
+    return NativeLocalStorage.readImageCaptureTime(uri);
+  }
+  return null;
+}
+
+export async function computePerceptualHash(uri: string): Promise<string | null> {
+  if (hasNativeLocalStorage() && NativeLocalStorage?.computePerceptualHash) {
+    return NativeLocalStorage.computePerceptualHash(uri);
+  }
+  return null;
 }

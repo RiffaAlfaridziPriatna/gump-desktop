@@ -284,7 +284,9 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
       NSString *sourcePath = [self pathFromUri:sourceUri];
       if (sourcePath.length == 0 ||
           ![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
-        reject(@"ENOENT", @"Source file not found", nil);
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"ENOENT", @"Source file not found", nil);
+        });
         return;
       }
 
@@ -295,7 +297,9 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
                                                  attributes:nil
                                                       error:&dirError];
       if (dirError != nil) {
-        reject(@"EACCES", dirError.localizedDescription, dirError);
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"EACCES", dirError.localizedDescription, dirError);
+        });
         return;
       }
 
@@ -310,7 +314,9 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
                                               toPath:destPath
                                                error:&copyError];
       if (copyError != nil) {
-        reject(@"ECOPY", copyError.localizedDescription, copyError);
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"ECOPY", copyError.localizedDescription, copyError);
+        });
         return;
       }
 
@@ -321,15 +327,20 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
       NSString *type = ext.length > 0
                            ? [NSString stringWithFormat:@"public.%@", ext]
                            : @"image/jpeg";
-
-      resolve(@{
+      NSDictionary *result = @{
         @"uri" : [NSString stringWithFormat:@"file://%@", destPath],
         @"name" : destName,
         @"size" : fileSize ?: @(0),
         @"type" : type,
+      };
+
+      dispatch_async(dispatch_get_main_queue(), ^{
+        resolve(result);
       });
     } @catch (NSException *exception) {
-      reject(@"EUNKNOWN", exception.reason, nil);
+      dispatch_async(dispatch_get_main_queue(), ^{
+        reject(@"EUNKNOWN", exception.reason, nil);
+      });
     }
   });
 }
@@ -612,6 +623,137 @@ RCT_EXPORT_METHOD(deleteAlbum:(NSString *)albumId
     @"width" : @(width),
     @"height" : @(height),
   };
+}
+
+- (NSNumber *)captureTimestampMillisFromPath:(NSString *)path
+{
+  NSURL *url = [NSURL fileURLWithPath:path isDirectory:NO];
+  CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL);
+  if (source == NULL) {
+    return nil;
+  }
+
+  NSDictionary *properties = (__bridge_transfer NSDictionary *)CGImageSourceCopyPropertiesAtIndex(source, 0, NULL);
+  CFRelease(source);
+  if (properties == nil) {
+    return nil;
+  }
+
+  NSString *dateString = nil;
+  NSDictionary *exif = properties[(NSString *)kCGImagePropertyExifDictionary];
+  if ([exif isKindOfClass:[NSDictionary class]]) {
+    dateString = exif[(NSString *)kCGImagePropertyExifDateTimeOriginal];
+    if (dateString.length == 0) {
+      dateString = exif[(NSString *)kCGImagePropertyExifDateTimeDigitized];
+    }
+    if (dateString.length == 0) {
+      dateString = exif[@"DateTime"];
+    }
+  }
+  if (dateString.length == 0) {
+    NSDictionary *tiff = properties[(NSString *)kCGImagePropertyTIFFDictionary];
+    if ([tiff isKindOfClass:[NSDictionary class]]) {
+      dateString = tiff[(NSString *)kCGImagePropertyTIFFDateTime];
+    }
+  }
+  if (dateString.length == 0) {
+    return nil;
+  }
+
+  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+  formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+  formatter.timeZone = [NSTimeZone localTimeZone];
+  formatter.dateFormat = @"yyyy:MM:dd HH:mm:ss";
+  NSDate *date = [formatter dateFromString:dateString];
+  if (date == nil) {
+    return nil;
+  }
+
+  return @((long long)([date timeIntervalSince1970] * 1000.0));
+}
+
+- (NSString *)differenceHashHexFromPath:(NSString *)path
+{
+  NSURL *url = [NSURL fileURLWithPath:path isDirectory:NO];
+  NSDictionary *options = @{
+    (NSString *)kCGImageSourceCreateThumbnailFromImageAlways : @YES,
+    (NSString *)kCGImageSourceThumbnailMaxPixelSize : @256,
+    (NSString *)kCGImageSourceCreateThumbnailWithTransform : @YES,
+  };
+  CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL);
+  if (source == NULL) {
+    return nil;
+  }
+  CGImageRef image = CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)options);
+  CFRelease(source);
+  if (image == NULL) {
+    return nil;
+  }
+
+  uint8_t pixels[72];
+  CGColorSpaceRef grayColorSpace = CGColorSpaceCreateDeviceGray();
+  CGContextRef context = CGBitmapContextCreate(pixels, 9, 8, 8, 9, grayColorSpace, kCGImageAlphaNone);
+  CGContextSetInterpolationQuality(context, kCGInterpolationLow);
+  CGContextTranslateCTM(context, 0, 8);
+  CGContextScaleCTM(context, 1.0, -1.0);
+  CGContextDrawImage(context, CGRectMake(0, 0, 9, 8), image);
+  CGContextRelease(context);
+  CGColorSpaceRelease(grayColorSpace);
+  CGImageRelease(image);
+
+  uint64_t hash = 0;
+  int bit = 0;
+  for (int y = 0; y < 8; y++) {
+    for (int x = 0; x < 8; x++) {
+      if (pixels[y * 9 + x] > pixels[y * 9 + x + 1]) {
+        hash |= (1ULL << (63 - bit));
+      }
+      bit++;
+    }
+  }
+  return [NSString stringWithFormat:@"%016llx", hash];
+}
+
+RCT_EXPORT_METHOD(readImageCaptureTime:(NSString *)uri
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    NSString *path = [self pathFromUri:uri];
+    if (path.length == 0 ||
+        ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        resolve([NSNull null]);
+      });
+      return;
+    }
+
+    NSNumber *timestamp = [self captureTimestampMillisFromPath:path];
+    dispatch_async(dispatch_get_main_queue(), ^{
+      resolve(timestamp ?: [NSNull null]);
+    });
+  });
+}
+
+RCT_EXPORT_METHOD(computePerceptualHash:(NSString *)uri
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    NSString *path = [self pathFromUri:uri];
+    if (path.length == 0 ||
+        ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        resolve([NSNull null]);
+      });
+      return;
+    }
+
+    NSString *hash = [self differenceHashHexFromPath:path];
+    dispatch_async(dispatch_get_main_queue(), ^{
+      resolve(hash ?: [NSNull null]);
+    });
+  });
 }
 
 RCT_EXPORT_METHOD(getImageDimensions:(NSString *)uri

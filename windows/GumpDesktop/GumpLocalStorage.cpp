@@ -8,6 +8,7 @@
 #include <winrt/Windows.Media.FaceAnalysis.h>
 #include <winrt/Windows.Security.Cryptography.h>
 #include <winrt/Windows.Storage.h>
+#include <winrt/Windows.Storage.FileProperties.h>
 #include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Windows.Web.Http.h>
 
@@ -15,6 +16,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <thread>
 
 namespace winrtRN = winrt::Microsoft::ReactNative;
@@ -22,6 +24,7 @@ using namespace winrt::Windows::Graphics::Imaging;
 using namespace winrt::Windows::Media::FaceAnalysis;
 using namespace winrt::Windows::Security::Cryptography;
 using namespace winrt::Windows::Storage;
+using namespace winrt::Windows::Storage::FileProperties;
 using namespace winrt::Windows::Storage::Streams;
 using namespace winrt::Windows::Web::Http;
 
@@ -79,6 +82,21 @@ std::string MimeTypeForPath(const std::filesystem::path &path) {
     return "image/jpeg";
   }
   return "public." + ToUtf8(ext.substr(1));
+}
+
+int64_t ToUnixMillis(winrt::Windows::Foundation::DateTime const &value) {
+  return (value.time_since_epoch().count() - 116444736000000000LL) / 10000LL;
+}
+
+std::optional<double> ReadCaptureTimestampMillis(const std::filesystem::path &path) {
+  const auto file =
+      StorageFile::GetFileFromPathAsync(winrt::to_hstring(path.wstring())).get();
+  const auto properties = file.Properties().GetImagePropertiesAsync().get();
+  const auto dateTaken = properties.DateTaken();
+  if (dateTaken == winrt::Windows::Foundation::DateTime{}) {
+    return std::nullopt;
+  }
+  return static_cast<double>(ToUnixMillis(dateTaken));
 }
 
 winrtRN::JSValueObject EyesOpenFromScore(float openness) {
@@ -210,6 +228,47 @@ BitmapPixels ReadBitmapPixels(const SoftwareBitmap &bitmap) {
   result.stride = plane.Stride;
   result.bytes.assign(data + plane.StartIndex, data + plane.StartIndex + plane.Height * plane.Stride);
   return result;
+}
+
+std::optional<uint64_t> ComputeDifferenceHash(const std::filesystem::path &path) {
+  const auto bitmap = LoadSoftwareBitmap(path);
+  const auto pixels = ReadBitmapPixels(bitmap);
+  const int srcWidth = pixels.width;
+  const int srcHeight = pixels.height;
+  if (srcWidth <= 0 || srcHeight <= 0) {
+    return std::nullopt;
+  }
+
+  uint8_t gray[72]{};
+  for (int y = 0; y < 8; ++y) {
+    for (int x = 0; x < 9; ++x) {
+      const double sourceX = (x + 0.5) * srcWidth / 9.0 - 0.5;
+      const double sourceY = (y + 0.5) * srcHeight / 8.0 - 0.5;
+      const int pixelX = std::clamp(static_cast<int>(std::round(sourceX)), 0, srcWidth - 1);
+      const int pixelY = std::clamp(static_cast<int>(std::round(sourceY)), 0, srcHeight - 1);
+      const int index = pixelY * pixels.stride + pixelX * 4;
+      gray[y * 9 + x] = static_cast<uint8_t>(
+          pixels.bytes[index] * 0.299 + pixels.bytes[index + 1] * 0.587 + pixels.bytes[index + 2] * 0.114);
+    }
+  }
+
+  uint64_t hash = 0;
+  int bit = 0;
+  for (int y = 0; y < 8; ++y) {
+    for (int x = 0; x < 8; ++x) {
+      if (gray[y * 9 + x] > gray[y * 9 + x + 1]) {
+        hash |= (1ULL << (63 - bit));
+      }
+      ++bit;
+    }
+  }
+  return hash;
+}
+
+std::string FormatHashHex(uint64_t hash) {
+  char buffer[17]{};
+  std::snprintf(buffer, sizeof(buffer), "%016llx", static_cast<unsigned long long>(hash));
+  return buffer;
 }
 
 winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
@@ -527,6 +586,42 @@ void GumpLocalStorage::GetImageDimensions(std::string uri, ReactPromiseJS &&prom
             {"width", static_cast<double>(bitmap.PixelWidth())},
             {"height", static_cast<double>(bitmap.PixelHeight())},
         });
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::ReadImageCaptureTime(std::string uri, ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [uri = std::move(uri)]() {
+        const auto path = PathFromUri(uri);
+        if (path.empty() || !std::filesystem::exists(path)) {
+          return winrtRN::JSValue(nullptr);
+        }
+
+        const auto timestamp = ReadCaptureTimestampMillis(path);
+        if (!timestamp.has_value()) {
+          return winrtRN::JSValue(nullptr);
+        }
+
+        return winrtRN::JSValue(*timestamp);
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::ComputePerceptualHash(std::string uri, ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [uri = std::move(uri)]() {
+        const auto path = PathFromUri(uri);
+        if (path.empty() || !std::filesystem::exists(path)) {
+          return winrtRN::JSValue(nullptr);
+        }
+
+        const auto hash = ComputeDifferenceHash(path);
+        if (!hash.has_value()) {
+          return winrtRN::JSValue(nullptr);
+        }
+
+        return winrtRN::JSValue(FormatHashHex(*hash));
       },
       std::move(promise));
 }

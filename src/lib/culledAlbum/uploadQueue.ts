@@ -1,4 +1,6 @@
 import { copyPhotoToAlbum } from '@lib/localStorage';
+import { enrichPhotoCaptureTime } from '@lib/imageCaptureTime';
+import { checkLocalImportBatchComplete } from './store';
 import { FileAsset } from '@services/upload/types';
 import { countByUploadStatus, CulledAlbumPhoto } from './types';
 
@@ -150,7 +152,21 @@ export function createUploadQueue(deps: UploadQueueDeps) {
             entry.progress = 100;
             entry.status = 'uploaded';
           });
+          void enrichPhotoCaptureTime(
+            albumId,
+            photoId,
+            localFile.uri,
+            sourceFile.capturedAt ?? photo.capturedAt,
+          ).catch(error => {
+            console.error(
+              '[uploadQueue] Failed to enrich capture time',
+              albumId,
+              photoId,
+              error,
+            );
+          });
           scheduleAlbumPersist(albumId);
+          void checkLocalImportBatchComplete(albumId);
           resolve();
         })
         .catch(err => {
@@ -177,11 +193,15 @@ export function createUploadQueue(deps: UploadQueueDeps) {
       }
 
       uploadPhoto(albumId, photo.photoId)
-        .then(() => processPending(albumId))
+        .then(async () => {
+          await checkLocalImportBatchComplete(albumId);
+          processPending(albumId);
+        })
         .catch(err => {
           const message =
             err instanceof Error && err.message ? err.message : undefined;
           failPhoto(albumId, photo.photoId, message);
+          void checkLocalImportBatchComplete(albumId);
           processPending(albumId);
         });
       uploadingCount++;

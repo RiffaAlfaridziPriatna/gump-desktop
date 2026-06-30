@@ -23,9 +23,15 @@ import {
   CullingPhoto,
   derivePhotoFlags,
   deriveStarRating,
-  detectDuplicates,
+  DuplicateDetectionPhoto,
 } from './cullingUtil';
+import {detectDuplicatesOptimized} from './duplicateDetection';
 import {NativeDetectedFace} from '@lib/culledAlbum/types';
+import {enrichMissingCaptureTimes, readImageCaptureTime} from '@lib/imageCaptureTime';
+import {
+  computeImagePerceptualHash,
+  enrichMissingPerceptualHashes,
+} from '@lib/perceptualHash';
 
 type NativeLocalStorageModule = {
   detectFacesForCulling: (uri: string) => Promise<NativeDetectedFace[]>;
@@ -53,31 +59,6 @@ function mapNativeFace(
     pose: face.pose ?? {pitch: 0, roll: 0, yaw: 0},
     rekognitionFaceId: `${photoId}-${face.faceId ?? index}`,
   };
-}
-
-const ANALYSIS_TIMEOUT_MS = 60_000;
-
-function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  label: string,
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
-      ms,
-    );
-    promise.then(
-      value => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      error => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
 }
 
 interface PlatformDetector {
@@ -134,13 +115,19 @@ async function getAnalyzedPhotos(albumId: string): Promise<CullingPhoto[]> {
 }
 
 function applyDuplicateFlags(albumId: string): void {
-  const photos = getPhotosForAlbum(albumId)
-    .filter(photo => photo.analysisStatus === 'analyzed')
-    .map(toCullingPhoto);
-  const photoMap = Object.fromEntries(
-    photos.map(photo => [photo.photoId, photo]),
-  );
-  detectDuplicates(photoMap);
+  const photoMap: Record<string, DuplicateDetectionPhoto> = {};
+  for (const photo of getPhotosForAlbum(albumId).filter(
+    entry => entry.analysisStatus === 'analyzed',
+  )) {
+    photoMap[photo.photoId] = {
+      ...toCullingPhoto(photo),
+      capturedAt: photo.capturedAt,
+      perceptualHash: photo.perceptualHash,
+    };
+  }
+
+  detectDuplicatesOptimized(photoMap);
+
   for (const photo of Object.values(photoMap)) {
     updatePhoto(albumId, photo.photoId, entry => {
       entry.duplicated = photo.duplicated;
@@ -166,19 +153,28 @@ function assignFaceClusterIds(albumId: string): void {
   }
 }
 
+async function enrichAlbumMetadataIfNeeded(albumId: string): Promise<void> {
+  const photos = getPhotosForAlbum(albumId);
+  const tasks: Promise<void>[] = [];
+
+  if (photos.some(photo => photo.capturedAt == null)) {
+    tasks.push(enrichMissingCaptureTimes(albumId));
+  }
+  if (photos.some(photo => photo.perceptualHash == null)) {
+    tasks.push(enrichMissingPerceptualHashes(albumId));
+  }
+
+  if (tasks.length > 0) {
+    await Promise.all(tasks);
+  }
+}
+
 export const cullingEngine = {
   async analyzePhoto(
     albumId: string,
     photoId: string,
     file: FileAsset,
   ): Promise<APIResponse.CullingPhoto> {
-    const faces = await withTimeout(
-      detector.detectFaces(file.uri, photoId),
-      ANALYSIS_TIMEOUT_MS,
-      'Face detection',
-    );
-    const flags = derivePhotoFlags(faces);
-
     const existing = getPhotosForAlbum(albumId).find(
       photo => photo.photoId === photoId,
     );
@@ -186,12 +182,33 @@ export const cullingEngine = {
       throw new Error('Photo not found in album store');
     }
 
+    const captureTimePromise =
+      existing.capturedAt != null
+        ? Promise.resolve(existing.capturedAt)
+        : readImageCaptureTime(file.uri);
+
+    const perceptualHashPromise =
+      existing.perceptualHash != null
+        ? Promise.resolve(existing.perceptualHash)
+        : computeImagePerceptualHash(file.uri);
+
+    const [faces, perceptualHash, capturedAt] = await Promise.all([
+      detector.detectFaces(file.uri, photoId),
+      perceptualHashPromise,
+      captureTimePromise,
+    ]);
+    const flags = derivePhotoFlags(faces);
+
     const isFirstAnalysis = existing.faces.length === 0;
     const initialStarRating =
       existing.starRating ?? deriveStarRating(faces);
 
     updatePhoto(albumId, photoId, photo => {
       photo.faces = faces;
+      photo.perceptualHash = perceptualHash;
+      if (capturedAt != null) {
+        photo.capturedAt = capturedAt;
+      }
       photo.aiSelected = flags.aiSelected;
       photo.maybe = flags.maybe;
       photo.blurred = flags.blurred;
@@ -212,6 +229,13 @@ export const cullingEngine = {
 
   async getPhotos(albumId: string): Promise<APIResponse.CullingPhotoList> {
     return {results: await getAnalyzedPhotos(albumId)};
+  },
+
+  async refreshDuplicateFlags(albumId: string): Promise<void> {
+    await ensureAlbumLoaded(albumId);
+    await enrichAlbumMetadataIfNeeded(albumId);
+    applyDuplicateFlags(albumId);
+    await persistAlbum(albumId);
   },
 
   async getStats(albumId: string): Promise<APIResponse.CullingStats> {

@@ -5,6 +5,7 @@ export type FileAsset = {
   name: string;
   size: number;
   type: string;
+  capturedAt?: number | null;
 };
 
 type NativeLocalStorageReader = {

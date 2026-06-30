@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Rect
+import android.media.ExifInterface
 import android.net.Uri
 import android.util.Base64
 import com.facebook.react.bridge.Arguments
@@ -22,6 +23,9 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.Executors
 import kotlin.math.ln
@@ -74,6 +78,61 @@ class GumpLocalStorageModule(
         promise.resolve(result)
       } catch (error: Exception) {
         promise.reject("EDETECT", error.message ?: "Face detection failed", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun readImageCaptureTime(uri: String, promise: Promise) {
+    executor.execute {
+      try {
+        val path = pathFromUri(uri)
+        val file = File(path)
+        if (!file.exists()) {
+          promise.resolve(null)
+          return@execute
+        }
+
+        val exif = ExifInterface(path)
+        val dateString =
+            exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+                ?: exif.getAttribute(ExifInterface.TAG_DATETIME_DIGITIZED)
+                ?: exif.getAttribute(ExifInterface.TAG_DATETIME)
+        if (dateString.isNullOrBlank()) {
+          promise.resolve(null)
+          return@execute
+        }
+
+        val formatter = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)
+        formatter.timeZone = TimeZone.getDefault()
+        val date = formatter.parse(dateString)
+        if (date == null) {
+          promise.resolve(null)
+          return@execute
+        }
+
+        promise.resolve(date.time.toDouble())
+      } catch (_: Exception) {
+        promise.resolve(null)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun computePerceptualHash(uri: String, promise: Promise) {
+    executor.execute {
+      try {
+        val path = pathFromUri(uri)
+        val file = File(path)
+        if (!file.exists()) {
+          promise.resolve(null)
+          return@execute
+        }
+
+        val hash = computeDifferenceHash(path)
+        promise.resolve(hash)
+      } catch (_: Exception) {
+        promise.resolve(null)
       }
     }
   }
@@ -512,5 +571,43 @@ class GumpLocalStorageModule(
     val variance = (sumSquared / count) - mean * mean
     val normalized = (ln(variance + 1.0) / ln(1000.0) * 100.0).toFloat()
     return normalized.coerceIn(0f, 100f)
+  }
+
+  private fun computeDifferenceHash(path: String): String? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    val sampleOptions =
+        BitmapFactory.Options().apply {
+          inSampleSize =
+              max(1, min(bounds.outWidth, bounds.outHeight) / 256)
+          inJustDecodeBounds = false
+        }
+    val bitmap = BitmapFactory.decodeFile(path, sampleOptions) ?: return null
+    val scaled = Bitmap.createScaledBitmap(bitmap, 9, 8, true)
+    if (scaled !== bitmap) {
+      bitmap.recycle()
+    }
+
+    val pixels = IntArray(72)
+    scaled.getPixels(pixels, 0, 9, 0, 0, 9, 8)
+    scaled.recycle()
+
+    val gray = IntArray(72) { index ->
+      val pixel = pixels[index]
+      (Color.red(pixel) * 0.299 + Color.green(pixel) * 0.587 + Color.blue(pixel) * 0.114)
+          .toInt()
+    }
+
+    var hash = 0L
+    var bit = 0
+    for (y in 0 until 8) {
+      for (x in 0 until 8) {
+        if (gray[y * 9 + x] > gray[y * 9 + x + 1]) {
+          hash = hash or (1L shl (63 - bit))
+        }
+        bit++
+      }
+    }
+    return String.format(Locale.US, "%016x", hash)
   }
 }

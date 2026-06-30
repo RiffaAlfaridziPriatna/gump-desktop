@@ -1,5 +1,8 @@
 import {FileAsset} from '@services/upload/types';
 import {filterSupportedCullingImages} from '@lib/supportedImageFormats';
+import {parsePickerCaptureTime} from '@lib/imageCaptureTime';
+import {runTasksWithConcurrency} from '@lib/asyncPool';
+import {readImageCaptureTime} from '@lib/localStorage';
 import {NativeModules} from 'react-native';
 import {launchImageLibrary, Asset} from 'react-native-image-picker';
 import {isDesktopPlatform, isMobilePlatform} from '@lib/platform';
@@ -14,6 +17,8 @@ const NativeFilePicker = NativeModules.GumpFilePicker as
   | NativeFilePickerModule
   | undefined;
 
+const MAX_CONCURRENT_CAPTURE_TIME_READS = 4;
+
 function mapImagePickerAsset(asset: Asset): FileAsset | null {
   if (!asset.uri || !asset.fileName) return null;
   return {
@@ -21,6 +26,7 @@ function mapImagePickerAsset(asset: Asset): FileAsset | null {
     name: asset.fileName,
     size: asset.fileSize ?? 0,
     type: asset.type ?? 'image/jpeg',
+    capturedAt: parsePickerCaptureTime(asset.timestamp),
   };
 }
 
@@ -40,10 +46,32 @@ async function pickImagesWithImagePicker(): Promise<FileAsset[]> {
     .filter((asset): asset is FileAsset => asset !== null);
 }
 
+async function enrichDesktopPickerCaptureTimes(
+  files: FileAsset[],
+): Promise<FileAsset[]> {
+  if (files.length === 0 || !files.some(file => file.capturedAt == null)) {
+    return files;
+  }
+
+  return runTasksWithConcurrency(
+    files,
+    MAX_CONCURRENT_CAPTURE_TIME_READS,
+    async file => {
+      if (file.capturedAt != null) {
+        return file;
+      }
+
+      const capturedAt = await readImageCaptureTime(file.uri);
+      return capturedAt != null ? {...file, capturedAt} : file;
+    },
+  );
+}
+
 export async function pickImages(): Promise<FileAsset[]> {
   if (isDesktopPlatform() && NativeFilePicker?.pickImages) {
     const files = await NativeFilePicker.pickImages();
-    return filterSupportedCullingImages(files);
+    const supported = filterSupportedCullingImages(files);
+    return enrichDesktopPickerCaptureTimes(supported);
   }
 
   if (isMobilePlatform()) {

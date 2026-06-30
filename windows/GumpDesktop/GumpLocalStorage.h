@@ -55,6 +55,16 @@ struct GumpLocalStorage {
   void GetImageDimensions(
       std::string uri,
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(ReadImageCaptureTime, L"readImageCaptureTime");
+  void ReadImageCaptureTime(
+      std::string uri,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(ComputePerceptualHash, L"computePerceptualHash");
+  void ComputePerceptualHash(
+      std::string uri,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
 };
 
 } // namespace GumpDesktop
