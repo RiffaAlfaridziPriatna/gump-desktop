@@ -3,6 +3,9 @@ import {createAnalysisQueue} from '@lib/culledAlbum/analysisQueue';
 import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
 import {
   addPhotosToAlbum,
+  clearAnalysisBatch,
+  clearLocalImportBatch,
+  getAlbum,
   getPhotoById,
   getPhotosForAlbum,
   markCullingCompleted,
@@ -29,7 +32,7 @@ import {
 } from './culledAlbumContext';
 
 const MAX_CONCURRENT_UPLOADS = 4;
-const MAX_CONCURRENT_SERVER_UPLOADS = 1;
+const MAX_CONCURRENT_SERVER_UPLOADS = 4;
 const MAX_CONCURRENT_ANALYSIS = 2;
 
 export function CulledAlbumProvider({children}: PropsWithChildren) {
@@ -122,16 +125,12 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     queueMicrotask(() => analysisQueueRef.current!.processPending(albumId));
   }, []);
 
-  const startSelectedUpload = useCallback(
-    async (albumId: string, photoIds: string[]) => {
-      startServerUploadBatch(albumId, photoIds);
-      await persistAlbum(albumId);
-      queueMicrotask(() =>
-        serverUploadQueueRef.current!.processPending(albumId),
-      );
-    },
-    [],
-  );
+  const startSelectedUpload = useCallback((albumId: string, photoIds: string[]) => {
+    startServerUploadBatch(albumId, photoIds);
+    serverUploadQueueRef.current!.resetActiveUploadCount(albumId);
+    void persistAlbum(albumId);
+    serverUploadQueueRef.current!.processPending(albumId);
+  }, []);
 
   const purgeAlbum = useCallback(async (albumId: string) => {
     syncedAlbumsRef.current.delete(albumId);
@@ -156,6 +155,11 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
   const clearCompleted = useCallback((mode: CulledAlbumToastMode) => {
     if (mode === 'upload') {
+      const albumId = uiStoreRef.current!.getState().activeUploadAlbumId;
+      if (albumId) {
+        clearLocalImportBatch(albumId);
+        void persistAlbum(albumId);
+      }
       uiStoreRef.current!.setState({
         uploadVisible: false,
         activeUploadAlbumId: null,
@@ -163,6 +167,11 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       return;
     }
 
+    const albumId = uiStoreRef.current!.getState().activeAnalyzeAlbumId;
+    if (albumId) {
+      clearAnalysisBatch(albumId);
+      void persistAlbum(albumId);
+    }
     uiStoreRef.current!.setState({
       analyzeVisible: false,
       activeAnalyzeAlbumId: null,
@@ -174,15 +183,23 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     if (!albumId) {
       return;
     }
-    for (const photo of getPhotosForAlbum(albumId)) {
-      if (photo.status !== 'uploaded') {
-        updatePhoto(albumId, photo.photoId, entry => {
+    const batchPhotoIds = getAlbum(albumId)?.localImportBatchPhotoIds ?? [];
+    const photoIds =
+      batchPhotoIds.length > 0
+        ? batchPhotoIds
+        : getPhotosForAlbum(albumId)
+            .filter(photo => photo.status !== 'uploaded')
+            .map(photo => photo.photoId);
+
+    for (const photoId of photoIds) {
+      updatePhoto(albumId, photoId, entry => {
+        if (entry.status !== 'uploaded') {
           entry.status = 'failed';
           if (error && entry.error === undefined) {
             entry.error = error;
           }
-        });
-      }
+        }
+      });
     }
   }, []);
 
@@ -191,15 +208,23 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     if (!albumId) {
       return;
     }
-    for (const photo of getPhotosForAlbum(albumId)) {
-      if (photo.analysisStatus !== 'analyzed') {
-        updatePhoto(albumId, photo.photoId, entry => {
+    const batchPhotoIds = getAlbum(albumId)?.analysisBatchPhotoIds ?? [];
+    const photoIds =
+      batchPhotoIds.length > 0
+        ? batchPhotoIds
+        : getPhotosForAlbum(albumId)
+            .filter(photo => photo.analysisStatus !== 'analyzed')
+            .map(photo => photo.photoId);
+
+    for (const photoId of photoIds) {
+      updatePhoto(albumId, photoId, entry => {
+        if (entry.analysisStatus !== 'analyzed') {
           entry.analysisStatus = 'failed';
           if (error && entry.analysisError === undefined) {
             entry.analysisError = error;
           }
-        });
-      }
+        }
+      });
     }
   }, []);
 

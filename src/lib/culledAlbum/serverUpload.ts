@@ -1,7 +1,7 @@
 import {make} from '@lib/di';
 import {APIException, APIService} from '@services/api';
 import {CulledAlbumPhoto} from './types';
-import {getPhotoById, persistAlbum, updatePhoto} from './store';
+import {getPhotoById, updatePhoto} from './store';
 
 function isRetryableServerError(err: unknown): boolean {
   return err instanceof APIException && err.statusCode >= 500;
@@ -60,5 +60,4 @@ export async function uploadServerPhoto(
     entry.serverUploadProgress = 100;
     entry.serverUploadStatus = 'uploaded';
   });
-  await persistAlbum(albumId);
 }

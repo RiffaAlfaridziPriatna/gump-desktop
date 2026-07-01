@@ -25,6 +25,11 @@ export type ServerUploadQueueDeps = {
 export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
   const {maxConcurrent, getPhoto, updatePhoto, persistAlbum, uploadPhoto} =
     deps;
+  const activeUploadCounts = new Map<string, number>();
+
+  function resetActiveUploadCount(albumId: string): void {
+    activeUploadCounts.set(albumId, 0);
+  }
 
   function failPhoto(albumId: string, photoId: string, error?: string): void {
     updatePhoto(albumId, photoId, photo => {
@@ -41,12 +46,7 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
       return;
     }
 
-    let uploadingCount = 0;
-    for (const photoId of batchPhotoIds) {
-      if (getPhoto(albumId, photoId)?.serverUploadStatus === 'uploading') {
-        uploadingCount++;
-      }
-    }
+    let uploadingCount = activeUploadCounts.get(albumId) ?? 0;
 
     for (const photoId of batchPhotoIds) {
       if (uploadingCount >= maxConcurrent) {
@@ -58,10 +58,18 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
         continue;
       }
 
-      uploadPhoto(albumId, photoId)
+      updatePhoto(albumId, photoId, entry => {
+        entry.serverUploadStatus = 'uploading';
+        entry.serverUploadProgress = 0;
+        entry.serverUploadError = undefined;
+      });
+
+      uploadingCount++;
+      activeUploadCounts.set(albumId, uploadingCount);
+
+      void uploadPhoto(albumId, photoId)
         .then(async () => {
           await checkServerUploadBatchComplete(albumId);
-          processPending(albumId);
         })
         .catch(err => {
           console.error('[serverUploadQueue] Upload failed', {
@@ -72,11 +80,14 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
           });
           failPhoto(albumId, photoId, formatUploadError(err));
           void persistAlbum(albumId);
+        })
+        .finally(() => {
+          const current = activeUploadCounts.get(albumId) ?? 1;
+          activeUploadCounts.set(albumId, Math.max(0, current - 1));
           processPending(albumId);
         });
-      uploadingCount++;
     }
   }
 
-  return {processPending, failPhoto};
+  return {processPending, failPhoto, resetActiveUploadCount};
 }

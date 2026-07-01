@@ -7,6 +7,7 @@ import {
 import {createStateStore} from '@lib/state';
 import {FileAsset} from '@services/upload/types';
 import {mergeAlbumPhotos, mergeWithMemoryAlbum} from './merge';
+import {isLocalImportBatchFinished} from './localImportProgress';
 import {readAlbum, readAllAlbums, removeAlbum, saveAlbum} from './storage';
 import {syncAlbumWithDisk} from './sync';
 import {
@@ -18,6 +19,7 @@ import {
   CulledAlbum,
   CulledAlbumPhoto,
   hasInFlightAnalysis,
+  hasInFlightServerUploads,
   hasInFlightUploads,
   normalizePersistedAlbum,
   recomputeAlbumTotals,
@@ -57,7 +59,11 @@ async function buildRefreshedAlbum(
   persisted?: CulledAlbum | null,
 ): Promise<CulledAlbum> {
   const active = getAlbumFromState(albumId);
-  if (hasInFlightUploads(active) || hasInFlightAnalysis(active)) {
+  if (
+    hasInFlightUploads(active) ||
+    hasInFlightAnalysis(active) ||
+    hasInFlightServerUploads(active)
+  ) {
     return active!;
   }
 
@@ -79,7 +85,11 @@ async function buildRefreshedAlbum(
 
 export async function loadAlbumIntoStore(albumId: string): Promise<CulledAlbum> {
   const active = getAlbumFromState(albumId);
-  if (hasInFlightUploads(active) || hasInFlightAnalysis(active)) {
+  if (
+    hasInFlightUploads(active) ||
+    hasInFlightAnalysis(active) ||
+    hasInFlightServerUploads(active)
+  ) {
     return active!;
   }
 
@@ -100,7 +110,11 @@ export async function loadAlbumsIntoStore(albumIds: string[]): Promise<void> {
     await Promise.all(
       albumIds.map(async albumId => {
         const active = getAlbumFromState(albumId);
-        if (hasInFlightUploads(active) || hasInFlightAnalysis(active)) {
+        if (
+          hasInFlightUploads(active) ||
+          hasInFlightAnalysis(active) ||
+          hasInFlightServerUploads(active)
+        ) {
           albums[albumId] = active!;
           return;
         }
@@ -120,7 +134,11 @@ export async function loadAlbumsIntoStore(albumIds: string[]): Promise<void> {
           state.albums[albumId] = loaded;
           continue;
         }
-        if (hasInFlightUploads(current) || hasInFlightAnalysis(current)) {
+        if (
+          hasInFlightUploads(current) ||
+          hasInFlightAnalysis(current) ||
+          hasInFlightServerUploads(current)
+        ) {
           continue;
         }
         current.photos = mergeAlbumPhotos(loaded.photos, current.photos);
@@ -138,7 +156,7 @@ export async function loadAlbumsIntoStore(albumIds: string[]): Promise<void> {
 export async function persistAlbum(albumId: string): Promise<void> {
   const album = getAlbumFromState(albumId);
   if (album) {
-    await saveAlbum(album);
+    await saveAlbum(JSON.parse(JSON.stringify(album)) as CulledAlbum);
   }
 }
 
@@ -166,7 +184,9 @@ export async function loadAllLocalAlbumsIntoStore(): Promise<void> {
       const current = state.albums[albumId];
       if (
         current &&
-        (hasInFlightUploads(current) || hasInFlightAnalysis(current))
+        (hasInFlightUploads(current) ||
+          hasInFlightAnalysis(current) ||
+          hasInFlightServerUploads(current))
       ) {
         current.photos = mergeAlbumPhotos(incoming.photos, current.photos);
         recomputeAlbumTotals(current);
@@ -274,6 +294,30 @@ export async function checkServerUploadBatchComplete(
   await persistAlbum(albumId);
 }
 
+export async function checkLocalImportBatchComplete(
+  albumId: string,
+): Promise<void> {
+  const album = getAlbumFromState(albumId);
+  if (
+    !album ||
+    album.localImportBatchPhotoIds.length === 0 ||
+    !isLocalImportBatchFinished(album.photos, album.localImportBatchPhotoIds)
+  ) {
+    return;
+  }
+
+  await persistAlbum(albumId);
+}
+
+export function clearLocalImportBatch(albumId: string): void {
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (album) {
+      album.localImportBatchPhotoIds = [];
+    }
+  });
+}
+
 export function getAlbum(albumId: string): CulledAlbum | null {
   return getAlbumFromState(albumId);
 }
@@ -297,6 +341,7 @@ export function addPhotosToAlbum(
     const album = state.albums[albumId]!;
 
     const baseUploadedAt = Date.now();
+    const addedPhotoIds: string[] = [];
     for (let index = 0; index < supportedFiles.length; index++) {
       const file = supportedFiles[index]!;
       const photo = createCulledAlbumPhoto(
@@ -309,8 +354,10 @@ export function addPhotosToAlbum(
       }
       album.photos.push(photo);
       added.push(photo);
+      addedPhotoIds.push(photo.photoId);
     }
 
+    album.localImportBatchPhotoIds = addedPhotoIds;
     album.photos = sortPhotosByUploadedAt(album.photos);
     recomputeAlbumTotals(album);
   });
@@ -389,6 +436,7 @@ export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {
       return;
     }
 
+    const batchPhotoIds: string[] = [];
     for (const photo of album.photos) {
       if (photo.status !== 'uploaded') {
         continue;
@@ -397,10 +445,21 @@ export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {
       photo.analysisStatus = 'pending';
       photo.analysisError = undefined;
       queued.push(photo);
+      batchPhotoIds.push(photo.photoId);
     }
 
+    album.analysisBatchPhotoIds = batchPhotoIds;
     recomputeAlbumTotals(album);
   });
 
   return queued;
+}
+
+export function clearAnalysisBatch(albumId: string): void {
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (album) {
+      album.analysisBatchPhotoIds = [];
+    }
+  });
 }

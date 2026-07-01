@@ -4,6 +4,8 @@ import {uploadPartFromFile} from '@services/upload/multipart';
 import {APIAgent} from '../agent';
 import {APIRequest, APIResponse} from '../types';
 
+const UPLOAD_PART_BATCH_SIZE = 4;
+
 @Injectable()
 export class MediaResource {
   constructor(private readonly agent: APIAgent) {}
@@ -32,11 +34,19 @@ export class MediaResource {
     );
 
     const uploadedParts: APIResponse.UploadedPart[] = [];
+    let completedParts = 0;
 
-    for (let index = 0; index < session.parts.length; index++) {
-      const part = session.parts[index];
-      uploadedParts.push(await uploadPartFromFile(data.file.uri, part));
-      onProgress(Math.floor(((index + 1) / session.parts.length) * 100));
+    for (let index = 0; index < session.parts.length; index += UPLOAD_PART_BATCH_SIZE) {
+      const batch = session.parts.slice(index, index + UPLOAD_PART_BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(async part => {
+          const uploaded = await uploadPartFromFile(data.file.uri, part);
+          completedParts++;
+          onProgress(Math.floor((completedParts / session.parts.length) * 100));
+          return uploaded;
+        }),
+      );
+      uploadedParts.push(...batchResults);
     }
 
     await this.agent.requestWithToken(

@@ -8,7 +8,7 @@ export function getServerUploadBatchPhotos(
   return photos.filter(photo => batchIds.has(photo.photoId));
 }
 
-function serverUploadItemProgress(photo: CulledAlbumPhoto): number {
+function photoUploadProgress(photo: CulledAlbumPhoto): number {
   if (
     photo.serverUploadStatus === 'uploaded' ||
     photo.serverUploadStatus === 'failed'
@@ -16,7 +16,7 @@ function serverUploadItemProgress(photo: CulledAlbumPhoto): number {
     return 1;
   }
   if (photo.serverUploadStatus === 'uploading') {
-    return Math.max(0.05, photo.serverUploadProgress / 100);
+    return photo.serverUploadProgress / 100;
   }
   return 0;
 }
@@ -30,11 +30,22 @@ export function computeServerUploadBatchProgress(
     return 0;
   }
 
-  const total = batchPhotos.reduce(
-    (sum, photo) => sum + serverUploadItemProgress(photo),
-    0,
-  );
-  return total / batchPhotos.length;
+  let totalBytes = 0;
+  let uploadedBytes = 0;
+
+  for (const photo of batchPhotos) {
+    const size = photo.file.size;
+    if (size > 0) {
+      totalBytes += size;
+      uploadedBytes += size * photoUploadProgress(photo);
+      continue;
+    }
+
+    totalBytes += 1;
+    uploadedBytes += photoUploadProgress(photo);
+  }
+
+  return totalBytes === 0 ? 0 : uploadedBytes / totalBytes;
 }
 
 export function isServerUploadBatchFinished(

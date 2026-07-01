@@ -45,6 +45,10 @@ export type CulledAlbumPhoto = {
   file: FileAsset;
   /** Unix timestamp (ms) when the photo was added locally; used for display order. */
   uploadedAt: number;
+  /** Unix timestamp (ms) from EXIF/picker capture metadata when available. */
+  capturedAt: number | null;
+  /** 64-bit difference hash (dHash) as 16-char hex for duplicate detection. */
+  perceptualHash: string | null;
   progress: number;
   status: CulledAlbumPhotoUploadStatus;
   error?: string;
@@ -80,6 +84,9 @@ export type CulledAlbum = {
   cullingHasUploads: boolean;
   link: string;
   uploadBatchPhotoIds: string[];
+  localImportBatchPhotoIds: string[];
+  analysisBatchPhotoIds: string[];
+  nextFaceClusterId: number;
   createdAt: string;
   totalPhotos: number;
   totalStorage: number;
@@ -97,6 +104,8 @@ export function createCulledAlbumPhoto(
     photoId,
     file,
     uploadedAt,
+    capturedAt: file.capturedAt ?? null,
+    perceptualHash: null,
     progress: 0,
     status: 'pending',
     serverUploadStatus: 'idle',
@@ -127,6 +136,9 @@ export function createCulledAlbumFromSelection(
     cullingHasUploads: false,
     link: source.link,
     uploadBatchPhotoIds: [],
+    localImportBatchPhotoIds: [],
+    analysisBatchPhotoIds: [],
+    nextFaceClusterId: 0,
     createdAt: new Date().toISOString(),
     totalPhotos: 0,
     totalStorage: 0,
@@ -176,6 +188,13 @@ export function isAnalysisInFlight(photo: CulledAlbumPhoto): boolean {
   );
 }
 
+export function isServerUploadInFlight(photo: CulledAlbumPhoto): boolean {
+  return (
+    photo.serverUploadStatus === 'pending' ||
+    photo.serverUploadStatus === 'uploading'
+  );
+}
+
 export function hasInFlightUploads(
   album: CulledAlbum | null | undefined,
 ): boolean {
@@ -186,6 +205,22 @@ export function hasInFlightAnalysis(
   album: CulledAlbum | null | undefined,
 ): boolean {
   return album?.photos.some(isAnalysisInFlight) ?? false;
+}
+
+export function hasInFlightServerUploads(
+  album: CulledAlbum | null | undefined,
+): boolean {
+  if (!album || album.uploadBatchPhotoIds.length === 0) {
+    return false;
+  }
+
+  const batchIds = new Set(album.uploadBatchPhotoIds);
+  return album.photos.some(
+    photo =>
+      batchIds.has(photo.photoId) &&
+      photo.serverUploadStatus !== 'uploaded' &&
+      photo.serverUploadStatus !== 'failed',
+  );
 }
 
 export function countByUploadStatus(
@@ -231,6 +266,8 @@ export function normalizePersistedPhoto(
   photo: CulledAlbumPhoto,
 ): CulledAlbumPhoto {
   photo.uploadedAt ??= 0;
+  photo.capturedAt ??= null;
+  photo.perceptualHash ??= null;
   if (photo.status === 'uploading') {
     photo.status = 'pending';
     photo.progress = 0;
@@ -264,6 +301,8 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.cullingHasUploads ??= false;
   album.link ??= '';
   album.uploadBatchPhotoIds ??= [];
+  album.localImportBatchPhotoIds ??= [];
+  album.analysisBatchPhotoIds ??= [];
   album.createdAt ??= new Date(0).toISOString();
   album.totalPhotos ??= album.photos.length;
   album.totalStorage ??= 0;

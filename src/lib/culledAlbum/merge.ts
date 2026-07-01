@@ -1,9 +1,34 @@
-import {CulledAlbumPhoto, isAnalysisInFlight, isUploadInFlight} from './types';
+import {CulledAlbumPhoto, isAnalysisInFlight, isServerUploadInFlight, isUploadInFlight} from './types';
 
 function preferPhoto(
   existing: CulledAlbumPhoto,
   incoming: CulledAlbumPhoto,
 ): CulledAlbumPhoto {
+  if (incoming.serverUploadStatus === 'uploading') {
+    return incoming;
+  }
+  if (existing.serverUploadStatus === 'uploading') {
+    return existing;
+  }
+  if (
+    incoming.serverUploadStatus === 'uploaded' &&
+    existing.serverUploadStatus !== 'uploaded'
+  ) {
+    return incoming;
+  }
+  if (
+    existing.serverUploadStatus === 'uploaded' &&
+    incoming.serverUploadStatus !== 'uploaded'
+  ) {
+    return existing;
+  }
+  if (isServerUploadInFlight(incoming) && !isServerUploadInFlight(existing)) {
+    return incoming;
+  }
+  if (isServerUploadInFlight(existing) && !isServerUploadInFlight(incoming)) {
+    return existing;
+  }
+
   const incomingInFlight = isUploadInFlight(incoming);
   const existingInFlight = isUploadInFlight(existing);
 
