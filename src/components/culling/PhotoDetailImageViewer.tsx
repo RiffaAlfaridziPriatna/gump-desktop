@@ -1,18 +1,17 @@
 import {FaceStatusIconBadge} from '@components/culling/FaceStatusIconBadge';
 import type {KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
-import {FrostedBackdrop} from '@components/ui/frosted';
 import {
   boundingBoxToDisplayRect,
   DisplayRect,
+  getContainedImageLayout,
   getFaceZoomImageLayout,
-  getTopAlignedFullWidthImageLayout,
 } from '@lib/cullingFaceCrop';
 import {
   getEyeStatusMeta,
   getFocusStatusMeta,
 } from '@lib/culling/faceStatus';
 import {isScrollAwareTooltipLocked, useScrollAwareTooltipStore} from '@lib/scrollAwareTooltip';
-import {loadImageDimensions} from '@lib/imageDimensions';
+import {ImageDimensions, loadImageDimensions} from '@lib/imageDimensions';
 import {colors} from '@lib/colors';
 import {APIResponse} from '@services/api';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
@@ -22,6 +21,7 @@ type PhotoDetailImageViewerProps = {
   uri: string;
   faces: APIResponse.CullingFace[];
   zoomFaceIndex: number | null;
+  imageSize?: ImageDimensions | null;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
 };
 
@@ -31,7 +31,6 @@ type FaceOverlayProps = {
   face: APIResponse.CullingFace;
   displayRect?: DisplayRect;
   mode: FaceOverlayMode;
-  imageBackdrop?: FrostedBackdrop;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
 };
 
@@ -39,7 +38,6 @@ function FaceStatusOverlay({
   face,
   displayRect,
   mode,
-  imageBackdrop,
   onTooltipAnchorChange,
 }: FaceOverlayProps) {
   const overlayRef = useRef<View>(null);
@@ -77,14 +75,12 @@ function FaceStatusOverlay({
     <View style={styles.faceStatusBadges}>
       <FaceStatusIconBadge
         meta={eyeMeta}
-        backdrop={imageBackdrop}
         onHoverIn={tooltipEnabled ? showTooltip : undefined}
         onHoverOut={tooltipEnabled ? hideTooltip : undefined}
         size="large"
       />
       <FaceStatusIconBadge
         meta={focusMeta}
-        backdrop={imageBackdrop}
         onHoverIn={tooltipEnabled ? showTooltip : undefined}
         onHoverOut={tooltipEnabled ? hideTooltip : undefined}
         size="large"
@@ -130,17 +126,16 @@ export function PhotoDetailImageViewer({
   uri,
   faces,
   zoomFaceIndex,
+  imageSize: imageSizeProp,
   onTooltipAnchorChange,
 }: PhotoDetailImageViewerProps) {
   const [containerSize, setContainerSize] = useState({width: 0, height: 0});
-  const [imageSize, setImageSize] = useState<{
+  const [loadedImageSize, setLoadedImageSize] = useState<{
     width: number;
     height: number;
   } | null>(null);
-  const [imageBackdrop, setImageBackdrop] = useState<
-    FrostedBackdrop | undefined
-  >();
   const imageWrapRef = useRef<View>(null);
+  const imageSize = imageSizeProp ?? loadedImageSize;
 
   useEffect(() => {
     if (zoomFaceIndex !== null) {
@@ -149,31 +144,23 @@ export function PhotoDetailImageViewer({
   }, [zoomFaceIndex, onTooltipAnchorChange]);
 
   useEffect(() => {
+    if (imageSizeProp) {
+      return;
+    }
+
     let cancelled = false;
-    setImageSize(null);
+    setLoadedImageSize(null);
 
     loadImageDimensions(uri).then(dimensions => {
       if (!cancelled && dimensions) {
-        setImageSize(dimensions);
+        setLoadedImageSize(dimensions);
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [uri]);
-
-  const syncImageBackdrop = useCallback(() => {
-    imageWrapRef.current?.measureInWindow((x, y, measuredWidth, measuredHeight) => {
-      setImageBackdrop({
-        uri,
-        coverWidth: measuredWidth,
-        coverHeight: measuredHeight,
-        coverX: x,
-        coverY: y,
-      });
-    });
-  }, [uri]);
+  }, [imageSizeProp, uri]);
 
   const imageLayout = useMemo(() => {
     if (!imageSize || containerSize.width <= 0 || containerSize.height <= 0) {
@@ -193,8 +180,9 @@ export function PhotoDetailImageViewer({
       );
     }
 
-    return getTopAlignedFullWidthImageLayout(
+    return getContainedImageLayout(
       containerSize.width,
+      containerSize.height,
       imageSize.width,
       imageSize.height,
     );
@@ -239,19 +227,16 @@ export function PhotoDetailImageViewer({
               width: containerSize.width,
               height: containerSize.height,
             },
-          ]}
-        >
+          ]}>
           <View
             ref={imageWrapRef}
             style={[
-              styles.imageWrap,
+              styles.imageFrame,
               {
                 width: containerSize.width,
                 height: containerSize.height,
               },
-            ]}
-            onLayout={syncImageBackdrop}
-          >
+            ]}>
             <Image
               source={{uri}}
               style={{
@@ -270,7 +255,6 @@ export function PhotoDetailImageViewer({
                 key={`zoom-${visibleFaces[0].index}`}
                 face={visibleFaces[0].face}
                 mode="fixedBottom"
-                imageBackdrop={imageBackdrop}
                 onTooltipAnchorChange={onTooltipAnchorChange}
               />
             ) : (
@@ -280,7 +264,6 @@ export function PhotoDetailImageViewer({
                   face={face}
                   displayRect={displayRect}
                   mode="attached"
-                  imageBackdrop={imageBackdrop}
                   onTooltipAnchorChange={onTooltipAnchorChange}
                 />
               ))
@@ -303,9 +286,10 @@ const styles = StyleSheet.create({
   stage: {
     position: 'relative',
   },
-  imageWrap: {
+  imageFrame: {
     position: 'relative',
     overflow: 'hidden',
+    backgroundColor: colors.cardBackgroundSecondary,
   },
   overlayLayer: {
     ...StyleSheet.absoluteFillObject,
