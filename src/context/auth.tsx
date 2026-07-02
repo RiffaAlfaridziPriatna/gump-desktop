@@ -14,6 +14,7 @@ import {createStateStore, StateStore, useStateStore} from '@lib/state';
 import {useContextOrThrow} from '@lib/context';
 import {make} from '@lib/di';
 import {APIService, APIResponse} from '@services/api';
+import {useQuery, useQueryClient} from '@tanstack/react-query';
 
 export type AuthState = {
   user: APIResponse.User | APIResponse.Guest | null;
@@ -36,6 +37,7 @@ AuthActionsContext.displayName = 'AuthActionsContext';
 
 export function AuthProvider({children}: PropsWithChildren) {
   const storeRef = useRef<StateStore<AuthState>>(null);
+  const queryClient = useQueryClient();
 
   if (!storeRef.current) {
     storeRef.current = createStateStore<AuthState>({
@@ -46,20 +48,25 @@ export function AuthProvider({children}: PropsWithChildren) {
     });
   }
 
-  const login = useCallback(async (email: string, password: string) => {
-    const api = make(APIService);
-    const response = await api.auth.login({email, password});
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const api = make(APIService);
+      const response = await api.auth.login({email, password});
 
-    await setAuthToken(response.token);
-    api.agent.setToken(response.token);
+      await setAuthToken(response.token);
+      api.agent.setToken(response.token);
 
-    storeRef.current!.setState({
-      user: response.user,
-      token: response.token,
-      isAuthenticated: true,
-      isLoading: false,
-    });
-  }, []);
+      storeRef.current!.setState({
+        user: response.user,
+        token: response.token,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+
+      queryClient.setQueryData(['currentUser', response.token], response.user);
+    },
+    [queryClient],
+  );
 
   const logout = useCallback(async () => {
     await deleteAuthToken();
@@ -71,7 +78,9 @@ export function AuthProvider({children}: PropsWithChildren) {
       isAuthenticated: false,
       isLoading: false,
     });
-  }, []);
+
+    queryClient.clear();
+  }, [queryClient]);
 
   const loadStoredAuth = useCallback(async () => {
     try {
@@ -121,4 +130,20 @@ export function useAuthState<R = AuthState>(
 
 export function useAuthActions(): AuthActions {
   return useContextOrThrow(AuthActionsContext);
+}
+
+export function useCurrentUser(token: string | null) {
+  const api = make(APIService);
+
+  return useQuery({
+    queryKey: ['currentUser', token],
+    queryFn: async () => {
+      if (!token) return null;
+      api.agent.setToken(token);
+      return await api.auth.getCurrentUser();
+    },
+    enabled: Boolean(token),
+    staleTime: Infinity,
+    retry: false,
+  });
 }

@@ -7,9 +7,19 @@ import {colors} from '@lib/colors';
 import {DefaultTheme, NavigationContainer} from '@react-navigation/native';
 import {ActivityIndicator, StyleSheet, View} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import 'reflect-metadata';
 import {AuthNavigator} from './AuthNavigator';
 import {MainNavigator} from './MainNavigator';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60000,
+      retry: 1,
+    },
+  },
+});
 
 const DarkTheme = {
   ...DefaultTheme,
@@ -42,18 +52,20 @@ function RootNavigator() {
 export default function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
-      <ErrorProvider>
-        <AuthProvider>
-          <CulledAlbumProvider>
-            <NavigationContainer theme={DarkTheme}>
-              <RootNavigator />
-            </NavigationContainer>
-            <UploadToast mode="upload" />
-            <UploadToast mode="analyze" />
-            <ErrorToast />
-          </CulledAlbumProvider>
-        </AuthProvider>
-      </ErrorProvider>
+      <QueryClientProvider client={queryClient}>
+        <ErrorProvider>
+          <AuthProvider>
+            <CulledAlbumProvider>
+              <NavigationContainer theme={DarkTheme}>
+                <RootNavigator />
+              </NavigationContainer>
+              <UploadToast mode="upload" />
+              <UploadToast mode="analyze" />
+              <ErrorToast />
+            </CulledAlbumProvider>
+          </AuthProvider>
+        </ErrorProvider>
+      </QueryClientProvider>
     </GestureHandlerRootView>
   );
 }

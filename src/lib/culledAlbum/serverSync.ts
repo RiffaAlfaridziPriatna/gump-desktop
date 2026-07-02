@@ -6,6 +6,7 @@ import {
   hasInFlightAnalysis,
   hasInFlightUploads,
 } from './types';
+import {useQuery} from '@tanstack/react-query';
 
 function jsonEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -81,4 +82,24 @@ export async function syncCulledAlbumsWithServer(
   });
 
   await Promise.all(albumIdsToPersist.map(albumId => persistAlbum(albumId)));
+}
+
+export function useServerAlbumSync(albumIds: string[], enabled: boolean = true) {
+  const api = make(APIService);
+
+  const query = useQuery({
+    queryKey: ['serverAlbumSync', albumIds.sort().join(',')],
+    queryFn: async () => {
+      if (albumIds.length === 0 || !api.agent.getToken()) {
+        return null;
+      }
+      await syncCulledAlbumsWithServer(albumIds);
+      return true;
+    },
+    enabled: enabled && albumIds.length > 0,
+    staleTime: 300000,
+    retry: 1,
+  });
+
+  return query;
 }

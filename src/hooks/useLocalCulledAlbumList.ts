@@ -1,5 +1,5 @@
 import {useCulledAlbumStore} from '@context/culledAlbum';
-import {syncCulledAlbumsWithServer} from '@lib/culledAlbum/serverSync';
+import {useServerAlbumSync} from '@lib/culledAlbum/serverSync';
 import {
   culledAlbumStore,
   loadAllLocalAlbumsIntoStore,
@@ -17,28 +17,23 @@ function sortAlbums(albums: CulledAlbum[]): CulledAlbum[] {
 export function useLocalCulledAlbumList() {
   const [loadingAlbums, setLoadingAlbums] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [enableSync, setEnableSync] = useState(false);
 
   const albums = useCulledAlbumStore(state =>
     sortAlbums(Object.values(state.albums)),
   );
 
-  const syncWithServerInBackground = useCallback(() => {
-    const albumIds = Object.keys(culledAlbumStore.getState().albums);
-    if (albumIds.length === 0) {
-      return;
-    }
+  const albumIds = useMemo(
+    () => Object.keys(culledAlbumStore.getState().albums),
+    [albums],
+  );
 
-    void syncCulledAlbumsWithServer(albumIds).catch(err => {
-      console.warn(
-        '[useLocalCulledAlbumList] Background server sync failed:',
-        err,
-      );
-    });
-  }, []);
+  useServerAlbumSync(albumIds, enableSync);
 
   const refresh = useCallback(async () => {
     setLoadingAlbums(true);
     setError(null);
+    setEnableSync(false);
     try {
       await loadAllLocalAlbumsIntoStore();
     } catch (err) {
@@ -47,9 +42,9 @@ export function useLocalCulledAlbumList() {
       );
     } finally {
       setLoadingAlbums(false);
-      syncWithServerInBackground();
+      setEnableSync(true);
     }
-  }, [syncWithServerInBackground]);
+  }, []);
 
   useEffect(() => {
     refresh();

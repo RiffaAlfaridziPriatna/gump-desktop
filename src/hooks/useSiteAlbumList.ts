@@ -1,6 +1,7 @@
 import {make} from '@lib/di';
 import {APIService, APIResponse, assertAPIException} from '@services/api';
-import {useCallback, useEffect, useReducer, useState} from 'react';
+import {useInfiniteQuery} from '@tanstack/react-query';
+import {useCallback, useMemo} from 'react';
 
 export type SiteAlbumListSearchValues = {
   keyword?: string;
@@ -10,85 +11,85 @@ export type SiteAlbumListSearchValues = {
   order?: 'asc' | 'desc';
 };
 
-type UpdateAlbumsParams =
-  | {action: 'replace'; data: APIResponse.AlbumList}
-  | {action: 'append'; data: APIResponse.AlbumList};
-
-const emptyAlbumList: APIResponse.AlbumList = {
-  next: null,
-  previous: null,
-  results: [],
-  count: 0,
-};
-
 export function useSiteAlbumList(search: SiteAlbumListSearchValues = {}) {
   const api = make(APIService);
-  const [loadingAlbums, setLoadingAlbums] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [albums, updateAlbums] = useReducer(
-    (state: APIResponse.AlbumList, params: UpdateAlbumsParams) => {
-      if (params.action === 'append') {
-        return {
-          ...state,
-          next: params.data.next,
-          results: state.results.concat(params.data.results),
-        };
-      }
-      return {
-        next: params.data.next,
-        previous: params.data.previous,
-        results: params.data.results,
-        count: params.data.count,
-      };
-    },
-    emptyAlbumList,
-  );
 
-  const fetchAlbums = useCallback(
-    async (cursor?: string) => {
-      setLoadingAlbums(true);
-      setError(null);
+  const queryKey = [
+    'siteAlbums',
+    search.keyword,
+    search.year,
+    search.month,
+    search.sort,
+    search.order,
+  ];
+
+  const {
+    data,
+    error: queryError,
+    fetchNextPage,
+    hasNextPage,
+    isFetching,
+    isFetchingNextPage,
+    refetch,
+  } = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({pageParam}) => {
       try {
-        const res = await api.album.getAll({
-          cursor,
+        return await api.album.getAll({
+          cursor: pageParam,
           keyword: search.keyword,
           year: search.year,
           month: search.month,
           sort: search.sort,
           order: search.order,
         });
-        updateAlbums({
-          action: cursor ? 'append' : 'replace',
-          data: res,
-        });
       } catch (err) {
         assertAPIException(err);
-        setError(err.message);
-      } finally {
-        setLoadingAlbums(false);
+        throw err;
       }
     },
-    [api, search.keyword, search.month, search.order, search.sort, search.year],
-  );
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: lastPage => lastPage.next ?? undefined,
+    staleTime: 300000,
+  });
 
-  useEffect(() => {
-    fetchAlbums();
-  }, [fetchAlbums]);
+  const albums = useMemo(() => {
+    if (!data) {
+      return {
+        next: null,
+        previous: null,
+        results: [],
+        count: 0,
+      };
+    }
+
+    const allResults = data.pages.flatMap(page => page.results);
+    const lastPage = data.pages[data.pages.length - 1];
+
+    return {
+      next: lastPage?.next ?? null,
+      previous: lastPage?.previous ?? null,
+      results: allResults,
+      count: lastPage?.count ?? 0,
+    };
+  }, [data]);
 
   const loadMore = useCallback(() => {
-    if (albums.next && !loadingAlbums) {
-      fetchAlbums(albums.next);
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
     }
-  }, [albums.next, fetchAlbums, loadingAlbums]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const refresh = useCallback(() => fetchAlbums(), [fetchAlbums]);
+  const refresh = useCallback(() => {
+    refetch();
+  }, [refetch]);
 
   return {
-    loadingAlbums,
+    loadingAlbums: isFetching,
     albums,
-    error,
+    error: queryError ? String(queryError) : null,
     loadMore,
     refresh,
-    hasMore: Boolean(albums.next),
+    hasMore: Boolean(hasNextPage),
   };
 }
