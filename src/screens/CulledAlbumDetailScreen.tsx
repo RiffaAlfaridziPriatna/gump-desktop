@@ -1,63 +1,46 @@
-import { CulledAlbumFilterBar } from '@components/culling/CulledAlbumFilterBar';
-import { CulledAlbumDetailSidebar } from '@components/culling/CulledAlbumDetailSidebar';
-import { CulledAlbumPhotoGrid, CulledAlbumGridPhoto } from '@components/culling/CulledAlbumPhotoGrid';
-import { DeletePhotoModal } from '@components/modals/DeletePhotoModal';
-import { UploadSelectedConfirmModal } from '@components/modals/UploadSelectedConfirmModal';
-import { UploadToast } from '@components/upload/UploadToast';
-import {FaceStatusTooltip, type KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
+import {CulledAlbumFilterBar} from '@components/culling/CulledAlbumFilterBar';
+import {
+  CulledAlbumDetailSidebar,
+  KeyFaceWithSource,
+} from '@components/culling/CulledAlbumDetailSidebar';
+import {CulledAlbumPhotoGrid} from '@components/culling/CulledAlbumPhotoGrid';
+import {CulledAlbumDetailHeader} from '@components/culling/CulledAlbumDetailHeader';
+import {DeletePhotoModal} from '@components/modals/DeletePhotoModal';
+import {UploadSelectedConfirmModal} from '@components/modals/UploadSelectedConfirmModal';
+import {UploadToast} from '@components/upload/UploadToast';
+import {FaceStatusTooltip} from '@components/culling/FaceStatusTooltip';
 import {
   useCulledAlbumActions,
   useCulledAlbumPhotosState,
   useCulledAlbumStore,
 } from '@context/culledAlbum';
-import { useCulledAlbumPhotos } from '@hooks/useCulledAlbumPhotos';
-import {
-  matchesCulledAlbumGridFilters,
-  SelectionFilter,
-  StarRatingFilter,
-} from '@lib/culling/culledAlbumPhotoFilters';
-import { cullingEngine } from '@lib/culling/cullingEngine';
-import { CullFilterKey, matchesCullFilterKey } from '@lib/culling/cullingUtil';
-import { getCulledAlbumGridLayout } from '@lib/culledAlbumGridLayout';
-import { stabilizeGridPhotos } from '@lib/stableCulledAlbumGridPhotos';
-import { toCullingPhoto, isCulledPhotoDisabled } from '@lib/culledAlbum/types';
-import { colors } from '@lib/colors';
-import { fonts } from '@lib/typography';
-import { MainStackParamList } from '../app/MainNavigator';
-import { APIResponse } from '@services/api';
-import { StackScreenProps } from '@react-navigation/stack';
-import { useLayout } from '@hooks/useLayout';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import IconChevronLeft from '../assets/images/icon_chevron_left.svg';
+import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
+import {useCulledAlbumDetailData} from '@hooks/useCulledAlbumDetailData';
+import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
+import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
+import {resolveKeyFaceSource} from '@lib/cullingFaceCrop';
+import {cullingEngine} from '@lib/culling/cullingEngine';
+import {getCulledAlbumGridLayout} from '@lib/culledAlbumGridLayout';
+import {stabilizeGridPhotos} from '@lib/stableCulledAlbumGridPhotos';
+import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
+import {colors} from '@lib/colors';
+import {fonts} from '@lib/typography';
+import {MainStackParamList} from '../app/MainNavigator';
+import {StackScreenProps} from '@react-navigation/stack';
+import {useLayout} from '@hooks/useLayout';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {ActivityIndicator, StyleSheet, Text, View} from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import IconNoPhoto from '../assets/images/icon_no_photo.svg';
-import GumpLogo from '../assets/images/logo.svg';
-import { TouchableOpacity } from '@components/ui';
 
 type Props = StackScreenProps<MainStackParamList, 'CulledAlbumDetail'>;
 
-type FilterKey = CullFilterKey;
+export default function CulledAlbumDetailScreen({navigation, route}: Props) {
+  const {albumId} = route.params;
+  const {startSelectedUpload} = useCulledAlbumActions();
+  const {isMobileLayout, screenPaddingHorizontal} = useLayout();
 
-const FILTER_KEYS = Object.keys({
-  aiSelected: true,
-  maybe: true,
-  blurred: true,
-  closedEyes: true,
-  duplicated: true,
-}) as FilterKey[];
-
-export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
-  const { albumId } = route.params;
-  const { startSelectedUpload } = useCulledAlbumActions();
-  const { isMobileLayout, screenPaddingHorizontal } = useLayout();
-
-  const { photos, loadingPhotos, loadError } = useCulledAlbumPhotos(albumId);
+  const {photos, loadingPhotos, loadError} = useCulledAlbumPhotos(albumId);
   const albumPhotos = useCulledAlbumPhotosState(albumId);
   const cullingCompleted = useCulledAlbumStore(
     state => state.albums[albumId]?.cullingCompleted ?? false,
@@ -66,96 +49,55 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     state => state.albums[albumId]?.cullingHasUploads ?? false,
   );
   const albumName = useCulledAlbumStore(
-    state => state.albums[albumId]?.title ?? state.albums[albumId]?.name ?? 'Album',
+    state =>
+      state.albums[albumId]?.title ?? state.albums[albumId]?.name ?? 'Album',
   );
   const albumLink = useCulledAlbumStore(
     state => state.albums[albumId]?.link ?? '',
   );
 
-  const isAnalyzing = albumPhotos.some(
-    photo =>
-      photo.analysisStatus === 'pending' ||
-      photo.analysisStatus === 'analyzing',
-  );
-  const canDeletePhoto = cullingCompleted && !isAnalyzing;
 
-  const [analyzedPhotos, setAnalyzedPhotos] = useState<
-    APIResponse.CullingPhoto[]
-  >([]);
-  const [stats, setStats] = useState<APIResponse.CullingStats | null>(null);
-  const [keyFaces, setKeyFaces] = useState<APIResponse.CullingKeyFace[]>([]);
-  const [activeFilters, setActiveFilters] = useState<
-    Record<FilterKey, boolean>
-  >({
-    aiSelected: false,
-    maybe: false,
-    blurred: false,
-    closedEyes: false,
-    duplicated: false,
-  });
-  const [selectionFilter, setSelectionFilter] = useState<SelectionFilter>(null);
-  const [starRatingFilter, setStarRatingFilter] = useState<StarRatingFilter>(
-    [],
-  );
+  const {
+    stats,
+    keyFaces,
+    loadingDetail,
+    isAnalyzing,
+    analyzedPhotoList,
+    refreshDetail,
+    toggleSelection,
+    updateStarRating,
+    deletePhoto,
+    photoMap,
+  } = useCulledAlbumDetailData(albumId, albumPhotos);
 
+  const {
+    screenRootRef,
+    keyFaceTooltip,
+    keyFaceTooltipWidth,
+    screenOrigin,
+    syncScreenOrigin,
+    handleKeyFaceTooltipChange,
+    dismissKeyFaceTooltip,
+    setKeyFaceTooltipWidth,
+  } = useKeyFaceTooltip();
+
+  const gridPhotosCacheRef = useRef(new Map());
   const [photoToDelete, setPhotoToDelete] = useState<{
     photoId: string;
     fileName: string;
   } | null>(null);
-  const [loadingDetail, setLoadingDetail] = useState(true);
-
   const [cullFiltersExpanded, setCullFiltersExpanded] = useState(true);
   const [keyFacesExpanded, setKeyFacesExpanded] = useState(true);
-
-  const [keyFaceTooltip, setKeyFaceTooltip] =
-    useState<KeyFaceTooltipAnchor | null>(null);
-  const [keyFaceTooltipWidth, setKeyFaceTooltipWidth] = useState(0);
-  const [screenOrigin, setScreenOrigin] = useState({ x: 0, y: 0 });
   const [showUploadConfirm, setShowUploadConfirm] = useState(false);
-
   const [mainContentWidth, setMainContentWidth] = useState(0);
+
   const gridLayout = useMemo(
     () => getCulledAlbumGridLayout(mainContentWidth, isMobileLayout),
     [isMobileLayout, mainContentWidth],
   );
-  const { cardWidth, columnCount, gap, itemHeight, rowHeight } = gridLayout;
+  const {cardWidth, columnCount, gap, itemHeight, rowHeight} = gridLayout;
 
-  const screenRootRef = useRef<View>(null);
-  const gridPhotosCacheRef = useRef(new Map<string, CulledAlbumGridPhoto>());
-
-  const syncScreenOrigin = useCallback(() => {
-    screenRootRef.current?.measureInWindow((x, y) => {
-      setScreenOrigin({ x, y });
-    });
-  }, []);
-
-  const handleKeyFaceTooltipChange = useCallback(
-    (anchor: KeyFaceTooltipAnchor | null) => {
-      setKeyFaceTooltipWidth(0);
-      setKeyFaceTooltip(anchor);
-      if (anchor) {
-        syncScreenOrigin();
-      }
-    },
-    [syncScreenOrigin],
-  );
-
-  const dismissKeyFaceTooltip = useCallback(() => {
-    handleKeyFaceTooltipChange(null);
-  }, [handleKeyFaceTooltipChange]);
-
-  const photoMap = useMemo(() => {
-    const map = new Map<string, APIResponse.CullingPhoto>();
-    for (const photo of analyzedPhotos) {
-      map.set(photo.photoId, photo);
-    }
-    for (const photo of albumPhotos) {
-      if (photo.analysisStatus === 'analyzed') {
-        map.set(photo.photoId, toCullingPhoto(photo));
-      }
-    }
-    return map;
-  }, [albumPhotos, analyzedPhotos]);
+  const canDeletePhoto = cullingCompleted && !isAnalyzing;
 
   const rawGridPhotos = useMemo(() => {
     return albumPhotos
@@ -176,154 +118,51 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     [rawGridPhotos],
   );
 
-  const gridFilters = useMemo(
-    () => ({
-      selection: selectionFilter,
-      starRating: starRatingFilter,
-    }),
-    [selectionFilter, starRatingFilter],
-  );
-
-  const filteredPhotos = useMemo(() => {
-    const enabledCullFilters = Object.entries(activeFilters).filter(
-      ([, enabled]) => enabled,
-    ) as Array<[FilterKey, boolean]>;
-    const hasGridFilters =
-      selectionFilter !== null || starRatingFilter.length > 0;
-
-    return gridPhotos.filter(({ analysis }) => {
-      if (
-        hasGridFilters &&
-        !matchesCulledAlbumGridFilters(analysis, gridFilters)
-      ) {
-        return false;
-      }
-      if (enabledCullFilters.length === 0) {
-        return true;
-      }
-      if (!analysis) {
-        return false;
-      }
-      return enabledCullFilters.some(([key]) =>
-        matchesCullFilterKey(analysis, key),
-      );
-    });
-  }, [
+  const {
     activeFilters,
-    gridFilters,
-    gridPhotos,
     selectionFilter,
     starRatingFilter,
-  ]);
+    filteredPhotos,
+    filterCounts,
+    selectedCount,
+    toggleFilter,
+    setSelectionFilter,
+    setStarRatingFilter,
+  } = useCulledAlbumFilters(gridPhotos, stats);
 
   const filesByPhotoId = useMemo(() => {
     const map = new Map<string, (typeof gridPhotos)[number]['file']>();
-    for (const { photoId, file } of gridPhotos) {
+    for (const {photoId, file} of gridPhotos) {
       map.set(photoId, file);
     }
     return map;
   }, [gridPhotos]);
 
-  const analyzedPhotoList = useMemo(
-    () => Array.from(photoMap.values()),
-    [photoMap],
-  );
-
-  const analyzedPhotoCount = useMemo(
-    () =>
-      albumPhotos.filter(photo => photo.analysisStatus === 'analyzed').length,
-    [albumPhotos],
-  );
-
-  const refreshDetail = useCallback(async () => {
-    try {
-      await cullingEngine.refreshDuplicateFlags(albumId);
-      const keyFaceList = await cullingEngine.getKeyFaces(albumId);
-      const [photoList, statsResult] = await Promise.all([
-        cullingEngine.getPhotos(albumId),
-        cullingEngine.getStats(albumId),
-      ]);
-      setAnalyzedPhotos(photoList.results);
-      setStats(statsResult);
-      setKeyFaces(keyFaceList.results);
-    } catch (error) {
-      console.error(
-        '[CulledAlbumDetailScreen] Failed to refresh detail',
-        error,
-      );
-    } finally {
-      setLoadingDetail(false);
-    }
-  }, [albumId]);
-
-  useEffect(() => {
-    if (!isAnalyzing && analyzedPhotoCount > 0) {
-      refreshDetail();
-    }
-  }, [analyzedPhotoCount, isAnalyzing, refreshDetail]);
-
-  const toggleSelection = useCallback(
-    async (photoId: string, selected: boolean) => {
-      const updated = await cullingEngine.updateSelection(albumId, photoId, {
-        selected,
-      });
-      setAnalyzedPhotos(current =>
-        current.map(photo =>
-          photo.photoId === photoId ? { ...photo, ...updated } : photo,
-        ),
-      );
-      setStats(await cullingEngine.getStats(albumId));
-    },
-    [albumId],
-  );
-
-  const updateStarRating = useCallback(
-    async (photoId: string, starIndex: number, currentRating: number) => {
-      const targetRating = starIndex + 1;
-      const nextRating = currentRating === targetRating ? 0 : targetRating;
-      const updated = await cullingEngine.updateStarRating(
-        albumId,
-        photoId,
-        nextRating,
-      );
-      setAnalyzedPhotos(current =>
-        current.map(photo =>
-          photo.photoId === photoId ? { ...photo, ...updated } : photo,
-        ),
-      );
-    },
-    [albumId],
-  );
-
   const handleOpenPhotoDetail = useCallback(
     (photoId: string) => {
-      navigation.navigate('CulledAlbumPhotoDetail', { albumId, photoId });
+      navigation.navigate('CulledAlbumPhotoDetail', {albumId, photoId});
     },
     [albumId, navigation],
   );
 
   const handleDeletePhotoPress = useCallback(
     (photoId: string, fileName: string) => {
-      setPhotoToDelete({ photoId, fileName });
+      setPhotoToDelete({photoId, fileName});
     },
     [],
   );
 
-  async function handleDeletePhoto() {
+  const handleDeletePhoto = useCallback(async () => {
     if (!photoToDelete) {
       return;
     }
+    await deletePhoto(photoToDelete.photoId);
+    setPhotoToDelete(null);
+  }, [deletePhoto, photoToDelete]);
 
-    await cullingEngine.deletePhoto(albumId, photoToDelete.photoId);
-    setAnalyzedPhotos(current =>
-      current.filter(photo => photo.photoId !== photoToDelete.photoId),
-    );
-    await refreshDetail();
-  }
-
-  async function handleStartUpload() {
+  const handleStartUpload = useCallback(async () => {
     try {
-      const { selectedPhotoIds } = await cullingEngine.finalize(albumId);
+      const {selectedPhotoIds} = await cullingEngine.finalize(albumId);
       if (selectedPhotoIds.length === 0) {
         return;
       }
@@ -342,11 +181,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
       );
       throw error;
     }
-  }
-
-  const toggleFilter = useCallback((key: FilterKey) => {
-    setActiveFilters(current => ({ ...current, [key]: !current[key] }));
-  }, []);
+  }, [albumId, albumLink, albumName, navigation, startSelectedUpload]);
 
   const handleCullFiltersToggle = useCallback(() => {
     setCullFiltersExpanded(current => !current);
@@ -356,115 +191,34 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
     setKeyFacesExpanded(current => !current);
   }, []);
 
-  const selectedCount =
-    stats?.mySelections ??
-    gridPhotos.filter(photo => photo.analysis?.selected).length;
+  useEffect(() => {
+    syncScreenOrigin();
+  }, [cullFiltersExpanded, keyFacesExpanded, syncScreenOrigin]);
 
-  const filterCounts = useMemo(() => {
-    const counts = Object.fromEntries(
-      FILTER_KEYS.map(key => [key, 0]),
-    ) as Record<FilterKey, number>;
 
-    for (const photo of gridPhotos) {
-      if (!photo.analysis) {
-        continue;
-      }
-      for (const key of FILTER_KEYS) {
-        if (matchesCullFilterKey(photo.analysis, key)) {
-          counts[key] += 1;
-        }
-      }
-    }
-
-    for (const key of FILTER_KEYS) {
-      if (stats?.[key] !== undefined) {
-        counts[key] = stats[key] as number;
-      }
-    }
-
-    return counts;
-  }, [gridPhotos, stats]);
-
-  const sidebar = (
-    <CulledAlbumDetailSidebar
-      isMobileLayout={isMobileLayout}
-      totalPhotos={stats?.totalPhotos ?? photos.length}
-      selectedCount={selectedCount}
-      selectionFilter={selectionFilter}
-      onSelectionFilterChange={setSelectionFilter}
-      activeFilters={activeFilters}
-      onToggleFilter={toggleFilter}
-      filterCounts={filterCounts}
-      cullFiltersExpanded={cullFiltersExpanded}
-      onCullFiltersToggle={handleCullFiltersToggle}
-      keyFaces={keyFaces}
-      keyFacesExpanded={keyFacesExpanded}
-      onKeyFacesToggle={handleKeyFacesToggle}
-      analyzedPhotoList={analyzedPhotoList}
-      filesByPhotoId={filesByPhotoId}
-      onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
-    />
-  );
-
-  const photoGrid =
-    loadingPhotos || loadingDetail || cardWidth <= 0 ? (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={colors.accent} />
-      </View>
-    ) : loadError ? (
-      <View style={styles.loading}>
-        <Text style={styles.errorText}>{loadError}</Text>
-      </View>
-    ) : filteredPhotos.length === 0 ? (
-      <View style={styles.emptyState}>
-        <IconNoPhoto width={40} height={40} />
-        <Text style={styles.emptyStateText}>No photos to show.</Text>
-      </View>
-    ) : (
-      <CulledAlbumPhotoGrid
-        photos={filteredPhotos}
-        cardWidth={cardWidth}
-        columnCount={columnCount}
-        gap={gap}
-        itemHeight={itemHeight}
-        rowHeight={rowHeight}
-        isMobileLayout={isMobileLayout}
-        canDeletePhoto={canDeletePhoto}
-        contentContainerStyle={[
-          styles.grid,
-          isMobileLayout && styles.gridMobile,
-        ]}
-        onOpenDetail={handleOpenPhotoDetail}
-        onToggleSelection={toggleSelection}
-        onDeletePress={handleDeletePhotoPress}
-        onStarPress={updateStarRating}
-        onScrollInteractionStart={dismissKeyFaceTooltip}
-      />
-    );
+  const keyFacesWithSources = useMemo<KeyFaceWithSource[]>(() => {
+    return keyFaces.map(face => {
+      const source = resolveKeyFaceSource(face, analyzedPhotoList, filesByPhotoId);
+      return {
+        ...face,
+        uri: source?.uri,
+        boundingBox: source?.boundingBox,
+      };
+    });
+  }, [keyFaces, analyzedPhotoList, filesByPhotoId]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <View
-        ref={screenRootRef}
-        style={styles.screenRoot}
-        onLayout={syncScreenOrigin}
-      >
+      <View style={styles.screenShell}>
         <View
-          style={[
-            styles.header,
-            {paddingHorizontal: screenPaddingHorizontal},
-            isMobileLayout && styles.headerMobile,
-          ]}>
-          <GumpLogo width={112} height={40} />
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.7}
-          >
-            <IconChevronLeft width={24} height={24} color={colors.accent} />
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
-        </View>
+          ref={screenRootRef}
+          style={styles.screenRoot}
+          onLayout={syncScreenOrigin}>
+        <CulledAlbumDetailHeader
+          onBack={() => navigation.goBack()}
+          isMobileLayout={isMobileLayout}
+          paddingHorizontal={screenPaddingHorizontal}
+        />
 
         <View
           style={[
@@ -490,41 +244,85 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
             {paddingHorizontal: screenPaddingHorizontal},
             isMobileLayout && styles.contentMobile,
           ]}>
-          {isMobileLayout && sidebar}
+          {isMobileLayout && (
+            <CulledAlbumDetailSidebar
+              isMobileLayout={isMobileLayout}
+              totalPhotos={stats?.totalPhotos ?? photos.length}
+              selectedCount={selectedCount}
+              selectionFilter={selectionFilter}
+              onSelectionFilterChange={setSelectionFilter}
+              activeFilters={activeFilters}
+              onToggleFilter={toggleFilter}
+              filterCounts={filterCounts}
+              cullFiltersExpanded={cullFiltersExpanded}
+              onCullFiltersToggle={handleCullFiltersToggle}
+              keyFaces={keyFacesWithSources}
+              keyFacesExpanded={keyFacesExpanded}
+              onKeyFacesToggle={handleKeyFacesToggle}
+              onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
+            />
+          )}
           <View
             style={styles.mainColumn}
             onLayout={event =>
               setMainContentWidth(event.nativeEvent.layout.width)
             }>
-            {photoGrid}
+            {loadingPhotos || loadingDetail || cardWidth <= 0 ? (
+              <View style={styles.loading}>
+                <ActivityIndicator size="large" color={colors.accent} />
+              </View>
+            ) : loadError ? (
+              <View style={styles.loading}>
+                <Text style={styles.errorText}>{loadError}</Text>
+              </View>
+            ) : filteredPhotos.length === 0 ? (
+              <View style={styles.emptyState}>
+                <IconNoPhoto width={40} height={40} />
+                <Text style={styles.emptyStateText}>No photos to show.</Text>
+              </View>
+            ) : (
+              <CulledAlbumPhotoGrid
+                photos={filteredPhotos}
+                cardWidth={cardWidth}
+                columnCount={columnCount}
+                gap={gap}
+                itemHeight={itemHeight}
+                rowHeight={rowHeight}
+                isMobileLayout={isMobileLayout}
+                canDeletePhoto={canDeletePhoto}
+                contentContainerStyle={[
+                  styles.grid,
+                  isMobileLayout && styles.gridMobile,
+                ]}
+                onOpenDetail={handleOpenPhotoDetail}
+                onToggleSelection={toggleSelection}
+                onDeletePress={handleDeletePhotoPress}
+                onStarPress={updateStarRating}
+                onScrollInteractionStart={dismissKeyFaceTooltip}
+              />
+            )}
           </View>
-          {!isMobileLayout && sidebar}
+          {!isMobileLayout && (
+            <CulledAlbumDetailSidebar
+              isMobileLayout={isMobileLayout}
+              totalPhotos={stats?.totalPhotos ?? photos.length}
+              selectedCount={selectedCount}
+              selectionFilter={selectionFilter}
+              onSelectionFilterChange={setSelectionFilter}
+              activeFilters={activeFilters}
+              onToggleFilter={toggleFilter}
+              filterCounts={filterCounts}
+              cullFiltersExpanded={cullFiltersExpanded}
+              onCullFiltersToggle={handleCullFiltersToggle}
+              keyFaces={keyFacesWithSources}
+              keyFacesExpanded={keyFacesExpanded}
+              onKeyFacesToggle={handleKeyFacesToggle}
+              onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
+            />
+          )}
         </View>
 
-        <UploadToast mode="analyze" />
-
-        {keyFaceTooltip && (
-          <View
-            pointerEvents="none"
-            style={[
-              styles.keyFaceTooltipHost,
-              {
-                top: keyFaceTooltip.bottomY - screenOrigin.y + 6,
-                left: keyFaceTooltip.centerX - screenOrigin.x,
-                transform: [{ translateX: -keyFaceTooltipWidth / 2 }],
-                opacity: keyFaceTooltipWidth > 0 ? 1 : 0,
-              },
-            ]}
-            onLayout={event =>
-              setKeyFaceTooltipWidth(event.nativeEvent.layout.width)
-            }
-          >
-            <FaceStatusTooltip
-              eyeMeta={keyFaceTooltip.eyeMeta}
-              focusMeta={keyFaceTooltip.focusMeta}
-            />
-          </View>
-        )}
+        <UploadToast mode="analyze" albumId={albumId} />
 
         <DeletePhotoModal
           visible={photoToDelete !== null}
@@ -539,6 +337,29 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
           onClose={() => setShowUploadConfirm(false)}
           onStartUpload={handleStartUpload}
         />
+        </View>
+
+        {keyFaceTooltip && (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.keyFaceTooltipHost,
+              {
+                top: keyFaceTooltip.bottomY - screenOrigin.y + 6,
+                left: keyFaceTooltip.centerX - screenOrigin.x,
+                transform: [{translateX: -keyFaceTooltipWidth / 2}],
+                opacity: keyFaceTooltipWidth > 0 ? 1 : 0,
+              },
+            ]}
+            onLayout={event =>
+              setKeyFaceTooltipWidth(event.nativeEvent.layout.width)
+            }>
+            <FaceStatusTooltip
+              eyeMeta={keyFaceTooltip.eyeMeta}
+              focusMeta={keyFaceTooltip.focusMeta}
+            />
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -549,32 +370,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  screenShell: {
+    flex: 1,
+    position: 'relative',
+  },
   screenRoot: {
     flex: 1,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 40,
-    paddingBottom: 24,
-    gap: 24,
-  },
-  headerMobile: {
-    paddingTop: 16,
-    gap: 16,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  backText: {
-    fontFamily: fonts.sansBold,
-    fontSize: 20,
-    color: colors.accent,
-  },
   filterBarRow: {},
-
   content: {
     flex: 1,
     flexDirection: 'row',

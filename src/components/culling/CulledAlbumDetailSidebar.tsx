@@ -2,7 +2,7 @@ import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
 import {KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
 import {Accordion} from '@components/ui/Accordion';
 import {Checkbox, Pressable} from '@components/ui';
-import {resolveKeyFaceSource} from '@lib/cullingFaceCrop';
+import {CullingBoundingBox} from '@lib/cullingFaceCrop';
 import {SelectionFilter} from '@lib/culling/culledAlbumPhotoFilters';
 import {CullFilterKey} from '@lib/culling/cullingUtil';
 import {colors} from '@lib/colors';
@@ -13,7 +13,6 @@ import {
   useScrollAwareTooltipHandlers,
 } from '@lib/scrollAwareTooltip';
 import {APIResponse} from '@services/api';
-import {FileAsset} from '@services/upload/types';
 import {memo, useCallback, useRef} from 'react';
 import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
@@ -24,6 +23,11 @@ const FILTER_LABELS: Record<CullFilterKey, string> = {
   blurred: 'Blurred',
   closedEyes: 'Closed Eyes',
   duplicated: 'Duplicated',
+};
+
+export type KeyFaceWithSource = APIResponse.CullingKeyFace & {
+  uri?: string;
+  boundingBox?: CullingBoundingBox;
 };
 
 export type CulledAlbumDetailSidebarProps = {
@@ -37,11 +41,9 @@ export type CulledAlbumDetailSidebarProps = {
   filterCounts: Record<CullFilterKey, number>;
   cullFiltersExpanded: boolean;
   onCullFiltersToggle: () => void;
-  keyFaces: APIResponse.CullingKeyFace[];
+  keyFaces: KeyFaceWithSource[];
   keyFacesExpanded: boolean;
   onKeyFacesToggle: () => void;
-  analyzedPhotoList: APIResponse.CullingPhoto[];
-  filesByPhotoId: Map<string, FileAsset>;
   onKeyFaceTooltipChange: (anchor: KeyFaceTooltipAnchor | null) => void;
 };
 
@@ -59,8 +61,6 @@ function CulledAlbumDetailSidebarComponent({
   keyFaces,
   keyFacesExpanded,
   onKeyFacesToggle,
-  analyzedPhotoList,
-  filesByPhotoId,
   onKeyFaceTooltipChange,
 }: CulledAlbumDetailSidebarProps) {
   const scrollStoreRef = useRef(createScrollAwareTooltipStore());
@@ -78,7 +78,8 @@ function CulledAlbumDetailSidebarComponent({
       <Accordion
         title="Cull Filters"
         expanded={cullFiltersExpanded}
-        onToggle={onCullFiltersToggle}>
+        onToggle={onCullFiltersToggle}
+        style={styles.cullFiltersAccordion}>
         <View style={styles.accordionContent}>
           <View style={styles.totalPhotosBadge}>
             <Text style={styles.totalPhotosLabel}>Total Photos</Text>
@@ -130,25 +131,17 @@ function CulledAlbumDetailSidebarComponent({
             ]}
             showsVerticalScrollIndicator={!isMobileLayout}
             showsHorizontalScrollIndicator={isMobileLayout}>
-            {keyFaces.map(face => {
-              const source = resolveKeyFaceSource(
-                face,
-                analyzedPhotoList,
-                filesByPhotoId,
-              );
-
-              return (
-                <KeyFaceSidebarItem
-                  key={face.faceId}
-                  uri={source?.uri}
-                  boundingBox={source?.boundingBox}
-                  eyeStatus={face.eyeStatus}
-                  focusLevel={face.focusLevel}
-                  width={64}
-                  onTooltipAnchorChange={onKeyFaceTooltipChange}
-                />
-              );
-            })}
+            {keyFaces.map(face => (
+              <KeyFaceSidebarItem
+                key={face.faceId}
+                uri={face.uri}
+                boundingBox={face.boundingBox}
+                eyeStatus={face.eyeStatus}
+                focusLevel={face.focusLevel}
+                width={64}
+                onTooltipAnchorChange={onKeyFaceTooltipChange}
+              />
+            ))}
           </ScrollView>
         </ScrollAwareTooltipContext.Provider>
       </Accordion>
@@ -252,7 +245,10 @@ const styles = StyleSheet.create({
     flexWrap: 'nowrap',
     paddingRight: 0,
   },
+  cullFiltersAccordion: {
+    zIndex: 2,
+  },
   keyFacesAccordion: {
-    overflow: 'visible',
+    zIndex: 1,
   },
 });
