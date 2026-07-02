@@ -1,6 +1,7 @@
 import {deleteLocalPhotoFile} from '@lib/localStorage';
 import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
 import {
+  culledAlbumStore,
   ensureAlbumLoaded,
   getAlbum,
   getPhotoById,
@@ -16,7 +17,6 @@ import {NativeModules, Platform} from 'react-native';
 import {
   classifyEyeStatus,
   classifyFocus,
-  clusterFacesAcrossPhotos,
   computeKeyFaces,
   computeStats,
   CullingFace,
@@ -24,14 +24,14 @@ import {
   derivePhotoFlags,
   deriveStarRating,
   DuplicateDetectionPhoto,
+  faceFingerprint,
+  fingerprintDistance,
+  FACE_CLUSTER_THRESHOLD,
 } from './cullingUtil';
 import {detectDuplicatesOptimized} from './duplicateDetection';
 import {NativeDetectedFace} from '@lib/culledAlbum/types';
-import {enrichMissingCaptureTimes, readImageCaptureTime} from '@lib/imageCaptureTime';
-import {
-  computeImagePerceptualHash,
-  enrichMissingPerceptualHashes,
-} from '@lib/perceptualHash';
+import {readImageCaptureTime} from '@lib/imageCaptureTime';
+import {computeImagePerceptualHash} from '@lib/perceptualHash';
 
 type NativeLocalStorageModule = {
   detectFacesForCulling: (uri: string) => Promise<NativeDetectedFace[]>;
@@ -135,38 +135,72 @@ function applyDuplicateFlags(albumId: string): void {
   }
 }
 
-function assignFaceClusterIds(albumId: string): void {
-  const photos = getPhotosForAlbum(albumId)
-    .filter(photo => photo.analysisStatus === 'analyzed')
-    .map(toCullingPhoto);
-  const clusterMap = clusterFacesAcrossPhotos(photos);
+function assignFaceClusterIdsIncremental(
+  albumId: string,
+  photoId: string,
+  newFaces: CullingFace[],
+): void {
+  if (newFaces.length === 0) {
+    return;
+  }
 
-  for (const photo of photos) {
-    updatePhoto(albumId, photo.photoId, entry => {
-      entry.faces.forEach((face, faceIndex) => {
-        const clusterId = clusterMap.get(`${photo.photoId}:${faceIndex}`);
-        if (clusterId) {
-          face.rekognitionFaceId = clusterId;
+  const album = getAlbum(albumId);
+  if (!album) {
+    return;
+  }
+
+  const previousPhotos = getPhotosForAlbum(albumId).filter(
+    photo => photo.analysisStatus === 'analyzed' && photo.photoId !== photoId,
+  );
+
+  const newFingerprints = newFaces.map(faceFingerprint);
+  const assignedClusters: (string | null)[] = new Array(newFaces.length).fill(
+    null,
+  );
+
+  let nextClusterId = album.nextFaceClusterId;
+  for (let i = 0; i < newFaces.length; i++) {
+    let bestMatch: string | null = null;
+    let bestDistance = Infinity;
+
+    for (const prevPhoto of previousPhotos) {
+      for (const prevFace of prevPhoto.faces) {
+        if (!prevFace.rekognitionFaceId) {
+          continue;
         }
-      });
+
+        const prevFingerprint = faceFingerprint(prevFace);
+        const distance = fingerprintDistance(newFingerprints[i]!, prevFingerprint);
+
+        if (distance < FACE_CLUSTER_THRESHOLD && distance < bestDistance) {
+          bestDistance = distance;
+          bestMatch = prevFace.rekognitionFaceId;
+        }
+      }
+    }
+
+    if (bestMatch) {
+      assignedClusters[i] = bestMatch;
+    } else {
+      assignedClusters[i] = `person-${nextClusterId++}`;
+    }
+  }
+
+  culledAlbumStore.setState(state => {
+    const albumState = state.albums[albumId];
+    if (albumState) {
+      albumState.nextFaceClusterId = nextClusterId;
+    }
+  });
+
+  updatePhoto(albumId, photoId, entry => {
+    entry.faces.forEach((face, faceIndex) => {
+      const clusterId = assignedClusters[faceIndex];
+      if (clusterId) {
+        face.rekognitionFaceId = clusterId;
+      }
     });
-  }
-}
-
-async function enrichAlbumMetadataIfNeeded(albumId: string): Promise<void> {
-  const photos = getPhotosForAlbum(albumId);
-  const tasks: Promise<void>[] = [];
-
-  if (photos.some(photo => photo.capturedAt == null)) {
-    tasks.push(enrichMissingCaptureTimes(albumId));
-  }
-  if (photos.some(photo => photo.perceptualHash == null)) {
-    tasks.push(enrichMissingPerceptualHashes(albumId));
-  }
-
-  if (tasks.length > 0) {
-    await Promise.all(tasks);
-  }
+  });
 }
 
 export const cullingEngine = {
@@ -218,6 +252,8 @@ export const cullingEngine = {
       photo.selected = isFirstAnalysis ? flags.selected : existing.selected;
     });
 
+    assignFaceClusterIdsIncremental(albumId, photoId, faces);
+
     await persistAlbum(albumId);
 
     const updated = getPhotoById(albumId, photoId);
@@ -233,7 +269,6 @@ export const cullingEngine = {
 
   async refreshDuplicateFlags(albumId: string): Promise<void> {
     await ensureAlbumLoaded(albumId);
-    await enrichAlbumMetadataIfNeeded(albumId);
     applyDuplicateFlags(albumId);
     await persistAlbum(albumId);
   },
@@ -244,8 +279,6 @@ export const cullingEngine = {
 
   async getKeyFaces(albumId: string): Promise<APIResponse.CullingKeyFaceList> {
     await ensureAlbumLoaded(albumId);
-    assignFaceClusterIds(albumId);
-    await persistAlbum(albumId);
     return {results: computeKeyFaces(await getAnalyzedPhotos(albumId))};
   },
 
@@ -322,7 +355,6 @@ export const cullingEngine = {
       throw new Error('No analyzed photos');
     }
     applyDuplicateFlags(albumId);
-    assignFaceClusterIds(albumId);
     await persistAlbum(albumId);
   },
 

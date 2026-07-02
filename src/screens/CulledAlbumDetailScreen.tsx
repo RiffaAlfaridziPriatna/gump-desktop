@@ -237,6 +237,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
 
   const refreshDetail = useCallback(async () => {
     try {
+      await cullingEngine.refreshDuplicateFlags(albumId);
       const keyFaceList = await cullingEngine.getKeyFaces(albumId);
       const [photoList, statsResult] = await Promise.all([
         cullingEngine.getPhotos(albumId),
@@ -326,7 +327,7 @@ export default function CulledAlbumDetailScreen({ navigation, route }: Props) {
       if (selectedPhotoIds.length === 0) {
         return;
       }
-      await startSelectedUpload(albumId, selectedPhotoIds);
+      startSelectedUpload(albumId, selectedPhotoIds);
       setShowUploadConfirm(false);
       navigation.replace('CulledAlbumUploadProgress', {
         albumId,

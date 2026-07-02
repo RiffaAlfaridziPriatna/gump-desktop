@@ -1,8 +1,5 @@
-import {getPhotoById, getPhotosForAlbum, updatePhoto} from '@lib/culledAlbum/store';
-import {runTasksWithConcurrency} from '@lib/asyncPool';
+import {getPhotoById, updatePhoto} from '@lib/culledAlbum/store';
 import {computePerceptualHash as computeNativePerceptualHash} from '@lib/localStorage';
-
-const MAX_CONCURRENT_HASH_COMPUTATIONS = 4;
 
 export function hammingDistance(hexA: string, hexB: string): number {
   const valueA = BigInt(`0x${hexA}`);
@@ -26,32 +23,6 @@ export async function computeImagePerceptualHash(
     return null;
   }
   return hash.toLowerCase();
-}
-
-export async function enrichMissingPerceptualHashes(
-  albumId: string,
-): Promise<void> {
-  const photosNeedingHash = getPhotosForAlbum(albumId).filter(
-    photo => photo.perceptualHash == null,
-  );
-  if (photosNeedingHash.length === 0) {
-    return;
-  }
-
-  await runTasksWithConcurrency(
-    photosNeedingHash,
-    MAX_CONCURRENT_HASH_COMPUTATIONS,
-    async photo => {
-      const perceptualHash = await computeImagePerceptualHash(photo.file.uri);
-      if (perceptualHash == null) {
-        return;
-      }
-
-      updatePhoto(albumId, photo.photoId, entry => {
-        entry.perceptualHash = perceptualHash;
-      });
-    },
-  );
 }
 
 export async function enrichPhotoPerceptualHash(

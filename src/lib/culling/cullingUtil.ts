@@ -208,14 +208,9 @@ export function computeKeyFaces(
     .sort((a, b) => b.occurrenceCount - a.occurrenceCount);
 }
 
-const FACE_CLUSTER_THRESHOLD = 0.12;
+export const FACE_CLUSTER_THRESHOLD = 0.18;
 
-function photoIdFromFaceKey(key: string): string {
-  const colonIndex = key.lastIndexOf(':');
-  return colonIndex >= 0 ? key.slice(0, colonIndex) : key;
-}
-
-function faceFingerprint(face: CullingFace): number[] {
+export function faceFingerprint(face: CullingFace): number[] {
   const { boundingBox: box, landmarks, pose } = face;
   const eyeLeft = landmarks.find(landmark => landmark.type === 'eyeLeft');
   const eyeRight = landmarks.find(landmark => landmark.type === 'eyeRight');
@@ -255,7 +250,7 @@ function faceFingerprint(face: CullingFace): number[] {
   ];
 }
 
-function fingerprintDistance(a: number[], b: number[]): number {
+export function fingerprintDistance(a: number[], b: number[]): number {
   let sum = 0;
   for (let i = 0; i < a.length; i++) {
     sum += (a[i]! - b[i]!) ** 2;
@@ -263,78 +258,3 @@ function fingerprintDistance(a: number[], b: number[]): number {
   return Math.sqrt(sum / a.length);
 }
 
-class UnionFind {
-  private parent: number[];
-
-  constructor(size: number) {
-    this.parent = Array.from({ length: size }, (_, index) => index);
-  }
-
-  find(index: number): number {
-    if (this.parent[index] !== index) {
-      this.parent[index] = this.find(this.parent[index]!);
-    }
-    return this.parent[index]!;
-  }
-
-  union(a: number, b: number): void {
-    const rootA = this.find(a);
-    const rootB = this.find(b);
-    if (rootA !== rootB) {
-      this.parent[rootB] = rootA;
-    }
-  }
-}
-
-export function clusterFacesAcrossPhotos(
-  photos: CullingPhoto[],
-): Map<string, string> {
-  type FaceEntry = { key: string; fingerprint: number[] };
-  const entries: FaceEntry[] = [];
-
-  for (const photo of photos) {
-    photo.faces.forEach((face, faceIndex) => {
-      entries.push({
-        key: `${photo.photoId}:${faceIndex}`,
-        fingerprint: faceFingerprint(face),
-      });
-    });
-  }
-
-  if (entries.length === 0) {
-    return new Map();
-  }
-
-  const unionFind = new UnionFind(entries.length);
-  for (let i = 0; i < entries.length; i++) {
-    for (let j = i + 1; j < entries.length; j++) {
-      if (
-        photoIdFromFaceKey(entries[i]!.key) ===
-        photoIdFromFaceKey(entries[j]!.key)
-      ) {
-        continue;
-      }
-
-      if (
-        fingerprintDistance(entries[i]!.fingerprint, entries[j]!.fingerprint) <
-        FACE_CLUSTER_THRESHOLD
-      ) {
-        unionFind.union(i, j);
-      }
-    }
-  }
-
-  const rootToCluster = new Map<number, string>();
-  let clusterCounter = 0;
-  const result = new Map<string, string>();
-
-  for (let i = 0; i < entries.length; i++) {
-    const root = unionFind.find(i);
-    if (!rootToCluster.has(root)) {
-      rootToCluster.set(root, `person-${clusterCounter++}`);
-    }
-    result.set(entries[i]!.key, rootToCluster.get(root)!);
-  }
-
-  return result;
-}

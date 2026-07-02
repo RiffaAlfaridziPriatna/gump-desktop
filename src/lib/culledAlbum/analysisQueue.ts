@@ -1,6 +1,11 @@
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {FileAsset} from '@services/upload/types';
 import {
+  getAnalysisBatchPhotos,
+  isAnalysisBatchFinished,
+} from './analysisProgress';
+import {getAlbum} from './store';
+import {
   countByAnalysisStatus,
   CulledAlbumPhoto,
 } from './types';
@@ -42,19 +47,14 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       return;
     }
 
-    const photos = getPhotos(albumId).filter(
-      photo => photo.analysisStatus !== 'idle',
-    );
+    const album = getAlbum(albumId);
+    const batchPhotoIds = album?.analysisBatchPhotoIds ?? [];
+    const albumPhotos = getPhotos(albumId);
+    const photos = getAnalysisBatchPhotos(albumPhotos, batchPhotoIds);
     if (photos.length === 0) {
       return;
     }
-    if (
-      !photos.every(
-        photo =>
-          photo.analysisStatus === 'analyzed' ||
-          photo.analysisStatus === 'failed',
-      )
-    ) {
+    if (!isAnalysisBatchFinished(albumPhotos, batchPhotoIds)) {
       return;
     }
 

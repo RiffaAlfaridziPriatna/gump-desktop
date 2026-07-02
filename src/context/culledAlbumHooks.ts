@@ -1,6 +1,8 @@
 import {useContextOrThrow} from '@lib/context';
 import {culledAlbumStore} from '@lib/culledAlbum/store';
 import {getServerUploadBatchPhotos} from '@lib/culledAlbum/serverUploadProgress';
+import {getLocalImportBatchPhotos} from '@lib/culledAlbum/localImportProgress';
+import {getAnalysisBatchPhotos} from '@lib/culledAlbum/analysisProgress';
 import {CulledAlbumPhoto, sortPhotosByUploadedAt} from '@lib/culledAlbum/types';
 import {useStateStore} from '@lib/state';
 import {useMemo} from 'react';
@@ -12,6 +14,66 @@ import {
 
 const EMPTY_PHOTO_IDS: string[] = [];
 const EMPTY_PHOTOS: CulledAlbumPhoto[] = [];
+
+function buildServerUploadStateSignature(
+  albumId: string,
+  state: ReturnType<typeof culledAlbumStore.getState>,
+): string {
+  const album = state.albums[albumId];
+  if (!album?.uploadBatchPhotoIds.length) {
+    return '';
+  }
+
+  return album.uploadBatchPhotoIds
+    .map(photoId => {
+      const photo = album.photos.find(entry => entry.photoId === photoId);
+      if (!photo) {
+        return `${photoId}:missing`;
+      }
+      return `${photoId}:${photo.serverUploadStatus}:${photo.serverUploadProgress}`;
+    })
+    .join('|');
+}
+
+function buildLocalImportStateSignature(
+  albumId: string,
+  state: ReturnType<typeof culledAlbumStore.getState>,
+): string {
+  const album = state.albums[albumId];
+  if (!album?.localImportBatchPhotoIds.length) {
+    return '';
+  }
+
+  return album.localImportBatchPhotoIds
+    .map(photoId => {
+      const photo = album.photos.find(entry => entry.photoId === photoId);
+      if (!photo) {
+        return `${photoId}:missing`;
+      }
+      return `${photoId}:${photo.status}:${photo.progress}`;
+    })
+    .join('|');
+}
+
+function buildAnalysisStateSignature(
+  albumId: string,
+  state: ReturnType<typeof culledAlbumStore.getState>,
+): string {
+  const album = state.albums[albumId];
+  if (!album?.analysisBatchPhotoIds.length) {
+    return '';
+  }
+
+  return album.analysisBatchPhotoIds
+    .map(photoId => {
+      const photo = album.photos.find(entry => entry.photoId === photoId);
+      if (!photo) {
+        return `${photoId}:missing`;
+      }
+      return `${photoId}:${photo.analysisStatus}:${photo.analysisProgress}`;
+    })
+    .join('|');
+}
 
 export function useCulledAlbumUiState<R = CulledAlbumUiState>(
   selector?: (state: CulledAlbumUiState) => R,
@@ -37,17 +99,39 @@ export function useCulledAlbumPhotosState(albumId: string): CulledAlbumPhoto[] {
 }
 
 export function useCulledAlbumUploadItems(albumId: string | null) {
-  return useCulledAlbumStore(state => {
+  const batchPhotoIds = useCulledAlbumStore(state => {
+    if (!albumId) {
+      return EMPTY_PHOTO_IDS;
+    }
+    return state.albums[albumId]?.localImportBatchPhotoIds ?? EMPTY_PHOTO_IDS;
+  });
+  const importStateSignature = useCulledAlbumStore(state => {
+    if (!albumId) {
+      return '';
+    }
+    return buildLocalImportStateSignature(albumId, state);
+  });
+  const albumPhotos = useCulledAlbumStore(state => {
     if (!albumId) {
       return EMPTY_PHOTOS;
     }
     return state.albums[albumId]?.photos ?? EMPTY_PHOTOS;
   });
+
+  return useMemo(() => {
+    if (!albumId || batchPhotoIds.length === 0) {
+      return EMPTY_PHOTOS;
+    }
+    return getLocalImportBatchPhotos(albumPhotos, batchPhotoIds);
+  }, [albumId, albumPhotos, batchPhotoIds, importStateSignature]);
 }
 
 export function useCulledAlbumServerUploadBatch(albumId: string) {
   const batchPhotoIds = useCulledAlbumStore(
     state => state.albums[albumId]?.uploadBatchPhotoIds ?? EMPTY_PHOTO_IDS,
+  );
+  const uploadStateSignature = useCulledAlbumStore(state =>
+    buildServerUploadStateSignature(albumId, state),
   );
   const albumPhotos = useCulledAlbumStore(
     state => state.albums[albumId]?.photos ?? EMPTY_PHOTOS,
@@ -62,19 +146,42 @@ export function useCulledAlbumServerUploadBatch(albumId: string) {
       batchPhotoIds,
       photos: getServerUploadBatchPhotos(albumPhotos, batchPhotoIds),
     };
-  }, [albumPhotos, batchPhotoIds]);
+  }, [albumPhotos, batchPhotoIds, uploadStateSignature]);
 }
 
 export function useCulledAlbumAnalyzeItems(albumId: string | null) {
-  const photos = useCulledAlbumStore(state => {
+  const batch = useCulledAlbumAnalysisBatch(albumId);
+  return batch.photos;
+}
+
+function useCulledAlbumAnalysisBatch(albumId: string | null) {
+  const batchPhotoIds = useCulledAlbumStore(state => {
+    if (!albumId) {
+      return EMPTY_PHOTO_IDS;
+    }
+    return state.albums[albumId]?.analysisBatchPhotoIds ?? EMPTY_PHOTO_IDS;
+  });
+  const analysisStateSignature = useCulledAlbumStore(state => {
+    if (!albumId) {
+      return '';
+    }
+    return buildAnalysisStateSignature(albumId, state);
+  });
+  const albumPhotos = useCulledAlbumStore(state => {
     if (!albumId) {
       return EMPTY_PHOTOS;
     }
     return state.albums[albumId]?.photos ?? EMPTY_PHOTOS;
   });
 
-  return useMemo(
-    () => photos.filter(photo => photo.analysisStatus !== 'idle'),
-    [photos],
-  );
+  return useMemo(() => {
+    if (!albumId || batchPhotoIds.length === 0) {
+      return {batchPhotoIds: EMPTY_PHOTO_IDS, photos: EMPTY_PHOTOS};
+    }
+
+    return {
+      batchPhotoIds,
+      photos: getAnalysisBatchPhotos(albumPhotos, batchPhotoIds),
+    };
+  }, [albumId, albumPhotos, batchPhotoIds, analysisStateSignature]);
 }
