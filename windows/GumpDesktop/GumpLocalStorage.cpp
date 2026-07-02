@@ -14,10 +14,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <optional>
 #include <thread>
+#include <vector>
 
 namespace winrtRN = winrt::Microsoft::ReactNative;
 using namespace winrt::Windows::Graphics::Imaging;
@@ -99,17 +101,19 @@ std::optional<double> ReadCaptureTimestampMillis(const std::filesystem::path &pa
   return static_cast<double>(ToUnixMillis(dateTaken));
 }
 
-winrtRN::JSValueObject EyesOpenFromScore(float openness) {
-  const float openThreshold = 0.75f;
-  const float closedThreshold = 0.35f;
+winrtRN::JSValueObject EyesOpenFromScore(float minOpen, float maxOpen, float avgOpen) {
+  const float openThreshold = 0.65f;
+  const float openMinThreshold = 0.55f;
+  const float closedMaxThreshold = 0.40f;
+  const float closedAvgThreshold = 0.35f;
 
   winrtRN::JSValueObject eyesOpen;
-  if (openness >= openThreshold) {
+  if (avgOpen >= openThreshold && minOpen >= openMinThreshold) {
     eyesOpen["value"] = true;
-    eyesOpen["confidence"] = std::min(98.0, 86.0 + (openness - openThreshold) * 200.0);
-  } else if (openness <= closedThreshold) {
+    eyesOpen["confidence"] = std::min(98.0, 86.0 + (avgOpen - openThreshold) * 200.0);
+  } else if (maxOpen <= closedMaxThreshold || avgOpen <= closedAvgThreshold) {
     eyesOpen["value"] = false;
-    eyesOpen["confidence"] = std::min(98.0, 86.0 + (closedThreshold - openness) * 400.0);
+    eyesOpen["confidence"] = std::min(98.0, 86.0 + (closedMaxThreshold - maxOpen) * 400.0);
   } else {
     eyesOpen["value"] = false;
     eyesOpen["confidence"] = 72.0;
@@ -271,11 +275,275 @@ std::string FormatHashHex(uint64_t hash) {
   return buffer;
 }
 
+constexpr float kFaceBoxIoUThreshold = 0.45f;
+constexpr float kTileOverlapFraction = 0.25f;
+constexpr int kMinFacesToSkipTiling = 8;
+constexpr int kMinPixelsForTiling = 2000000;
+
+struct NormalizedFaceBox {
+  float left{0.0f};
+  float top{0.0f};
+  float width{0.0f};
+  float height{0.0f};
+};
+
+NormalizedFaceBox ToNormalizedFaceBox(const BitmapBounds &box, int imageWidth, int imageHeight) {
+  return NormalizedFaceBox{
+      static_cast<float>(box.X) / static_cast<float>(imageWidth),
+      static_cast<float>(box.Y) / static_cast<float>(imageHeight),
+      static_cast<float>(box.Width) / static_cast<float>(imageWidth),
+      static_cast<float>(box.Height) / static_cast<float>(imageHeight),
+  };
+}
+
+float IntersectionOverUnion(const NormalizedFaceBox &a, const NormalizedFaceBox &b) {
+  const float intersectLeft = std::max(a.left, b.left);
+  const float intersectTop = std::max(a.top, b.top);
+  const float intersectRight = std::min(a.left + a.width, b.left + b.width);
+  const float intersectBottom = std::min(a.top + a.height, b.top + b.height);
+  const float intersectWidth = std::max(0.0f, intersectRight - intersectLeft);
+  const float intersectHeight = std::max(0.0f, intersectBottom - intersectTop);
+  const float intersection = intersectWidth * intersectHeight;
+  if (intersection <= 0.0f) {
+    return 0.0f;
+  }
+
+  const float unionArea = a.width * a.height + b.width * b.height - intersection;
+  if (unionArea <= 0.0f) {
+    return 0.0f;
+  }
+  return intersection / unionArea;
+}
+
+std::vector<BitmapBounds> DeduplicateFaceBoxes(
+    const std::vector<BitmapBounds> &boxes,
+    int imageWidth,
+    int imageHeight) {
+  if (boxes.size() <= 1) {
+    return boxes;
+  }
+
+  std::vector<BitmapBounds> sorted = boxes;
+  std::sort(sorted.begin(), sorted.end(), [](const BitmapBounds &left, const BitmapBounds &right) {
+    return (left.Width * left.Height) > (right.Width * right.Height);
+  });
+
+  std::vector<BitmapBounds> kept;
+  for (const auto &candidate : sorted) {
+    const auto candidateNormalized = ToNormalizedFaceBox(candidate, imageWidth, imageHeight);
+    const bool overlapsExisting = std::any_of(kept.begin(), kept.end(), [&](const BitmapBounds &existing) {
+      return IntersectionOverUnion(candidateNormalized, ToNormalizedFaceBox(existing, imageWidth, imageHeight)) >=
+             kFaceBoxIoUThreshold;
+    });
+    if (!overlapsExisting) {
+      kept.push_back(candidate);
+    }
+  }
+  return kept;
+}
+
+SoftwareBitmap CropSoftwareBitmap(
+    const SoftwareBitmap &source,
+    const BitmapPixels &sourcePixels,
+    int originX,
+    int originY,
+    int cropWidth,
+    int cropHeight) {
+  auto cropped =
+      SoftwareBitmap::Create(BitmapPixelFormat::Bgra8, cropWidth, cropHeight, BitmapAlphaMode::Premultiplied);
+  BitmapBuffer destBuffer = cropped.LockBuffer(BitmapBufferAccessMode::Write);
+  const auto destPlane = destBuffer.GetPlaneDescription(0);
+  const auto destReference = destBuffer.CreateReference();
+  const auto destAccess = destReference.as<::Windows::Foundation::IMemoryBufferByteAccess>();
+
+  byte *destData = nullptr;
+  uint32_t capacity = 0;
+  winrt::check_hresult(destAccess->GetBuffer(&destData, &capacity));
+
+  for (int y = 0; y < cropHeight; ++y) {
+    const int sourceY = originY + y;
+    const size_t sourceIndex = static_cast<size_t>(sourceY) * static_cast<size_t>(sourcePixels.stride) +
+                               static_cast<size_t>(originX) * 4U;
+    const size_t destIndex = static_cast<size_t>(y) * static_cast<size_t>(destPlane.Stride);
+    std::memcpy(destData + destIndex, sourcePixels.bytes.data() + sourceIndex, static_cast<size_t>(cropWidth) * 4U);
+  }
+
+  return cropped;
+}
+
+std::vector<BitmapBounds> DetectFaceBoxesInBitmap(const FaceDetector &detector, const SoftwareBitmap &bitmap) {
+  const auto faces = detector.DetectFacesAsync(bitmap).get();
+  std::vector<BitmapBounds> boxes;
+  for (const auto &face : faces) {
+    boxes.push_back(face.FaceBox());
+  }
+  return boxes;
+}
+
+std::vector<BitmapBounds> DetectTiledFaceBoxes(
+    const FaceDetector &detector,
+    const SoftwareBitmap &bitmap,
+    const BitmapPixels &sourcePixels,
+    int gridCount) {
+  const int imageWidth = bitmap.PixelWidth();
+  const int imageHeight = bitmap.PixelHeight();
+  if (imageWidth <= 0 || imageHeight <= 0 || gridCount <= 0) {
+    return {};
+  }
+
+  const int tileWidth = static_cast<int>(
+      static_cast<float>(imageWidth) / static_cast<float>(gridCount) * (1.0f + kTileOverlapFraction));
+  const int tileHeight = static_cast<int>(
+      static_cast<float>(imageHeight) / static_cast<float>(gridCount) * (1.0f + kTileOverlapFraction));
+  const int stepX = imageWidth / gridCount;
+  const int stepY = imageHeight / gridCount;
+
+  std::vector<BitmapBounds> merged;
+  for (int row = 0; row < gridCount; ++row) {
+    for (int col = 0; col < gridCount; ++col) {
+      int originX = col * stepX;
+      int originY = row * stepY;
+      if (originX + tileWidth > imageWidth) {
+        originX = std::max(0, imageWidth - tileWidth);
+      }
+      if (originY + tileHeight > imageHeight) {
+        originY = std::max(0, imageHeight - tileHeight);
+      }
+
+      const auto tileBitmap = CropSoftwareBitmap(bitmap, sourcePixels, originX, originY, tileWidth, tileHeight);
+      const auto tileFaces = DetectFaceBoxesInBitmap(detector, tileBitmap);
+      for (const auto &tileFace : tileFaces) {
+        merged.push_back(BitmapBounds{
+            tileFace.X + originX,
+            tileFace.Y + originY,
+            tileFace.Width,
+            tileFace.Height,
+        });
+      }
+    }
+  }
+
+  return DeduplicateFaceBoxes(merged, imageWidth, imageHeight);
+}
+
+std::vector<BitmapBounds> CollectFaceBoxes(
+    const FaceDetector &detector,
+    const SoftwareBitmap &bitmap,
+    const BitmapPixels &sourcePixels) {
+  const int imageWidth = bitmap.PixelWidth();
+  const int imageHeight = bitmap.PixelHeight();
+  const int pixelCount = imageWidth * imageHeight;
+
+  std::vector<BitmapBounds> combined = DetectFaceBoxesInBitmap(detector, bitmap);
+  std::vector<BitmapBounds> deduped = DeduplicateFaceBoxes(combined, imageWidth, imageHeight);
+  if (deduped.size() >= static_cast<size_t>(kMinFacesToSkipTiling) || pixelCount < kMinPixelsForTiling) {
+    return deduped;
+  }
+
+  const auto tiledTwoByTwo = DetectTiledFaceBoxes(detector, bitmap, sourcePixels, 2);
+  combined.insert(combined.end(), tiledTwoByTwo.begin(), tiledTwoByTwo.end());
+  deduped = DeduplicateFaceBoxes(combined, imageWidth, imageHeight);
+  if (deduped.size() >= static_cast<size_t>(kMinFacesToSkipTiling)) {
+    return deduped;
+  }
+
+  const auto tiledThreeByThree = DetectTiledFaceBoxes(detector, bitmap, sourcePixels, 3);
+  combined.insert(combined.end(), tiledThreeByThree.begin(), tiledThreeByThree.end());
+  return DeduplicateFaceBoxes(combined, imageWidth, imageHeight);
+}
+
+bool IsAcceptableFaceBox(const BitmapBounds &box, int imageWidth, int imageHeight) {
+  if (box.Width < 40 || box.Height < 40) {
+    return false;
+  }
+
+  const float aspect = static_cast<float>(box.Width) / static_cast<float>(std::max(1, box.Height));
+  if (aspect < 0.55f || aspect > 1.8f) {
+    return false;
+  }
+
+  const float areaFraction =
+      (static_cast<float>(box.Width) * static_cast<float>(box.Height)) /
+      (static_cast<float>(imageWidth) * static_cast<float>(imageHeight));
+  if (areaFraction < 0.0005f) {
+    return false;
+  }
+
+  return true;
+}
+
+winrtRN::JSValueObject BuildFaceObject(
+    const BitmapBounds &box,
+    int index,
+    const uint8_t *pixelData,
+    int imageWidth,
+    int imageHeight,
+    int stride) {
+  const float left = static_cast<float>(box.X) / static_cast<float>(imageWidth);
+  const float top = static_cast<float>(box.Y) / static_cast<float>(imageHeight);
+  const float width = static_cast<float>(box.Width) / static_cast<float>(imageWidth);
+  const float height = static_cast<float>(box.Height) / static_cast<float>(imageHeight);
+
+  const int eyeTop = static_cast<int>(box.Y + box.Height * 0.18f);
+  const int eyeHeight = static_cast<int>(box.Height * 0.22f);
+  const int leftEyeLeft = static_cast<int>(box.X + box.Width * 0.12f);
+  const int leftEyeWidth = static_cast<int>(box.Width * 0.28f);
+  const int rightEyeLeft = static_cast<int>(box.X + box.Width * 0.60f);
+  const int rightEyeWidth = static_cast<int>(box.Width * 0.28f);
+
+  const float leftOpen = EstimateEyeOpenness(
+      pixelData, imageWidth, imageHeight, stride, leftEyeLeft, eyeTop, leftEyeWidth, eyeHeight);
+  const float rightOpen = EstimateEyeOpenness(
+      pixelData, imageWidth, imageHeight, stride, rightEyeLeft, eyeTop, rightEyeWidth, eyeHeight);
+  const float minOpen = std::min(leftOpen, rightOpen);
+  const float maxOpen = std::max(leftOpen, rightOpen);
+  const float avgOpen = (leftOpen + rightOpen) / 2.0f;
+  const float sharpness = ComputeSharpness(pixelData, imageWidth, imageHeight, stride, box);
+
+  return winrtRN::JSValueObject{
+      {"boundingBox",
+       winrtRN::JSValueObject{
+           {"left", left},
+           {"top", top},
+           {"width", width},
+           {"height", height},
+       }},
+      {"eyesOpen", EyesOpenFromScore(minOpen, maxOpen, avgOpen)},
+      {"sharpness", sharpness},
+      {"brightness", 60.0},
+      {"landmarks",
+       winrtRN::JSValueArray{
+           winrtRN::JSValueObject{
+               {"type", "eyeLeft"},
+               {"x", left + width * 0.25},
+               {"y", 1.0 - (top + height * 0.32)},
+           },
+           winrtRN::JSValueObject{
+               {"type", "eyeRight"},
+               {"x", left + width * 0.75},
+               {"y", 1.0 - (top + height * 0.32)},
+           },
+           winrtRN::JSValueObject{
+               {"type", "nose"},
+               {"x", left + width * 0.5},
+               {"y", 1.0 - (top + height * 0.55)},
+           },
+           winrtRN::JSValueObject{
+               {"type", "mouth"},
+               {"x", left + width * 0.5},
+               {"y", 1.0 - (top + height * 0.78)},
+           },
+       }},
+      {"pose", winrtRN::JSValueObject{{"pitch", 0.0}, {"roll", 0.0}, {"yaw", 0.0}}},
+      {"faceId", "local-face-" + std::to_string(index)},
+  };
+}
+
 winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
   const auto detector = FaceDetector::CreateAsync().get();
   const auto bitmap = LoadSoftwareBitmap(path);
-  const auto faces = detector.DetectFacesAsync(bitmap).get();
   const auto pixels = ReadBitmapPixels(bitmap);
+  const auto faceBoxes = CollectFaceBoxes(detector, bitmap, pixels);
 
   const int imageWidth = pixels.width;
   const int imageHeight = pixels.height;
@@ -284,66 +552,11 @@ winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
 
   winrtRN::JSValueArray result;
   int index = 0;
-  for (const auto &face : faces) {
-    const auto box = face.FaceBox();
-    const float left = static_cast<float>(box.X) / imageWidth;
-    const float top = static_cast<float>(box.Y) / imageHeight;
-    const float width = static_cast<float>(box.Width) / imageWidth;
-    const float height = static_cast<float>(box.Height) / imageHeight;
-
-    const int eyeTop = static_cast<int>(box.Y + box.Height * 0.18f);
-    const int eyeHeight = static_cast<int>(box.Height * 0.22f);
-    const int leftEyeLeft = static_cast<int>(box.X + box.Width * 0.12f);
-    const int leftEyeWidth = static_cast<int>(box.Width * 0.28f);
-    const int rightEyeLeft = static_cast<int>(box.X + box.Width * 0.60f);
-    const int rightEyeWidth = static_cast<int>(box.Width * 0.28f);
-
-    const float leftOpen = EstimateEyeOpenness(
-        pixelData, imageWidth, imageHeight, stride, leftEyeLeft, eyeTop, leftEyeWidth, eyeHeight);
-    const float rightOpen = EstimateEyeOpenness(
-        pixelData, imageWidth, imageHeight, stride, rightEyeLeft, eyeTop, rightEyeWidth, eyeHeight);
-    const float minOpen = std::min(leftOpen, rightOpen);
-    const float sharpness = ComputeSharpness(pixelData, imageWidth, imageHeight, stride, box);
-
-    winrtRN::JSValueObject faceObject{
-        {"boundingBox",
-         winrtRN::JSValueObject{
-             {"left", left},
-             {"top", top},
-             {"width", width},
-             {"height", height},
-         }},
-        {"eyesOpen", EyesOpenFromScore(minOpen)},
-        {"sharpness", sharpness},
-        {"brightness", 60.0},
-        {"landmarks",
-         winrtRN::JSValueArray{
-             winrtRN::JSValueObject{
-                 {"type", "eyeLeft"},
-                 {"x", left + width * 0.25},
-                 {"y", 1.0 - (top + height * 0.32)},
-             },
-             winrtRN::JSValueObject{
-                 {"type", "eyeRight"},
-                 {"x", left + width * 0.75},
-                 {"y", 1.0 - (top + height * 0.32)},
-             },
-             winrtRN::JSValueObject{
-                 {"type", "nose"},
-                 {"x", left + width * 0.5},
-                 {"y", 1.0 - (top + height * 0.55)},
-             },
-             winrtRN::JSValueObject{
-                 {"type", "mouth"},
-                 {"x", left + width * 0.5},
-                 {"y", 1.0 - (top + height * 0.78)},
-             },
-         }},
-        {"pose", winrtRN::JSValueObject{{"pitch", 0.0}, {"roll", 0.0}, {"yaw", 0.0}}},
-        {"faceId", "local-face-" + std::to_string(index)},
-    };
-
-    result.push_back(std::move(faceObject));
+  for (const auto &box : faceBoxes) {
+    if (!IsAcceptableFaceBox(box, imageWidth, imageHeight)) {
+      continue;
+    }
+    result.push_back(BuildFaceObject(box, index, pixelData, imageWidth, imageHeight, stride));
     ++index;
   }
 

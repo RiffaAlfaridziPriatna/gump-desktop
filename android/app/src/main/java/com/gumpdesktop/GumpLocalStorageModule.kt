@@ -3,6 +3,7 @@ package com.gumpdesktop
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Rect
 import android.media.ExifInterface
 import android.net.Uri
@@ -16,6 +17,7 @@ import com.facebook.react.bridge.WritableMap
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.Face
+import com.google.mlkit.vision.face.FaceContour
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.google.mlkit.vision.face.FaceLandmark
@@ -40,6 +42,18 @@ class GumpLocalStorageModule(
 
   override fun getName(): String = "GumpLocalStorage"
 
+  private data class NormalizedFaceBox(
+      val left: Float,
+      val top: Float,
+      val width: Float,
+      val height: Float,
+  )
+
+  private data class FaceDetectionResult(
+      val box: NormalizedFaceBox,
+      val map: WritableMap,
+  )
+
   @ReactMethod
   fun detectFacesForCulling(uri: String, promise: Promise) {
     executor.execute {
@@ -52,27 +66,21 @@ class GumpLocalStorageModule(
         }
 
         val bitmap =
-            BitmapFactory.decodeFile(path)
+            loadOrientedBitmap(path)
                 ?: run {
                   promise.reject("EIMAGE", "Unable to decode image")
                   return@execute
                 }
 
-        val image = InputImage.fromFilePath(reactContext, Uri.fromFile(file))
-        val options =
-            FaceDetectorOptions.Builder()
-                .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
-                .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
-                .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
-                .build()
-        val detector = FaceDetection.getClient(options)
-        val faces = Tasks.await(detector.process(image))
-
+        val detector = createFaceDetector()
         val imageWidth = bitmap.width.toFloat()
         val imageHeight = bitmap.height.toFloat()
+        val detections = collectFaceDetections(detector, bitmap, imageWidth, imageHeight)
+
         val result = Arguments.createArray()
-        faces.forEachIndexed { index, face ->
-          result.pushMap(faceToMap(face, index, bitmap, imageWidth, imageHeight))
+        detections.forEachIndexed { index, detection ->
+          detection.map.putString("faceId", "local-face-$index")
+          result.pushMap(detection.map)
         }
         bitmap.recycle()
         promise.resolve(result)
@@ -373,10 +381,27 @@ class GumpLocalStorageModule(
           return@execute
         }
 
+        var width = options.outWidth
+        var height = options.outHeight
+        val exif = ExifInterface(path)
+        val orientation =
+            exif.getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL,
+            )
+        if (orientation == ExifInterface.ORIENTATION_ROTATE_90 ||
+            orientation == ExifInterface.ORIENTATION_ROTATE_270 ||
+            orientation == ExifInterface.ORIENTATION_TRANSPOSE ||
+            orientation == ExifInterface.ORIENTATION_TRANSVERSE) {
+          val tmp = width
+          width = height
+          height = tmp
+        }
+
         promise.resolve(
             Arguments.createMap().apply {
-              putInt("width", options.outWidth)
-              putInt("height", options.outHeight)
+              putInt("width", width)
+              putInt("height", height)
             },
         )
       } catch (error: Exception) {
@@ -387,6 +412,282 @@ class GumpLocalStorageModule(
 
   private fun cullingAlbumDirectory(albumId: String): File =
       File(reactContext.filesDir, "Gump/culling-albums/$albumId")
+
+  private fun createFaceDetector() =
+      FaceDetection.getClient(
+          FaceDetectorOptions.Builder()
+              .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+              .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
+              .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
+              .setMinFaceSize(0.03f)
+              .build(),
+      )
+
+  private fun collectFaceDetections(
+      detector: com.google.mlkit.vision.face.FaceDetector,
+      bitmap: Bitmap,
+      imageWidth: Float,
+      imageHeight: Float,
+  ): List<FaceDetectionResult> {
+    val fullFrame = detectFacesInBitmap(detector, bitmap, imageWidth, imageHeight, 0, 0)
+    val pixelCount = imageWidth * imageHeight
+    if (fullFrame.size >= MIN_FACES_TO_SKIP_TILING || pixelCount < MIN_PIXELS_FOR_TILING) {
+      return deduplicateFaceDetections(fullFrame)
+    }
+
+    val combined = fullFrame.toMutableList()
+    combined.addAll(detectTiledFaces(detector, bitmap, imageWidth, imageHeight, gridCount = 2))
+    val deduped = deduplicateFaceDetections(combined)
+    if (deduped.size >= MIN_FACES_TO_SKIP_TILING) {
+      return deduped
+    }
+
+    combined.addAll(detectTiledFaces(detector, bitmap, imageWidth, imageHeight, gridCount = 3))
+    return deduplicateFaceDetections(combined)
+  }
+
+  private fun detectFacesInBitmap(
+      detector: com.google.mlkit.vision.face.FaceDetector,
+      bitmap: Bitmap,
+      imageWidth: Float,
+      imageHeight: Float,
+      offsetX: Int,
+      offsetY: Int,
+  ): List<FaceDetectionResult> {
+    val faces = Tasks.await(detector.process(InputImage.fromBitmap(bitmap, 0)))
+    return faces.mapNotNull { face ->
+      if (!isAcceptableFace(face, imageWidth, imageHeight)) {
+        return@mapNotNull null
+      }
+      val map = faceToMap(face, 0, bitmap, imageWidth, imageHeight, offsetX, offsetY)
+      FaceDetectionResult(box = normalizedBoxFromMap(map), map = map)
+    }
+  }
+
+  private fun detectTiledFaces(
+      detector: com.google.mlkit.vision.face.FaceDetector,
+      bitmap: Bitmap,
+      imageWidth: Float,
+      imageHeight: Float,
+      gridCount: Int,
+  ): List<FaceDetectionResult> {
+    val imageWidthInt = bitmap.width
+    val imageHeightInt = bitmap.height
+    val tileWidth =
+        (imageWidthInt / gridCount.toFloat() * (1f + TILE_OVERLAP_FRACTION)).toInt()
+            .coerceAtMost(imageWidthInt)
+    val tileHeight =
+        (imageHeightInt / gridCount.toFloat() * (1f + TILE_OVERLAP_FRACTION)).toInt()
+            .coerceAtMost(imageHeightInt)
+    val stepX = imageWidthInt / gridCount
+    val stepY = imageHeightInt / gridCount
+
+    val detections = mutableListOf<FaceDetectionResult>()
+    for (row in 0 until gridCount) {
+      for (col in 0 until gridCount) {
+        var originX = col * stepX
+        var originY = row * stepY
+        if (originX + tileWidth > imageWidthInt) {
+          originX = max(0, imageWidthInt - tileWidth)
+        }
+        if (originY + tileHeight > imageHeightInt) {
+          originY = max(0, imageHeightInt - tileHeight)
+        }
+
+        val tileBitmap =
+            Bitmap.createBitmap(bitmap, originX, originY, tileWidth, tileHeight)
+        try {
+          detections.addAll(
+              detectFacesInBitmap(
+                  detector,
+                  tileBitmap,
+                  imageWidth,
+                  imageHeight,
+                  originX,
+                  originY,
+              ),
+          )
+        } finally {
+          if (tileBitmap !== bitmap) {
+            tileBitmap.recycle()
+          }
+        }
+      }
+    }
+    return detections
+  }
+
+  private fun normalizedBoxFromMap(map: WritableMap): NormalizedFaceBox {
+    val box = map.getMap("boundingBox")!!
+    return NormalizedFaceBox(
+        left = box.getDouble("left").toFloat(),
+        top = box.getDouble("top").toFloat(),
+        width = box.getDouble("width").toFloat(),
+        height = box.getDouble("height").toFloat(),
+    )
+  }
+
+  private fun intersectionOverUnion(a: NormalizedFaceBox, b: NormalizedFaceBox): Float {
+    val intersectLeft = max(a.left, b.left)
+    val intersectTop = max(a.top, b.top)
+    val intersectRight = min(a.left + a.width, b.left + b.width)
+    val intersectBottom = min(a.top + a.height, b.top + b.height)
+    val intersectWidth = max(0f, intersectRight - intersectLeft)
+    val intersectHeight = max(0f, intersectBottom - intersectTop)
+    val intersection = intersectWidth * intersectHeight
+    if (intersection <= 0f) {
+      return 0f
+    }
+    val union = a.width * a.height + b.width * b.height - intersection
+    if (union <= 0f) {
+      return 0f
+    }
+    return intersection / union
+  }
+
+  private fun deduplicateFaceDetections(
+      detections: List<FaceDetectionResult>,
+  ): List<FaceDetectionResult> {
+    if (detections.size <= 1) {
+      return detections
+    }
+
+    val kept = mutableListOf<FaceDetectionResult>()
+    for (candidate in detections) {
+      val overlaps =
+          kept.any {
+            intersectionOverUnion(candidate.box, it.box) >= FACE_BOX_IOU_THRESHOLD
+          }
+      if (!overlaps) {
+        kept.add(candidate)
+      }
+    }
+    return kept
+  }
+
+  private fun loadOrientedBitmap(path: String): Bitmap? {
+    val raw = BitmapFactory.decodeFile(path) ?: return null
+    val exif = ExifInterface(path)
+    val orientation =
+        exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+    if (orientation == ExifInterface.ORIENTATION_NORMAL) {
+      return raw
+    }
+
+    val matrix = Matrix()
+    when (orientation) {
+      ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+      ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+      ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+      ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+      ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+      ExifInterface.ORIENTATION_TRANSPOSE -> {
+        matrix.postRotate(90f)
+        matrix.postScale(-1f, 1f)
+      }
+      ExifInterface.ORIENTATION_TRANSVERSE -> {
+        matrix.postRotate(270f)
+        matrix.postScale(-1f, 1f)
+      }
+      else -> return raw
+    }
+
+    val oriented = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
+    if (oriented !== raw) {
+      raw.recycle()
+    }
+    return oriented
+  }
+
+  private fun isAcceptableFace(
+      face: Face,
+      imageWidth: Float,
+      imageHeight: Float,
+  ): Boolean {
+    val box = face.boundingBox
+    if (box.width() < 40 || box.height() < 40) {
+      return false
+    }
+
+    val faceAreaFraction =
+        (box.width().toFloat() * box.height().toFloat()) / (imageWidth * imageHeight)
+    if (faceAreaFraction < 0.0005f) {
+      return false
+    }
+
+    val aspect = box.width().toFloat() / max(box.height(), 1)
+    if (aspect < 0.55f || aspect > 1.8f) {
+      return false
+    }
+
+    if (face.getLandmark(FaceLandmark.LEFT_EYEBROW) == null ||
+        face.getLandmark(FaceLandmark.RIGHT_EYEBROW) == null) {
+      return false
+    }
+
+    val contour = face.getContour(FaceContour.FACE)
+    if (contour == null || contour.points.size < 8) {
+      return false
+    }
+
+    val leftEye = face.getLandmark(FaceLandmark.LEFT_EYE)?.position ?: return false
+    val rightEye = face.getLandmark(FaceLandmark.RIGHT_EYE)?.position ?: return false
+    val nose = face.getLandmark(FaceLandmark.NOSE_BASE)?.position ?: return false
+    val mouthLeft = face.getLandmark(FaceLandmark.MOUTH_LEFT)?.position
+    val mouthRight = face.getLandmark(FaceLandmark.MOUTH_RIGHT)?.position
+    val mouthBottom =
+        face.getLandmark(FaceLandmark.MOUTH_BOTTOM)?.position
+            ?: mouthLeft
+            ?: return false
+
+    if (leftEye.x >= rightEye.x) {
+      return false
+    }
+
+    val eyeDistance = rightEye.x - leftEye.x
+    if (eyeDistance < box.width() * 0.18f || eyeDistance > box.width() * 0.62f) {
+      return false
+    }
+
+    if (kotlin.math.abs(leftEye.y - rightEye.y) / box.height().toFloat() > 0.12f) {
+      return false
+    }
+
+    val eyeCenterX = (leftEye.x + rightEye.x) / 2f
+    if (kotlin.math.abs(nose.x - eyeCenterX) > eyeDistance * 0.40f) {
+      return false
+    }
+
+    val eyesY = (leftEye.y + rightEye.y) / 2f
+    if (eyesY >= nose.y || nose.y >= mouthBottom.y) {
+      return false
+    }
+
+    val relEyesY = (eyesY - box.top) / box.height().toFloat()
+    val relNoseY = (nose.y - box.top) / box.height().toFloat()
+    val relMouthY = (mouthBottom.y - box.top) / box.height().toFloat()
+    if (relEyesY > 0.45f || relMouthY < 0.55f) {
+      return false
+    }
+
+    val eyeToNose = relNoseY - relEyesY
+    val noseToMouth = relMouthY - relNoseY
+    if (eyeToNose < 0.12f || eyeToNose > 0.42f) {
+      return false
+    }
+    if (noseToMouth < 0.08f || noseToMouth > 0.35f) {
+      return false
+    }
+
+    if (mouthLeft != null && mouthRight != null) {
+      val mouthWidth = mouthRight.x - mouthLeft.x
+      if (mouthWidth < eyeDistance * 0.65f) {
+        return false
+      }
+    }
+
+    return true
+  }
 
   private fun pathFromUri(uri: String): String {
     if (uri.isEmpty()) {
@@ -404,24 +705,36 @@ class GumpLocalStorageModule(
       bitmap: Bitmap,
       imageWidth: Float,
       imageHeight: Float,
+      offsetX: Int = 0,
+      offsetY: Int = 0,
   ): WritableMap {
     val box = face.boundingBox
+    val mappedBox =
+        Rect(
+            box.left + offsetX,
+            box.top + offsetY,
+            box.right + offsetX,
+            box.bottom + offsetY,
+        )
     val sharpness = computeSharpness(bitmap, box)
 
     return Arguments.createMap().apply {
       putMap(
           "boundingBox",
           Arguments.createMap().apply {
-            putDouble("left", box.left / imageWidth.toDouble())
-            putDouble("top", box.top / imageHeight.toDouble())
-            putDouble("width", box.width() / imageWidth.toDouble())
-            putDouble("height", box.height() / imageHeight.toDouble())
+            putDouble("left", mappedBox.left / imageWidth.toDouble())
+            putDouble("top", mappedBox.top / imageHeight.toDouble())
+            putDouble("width", mappedBox.width() / imageWidth.toDouble())
+            putDouble("height", mappedBox.height() / imageHeight.toDouble())
           },
       )
       putMap("eyesOpen", eyesOpenFromFace(face))
       putDouble("sharpness", sharpness.toDouble())
       putDouble("brightness", 60.0)
-      putArray("landmarks", landmarksFromFace(face, imageWidth, imageHeight))
+      putArray(
+          "landmarks",
+          landmarksFromFace(face, imageWidth, imageHeight, offsetX, offsetY),
+      )
       putMap(
           "pose",
           Arguments.createMap().apply {
@@ -438,12 +751,14 @@ class GumpLocalStorageModule(
       face: Face,
       imageWidth: Float,
       imageHeight: Float,
+      offsetX: Int = 0,
+      offsetY: Int = 0,
   ) =
       Arguments.createArray().apply {
-        pushLandmark(face, FaceLandmark.LEFT_EYE, "eyeLeft", imageWidth, imageHeight)
-        pushLandmark(face, FaceLandmark.RIGHT_EYE, "eyeRight", imageWidth, imageHeight)
-        pushLandmark(face, FaceLandmark.NOSE_BASE, "nose", imageWidth, imageHeight)
-        pushLandmark(face, FaceLandmark.MOUTH_BOTTOM, "mouth", imageWidth, imageHeight)
+        pushLandmark(face, FaceLandmark.LEFT_EYE, "eyeLeft", imageWidth, imageHeight, offsetX, offsetY)
+        pushLandmark(face, FaceLandmark.RIGHT_EYE, "eyeRight", imageWidth, imageHeight, offsetX, offsetY)
+        pushLandmark(face, FaceLandmark.NOSE_BASE, "nose", imageWidth, imageHeight, offsetX, offsetY)
+        pushLandmark(face, FaceLandmark.MOUTH_BOTTOM, "mouth", imageWidth, imageHeight, offsetX, offsetY)
       }
 
   private fun com.facebook.react.bridge.WritableArray.pushLandmark(
@@ -452,13 +767,15 @@ class GumpLocalStorageModule(
       type: String,
       imageWidth: Float,
       imageHeight: Float,
+      offsetX: Int,
+      offsetY: Int,
   ) {
     val position = face.getLandmark(landmarkType)?.position ?: return
     pushMap(
         Arguments.createMap().apply {
           putString("type", type)
-          putDouble("x", (position.x / imageWidth).toDouble())
-          putDouble("y", (1.0 - position.y / imageHeight).toDouble())
+          putDouble("x", ((position.x + offsetX) / imageWidth).toDouble())
+          putDouble("y", (1.0 - (position.y + offsetY) / imageHeight).toDouble())
         },
     )
   }
@@ -474,26 +791,32 @@ class GumpLocalStorageModule(
       }
     }
 
-    val minOpenProbability = listOfNotNull(left, right).min()
-    val openThreshold = 0.75f
-    val closedThreshold = 0.35f
+    val probs = listOfNotNull(left, right)
+    val minOpenProbability = probs.min()
+    val maxOpenProbability = probs.max()
+    val avgOpenProbability = probs.average().toFloat()
+    val openThreshold = 0.65f
+    val openMinThreshold = 0.55f
+    val closedMaxThreshold = 0.40f
+    val closedAvgThreshold = 0.35f
 
     return when {
-      minOpenProbability >= openThreshold -> {
+      avgOpenProbability >= openThreshold && minOpenProbability >= openMinThreshold -> {
         Arguments.createMap().apply {
           putBoolean("value", true)
           putDouble(
               "confidence",
-              min(98.0, 86.0 + (minOpenProbability - openThreshold) * 200.0).toDouble(),
+              min(98.0, 86.0 + (avgOpenProbability - openThreshold) * 200.0).toDouble(),
           )
         }
       }
-      minOpenProbability <= closedThreshold -> {
+      maxOpenProbability <= closedMaxThreshold ||
+          avgOpenProbability <= closedAvgThreshold -> {
         Arguments.createMap().apply {
           putBoolean("value", false)
           putDouble(
               "confidence",
-              min(98.0, 86.0 + (closedThreshold - minOpenProbability) * 400.0).toDouble(),
+              min(98.0, 86.0 + (closedMaxThreshold - maxOpenProbability) * 400.0).toDouble(),
           )
         }
       }
@@ -609,5 +932,12 @@ class GumpLocalStorageModule(
       }
     }
     return String.format(Locale.US, "%016x", hash)
+  }
+
+  companion object {
+    private const val FACE_BOX_IOU_THRESHOLD = 0.45f
+    private const val TILE_OVERLAP_FRACTION = 0.25f
+    private const val MIN_FACES_TO_SKIP_TILING = 8
+    private const val MIN_PIXELS_FOR_TILING = 2_000_000
   }
 }

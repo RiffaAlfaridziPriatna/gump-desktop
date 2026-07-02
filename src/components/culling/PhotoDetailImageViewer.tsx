@@ -261,7 +261,6 @@ export function PhotoDetailImageViewer({
                 left: imageLayout.left,
                 top: imageLayout.top,
               }}
-              resizeMode="cover"
             />
           </View>
 
