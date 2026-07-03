@@ -35,35 +35,21 @@ export function Accordion({
 }: AccordionProps) {
   const [measuredHeight, setMeasuredHeight] = useState(0);
   const heightProgress = useRef(new Animated.Value(expanded ? 1 : 0)).current;
-  const chevronProgress = useRef(new Animated.Value(expanded ? 1 : 0)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(heightProgress, {
-        toValue: expanded ? 1 : 0,
-        duration: ANIMATION_DURATION_MS,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }),
-      Animated.timing(chevronProgress, {
-        toValue: expanded ? 1 : 0,
-        duration: ANIMATION_DURATION_MS,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [expanded, chevronProgress, heightProgress]);
+    Animated.timing(heightProgress, {
+      toValue: expanded ? 1 : 0,
+      duration: ANIMATION_DURATION_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [expanded, heightProgress]);
 
   const hasMeasurement = measuredHeight > 0;
 
   const animatedHeight = heightProgress.interpolate({
     inputRange: [0, 1],
     outputRange: [0, measuredHeight],
-  });
-
-  const chevronRotation = chevronProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['180deg', '0deg'],
   });
 
   const handleContentLayout = (height: number) => {
@@ -83,12 +69,13 @@ export function Accordion({
         style={styles.header}
         accessibilityRole="button"
         accessibilityState={{expanded}}>
-        <Animated.View
-          style={{
-            transform: [{rotate: chevronRotation}],
-          }}>
+        <View
+          style={[
+            styles.chevron,
+            {transform: [{rotate: expanded ? '0deg' : '180deg'}]},
+          ]}>
           <IconChevronUp width={24} height={24} color={colors.textGray} />
-        </Animated.View>
+        </View>
         <Text style={styles.title}>{title}</Text>
       </Pressable>
 
@@ -154,6 +141,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    position: 'relative',
+    zIndex: 2,
+  },
+  chevron: {
+    width: 24,
+    height: 24,
   },
   title: {
     flex: 1,
