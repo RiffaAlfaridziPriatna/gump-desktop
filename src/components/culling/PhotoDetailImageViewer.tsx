@@ -177,7 +177,7 @@ export function PhotoDetailImageViewer({
   }, [imageSizeProp, uri]);
 
   useEffect(() => {
-    void preloadImage(uri);
+    preloadImage(uri).catch(() => undefined);
   }, [uri]);
 
   const handleImageLoad = useCallback(() => {

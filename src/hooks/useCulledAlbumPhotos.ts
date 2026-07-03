@@ -1,4 +1,4 @@
-import {ensureAlbumLoaded} from '@lib/culledAlbum/store';
+import {culledAlbumStore, ensureAlbumLoaded} from '@lib/culledAlbum/store';
 import {useCulledAlbumPhotosState} from '@context/culledAlbum';
 import {FileAsset} from '@services/upload/types';
 import {useCallback, useEffect, useMemo, useState} from 'react';
@@ -7,9 +7,16 @@ type Options = {
   skipInitialLoad?: boolean;
 };
 
+function hasCachedAlbumPhotos(albumId: string): boolean {
+  const album = culledAlbumStore.getState().albums[albumId];
+  return Boolean(album && album.photos.length > 0);
+}
+
 export function useCulledAlbumPhotos(albumId: string, options?: Options) {
   const photos = useCulledAlbumPhotosState(albumId);
-  const [loadingPhotos, setLoadingPhotos] = useState(!options?.skipInitialLoad);
+  const [loadingPhotos, setLoadingPhotos] = useState(
+    () => !options?.skipInitialLoad && !hasCachedAlbumPhotos(albumId),
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadPhotos = useCallback(async () => {
@@ -20,8 +27,6 @@ export function useCulledAlbumPhotos(albumId: string, options?: Options) {
       setLoadError(
         err instanceof Error ? err.message : 'Failed to load local photos',
       );
-    } finally {
-      setLoadingPhotos(false);
     }
   }, [albumId]);
 
@@ -30,9 +35,24 @@ export function useCulledAlbumPhotos(albumId: string, options?: Options) {
       setLoadingPhotos(false);
       return;
     }
-    setLoadingPhotos(true);
-    loadPhotos();
-  }, [loadPhotos, options?.skipInitialLoad]);
+
+    const cached = hasCachedAlbumPhotos(albumId);
+    if (!cached) {
+      setLoadingPhotos(true);
+    }
+
+    let cancelled = false;
+
+    loadPhotos().finally(() => {
+      if (!cancelled) {
+        setLoadingPhotos(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [albumId, loadPhotos, options?.skipInitialLoad]);
 
   const fileAssets: FileAsset[] = useMemo(
     () =>

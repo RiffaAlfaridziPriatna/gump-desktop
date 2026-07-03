@@ -4,7 +4,6 @@ import {
 } from '@components/culling/CulledAlbumPhotoCard';
 import {CulledAlbumGridPhoto} from '@components/culling/CulledAlbumPhotoGrid';
 import {CulledAlbumGridRow} from '@lib/culledAlbumGridLayout';
-import {ImageDimensions} from '@lib/imageDimensions';
 import {memo} from 'react';
 import {StyleSheet, View} from 'react-native';
 
@@ -15,7 +14,6 @@ export type CulledAlbumPhotoRowProps = {
   gap: number;
   canDeletePhoto: boolean;
   isMobileLayout: boolean;
-  thumbnailDimensions: Map<string, ImageDimensions>;
   onOpenDetail: CulledAlbumPhotoCardProps['onOpenDetail'];
   onToggleSelection: CulledAlbumPhotoCardProps['onToggleSelection'];
   onDeletePress: CulledAlbumPhotoCardProps['onDeletePress'];
@@ -29,7 +27,6 @@ function CulledAlbumPhotoRowComponent({
   gap,
   canDeletePhoto,
   isMobileLayout,
-  thumbnailDimensions,
   onOpenDetail,
   onToggleSelection,
   onDeletePress,
@@ -49,8 +46,6 @@ function CulledAlbumPhotoRowComponent({
             canDeletePhoto={canDeletePhoto && !photo.disabled}
             disabled={photo.disabled}
             isMobileLayout={isMobileLayout}
-            imageSize={thumbnailDimensions.get(photo.file.uri)}
-            usePreloadedDimensions
             onOpenDetail={onOpenDetail}
             onToggleSelection={onToggleSelection}
             onDeletePress={onDeletePress}
@@ -73,7 +68,6 @@ function areRowsEqual(
     previous.gap !== next.gap ||
     previous.canDeletePhoto !== next.canDeletePhoto ||
     previous.isMobileLayout !== next.isMobileLayout ||
-    previous.thumbnailDimensions !== next.thumbnailDimensions ||
     previous.onOpenDetail !== next.onOpenDetail ||
     previous.onToggleSelection !== next.onToggleSelection ||
     previous.onDeletePress !== next.onDeletePress ||

@@ -97,7 +97,7 @@ export default function CulledAlbumPhotoDetailScreen({
   useLayoutEffect(() => {
     setMainImageReady(false);
     if (uri) {
-      void preloadImage(uri);
+      preloadImage(uri).catch(() => undefined);
     }
   }, [uri]);
 

@@ -17,9 +17,12 @@ import {
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
 import {useCulledAlbumDetailData} from '@hooks/useCulledAlbumDetailData';
 import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
+import {usePreloadGridImages} from '@hooks/usePreloadGridImages';
 import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
+import {useScreenTransitionEnd} from '@hooks/useScreenTransitionEnd';
 import {resolveKeyFaceSource} from '@lib/cullingFaceCrop';
 import {cullingEngine} from '@lib/culling/cullingEngine';
+import {preloadImage} from '@lib/imagePreload';
 import {getCulledAlbumGridLayout} from '@lib/culledAlbumGridLayout';
 import {stabilizeGridPhotos} from '@lib/stableCulledAlbumGridPhotos';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
@@ -35,12 +38,16 @@ import IconNoPhoto from '../assets/images/icon_no_photo.svg';
 
 type Props = StackScreenProps<MainStackParamList, 'CulledAlbumDetail'>;
 
+const DESKTOP_SIDEBAR_WIDTH = 246;
+const CONTENT_COLUMN_GAP = 24;
+
 export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const {albumId} = route.params;
+  const transitionEnded = useScreenTransitionEnd(navigation);
   const {startSelectedUpload} = useCulledAlbumActions();
-  const {isMobileLayout, screenPaddingHorizontal} = useLayout();
+  const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
 
-  const {photos, loadingPhotos, loadError} = useCulledAlbumPhotos(albumId);
+  const {photos, loadError} = useCulledAlbumPhotos(albumId);
   const albumPhotos = useCulledAlbumPhotosState(albumId);
   const cullingCompleted = useCulledAlbumStore(
     state => state.albums[albumId]?.cullingCompleted ?? false,
@@ -60,10 +67,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const {
     stats,
     keyFaces,
-    loadingDetail,
     isAnalyzing,
     analyzedPhotoList,
-    refreshDetail,
     toggleSelection,
     updateStarRating,
     deletePhoto,
@@ -91,9 +96,39 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const [showUploadConfirm, setShowUploadConfirm] = useState(false);
   const [mainContentWidth, setMainContentWidth] = useState(0);
 
+  useEffect(() => {
+    setMainContentWidth(0);
+  }, [albumId]);
+
+  const estimatedMainContentWidth = useMemo(() => {
+    const contentWidth = screenWidth - 2 * screenPaddingHorizontal;
+    if (isMobileLayout) {
+      return contentWidth;
+    }
+    return Math.max(0, contentWidth - DESKTOP_SIDEBAR_WIDTH - CONTENT_COLUMN_GAP);
+  }, [isMobileLayout, screenPaddingHorizontal, screenWidth]);
+
+  const estimatedGridLayout = useMemo(
+    () => getCulledAlbumGridLayout(estimatedMainContentWidth, isMobileLayout),
+    [estimatedMainContentWidth, isMobileLayout],
+  );
+
+  const initialPreloadUris = useMemo(() => {
+    const photoCount = Math.max(1, estimatedGridLayout.columnCount * 2);
+    return albumPhotos
+      .filter(photo => photo.status === 'uploaded')
+      .slice(0, photoCount)
+      .map(photo => photo.file.uri);
+  }, [albumPhotos, estimatedGridLayout.columnCount]);
+
+  usePreloadGridImages(initialPreloadUris);
+
+  const layoutWidth =
+    mainContentWidth > 0 ? mainContentWidth : estimatedMainContentWidth;
+
   const gridLayout = useMemo(
-    () => getCulledAlbumGridLayout(mainContentWidth, isMobileLayout),
-    [isMobileLayout, mainContentWidth],
+    () => getCulledAlbumGridLayout(layoutWidth, isMobileLayout),
+    [isMobileLayout, layoutWidth],
   );
   const {cardWidth, columnCount, gap, itemHeight, rowHeight} = gridLayout;
 
@@ -140,9 +175,13 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
   const handleOpenPhotoDetail = useCallback(
     (photoId: string) => {
+      const entry = gridPhotos.find(photo => photo.photoId === photoId);
+      if (entry?.file.uri) {
+        preloadImage(entry.file.uri).catch(() => undefined);
+      }
       navigation.navigate('CulledAlbumPhotoDetail', {albumId, photoId});
     },
-    [albumId, navigation],
+    [albumId, gridPhotos, navigation],
   );
 
   const handleDeletePhotoPress = useCallback(
@@ -205,7 +244,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         boundingBox: source?.boundingBox,
       };
     });
-  }, [keyFaces, analyzedPhotoList, filesByPhotoId]);
+  }, [analyzedPhotoList, filesByPhotoId, keyFaces]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -220,6 +259,36 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           paddingHorizontal={screenPaddingHorizontal}
         />
 
+        {!transitionEnded ? (
+          <>
+            <View style={styles.mainLoading}>
+              <ActivityIndicator size="large" color={colors.accent} />
+            </View>
+            <View style={styles.layoutProbe} pointerEvents="none">
+              <View
+                style={[
+                  styles.content,
+                  {paddingHorizontal: screenPaddingHorizontal},
+                  isMobileLayout && styles.contentMobile,
+                ]}>
+                {!isMobileLayout && (
+                  <View style={styles.sidebarProbe} />
+                )}
+                <View
+                  style={styles.mainColumn}
+                  onLayout={event =>
+                    setMainContentWidth(event.nativeEvent.layout.width)
+                  }
+                />
+              </View>
+            </View>
+          </>
+        ) : loadError ? (
+          <View style={styles.mainLoading}>
+            <Text style={styles.errorText}>{loadError}</Text>
+          </View>
+        ) : (
+          <>
         <View
           style={[
             styles.filterBarRow,
@@ -267,15 +336,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             onLayout={event =>
               setMainContentWidth(event.nativeEvent.layout.width)
             }>
-            {loadingPhotos || loadingDetail || cardWidth <= 0 ? (
-              <View style={styles.loading}>
-                <ActivityIndicator size="large" color={colors.accent} />
-              </View>
-            ) : loadError ? (
-              <View style={styles.loading}>
-                <Text style={styles.errorText}>{loadError}</Text>
-              </View>
-            ) : filteredPhotos.length === 0 ? (
+            {filteredPhotos.length === 0 ? (
               <View style={styles.emptyState}>
                 <IconNoPhoto width={40} height={40} />
                 <Text style={styles.emptyStateText}>No photos to show.</Text>
@@ -337,7 +398,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           onClose={() => setShowUploadConfirm(false)}
           onStartUpload={handleStartUpload}
         />
-        </View>
 
         {keyFaceTooltip && (
           <View
@@ -360,6 +420,9 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             />
           </View>
         )}
+          </>
+        )}
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -377,6 +440,18 @@ const styles = StyleSheet.create({
   screenRoot: {
     flex: 1,
   },
+  mainLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  layoutProbe: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0,
+  },
+  sidebarProbe: {
+    width: DESKTOP_SIDEBAR_WIDTH,
+  },
   filterBarRow: {},
   content: {
     flex: 1,
@@ -389,11 +464,6 @@ const styles = StyleSheet.create({
   },
   mainColumn: {
     flex: 1,
-  },
-  loading: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   errorText: {
     fontFamily: fonts.sans,

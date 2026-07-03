@@ -19,7 +19,7 @@ export function useImageDimensions(uri: string | undefined) {
     const cached = getCachedImageDimensions(uri);
     if (cached) {
       setImageSize(cached);
-      void preloadImage(uri);
+      preloadImage(uri).catch(() => undefined);
       return;
     }
 

@@ -6,7 +6,9 @@ import {useDeleteCulledAlbum} from '@hooks/useDeleteCulledAlbum';
 import {useLayout} from '@hooks/useLayout';
 import {toAlbumCardModel} from '@lib/culledAlbum/format';
 import {resolveCulledAlbumRoute} from '@lib/culledAlbum/service';
+import {culledAlbumStore} from '@lib/culledAlbum/store';
 import {CulledAlbum} from '@lib/culledAlbum/types';
+import {preloadImages} from '@lib/imagePreload';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
@@ -66,6 +68,17 @@ export default function HomeScreen({navigation}: Props) {
     };
 
     const route = await resolveCulledAlbumRoute(album.albumId);
+
+    if (route === 'CulledAlbumDetail') {
+      const storedPhotos =
+        culledAlbumStore.getState().albums[album.albumId]?.photos ?? [];
+      const uris = storedPhotos
+        .filter(photo => photo.status === 'uploaded')
+        .slice(0, 8)
+        .map(photo => photo.file.uri);
+      preloadImages(uris).catch(() => undefined);
+    }
+
     navigation.navigate(route, params);
   }
 

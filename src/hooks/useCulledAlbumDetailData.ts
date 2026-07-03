@@ -1,16 +1,40 @@
 import {useCulledAlbumPhotosState} from '@context/culledAlbum';
 import {cullingEngine} from '@lib/culling/cullingEngine';
+import {computeKeyFaces, computeStats} from '@lib/culling/cullingUtil';
 import {toCullingPhoto} from '@lib/culledAlbum/types';
 import {APIResponse} from '@services/api';
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef} from 'react';
+import {InteractionManager} from 'react-native';
 
-export function useCulledAlbumDetailData(albumId: string, albumPhotos: ReturnType<typeof useCulledAlbumPhotosState>) {
-  const [analyzedPhotos, setAnalyzedPhotos] = useState<
-    APIResponse.CullingPhoto[]
-  >([]);
-  const [stats, setStats] = useState<APIResponse.CullingStats | null>(null);
-  const [keyFaces, setKeyFaces] = useState<APIResponse.CullingKeyFace[]>([]);
-  const [loadingDetail, setLoadingDetail] = useState(true);
+export function useCulledAlbumDetailData(
+  albumId: string,
+  albumPhotos: ReturnType<typeof useCulledAlbumPhotosState>,
+) {
+  const wasAnalyzingRef = useRef(
+    albumPhotos.some(
+      photo =>
+        photo.analysisStatus === 'pending' ||
+        photo.analysisStatus === 'analyzing',
+    ),
+  );
+
+  const analyzedPhotos = useMemo(
+    () =>
+      albumPhotos
+        .filter(photo => photo.analysisStatus === 'analyzed')
+        .map(toCullingPhoto),
+    [albumPhotos],
+  );
+
+  const stats = useMemo(
+    () => (analyzedPhotos.length > 0 ? computeStats(analyzedPhotos) : null),
+    [analyzedPhotos],
+  );
+
+  const keyFaces = useMemo(
+    () => (analyzedPhotos.length > 0 ? computeKeyFaces(analyzedPhotos) : []),
+    [analyzedPhotos],
+  );
 
   const isAnalyzing = useMemo(
     () =>
@@ -27,63 +51,59 @@ export function useCulledAlbumDetailData(albumId: string, albumPhotos: ReturnTyp
     for (const photo of analyzedPhotos) {
       map.set(photo.photoId, photo);
     }
-    for (const photo of albumPhotos) {
-      if (photo.analysisStatus === 'analyzed') {
-        map.set(photo.photoId, toCullingPhoto(photo));
-      }
-    }
     return map;
-  }, [albumPhotos, analyzedPhotos]);
+  }, [analyzedPhotos]);
 
   const analyzedPhotoList = useMemo(
     () => Array.from(photoMap.values()),
     [photoMap],
   );
 
-  const analyzedPhotoCount = useMemo(
-    () =>
-      albumPhotos.filter(photo => photo.analysisStatus === 'analyzed').length,
-    [albumPhotos],
-  );
+  const analyzedPhotoCount = analyzedPhotos.length;
 
   const refreshDetail = useCallback(async () => {
     try {
       await cullingEngine.refreshDuplicateFlags(albumId);
-      const keyFaceList = await cullingEngine.getKeyFaces(albumId);
-      const [photoList, statsResult] = await Promise.all([
-        cullingEngine.getPhotos(albumId),
-        cullingEngine.getStats(albumId),
-      ]);
-      setAnalyzedPhotos(photoList.results);
-      setStats(statsResult);
-      setKeyFaces(keyFaceList.results);
     } catch (error) {
       console.error(
         '[useCulledAlbumDetailData] Failed to refresh detail',
         error,
       );
-    } finally {
-      setLoadingDetail(false);
     }
   }, [albumId]);
 
   useEffect(() => {
-    if (!isAnalyzing && analyzedPhotoCount > 0) {
-      refreshDetail();
+    wasAnalyzingRef.current = isAnalyzing;
+  }, [albumId]);
+
+  useEffect(() => {
+    if (analyzedPhotoCount === 0) {
+      return;
     }
-  }, [analyzedPhotoCount, isAnalyzing, refreshDetail]);
+
+    if (isAnalyzing) {
+      wasAnalyzingRef.current = true;
+      return;
+    }
+
+    if (!wasAnalyzingRef.current) {
+      return;
+    }
+
+    wasAnalyzingRef.current = false;
+
+    const task = InteractionManager.runAfterInteractions(() => {
+      refreshDetail().catch(() => undefined);
+    });
+
+    return () => {
+      task.cancel();
+    };
+  }, [albumId, analyzedPhotoCount, isAnalyzing, refreshDetail]);
 
   const toggleSelection = useCallback(
     async (photoId: string, selected: boolean) => {
-      const updated = await cullingEngine.updateSelection(albumId, photoId, {
-        selected,
-      });
-      setAnalyzedPhotos(current =>
-        current.map(photo =>
-          photo.photoId === photoId ? {...photo, ...updated} : photo,
-        ),
-      );
-      setStats(await cullingEngine.getStats(albumId));
+      await cullingEngine.updateSelection(albumId, photoId, {selected});
     },
     [albumId],
   );
@@ -92,16 +112,7 @@ export function useCulledAlbumDetailData(albumId: string, albumPhotos: ReturnTyp
     async (photoId: string, starIndex: number, currentRating: number) => {
       const targetRating = starIndex + 1;
       const nextRating = currentRating === targetRating ? 0 : targetRating;
-      const updated = await cullingEngine.updateStarRating(
-        albumId,
-        photoId,
-        nextRating,
-      );
-      setAnalyzedPhotos(current =>
-        current.map(photo =>
-          photo.photoId === photoId ? {...photo, ...updated} : photo,
-        ),
-      );
+      await cullingEngine.updateStarRating(albumId, photoId, nextRating);
     },
     [albumId],
   );
@@ -109,10 +120,9 @@ export function useCulledAlbumDetailData(albumId: string, albumPhotos: ReturnTyp
   const deletePhoto = useCallback(
     async (photoId: string) => {
       await cullingEngine.deletePhoto(albumId, photoId);
-      setAnalyzedPhotos(current =>
-        current.filter(photo => photo.photoId !== photoId),
-      );
-      await refreshDetail();
+      InteractionManager.runAfterInteractions(() => {
+        refreshDetail().catch(() => undefined);
+      });
     },
     [albumId, refreshDetail],
   );
@@ -121,7 +131,6 @@ export function useCulledAlbumDetailData(albumId: string, albumPhotos: ReturnTyp
     analyzedPhotos,
     stats,
     keyFaces,
-    loadingDetail,
     isAnalyzing,
     photoMap,
     analyzedPhotoList,

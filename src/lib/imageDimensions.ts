@@ -105,12 +105,16 @@ export function getCulledAlbumThumbnailLayout(
     };
   }
 
-  const scale = containerHeight / imageHeight;
+  const scale = Math.min(
+    containerWidth / imageWidth,
+    containerHeight / imageHeight,
+  );
   const width = imageWidth * scale;
+  const height = imageHeight * scale;
   return {
     width,
-    height: containerHeight,
+    height,
     left: (containerWidth - width) / 2,
-    top: 0,
+    top: (containerHeight - height) / 2,
   };
 }

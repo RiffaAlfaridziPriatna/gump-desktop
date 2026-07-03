@@ -2,7 +2,6 @@ import {
   CulledAlbumPhotoHoverContext,
   createCulledAlbumPhotoHoverStore,
 } from '@lib/culledAlbumPhotoHover';
-import {useCulledAlbumThumbnailDimensions} from '@hooks/useCulledAlbumThumbnailDimensions';
 import {
   buildCulledAlbumGridRows,
   CulledAlbumGridRow,
@@ -70,13 +69,6 @@ export function CulledAlbumPhotoGrid({
   const isScrollActiveRef = useRef(false);
   const onScrollInteractionStartRef = useRef(onScrollInteractionStart);
   onScrollInteractionStartRef.current = onScrollInteractionStart;
-
-  const thumbnailUriKey = useMemo(
-    () => photos.map(photo => photo.file.uri).join('\0'),
-    [photos],
-  );
-  const thumbnailDimensions =
-    useCulledAlbumThumbnailDimensions(thumbnailUriKey);
 
   const rows = useMemo(
     () => buildCulledAlbumGridRows(photos, columnCount),
@@ -146,7 +138,6 @@ export function CulledAlbumPhotoGrid({
           gap={gap}
           canDeletePhoto={canDeletePhoto}
           isMobileLayout={isMobileLayout}
-          thumbnailDimensions={thumbnailDimensions}
           onOpenDetail={onOpenDetail}
           onToggleSelection={onToggleSelection}
           onDeletePress={onDeletePress}
@@ -163,7 +154,6 @@ export function CulledAlbumPhotoGrid({
         onOpenDetail,
         onStarPress,
         onToggleSelection,
-        thumbnailDimensions,
       ],
     );
 

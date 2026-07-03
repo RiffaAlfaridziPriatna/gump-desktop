@@ -6,7 +6,6 @@ import {
 } from '@lib/culledAlbumPhotoHover';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
-import {ImageDimensions} from '@lib/imageDimensions';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 import {memo, useCallback} from 'react';
@@ -25,8 +24,6 @@ export type CulledAlbumPhotoCardProps = {
   canDeletePhoto: boolean;
   disabled: boolean;
   isMobileLayout: boolean;
-  imageSize?: ImageDimensions;
-  usePreloadedDimensions?: boolean;
   onOpenDetail: (photoId: string) => void;
   onToggleSelection: (photoId: string, selected: boolean) => void;
   onDeletePress: (photoId: string, fileName: string) => void;
@@ -45,8 +42,6 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
   canDeletePhoto,
   disabled,
   isMobileLayout,
-  imageSize,
-  usePreloadedDimensions = false,
   onOpenDetail,
   onToggleSelection,
   onDeletePress,
@@ -82,12 +77,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
       onHoverOut={isMobileLayout ? undefined : handleHoverOut}
       onPress={handleOpenDetail}>
       <View style={styles.thumbnailWrapper}>
-        <CulledAlbumPhotoThumbnail
-          uri={file.uri}
-          width={cardWidth}
-          imageSize={imageSize}
-          usePreloadedDimensions={usePreloadedDimensions}
-        />
+        <CulledAlbumPhotoThumbnail uri={file.uri} width={cardWidth} />
         {showDeleteButton && (
           <Pressable
             style={styles.deletePhotoButton}
