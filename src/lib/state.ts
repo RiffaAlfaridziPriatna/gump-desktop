@@ -1,6 +1,7 @@
 import {immer} from 'zustand/middleware/immer';
-import {useShallow} from 'zustand/shallow';
-import {StoreApi, StoreMutators, createStore, useStore} from 'zustand';
+import {shallow} from 'zustand/shallow';
+import {useStoreWithEqualityFn} from 'zustand/traditional';
+import {StoreApi, StoreMutators, createStore} from 'zustand';
 
 export type StateStore<State> = StoreMutators<
   StoreApi<State>,
@@ -17,8 +18,9 @@ export function useStateStore<S, R = S>(
   store: StateStore<S>,
   selector?: (state: S) => R,
 ): R {
-  return useStore(
+  return useStoreWithEqualityFn(
     store,
-    useShallow(state => (selector ? selector(state) : (state as unknown as R))),
+    selector ? (state: S) => selector(state) : (state: S) => state as unknown as R,
+    shallow,
   );
 }

@@ -95,6 +95,23 @@ export type CulledAlbum = {
   photos: CulledAlbumPhoto[];
 };
 
+export type CulledAlbumListItem = Pick<
+  CulledAlbum,
+  | 'albumId'
+  | 'name'
+  | 'title'
+  | 'cover'
+  | 'coverMobile'
+  | 'cullingCompleted'
+  | 'cullingHasUploads'
+  | 'link'
+  | 'createdAt'
+  | 'totalPhotos'
+  | 'totalStorage'
+  | 'syncedMediaCount'
+  | 'syncedStorageGb'
+>;
+
 export function createCulledAlbumPhoto(
   file: FileAsset,
   photoId: string,

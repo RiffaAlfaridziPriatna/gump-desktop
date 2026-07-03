@@ -1,12 +1,12 @@
 import {useCulledAlbumActions} from '@context/culledAlbum';
-import {CulledAlbum} from '@lib/culledAlbum/types';
+import {CulledAlbumListItem} from '@lib/culledAlbum/types';
 import {useCallback} from 'react';
 
 export function useDeleteCulledAlbum() {
   const {purgeAlbum} = useCulledAlbumActions();
 
   return useCallback(
-    async (album: CulledAlbum) => {
+    async (album: CulledAlbumListItem) => {
       await purgeAlbum(album.albumId);
     },
     [purgeAlbum],

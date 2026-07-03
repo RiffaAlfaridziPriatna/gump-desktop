@@ -384,6 +384,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         </View>
 
         <UploadToast mode="analyze" albumId={albumId} />
+      <UploadToast mode="upload" albumId={albumId} />
 
         <DeletePhotoModal
           visible={photoToDelete !== null}

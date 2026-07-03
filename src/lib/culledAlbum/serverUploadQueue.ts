@@ -80,6 +80,7 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
           });
           failPhoto(albumId, photoId, formatUploadError(err));
           void persistAlbum(albumId);
+          void checkServerUploadBatchComplete(albumId);
         })
         .finally(() => {
           const current = activeUploadCounts.get(albumId) ?? 1;

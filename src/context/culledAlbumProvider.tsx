@@ -14,11 +14,16 @@ import {
   startServerUploadBatch,
   updatePhoto,
 } from '@lib/culledAlbum/store';
-import {
-  createServerUploadQueue,
-} from '@lib/culledAlbum/serverUploadQueue';
+import {createServerUploadQueue} from '@lib/culledAlbum/serverUploadQueue';
 import {uploadServerPhoto} from '@lib/culledAlbum/serverUpload';
 import {createUploadQueue} from '@lib/culledAlbum/uploadQueue';
+import {
+  clearAlbumQueues,
+  markCompletionSeen,
+  queueOperationForMode,
+  resetQueueOperation,
+  setQueueOperationStatus,
+} from '@lib/culledAlbum/uploadQueueStore';
 import {createStateStore, StateStore} from '@lib/state';
 import {getSimulatedUploadPerItemMinDurationMs} from '@lib/uploadToast';
 import {FileAsset} from '@services/upload/types';
@@ -45,12 +50,8 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
   if (!uiStoreRef.current) {
     uiStoreRef.current = createStateStore<CulledAlbumUiState>({
-      uploadVisible: false,
-      analyzeVisible: false,
       uploadError: null,
       analyzeError: null,
-      activeUploadAlbumId: null,
-      activeAnalyzeAlbumId: null,
     });
   }
 
@@ -90,9 +91,11 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       onComplete: async albumId => {
         await cullingEngine.completeAnalysis(albumId);
         await markCullingCompleted(albumId);
+        setQueueOperationStatus(albumId, 'analysis', 'completed');
       },
-      onError: message => {
+      onError: (albumId, message) => {
         uiStoreRef.current!.setState({analyzeError: message});
+        setQueueOperationStatus(albumId, 'analysis', 'failed');
       },
     });
   }
@@ -104,22 +107,16 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     );
     addPhotosToAlbum(albumId, files, {simulatedMinDurationMs: perItemMinDurationMs});
 
-    uiStoreRef.current!.setState({
-      uploadError: null,
-      uploadVisible: true,
-      activeUploadAlbumId: albumId,
-    });
+    uiStoreRef.current!.setState({uploadError: null});
+    setQueueOperationStatus(albumId, 'localImport', 'active');
 
     queueMicrotask(() => uploadQueueRef.current!.processPending(albumId));
   }, []);
 
   const startAnalysis = useCallback((albumId: string) => {
     syncedAlbumsRef.current.delete(albumId);
-    uiStoreRef.current!.setState({
-      analyzeError: null,
-      analyzeVisible: true,
-      activeAnalyzeAlbumId: albumId,
-    });
+    uiStoreRef.current!.setState({analyzeError: null});
+    setQueueOperationStatus(albumId, 'analysis', 'active');
 
     queuePhotosForAnalysis(albumId);
     queueMicrotask(() => analysisQueueRef.current!.processPending(albumId));
@@ -128,61 +125,36 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
   const startSelectedUpload = useCallback((albumId: string, photoIds: string[]) => {
     startServerUploadBatch(albumId, photoIds);
     serverUploadQueueRef.current!.resetActiveUploadCount(albumId);
-    void persistAlbum(albumId);
+    setQueueOperationStatus(albumId, 'serverUpload', 'active');
+    persistAlbum(albumId).catch(() => undefined);
     serverUploadQueueRef.current!.processPending(albumId);
   }, []);
 
   const purgeAlbum = useCallback(async (albumId: string) => {
     syncedAlbumsRef.current.delete(albumId);
     await purgeLocalCulledAlbum(albumId);
-    uiStoreRef.current!.setState(state => {
-      if (state.activeUploadAlbumId === albumId) {
-        state.activeUploadAlbumId = null;
-        state.uploadVisible = false;
-      }
-      if (state.activeAnalyzeAlbumId === albumId) {
-        state.activeAnalyzeAlbumId = null;
-        state.analyzeVisible = false;
-      }
-    });
+    clearAlbumQueues(albumId);
   }, []);
 
-  const hideToast = useCallback((mode: CulledAlbumToastMode) => {
-    uiStoreRef.current!.setState(
-      mode === 'upload' ? {uploadVisible: false} : {analyzeVisible: false},
-    );
+  const hideToast = useCallback((mode: CulledAlbumToastMode, albumId: string) => {
+    markCompletionSeen(albumId, queueOperationForMode(mode));
   }, []);
 
-  const clearCompleted = useCallback((mode: CulledAlbumToastMode) => {
+  const clearCompleted = useCallback((mode: CulledAlbumToastMode, albumId: string) => {
+    const operation = queueOperationForMode(mode);
+
     if (mode === 'upload') {
-      const albumId = uiStoreRef.current!.getState().activeUploadAlbumId;
-      if (albumId) {
-        clearLocalImportBatch(albumId);
-        void persistAlbum(albumId);
-      }
-      uiStoreRef.current!.setState({
-        uploadVisible: false,
-        activeUploadAlbumId: null,
-      });
-      return;
+      clearLocalImportBatch(albumId);
+      persistAlbum(albumId).catch(() => undefined);
+    } else if (mode === 'analyze') {
+      clearAnalysisBatch(albumId);
+      persistAlbum(albumId).catch(() => undefined);
     }
 
-    const albumId = uiStoreRef.current!.getState().activeAnalyzeAlbumId;
-    if (albumId) {
-      clearAnalysisBatch(albumId);
-      void persistAlbum(albumId);
-    }
-    uiStoreRef.current!.setState({
-      analyzeVisible: false,
-      activeAnalyzeAlbumId: null,
-    });
+    resetQueueOperation(albumId, operation);
   }, []);
 
-  const failNotUploadedItems = useCallback((error?: string) => {
-    const albumId = uiStoreRef.current!.getState().activeUploadAlbumId;
-    if (!albumId) {
-      return;
-    }
+  const failNotUploadedItems = useCallback((albumId: string, error?: string) => {
     const batchPhotoIds = getAlbum(albumId)?.localImportBatchPhotoIds ?? [];
     const photoIds =
       batchPhotoIds.length > 0
@@ -201,13 +173,11 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
         }
       });
     }
+
+    setQueueOperationStatus(albumId, 'localImport', 'failed');
   }, []);
 
-  const failNotAnalyzedItems = useCallback((error?: string) => {
-    const albumId = uiStoreRef.current!.getState().activeAnalyzeAlbumId;
-    if (!albumId) {
-      return;
-    }
+  const failNotAnalyzedItems = useCallback((albumId: string, error?: string) => {
     const batchPhotoIds = getAlbum(albumId)?.analysisBatchPhotoIds ?? [];
     const photoIds =
       batchPhotoIds.length > 0
@@ -226,6 +196,8 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
         }
       });
     }
+
+    setQueueOperationStatus(albumId, 'analysis', 'failed');
   }, []);
 
   const actions: CulledAlbumActions = {

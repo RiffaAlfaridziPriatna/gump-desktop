@@ -1,5 +1,5 @@
 import {APIResponse} from '@services/api';
-import {CulledAlbum} from './types';
+import {CulledAlbumListItem} from './types';
 
 export function bytesToGigabytes(bytes: number): number {
   return bytes / 1024 ** 3;
@@ -25,7 +25,7 @@ export type LocalAlbumCardModel = Pick<
   cullingHasUploads: boolean;
 };
 
-export function toAlbumCardModel(album: CulledAlbum): LocalAlbumCardModel {
+export function toAlbumCardModel(album: CulledAlbumListItem): LocalAlbumCardModel {
   return {
     id: album.albumId,
     name: album.name,

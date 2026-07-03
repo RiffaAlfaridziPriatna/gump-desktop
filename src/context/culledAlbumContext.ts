@@ -2,15 +2,11 @@ import {createContext} from 'react';
 import {StateStore} from '@lib/state';
 import {FileAsset} from '@services/upload/types';
 
-export type CulledAlbumToastMode = 'upload' | 'analyze';
+export type CulledAlbumToastMode = 'upload' | 'analyze' | 'serverUpload';
 
 export type CulledAlbumUiState = {
-  uploadVisible: boolean;
-  analyzeVisible: boolean;
   uploadError: string | null;
   analyzeError: string | null;
-  activeUploadAlbumId: string | null;
-  activeAnalyzeAlbumId: string | null;
 };
 
 export type CulledAlbumActions = {
@@ -18,10 +14,10 @@ export type CulledAlbumActions = {
   startAnalysis: (albumId: string) => void;
   startSelectedUpload: (albumId: string, photoIds: string[]) => void;
   purgeAlbum: (albumId: string) => Promise<void>;
-  hideToast: (mode: CulledAlbumToastMode) => void;
-  clearCompleted: (mode: CulledAlbumToastMode) => void;
-  failNotUploadedItems: (error?: string) => void;
-  failNotAnalyzedItems: (error?: string) => void;
+  hideToast: (mode: CulledAlbumToastMode, albumId: string) => void;
+  clearCompleted: (mode: CulledAlbumToastMode, albumId: string) => void;
+  failNotUploadedItems: (albumId: string, error?: string) => void;
+  failNotAnalyzedItems: (albumId: string, error?: string) => void;
 };
 
 export const CulledAlbumUiContext =

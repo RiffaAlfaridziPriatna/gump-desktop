@@ -1,16 +1,88 @@
-import {useCulledAlbumStore} from '@context/culledAlbum';
 import {useServerAlbumSync} from '@lib/culledAlbum/serverSync';
 import {
   culledAlbumStore,
   loadAllLocalAlbumsIntoStore,
 } from '@lib/culledAlbum/store';
-import {CulledAlbum} from '@lib/culledAlbum/types';
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {CulledAlbumListItem} from '@lib/culledAlbum/types';
+import {useCallback, useEffect, useMemo, useState, useSyncExternalStore} from 'react';
 
-function sortAlbums(albums: CulledAlbum[]): CulledAlbum[] {
+function sortAlbums(albums: CulledAlbumListItem[]): CulledAlbumListItem[] {
   return [...albums].sort(
     (a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+}
+
+function selectAlbumListItems(
+  state: ReturnType<typeof culledAlbumStore.getState>,
+): CulledAlbumListItem[] {
+  return sortAlbums(
+    Object.values(state.albums).map(album => ({
+      albumId: album.albumId,
+      name: album.name,
+      title: album.title,
+      cover: album.cover,
+      coverMobile: album.coverMobile,
+      cullingCompleted: album.cullingCompleted,
+      cullingHasUploads: album.cullingHasUploads,
+      link: album.link,
+      createdAt: album.createdAt,
+      totalPhotos: album.totalPhotos,
+      totalStorage: album.totalStorage,
+      syncedMediaCount: album.syncedMediaCount,
+      syncedStorageGb: album.syncedStorageGb,
+    })),
+  );
+}
+
+function albumListItemsEqual(
+  left: CulledAlbumListItem[],
+  right: CulledAlbumListItem[],
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  for (let index = 0; index < left.length; index++) {
+    const a = left[index]!;
+    const b = right[index]!;
+    if (
+      a.albumId !== b.albumId ||
+      a.name !== b.name ||
+      a.title !== b.title ||
+      a.cullingCompleted !== b.cullingCompleted ||
+      a.cullingHasUploads !== b.cullingHasUploads ||
+      a.link !== b.link ||
+      a.createdAt !== b.createdAt ||
+      a.totalPhotos !== b.totalPhotos ||
+      a.totalStorage !== b.totalStorage ||
+      a.syncedMediaCount !== b.syncedMediaCount ||
+      a.syncedStorageGb !== b.syncedStorageGb ||
+      a.cover !== b.cover ||
+      a.coverMobile !== b.coverMobile
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+let albumListSnapshot: CulledAlbumListItem[] = [];
+
+function getAlbumListSnapshot(): CulledAlbumListItem[] {
+  const next = selectAlbumListItems(culledAlbumStore.getState());
+  if (!albumListItemsEqual(albumListSnapshot, next)) {
+    albumListSnapshot = next;
+  }
+  return albumListSnapshot;
+}
+
+function useAlbumListItems(): CulledAlbumListItem[] {
+  return useSyncExternalStore(
+    culledAlbumStore.subscribe,
+    getAlbumListSnapshot,
+    getAlbumListSnapshot,
   );
 }
 
@@ -19,12 +91,10 @@ export function useLocalCulledAlbumList() {
   const [error, setError] = useState<string | null>(null);
   const [enableSync, setEnableSync] = useState(false);
 
-  const albums = useCulledAlbumStore(state =>
-    sortAlbums(Object.values(state.albums)),
-  );
+  const albums = useAlbumListItems();
 
   const albumIds = useMemo(
-    () => Object.keys(culledAlbumStore.getState().albums),
+    () => albums.map(album => album.albumId),
     [albums],
   );
 

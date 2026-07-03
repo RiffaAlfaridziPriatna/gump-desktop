@@ -1,7 +1,7 @@
 import {Modal} from '@components/ui';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
-import {CulledAlbum} from '@lib/culledAlbum/types';
+import {CulledAlbumListItem} from '@lib/culledAlbum/types';
 import {useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {StyleSheet, Text, View} from 'react-native';
@@ -9,7 +9,7 @@ import DecorativeDeleteAlbum from '../../assets/images/modal_decorative_delete_a
 
 type DeleteAlbumModalProps = {
   visible: boolean;
-  album: CulledAlbum | null;
+  album: CulledAlbumListItem | null;
   onClose: () => void;
   onDelete: () => Promise<void>;
 };

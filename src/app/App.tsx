@@ -2,7 +2,6 @@ import {AuthProvider, useAuthState} from '@context/auth';
 import {CulledAlbumProvider} from '@context/culledAlbum';
 import {ErrorProvider} from '@context/error';
 import {ErrorToast} from '@components/error';
-import {UploadToast} from '@components/upload/UploadToast';
 import {colors} from '@lib/colors';
 import {DefaultTheme, NavigationContainer} from '@react-navigation/native';
 import {ActivityIndicator, StyleSheet, View} from 'react-native';
@@ -59,8 +58,6 @@ export default function App() {
               <NavigationContainer theme={DarkTheme}>
                 <RootNavigator />
               </NavigationContainer>
-              <UploadToast mode="upload" />
-              <UploadToast mode="analyze" />
               <ErrorToast />
             </CulledAlbumProvider>
           </AuthProvider>

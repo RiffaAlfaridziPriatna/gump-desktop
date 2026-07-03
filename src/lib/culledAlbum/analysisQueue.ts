@@ -26,7 +26,7 @@ export type AnalysisQueueDeps = {
   markSynced: (albumId: string) => void;
   unmarkSynced: (albumId: string) => void;
   onComplete: (albumId: string) => Promise<void>;
-  onError: (message: string) => void;
+  onError: (albumId: string, message: string) => void;
 };
 
 export function createAnalysisQueue(deps: AnalysisQueueDeps) {
@@ -61,7 +61,10 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     const analyzedCount = countByAnalysisStatus(photos, 'analyzed');
     if (analyzedCount === 0) {
       const firstError = photos.find(photo => photo.analysisError)?.analysisError;
-      onError(firstError ?? 'All photos failed to analyze. Please try again.');
+      onError(
+        albumId,
+        firstError ?? 'All photos failed to analyze. Please try again.',
+      );
       return;
     }
 
@@ -70,7 +73,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       unmarkSynced(albumId);
       const message =
         err instanceof Error ? err.message : 'Failed to complete culling analysis';
-      onError(message);
+      onError(albumId, message);
       console.error('[CulledAlbum] Failed to complete culling analysis', err);
     });
   }
@@ -152,7 +155,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
               entry.analysisProgress = 0;
             }
           });
-          onError(message);
+          onError(albumId, message);
           tryCompleteAlbum(albumId);
           processPending(albumId);
         });

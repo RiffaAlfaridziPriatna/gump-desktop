@@ -1,4 +1,5 @@
 import {PhotoMasonryGrid} from '@components/photo/PhotoMasonryGrid';
+import {UploadToast} from '@components/upload/UploadToast';
 import {
   useCulledAlbumActions,
   useCulledAlbumPhotosState,
@@ -9,6 +10,7 @@ import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
+import {useIsFocused} from '@react-navigation/native';
 import {useEffect, useMemo, useRef, useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
@@ -27,6 +29,7 @@ type Props = StackScreenProps<MainStackParamList, 'AlbumDetail'>;
 export default function AlbumDetailScreen({navigation, route}: Props) {
   const {albumId, albumName, ownerName, files} = route.params;
   const {isMobileLayout, screenPaddingHorizontal} = useLayout();
+  const isFocused = useIsFocused();
   const albumPhotos = useCulledAlbumPhotosState(albumId);
   const {addPhotos, startAnalysis} = useCulledAlbumActions();
   const startedRef = useRef(false);
@@ -75,7 +78,18 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
 
   const totalPhotos =
     albumPhotos.length > 0 ? albumPhotos.length : photos.length;
-  const isCullingInProgress = cullingActive && !isAnalysisComplete;
+  const isAnalysisInProgress = albumPhotos.some(
+    photo =>
+      photo.analysisStatus === 'pending' || photo.analysisStatus === 'analyzing',
+  );
+  const isCullingInProgress =
+    (cullingActive || isAnalysisInProgress) && !isAnalysisComplete;
+
+  useEffect(() => {
+    if (isAnalysisInProgress) {
+      setCullingActive(true);
+    }
+  }, [isAnalysisInProgress]);
 
   useEffect(() => {
     if (files && files.length > 0 && !startedRef.current) {
@@ -98,7 +112,12 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   }, [cullingActive, hasAnalyzedPhotos, isAnalysisComplete]);
 
   useEffect(() => {
-    if (!cullingActive || !isAnalysisComplete || !hasAnalyzedPhotos) {
+    if (
+      !isFocused ||
+      !cullingActive ||
+      !isAnalysisComplete ||
+      !hasAnalyzedPhotos
+    ) {
       return;
     }
     navigation.replace('CulledAlbumDetail', {albumId});
@@ -107,6 +126,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     cullingActive,
     hasAnalyzedPhotos,
     isAnalysisComplete,
+    isFocused,
     navigation,
   ]);
 
@@ -194,13 +214,15 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         <View style={styles.loading}>
           <Text style={styles.errorText}>{loadError}</Text>
         </View>
-      ) : (
+      ) : isFocused ? (
         <PhotoMasonryGrid
           items={displayPhotos}
           placeholderCount={Math.min(placeholderCount, 12)}
           horizontalPadding={screenPaddingHorizontal}
         />
-      )}
+      ) : null}
+      <UploadToast mode="upload" albumId={albumId} />
+      <UploadToast mode="analyze" albumId={albumId} />
     </SafeAreaView>
   );
 }

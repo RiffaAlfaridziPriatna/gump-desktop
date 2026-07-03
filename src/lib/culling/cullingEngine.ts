@@ -10,7 +10,7 @@ import {
   removePhotoFromAlbum,
   updatePhoto,
 } from '@lib/culledAlbum/store';
-import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
+import {toCullingPhoto, isCulledPhotoDisabled, recomputeAlbumTotals} from '@lib/culledAlbum/types';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 import {NativeModules, Platform} from 'react-native';
@@ -127,11 +127,21 @@ function applyDuplicateFlags(albumId: string): void {
 
   detectDuplicates(photoMap);
 
-  for (const photo of Object.values(photoMap)) {
-    updatePhoto(albumId, photo.photoId, entry => {
-      entry.duplicated = photo.duplicated;
-    });
-  }
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (!album) {
+      return;
+    }
+
+    for (const photo of Object.values(photoMap)) {
+      const entry = album.photos.find(item => item.photoId === photo.photoId);
+      if (entry) {
+        entry.duplicated = photo.duplicated;
+      }
+    }
+
+    recomputeAlbumTotals(album);
+  });
 }
 
 function assignFaceClusterIdsIncremental(

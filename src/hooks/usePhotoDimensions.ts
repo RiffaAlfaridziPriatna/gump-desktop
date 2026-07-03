@@ -3,7 +3,7 @@ import {
   DEFAULT_ASPECT_WIDTH,
 } from '@lib/masonryLayout';
 import {FileAsset} from '@services/upload/types';
-import {useEffect, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {Image} from 'react-native';
 
 export type PhotoDimensions = {
@@ -41,6 +41,10 @@ function loadPhotoDimensions(uri: string): Promise<PhotoDimensions> {
 }
 
 export function usePhotoDimensions(photos: FileAsset[]) {
+  const photoUrisKey = useMemo(
+    () => photos.map(photo => photo.uri).join('\n'),
+    [photos],
+  );
   const [dimensions, setDimensions] = useState<Map<string, PhotoDimensions>>(
     () => new Map(),
   );
@@ -72,7 +76,7 @@ export function usePhotoDimensions(photos: FileAsset[]) {
     return () => {
       cancelled = true;
     };
-  }, [photos]);
+  }, [photoUrisKey, photos]);
 
   return {dimensions, loading};
 }

@@ -7,9 +7,10 @@ import {
 import {createStateStore} from '@lib/state';
 import {FileAsset} from '@services/upload/types';
 import {mergeAlbumPhotos, mergeWithMemoryAlbum} from './merge';
-import {isLocalImportBatchFinished} from './localImportProgress';
+import {isLocalImportBatchFinished, getLocalImportBatchPhotos} from './localImportProgress';
 import {readAlbum, readAllAlbums, removeAlbum, saveAlbum} from './storage';
 import {syncAlbumWithDisk} from './sync';
+import {setQueueOperationStatus} from './uploadQueueStore';
 import {
   isServerUploadBatchFinished,
   isServerUploadBatchSuccessful,
@@ -235,6 +236,9 @@ export async function checkServerUploadBatchComplete(
 
   if (isServerUploadBatchSuccessful(album.photos, album.uploadBatchPhotoIds)) {
     await markCullingHasUploads(albumId);
+    setQueueOperationStatus(albumId, 'serverUpload', 'completed');
+  } else {
+    setQueueOperationStatus(albumId, 'serverUpload', 'failed');
   }
   await persistAlbum(albumId);
 }
@@ -251,6 +255,16 @@ export async function checkLocalImportBatchComplete(
     return;
   }
 
+  const batchPhotos = getLocalImportBatchPhotos(
+    album.photos,
+    album.localImportBatchPhotoIds,
+  );
+  const hasUploaded = batchPhotos.some(photo => photo.status === 'uploaded');
+  setQueueOperationStatus(
+    albumId,
+    'localImport',
+    hasUploaded ? 'completed' : 'failed',
+  );
   await persistAlbum(albumId);
 }
 

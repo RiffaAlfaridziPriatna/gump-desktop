@@ -7,7 +7,7 @@ import {useLayout} from '@hooks/useLayout';
 import {toAlbumCardModel} from '@lib/culledAlbum/format';
 import {resolveCulledAlbumRoute} from '@lib/culledAlbum/service';
 import {culledAlbumStore} from '@lib/culledAlbum/store';
-import {CulledAlbum} from '@lib/culledAlbum/types';
+import {CulledAlbumListItem} from '@lib/culledAlbum/types';
 import {preloadImages} from '@lib/imagePreload';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
@@ -42,7 +42,7 @@ export default function HomeScreen({navigation}: Props) {
   } = useLayout();
 
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
-  const [albumToDelete, setAlbumToDelete] = useState<CulledAlbum | null>(null);
+  const [albumToDelete, setAlbumToDelete] = useState<CulledAlbumListItem | null>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
   const cardModels = useMemo(
     () => albums.map(album => toAlbumCardModel(album)),
@@ -56,7 +56,7 @@ export default function HomeScreen({navigation}: Props) {
     }, [refresh]),
   );
 
-  async function handlePressAlbum(album: CulledAlbum) {
+  async function handlePressAlbum(album: CulledAlbumListItem) {
     if (expandedCardId === album.albumId) {
       return;
     }

@@ -2,12 +2,18 @@ import {ProgressBar} from '@components/ui';
 import {
   useCulledAlbumActions,
   useCulledAlbumAnalyzeItems,
+  useCulledAlbumServerUploadBatch,
   useCulledAlbumUiState,
   useCulledAlbumUploadItems,
 } from '@context/culledAlbum';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
+import {computeServerUploadBatchProgress} from '@lib/culledAlbum/serverUploadProgress';
 import {CulledAlbumPhoto} from '@lib/culledAlbum/types';
+import {
+  QueueToastMode,
+  useAlbumQueueOperation,
+} from '@lib/culledAlbum/uploadQueueStore';
 import {useEffect, useMemo, useRef, useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
@@ -24,14 +30,12 @@ const SLIDE_DISTANCE = 120;
 const ANIMATION_MS = 220;
 const AUTO_CLOSE_DELAY_MS = 5000;
 
-type ToastMode = 'upload' | 'analyze';
-
 type UploadToastProps = {
-  mode?: ToastMode;
-  albumId?: string | null;
+  mode?: QueueToastMode;
+  albumId: string;
 };
 
-function countItems(photos: CulledAlbumPhoto[], mode: ToastMode) {
+function countItems(photos: CulledAlbumPhoto[], mode: QueueToastMode) {
   const counts = {pending: 0, completed: 0, inProgress: 0, failed: 0};
   for (const photo of photos) {
     if (mode === 'upload') {
@@ -42,32 +46,35 @@ function countItems(photos: CulledAlbumPhoto[], mode: ToastMode) {
       continue;
     }
 
-    if (photo.analysisStatus === 'pending') counts.pending++;
-    else if (photo.analysisStatus === 'failed') counts.failed++;
-    else if (photo.analysisStatus === 'analyzed') counts.completed++;
-    else if (photo.analysisStatus === 'analyzing') counts.inProgress++;
+    if (mode === 'analyze') {
+      if (photo.analysisStatus === 'pending') counts.pending++;
+      else if (photo.analysisStatus === 'failed') counts.failed++;
+      else if (photo.analysisStatus === 'analyzed') counts.completed++;
+      else if (photo.analysisStatus === 'analyzing') counts.inProgress++;
+      continue;
+    }
+
+    if (photo.serverUploadStatus === 'pending') counts.pending++;
+    else if (photo.serverUploadStatus === 'failed') counts.failed++;
+    else if (photo.serverUploadStatus === 'uploaded') counts.completed++;
+    else if (photo.serverUploadStatus === 'uploading') counts.inProgress++;
   }
   return counts;
 }
 
 export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   const deviceWidth = useWindowDimensions().width;
-
-  const uploadVisible = useCulledAlbumUiState(state => state.uploadVisible);
-  const analyzeVisible = useCulledAlbumUiState(state => state.analyzeVisible);
-  const activeUploadAlbumId = useCulledAlbumUiState(
-    state => state.activeUploadAlbumId,
-  );
-  const activeAnalyzeAlbumId = useCulledAlbumUiState(
-    state => state.activeAnalyzeAlbumId,
-  );
+  const queueOperation = useAlbumQueueOperation(albumId, mode);
   const analyzeError = useCulledAlbumUiState(state => state.analyzeError);
 
-  const targetUploadAlbumId = albumId || activeUploadAlbumId;
-  const targetAnalyzeAlbumId = albumId || activeAnalyzeAlbumId;
-
-  const uploadItems = useCulledAlbumUploadItems(targetUploadAlbumId);
-  const analyzeItems = useCulledAlbumAnalyzeItems(targetAnalyzeAlbumId);
+  const uploadItems = useCulledAlbumUploadItems(
+    mode === 'upload' ? albumId : null,
+  );
+  const analyzeItems = useCulledAlbumAnalyzeItems(
+    mode === 'analyze' ? albumId : null,
+  );
+  const {batchPhotoIds: serverBatchPhotoIds, photos: serverUploadItems} =
+    useCulledAlbumServerUploadBatch(albumId);
 
   const {
     hideToast,
@@ -76,25 +83,24 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     clearCompleted,
   } = useCulledAlbumActions();
 
-  const isActiveAlbum =
+  const items =
     mode === 'upload'
-      ? targetUploadAlbumId === activeUploadAlbumId
-      : targetAnalyzeAlbumId === activeAnalyzeAlbumId;
+      ? uploadItems
+      : mode === 'analyze'
+        ? analyzeItems
+        : serverUploadItems;
 
   const visible =
-    albumId !== undefined
-      ? isActiveAlbum && (mode === 'upload' ? uploadVisible : analyzeVisible)
-      : mode === 'upload'
-        ? uploadVisible
-        : analyzeVisible;
-
-  const items = mode === 'upload' ? uploadItems : analyzeItems;
-
+    queueOperation.status === 'active' ||
+    ((queueOperation.status === 'completed' ||
+      queueOperation.status === 'failed') &&
+      !queueOperation.completionSeen);
   const shouldBeVisible = visible && items.length > 0;
-  const [mounted, setMounted] = useState(shouldBeVisible);
+  const [mounted, setMounted] = useState(false);
 
   const translateY = useRef(new Animated.Value(SLIDE_DISTANCE)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const wasVisibleRef = useRef(false);
 
   const lastItemsRef = useRef<typeof items>([]);
   const shouldClearCompletedAfterCloseRef = useRef(false);
@@ -117,25 +123,33 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     counts.completed === 0 &&
     counts.failed > 0;
   const totalProgress = useMemo(() => {
+    if (mode === 'serverUpload') {
+      return computeServerUploadBatchProgress(renderItems, serverBatchPhotoIds);
+    }
+
     const totalItems = renderItems.length;
     if (totalItems === 0) {
       return 0;
     }
     const progressCount = counts.pending + counts.inProgress;
-    const totalProgress = progressCount / totalItems;
-    return 1 - (+totalProgress.toFixed(2));
-  }, [counts, renderItems]);
+    const progressRatio = progressCount / totalItems;
+    return 1 - +progressRatio.toFixed(2);
+  }, [counts, mode, renderItems, serverBatchPhotoIds]);
 
   const inProgressLabel =
     mode === 'upload'
       ? `Uploading ${counts.pending + counts.inProgress} photos`
-      : `Analyzing ${counts.pending + counts.inProgress} photos`;
+      : mode === 'analyze'
+        ? `Analyzing ${counts.pending + counts.inProgress} photos`
+        : `Uploading ${counts.pending + counts.inProgress} photos to server`;
   const completedLabel =
     mode === 'upload'
       ? `Uploaded ${counts.completed} photos`
-      : allAnalyzeFailed
-        ? `Failed to analyze ${counts.failed} photo${counts.failed === 1 ? '' : 's'}`
-        : `Culled ${counts.completed} photos`;
+      : mode === 'analyze'
+        ? allAnalyzeFailed
+          ? `Failed to analyze ${counts.failed} photo${counts.failed === 1 ? '' : 's'}`
+          : `Culled ${counts.completed} photos`
+        : `Uploaded ${counts.completed} photos to server`;
 
   useEffect(() => {
     if (!visible || !completed || renderItems.length === 0) {
@@ -143,14 +157,19 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     }
     const timer = setTimeout(() => {
       shouldClearCompletedAfterCloseRef.current = true;
-      hideToast(mode);
+      hideToast(mode, albumId);
     }, AUTO_CLOSE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [completed, hideToast, mode, renderItems.length, visible]);
+  }, [albumId, completed, hideToast, mode, renderItems.length, visible]);
 
   useEffect(() => {
-    if (shouldBeVisible) {
+    const wasVisible = wasVisibleRef.current;
+    wasVisibleRef.current = shouldBeVisible;
+
+    if (shouldBeVisible && !wasVisible) {
       setMounted(true);
+      translateY.setValue(SLIDE_DISTANCE);
+      opacity.setValue(0);
       Animated.parallel([
         Animated.timing(translateY, {
           toValue: 0,
@@ -168,27 +187,31 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
       return;
     }
 
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: SLIDE_DISTANCE,
-        duration: ANIMATION_MS,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacity, {
-        toValue: 0,
-        duration: ANIMATION_MS,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start(({finished}) => {
-      if (finished) setMounted(false);
-      if (finished && shouldClearCompletedAfterCloseRef.current) {
-        shouldClearCompletedAfterCloseRef.current = false;
-        clearCompleted(mode);
-      }
-    });
-  }, [clearCompleted, mode, opacity, shouldBeVisible, translateY]);
+    if (!shouldBeVisible && wasVisible) {
+      Animated.parallel([
+        Animated.timing(translateY, {
+          toValue: SLIDE_DISTANCE,
+          duration: ANIMATION_MS,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: ANIMATION_MS,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start(({finished}) => {
+        if (finished) {
+          setMounted(false);
+        }
+        if (finished && shouldClearCompletedAfterCloseRef.current) {
+          shouldClearCompletedAfterCloseRef.current = false;
+          clearCompleted(mode, albumId);
+        }
+      });
+    }
+  }, [albumId, clearCompleted, mode, opacity, shouldBeVisible, translateY]);
 
   if (!mounted) {
     return null;
@@ -197,15 +220,18 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   function handleClose() {
     if (!completed) {
       if (mode === 'upload') {
-        failNotUploadedItems('Upload cancelled');
-      } else {
-        failNotAnalyzedItems('Analysis cancelled');
+        failNotUploadedItems(albumId, 'Upload cancelled');
+      } else if (mode === 'analyze') {
+        failNotAnalyzedItems(albumId, 'Analysis cancelled');
       }
     } else {
       shouldClearCompletedAfterCloseRef.current = true;
     }
-    hideToast(mode);
+    hideToast(mode, albumId);
   }
+
+  const showCompletedBadge =
+    completed && !allAnalyzeFailed && queueOperation.status === 'completed';
 
   return (
     <Animated.View
@@ -219,7 +245,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
           <Text style={styles.title}>
             {completed ? completedLabel : inProgressLabel}
           </Text>
-          {completed && !allAnalyzeFailed && (
+          {showCompletedBadge && (
             <Text style={styles.completedText}>Completed</Text>
           )}
         </View>

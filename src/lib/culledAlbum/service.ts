@@ -1,6 +1,6 @@
 import {deleteLocalAlbumFiles} from '@lib/localStorage';
 import {clearAlbumData, loadAlbumIntoStore} from './store';
-import {CulledAlbum, hasStartedCulling} from './types';
+import {CulledAlbum, hasInFlightAnalysis} from './types';
 
 export async function purgeLocalCulledAlbum(albumId: string): Promise<void> {
   await Promise.all([
@@ -12,7 +12,19 @@ export async function purgeLocalCulledAlbum(albumId: string): Promise<void> {
 export function shouldOpenCulledDetailScreen(
   localAlbum: CulledAlbum | null,
 ): boolean {
-  return hasStartedCulling(localAlbum);
+  if (!localAlbum) {
+    return false;
+  }
+
+  if (hasInFlightAnalysis(localAlbum)) {
+    return false;
+  }
+
+  if (localAlbum.cullingCompleted) {
+    return true;
+  }
+
+  return localAlbum.photos.some(photo => photo.analysisStatus === 'analyzed');
 }
 
 export async function resolveCulledAlbumRoute(
