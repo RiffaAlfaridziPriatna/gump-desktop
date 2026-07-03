@@ -28,6 +28,7 @@ type ToastMode = 'upload' | 'analyze';
 
 type UploadToastProps = {
   mode?: ToastMode;
+  albumId?: string | null;
 };
 
 function countItems(photos: CulledAlbumPhoto[], mode: ToastMode) {
@@ -49,7 +50,7 @@ function countItems(photos: CulledAlbumPhoto[], mode: ToastMode) {
   return counts;
 }
 
-export function UploadToast({mode = 'upload'}: UploadToastProps) {
+export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   const deviceWidth = useWindowDimensions().width;
 
   const uploadVisible = useCulledAlbumUiState(state => state.uploadVisible);
@@ -62,8 +63,11 @@ export function UploadToast({mode = 'upload'}: UploadToastProps) {
   );
   const analyzeError = useCulledAlbumUiState(state => state.analyzeError);
 
-  const uploadItems = useCulledAlbumUploadItems(activeUploadAlbumId);
-  const analyzeItems = useCulledAlbumAnalyzeItems(activeAnalyzeAlbumId);
+  const targetUploadAlbumId = albumId || activeUploadAlbumId;
+  const targetAnalyzeAlbumId = albumId || activeAnalyzeAlbumId;
+
+  const uploadItems = useCulledAlbumUploadItems(targetUploadAlbumId);
+  const analyzeItems = useCulledAlbumAnalyzeItems(targetAnalyzeAlbumId);
 
   const {
     hideToast,
@@ -72,7 +76,18 @@ export function UploadToast({mode = 'upload'}: UploadToastProps) {
     clearCompleted,
   } = useCulledAlbumActions();
 
-  const visible = mode === 'upload' ? uploadVisible : analyzeVisible;
+  const isActiveAlbum =
+    mode === 'upload'
+      ? targetUploadAlbumId === activeUploadAlbumId
+      : targetAnalyzeAlbumId === activeAnalyzeAlbumId;
+
+  const visible =
+    albumId !== undefined
+      ? isActiveAlbum && (mode === 'upload' ? uploadVisible : analyzeVisible)
+      : mode === 'upload'
+        ? uploadVisible
+        : analyzeVisible;
+
   const items = mode === 'upload' ? uploadItems : analyzeItems;
 
   const shouldBeVisible = visible && items.length > 0;

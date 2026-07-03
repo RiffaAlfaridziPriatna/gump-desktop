@@ -8,7 +8,7 @@ import {
 
 const TEMPORAL_WINDOW_MS = 60 * 60 * 1000;
 
-export function detectDuplicatesOptimized(
+export function detectDuplicates(
   photos: Record<string, DuplicateDetectionPhoto>,
 ): void {
   const records = Object.values(photos);

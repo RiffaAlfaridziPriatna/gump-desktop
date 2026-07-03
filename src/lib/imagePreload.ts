@@ -6,10 +6,6 @@ const DEFAULT_CONCURRENCY = 4;
 const prefetchedUris = new Set<string>();
 const inflight = new Map<string, Promise<void>>();
 
-export function isImagePreloaded(uri: string): boolean {
-  return prefetchedUris.has(uri);
-}
-
 export function preloadImage(uri: string): Promise<void> {
   if (!uri) {
     return Promise.resolve();
@@ -37,14 +33,6 @@ export function preloadImage(uri: string): Promise<void> {
 
   inflight.set(uri, promise);
   return promise;
-}
-
-export function getPreloadImagePromise(uri: string): Promise<void> | null {
-  if (!uri || prefetchedUris.has(uri)) {
-    return null;
-  }
-
-  return inflight.get(uri) ?? null;
 }
 
 export async function preloadImages(

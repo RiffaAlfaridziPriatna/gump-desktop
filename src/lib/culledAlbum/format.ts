@@ -17,14 +17,6 @@ export function formatStorageSizeGb(gb: number): string {
   return `${gb.toFixed(1)} GB`;
 }
 
-export function toSizesGb(
-  sizeBytes: Record<string, number>,
-): Record<string, number> {
-  return Object.fromEntries(
-    Object.entries(sizeBytes).map(([id, bytes]) => [id, bytesToGigabytes(bytes)]),
-  );
-}
-
 export type LocalAlbumCardModel = Pick<
   APIResponse.Album,
   'id' | 'name' | 'title' | 'cover' | 'totalMediaCount' | 'size'

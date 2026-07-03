@@ -24,11 +24,10 @@ import {
   derivePhotoFlags,
   deriveStarRating,
   DuplicateDetectionPhoto,
+  assignFaceClustersToSinglePhoto,
   faceFingerprint,
-  fingerprintDistance,
-  FACE_CLUSTER_THRESHOLD,
 } from './cullingUtil';
-import {detectDuplicatesOptimized} from './duplicateDetection';
+import {detectDuplicates} from './duplicateDetection';
 import {NativeDetectedFace} from '@lib/culledAlbum/types';
 import {readImageCaptureTime} from '@lib/imageCaptureTime';
 import {computeImagePerceptualHash} from '@lib/perceptualHash';
@@ -126,7 +125,7 @@ function applyDuplicateFlags(albumId: string): void {
     };
   }
 
-  detectDuplicatesOptimized(photoMap);
+  detectDuplicates(photoMap);
 
   for (const photo of Object.values(photoMap)) {
     updatePhoto(albumId, photo.photoId, entry => {
@@ -138,68 +137,38 @@ function applyDuplicateFlags(albumId: string): void {
 function assignFaceClusterIdsIncremental(
   albumId: string,
   photoId: string,
-  newFaces: CullingFace[],
 ): void {
-  if (newFaces.length === 0) {
-    return;
-  }
-
-  const album = getAlbum(albumId);
-  if (!album) {
-    return;
-  }
-
-  const previousPhotos = getPhotosForAlbum(albumId).filter(
-    photo => photo.analysisStatus === 'analyzed' && photo.photoId !== photoId,
-  );
-
-  const newFingerprints = newFaces.map(faceFingerprint);
-  const assignedClusters: (string | null)[] = new Array(newFaces.length).fill(
-    null,
-  );
-
-  let nextClusterId = album.nextFaceClusterId;
-  for (let i = 0; i < newFaces.length; i++) {
-    let bestMatch: string | null = null;
-    let bestDistance = Infinity;
-
-    for (const prevPhoto of previousPhotos) {
-      for (const prevFace of prevPhoto.faces) {
-        if (!prevFace.rekognitionFaceId) {
-          continue;
-        }
-
-        const prevFingerprint = faceFingerprint(prevFace);
-        const distance = fingerprintDistance(newFingerprints[i]!, prevFingerprint);
-
-        if (distance < FACE_CLUSTER_THRESHOLD && distance < bestDistance) {
-          bestDistance = distance;
-          bestMatch = prevFace.rekognitionFaceId;
-        }
-      }
-    }
-
-    if (bestMatch) {
-      assignedClusters[i] = bestMatch;
-    } else {
-      assignedClusters[i] = `person-${nextClusterId++}`;
-    }
-  }
-
   culledAlbumStore.setState(state => {
     const albumState = state.albums[albumId];
-    if (albumState) {
-      albumState.nextFaceClusterId = nextClusterId;
+    if (!albumState) {
+      return;
     }
-  });
 
-  updatePhoto(albumId, photoId, entry => {
-    entry.faces.forEach((face, faceIndex) => {
-      const clusterId = assignedClusters[faceIndex];
-      if (clusterId) {
-        face.rekognitionFaceId = clusterId;
+    const photo = albumState.photos.find(entry => entry.photoId === photoId);
+    if (!photo || photo.faces.length === 0) {
+      return;
+    }
+
+    const previousPhotos = albumState.photos.filter(
+      entry =>
+        entry.analysisStatus === 'analyzed' && entry.photoId !== photoId,
+    );
+
+    const clusterRepresentatives = new Map<string, number[]>();
+    for (const previousPhoto of previousPhotos) {
+      for (const face of previousPhoto.faces) {
+        const clusterId = face.rekognitionFaceId;
+        if (clusterId && !clusterRepresentatives.has(clusterId)) {
+          clusterRepresentatives.set(clusterId, faceFingerprint(face));
+        }
       }
-    });
+    }
+
+    albumState.nextFaceClusterId = assignFaceClustersToSinglePhoto(
+      photo.faces,
+      clusterRepresentatives,
+      albumState.nextFaceClusterId,
+    );
   });
 }
 
@@ -252,7 +221,7 @@ export const cullingEngine = {
       photo.selected = isFirstAnalysis ? flags.selected : existing.selected;
     });
 
-    assignFaceClusterIdsIncremental(albumId, photoId, faces);
+    assignFaceClusterIdsIncremental(albumId, photoId);
 
     await persistAlbum(albumId);
 
@@ -265,12 +234,6 @@ export const cullingEngine = {
 
   async getPhotos(albumId: string): Promise<APIResponse.CullingPhotoList> {
     return {results: await getAnalyzedPhotos(albumId)};
-  },
-
-  async refreshDuplicateFlags(albumId: string): Promise<void> {
-    await ensureAlbumLoaded(albumId);
-    applyDuplicateFlags(albumId);
-    await persistAlbum(albumId);
   },
 
   async getStats(albumId: string): Promise<APIResponse.CullingStats> {

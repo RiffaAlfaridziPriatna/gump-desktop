@@ -1,4 +1,3 @@
-import {getPhotoById, updatePhoto} from '@lib/culledAlbum/store';
 import {computePerceptualHash as computeNativePerceptualHash} from '@lib/localStorage';
 
 export function hammingDistance(hexA: string, hexB: string): number {
@@ -23,25 +22,4 @@ export async function computeImagePerceptualHash(
     return null;
   }
   return hash.toLowerCase();
-}
-
-export async function enrichPhotoPerceptualHash(
-  albumId: string,
-  photoId: string,
-  sourceUri: string,
-): Promise<string | null> {
-  const existing = getPhotoById(albumId, photoId)?.perceptualHash ?? null;
-  if (existing != null) {
-    return existing;
-  }
-
-  const perceptualHash = await computeImagePerceptualHash(sourceUri);
-  if (perceptualHash == null) {
-    return null;
-  }
-
-  updatePhoto(albumId, photoId, entry => {
-    entry.perceptualHash = perceptualHash;
-  });
-  return perceptualHash;
 }

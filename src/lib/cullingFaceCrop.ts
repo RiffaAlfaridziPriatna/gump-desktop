@@ -68,21 +68,6 @@ export function getContainedImageLayout(
   };
 }
 
-export function getTopAlignedFullWidthImageLayout(
-  containerWidth: number,
-  imageWidth: number,
-  imageHeight: number,
-): DisplayRect {
-  const scale = containerWidth / imageWidth;
-
-  return {
-    width: containerWidth,
-    height: imageHeight * scale,
-    left: 0,
-    top: 0,
-  };
-}
-
 export function getFaceZoomImageLayout(
   containerWidth: number,
   containerHeight: number,

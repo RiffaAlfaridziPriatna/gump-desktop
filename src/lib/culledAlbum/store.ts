@@ -98,61 +98,6 @@ export async function loadAlbumIntoStore(albumId: string): Promise<CulledAlbum> 
   return getAlbumFromState(albumId) ?? album;
 }
 
-export async function loadAlbumsIntoStore(albumIds: string[]): Promise<void> {
-  if (albumIds.length === 0) {
-    return;
-  }
-
-  try {
-    const persisted = await readAllAlbums();
-    const albums: Record<string, CulledAlbum> = {};
-
-    await Promise.all(
-      albumIds.map(async albumId => {
-        const active = getAlbumFromState(albumId);
-        if (
-          hasInFlightUploads(active) ||
-          hasInFlightAnalysis(active) ||
-          hasInFlightServerUploads(active)
-        ) {
-          albums[albumId] = active!;
-          return;
-        }
-        albums[albumId] = await buildRefreshedAlbum(albumId, persisted[albumId]);
-      }),
-    );
-
-    culledAlbumStore.setState(state => {
-      state.error = null;
-      for (const albumId of albumIds) {
-        const loaded = albums[albumId];
-        if (!loaded) {
-          continue;
-        }
-        const current = state.albums[albumId];
-        if (!current) {
-          state.albums[albumId] = loaded;
-          continue;
-        }
-        if (
-          hasInFlightUploads(current) ||
-          hasInFlightAnalysis(current) ||
-          hasInFlightServerUploads(current)
-        ) {
-          continue;
-        }
-        current.photos = mergeAlbumPhotos(loaded.photos, current.photos);
-        recomputeAlbumTotals(current);
-      }
-    });
-  } catch (err) {
-    culledAlbumStore.setState({
-      error:
-        err instanceof Error ? err.message : 'Failed to load local album data',
-    });
-  }
-}
-
 export async function persistAlbum(albumId: string): Promise<void> {
   const album = getAlbumFromState(albumId);
   if (album) {

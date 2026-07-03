@@ -133,33 +133,6 @@ export function areFacesSimilar(facesA: CullingFace[], facesB: CullingFace[]): b
   return avgDistance < FACE_DUPLICATE_THRESHOLD;
 }
 
-export function detectDuplicates(photos: Record<string, DuplicateDetectionPhoto>) {
-  const records = Object.values(photos);
-  for (const record of records) {
-    record.duplicated = false;
-  }
-
-  for (let i = 0; i < records.length; i++) {
-    for (let j = i + 1; j < records.length; j++) {
-      const a = records[i]!;
-      const b = records[j]!;
-
-      const hasSimilarFaces = areFacesSimilar(a.faces, b.faces);
-      const hasSimilarPerceptualHash = arePerceptualHashesSimilar(
-        a.perceptualHash,
-        b.perceptualHash,
-      );
-
-      const isDuplicate = hasSimilarPerceptualHash || hasSimilarFaces;
-
-      if (isDuplicate) {
-        a.duplicated = true;
-        b.duplicated = true;
-      }
-    }
-  }
-}
-
 export function computeStats(photos: CullingPhoto[]): APIResponse.CullingStats {
   const selected = photos.filter(photo => photo.selected);
 
@@ -208,7 +181,72 @@ export function computeKeyFaces(
     .sort((a, b) => b.occurrenceCount - a.occurrenceCount);
 }
 
-export const FACE_CLUSTER_THRESHOLD = 0.18;
+/** Stricter threshold when matching a face to someone seen in another photo. */
+export const FACE_CLUSTER_CROSS_PHOTO_THRESHOLD = 0.1;
+
+type FaceClusterMatch = {
+  faceIndex: number;
+  clusterId: string;
+  distance: number;
+};
+
+/**
+ * Assigns a cluster id to every face in a single photo.
+ *
+ * Every face in one photo is a distinct person, so each existing cluster can be
+ * reused at most once per photo. This guarantees a group photo acts as a lower
+ * bound: N faces in one photo always yield at least N unique clusters overall.
+ *
+ * Matching against clusters from other photos is done globally (best pairs
+ * first) instead of greedily per face, so the closest face/cluster pairs win
+ * and the rest become new people.
+ */
+export function assignFaceClustersToSinglePhoto(
+  faces: CullingFace[],
+  clusterRepresentatives: Map<string, number[]>,
+  nextClusterId: number,
+): number {
+  const fingerprints = faces.map(faceFingerprint);
+  const assignedClusterIds: (string | null)[] = new Array(faces.length).fill(
+    null,
+  );
+
+  const candidateMatches: FaceClusterMatch[] = [];
+  for (let faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+    const fingerprint = fingerprints[faceIndex]!;
+    for (const [clusterId, representative] of clusterRepresentatives) {
+      const distance = fingerprintDistance(fingerprint, representative);
+      if (distance < FACE_CLUSTER_CROSS_PHOTO_THRESHOLD) {
+        candidateMatches.push({faceIndex, clusterId, distance});
+      }
+    }
+  }
+
+  candidateMatches.sort((a, b) => a.distance - b.distance);
+
+  const usedClusterIds = new Set<string>();
+  for (const match of candidateMatches) {
+    if (assignedClusterIds[match.faceIndex] !== null) {
+      continue;
+    }
+    if (usedClusterIds.has(match.clusterId)) {
+      continue;
+    }
+    assignedClusterIds[match.faceIndex] = match.clusterId;
+    usedClusterIds.add(match.clusterId);
+  }
+
+  for (let faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+    let clusterId = assignedClusterIds[faceIndex];
+    if (!clusterId) {
+      clusterId = `person-${nextClusterId++}`;
+      clusterRepresentatives.set(clusterId, fingerprints[faceIndex]!);
+    }
+    faces[faceIndex]!.rekognitionFaceId = clusterId;
+  }
+
+  return nextClusterId;
+}
 
 export function faceFingerprint(face: CullingFace): number[] {
   const { boundingBox: box, landmarks, pose } = face;

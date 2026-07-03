@@ -1,13 +1,5 @@
 import {FileAsset} from '@services/upload/types';
 
-export const SUPPORTED_CULLING_IMAGE_MIME_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/heic',
-  'image/tiff',
-] as const;
-
 const UNSUPPORTED_EXTENSIONS = new Set(['webp']);
 
 export const UNSUPPORTED_UPLOAD_FORMAT_ERROR =
