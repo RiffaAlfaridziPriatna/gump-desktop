@@ -1,18 +1,21 @@
-import { FaceCropAvatar } from '@components/culling/FaceCropAvatar';
-import { FaceStatusIconBadge } from '@components/culling/FaceStatusIconBadge';
-import { type KeyFaceTooltipAnchor } from '@components/culling/FaceStatusTooltip';
-import { type FrostedBackdrop } from '@components/ui/frosted';
-import { CullingBoundingBox } from '@lib/cullingFaceCrop';
+import {FaceCropAvatar} from '@components/culling/FaceCropAvatar';
+import {FaceStatusIconBadge} from '@components/culling/FaceStatusIconBadge';
+import {type KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
+import {CullingBoundingBox} from '@lib/cullingFaceCrop';
 import {
   getEyeStatusMeta,
   getFocusStatusMeta,
 } from '@lib/culling/faceStatus';
-import {isScrollAwareTooltipLocked, useScrollAwareTooltipStore} from '@lib/scrollAwareTooltip';
-import { colors } from '@lib/colors';
-import { APIResponse } from '@services/api';
-import { useCallback, useRef, useState } from 'react';
+import {
+  isScrollAwareTooltipLocked,
+  useScrollAwareTooltipStore,
+} from '@lib/scrollAwareTooltip';
+import {colors} from '@lib/colors';
+import {ImageDimensions} from '@lib/imageDimensions';
+import {APIResponse} from '@services/api';
+import {memo, useCallback, useRef} from 'react';
 import {Pressable} from '@components/ui';
-import { StyleSheet, View } from 'react-native';
+import {StyleSheet, View} from 'react-native';
 
 type KeyFaceSidebarItemProps = {
   uri?: string;
@@ -20,47 +23,27 @@ type KeyFaceSidebarItemProps = {
   eyeStatus: APIResponse.CullingEyeStatus;
   focusLevel: APIResponse.CullingFocusLevel;
   width: number;
+  imageSize?: ImageDimensions | null;
   selected?: boolean;
   onPress?: () => void;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
 };
 
-export function KeyFaceSidebarItem({
+export const KeyFaceSidebarItem = memo(function KeyFaceSidebarItem({
   uri,
   boundingBox,
   eyeStatus,
   focusLevel,
   width,
+  imageSize,
   selected = false,
   onPress,
   onTooltipAnchorChange,
 }: KeyFaceSidebarItemProps) {
-  const [avatarBackdrop, setAvatarBackdrop] = useState<
-    FrostedBackdrop | undefined
-  >();
   const avatarRef = useRef<View>(null);
   const scrollAwareTooltipStore = useScrollAwareTooltipStore();
   const eyeMeta = getEyeStatusMeta(eyeStatus);
   const focusMeta = getFocusStatusMeta(focusLevel);
-
-  const syncAvatarBackdrop = useCallback(() => {
-    if (!uri) {
-      setAvatarBackdrop(undefined);
-      return;
-    }
-
-    avatarRef.current?.measureInWindow(
-      (x, y, measuredWidth, measuredHeight) => {
-        setAvatarBackdrop({
-          uri,
-          coverWidth: measuredWidth,
-          coverHeight: measuredHeight,
-          coverX: x,
-          coverY: y,
-        });
-      },
-    );
-  }, [uri]);
 
   const handleHoverIn = useCallback(() => {
     if (isScrollAwareTooltipLocked(scrollAwareTooltipStore)) {
@@ -92,16 +75,18 @@ export function KeyFaceSidebarItem({
       style={[styles.container, {width, height: width}]}
       onPress={onPress}
       onHoverIn={handleHoverIn}
-      onHoverOut={handleHoverOut}
-    >
+      onHoverOut={handleHoverOut}>
       <View style={[styles.root, {width, height: width}]}>
         <View
           ref={avatarRef}
-          style={[styles.avatarWrap, {width, height: width}]}
-          onLayout={syncAvatarBackdrop}
-        >
+          style={[styles.avatarWrap, {width, height: width}]}>
           {uri && boundingBox ? (
-            <FaceCropAvatar uri={uri} boundingBox={boundingBox} size={width} />
+            <FaceCropAvatar
+              uri={uri}
+              boundingBox={boundingBox}
+              size={width}
+              imageSize={imageSize}
+            />
           ) : (
             <View
               style={[
@@ -123,13 +108,13 @@ export function KeyFaceSidebarItem({
         ) : null}
 
         <View style={styles.statusBadges}>
-          <FaceStatusIconBadge meta={eyeMeta} backdrop={avatarBackdrop} />
-          <FaceStatusIconBadge meta={focusMeta} backdrop={avatarBackdrop} />
+          <FaceStatusIconBadge meta={eyeMeta} />
+          <FaceStatusIconBadge meta={focusMeta} />
         </View>
       </View>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

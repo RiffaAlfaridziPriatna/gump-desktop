@@ -1,4 +1,3 @@
-import {FrostedView, type FrostedBackdrop} from '@components/ui/frosted';
 import {FaceStatusMeta} from '@lib/culling/faceStatus';
 import {Pressable} from '@components/ui';
 import {StyleSheet, View} from 'react-native';
@@ -15,7 +14,6 @@ const BADGE_SIZES: Record<
 
 type FaceStatusIconBadgeProps = {
   meta: FaceStatusMeta;
-  backdrop?: FrostedBackdrop;
   size?: FaceStatusIconBadgeSize;
   onHoverIn?: () => void;
   onHoverOut?: () => void;
@@ -23,7 +21,6 @@ type FaceStatusIconBadgeProps = {
 
 export function FaceStatusIconBadge({
   meta,
-  backdrop,
   size = 'small',
   onHoverIn,
   onHoverOut,
@@ -32,25 +29,23 @@ export function FaceStatusIconBadge({
   const {badge: badgeSize, icon: iconSize} = BADGE_SIZES[size];
 
   const badge = (
-    <FrostedView
-      style={{
-        width: badgeSize,
-        height: badgeSize,
-        borderRadius: badgeSize / 2,
-      }}
-      fallbackColor={'#131415BF'}
-      backdrop={backdrop}
-      blurAmount={2}
-    >
+    <View
+      style={[
+        styles.badge,
+        {
+          width: badgeSize,
+          height: badgeSize,
+          borderRadius: badgeSize / 2,
+        },
+      ]}>
       <View
         style={[
           styles.badgeContent,
           {width: badgeSize, height: badgeSize},
-        ]}
-      >
+        ]}>
         <Icon width={iconSize} height={iconSize} />
       </View>
-    </FrostedView>
+    </View>
   );
 
   if (!onHoverIn && !onHoverOut) {
@@ -65,6 +60,9 @@ export function FaceStatusIconBadge({
 }
 
 const styles = StyleSheet.create({
+  badge: {
+    backgroundColor: 'rgba(19, 20, 21, 0.75)',
+  },
   badgeContent: {
     alignItems: 'center',
     justifyContent: 'center',

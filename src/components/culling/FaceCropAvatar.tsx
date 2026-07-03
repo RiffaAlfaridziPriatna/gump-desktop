@@ -2,41 +2,57 @@ import {
   CullingBoundingBox,
   getFaceCropImageStyle,
 } from '@lib/cullingFaceCrop';
-import { loadImageDimensions } from '@lib/imageDimensions';
-import { colors } from '@lib/colors';
-import React, { useEffect, useMemo, useState } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import {
+  getCachedImageDimensions,
+  ImageDimensions,
+} from '@lib/imageDimensions';
+import {preloadImage} from '@lib/imagePreload';
+import {colors} from '@lib/colors';
+import React, {useEffect, useMemo, useState} from 'react';
+import {Image, StyleSheet, View} from 'react-native';
 
 type FaceCropAvatarProps = {
   uri: string;
   boundingBox: CullingBoundingBox;
   size: number;
+  imageSize?: ImageDimensions | null;
 };
 
 export const FaceCropAvatar = React.memo(function FaceCropAvatar({
   uri,
   boundingBox,
   size,
+  imageSize: imageSizeProp,
 }: FaceCropAvatarProps) {
-  const [imageSize, setImageSize] = useState<{
-    width: number;
-    height: number;
-  } | null>(null);
+  const [loadedImageSize, setLoadedImageSize] = useState<ImageDimensions | null>(
+    () => getCachedImageDimensions(uri) ?? null,
+  );
 
   useEffect(() => {
-    let cancelled = false;
-    setImageSize(null);
+    if (imageSizeProp) {
+      return;
+    }
 
-    loadImageDimensions(uri).then(dimensions => {
-      if (!cancelled && dimensions) {
-        setImageSize(dimensions);
+    const cached = getCachedImageDimensions(uri);
+    if (cached) {
+      setLoadedImageSize(cached);
+      return;
+    }
+
+    let cancelled = false;
+
+    preloadImage(uri).then(() => {
+      if (!cancelled) {
+        setLoadedImageSize(getCachedImageDimensions(uri) ?? null);
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [uri]);
+  }, [imageSizeProp, uri]);
+
+  const imageSize = imageSizeProp ?? loadedImageSize;
 
   const cropStyle = useMemo(
     () =>

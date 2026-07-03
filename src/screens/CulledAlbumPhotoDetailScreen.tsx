@@ -13,11 +13,14 @@ import {
 } from '@lib/scrollAwareTooltip';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {useLayout} from '@hooks/useLayout';
+import {useImageDimensions} from '@hooks/useImageDimensions';
+import {preloadImage} from '@lib/imagePreload';
 import {Pressable, TouchableOpacity} from '@components/ui';
 import {
-  ScrollView,
+  ActivityIndicator,
+  FlatList,
   StyleSheet,
   Text,
   View,
@@ -56,6 +59,7 @@ export default function CulledAlbumPhotoDetailScreen({
     }
   }, [photo]);
   const [zoomFaceIndex, setZoomFaceIndex] = useState<number | null>(null);
+  const [mainImageReady, setMainImageReady] = useState(false);
   const [tooltip, setTooltip] = useState<KeyFaceTooltipAnchor | null>(null);
   const [tooltipWidth, setTooltipWidth] = useState(0);
   const [screenOrigin, setScreenOrigin] = useState({x: 0, y: 0});
@@ -88,6 +92,18 @@ export default function CulledAlbumPhotoDetailScreen({
   const faces = analysis?.faces ?? [];
   const fileName = photo?.file.name ?? 'Photo';
   const uri = photo?.file.uri ?? '';
+  const imageSize = useImageDimensions(uri);
+
+  useLayoutEffect(() => {
+    setMainImageReady(false);
+    if (uri) {
+      void preloadImage(uri);
+    }
+  }, [uri]);
+
+  const handleMainImageReady = useCallback(() => {
+    setMainImageReady(true);
+  }, []);
   const isSelected = analysis?.selected ?? false;
   const starRating = analysis?.starRating ?? 0;
   const disabled = photo ? isCulledPhotoDisabled(photo, cullingHasUploads) : false;
@@ -117,6 +133,25 @@ export default function CulledAlbumPhotoDetailScreen({
     );
     setAnalysis(current => (current ? {...current, ...updated} : current));
   }
+
+  const renderKeyFaceItem = useCallback(
+    ({item: face, index}: {item: (typeof faces)[number]; index: number}) => (
+      <KeyFaceSidebarItem
+        uri={uri}
+        boundingBox={face.boundingBox}
+        eyeStatus={face.eyeStatus}
+        focusLevel={face.focusLevel}
+        width={64}
+        imageSize={imageSize}
+        selected={zoomFaceIndex === index}
+        onPress={() =>
+          setZoomFaceIndex(current => (current === index ? null : index))
+        }
+        onTooltipAnchorChange={handleTooltipChange}
+      />
+    ),
+    [handleTooltipChange, imageSize, uri, zoomFaceIndex],
+  );
 
   if (!photo || !analysis) {
     return (
@@ -226,6 +261,8 @@ export default function CulledAlbumPhotoDetailScreen({
                 uri={uri}
                 faces={faces}
                 zoomFaceIndex={zoomFaceIndex}
+                imageSize={imageSize}
+                onImageReady={handleMainImageReady}
                 onTooltipAnchorChange={handleTooltipChange}
               />
             </View>
@@ -236,34 +273,34 @@ export default function CulledAlbumPhotoDetailScreen({
                 isMobileLayout && styles.sidebarMobile,
               ]}>
               <Text style={styles.sidebarTitle}>Key Faces ({faces.length})</Text>
-              <ScrollView
-                {...keyFaceScrollHandlers}
-                horizontal={isMobileLayout}
-                style={styles.keyFaceScroll}
-                contentContainerStyle={[
-                  styles.keyFaceGrid,
-                  isMobileLayout && styles.keyFaceGridMobile,
-                ]}
-                showsVerticalScrollIndicator={!isMobileLayout}
-                showsHorizontalScrollIndicator={isMobileLayout}>
-                {faces.map((face, index) => (
-                  <KeyFaceSidebarItem
-                    key={index}
-                    uri={uri}
-                    boundingBox={face.boundingBox}
-                    eyeStatus={face.eyeStatus}
-                    focusLevel={face.focusLevel}
-                    width={64}
-                    selected={zoomFaceIndex === index}
-                    onPress={() =>
-                      setZoomFaceIndex(current =>
-                        current === index ? null : index,
-                      )
-                    }
-                    onTooltipAnchorChange={handleTooltipChange}
-                  />
-                ))}
-              </ScrollView>
+              {mainImageReady && imageSize ? (
+                <FlatList
+                  {...keyFaceScrollHandlers}
+                  data={faces}
+                  keyExtractor={(_, index) => `face-${index}`}
+                  renderItem={renderKeyFaceItem}
+                  horizontal={isMobileLayout}
+                  numColumns={isMobileLayout ? undefined : 3}
+                  columnWrapperStyle={
+                    isMobileLayout ? undefined : styles.keyFaceRow
+                  }
+                  style={styles.keyFaceScroll}
+                  contentContainerStyle={[
+                    styles.keyFaceGrid,
+                    isMobileLayout && styles.keyFaceGridMobile,
+                  ]}
+                  showsVerticalScrollIndicator={!isMobileLayout}
+                  showsHorizontalScrollIndicator={isMobileLayout}
+                  initialNumToRender={isMobileLayout ? 6 : 9}
+                  maxToRenderPerBatch={isMobileLayout ? 6 : 9}
+                  windowSize={3}
+                  removeClippedSubviews
+                />
+              ) : (
+                <View style={styles.keyFaceLoading}>
+                  <ActivityIndicator size="small" color={colors.accent} />
+                </View>
+              )}
             </View>
           </View>
         </ScrollAwareTooltipContext.Provider>
@@ -409,15 +446,22 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   keyFaceGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 16,
     paddingRight: 20,
     overflow: 'visible',
   },
+  keyFaceRow: {
+    gap: 16,
+  },
   keyFaceGridMobile: {
     flexWrap: 'nowrap',
     paddingRight: 0,
+  },
+  keyFaceLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 120,
   },
   tooltipHost: {
     position: 'absolute',

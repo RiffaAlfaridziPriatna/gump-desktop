@@ -11,11 +11,12 @@ import {
   getFocusStatusMeta,
 } from '@lib/culling/faceStatus';
 import {isScrollAwareTooltipLocked, useScrollAwareTooltipStore} from '@lib/scrollAwareTooltip';
-import {ImageDimensions, loadImageDimensions} from '@lib/imageDimensions';
+import {getCachedImageDimensions, ImageDimensions} from '@lib/imageDimensions';
+import {preloadImage} from '@lib/imagePreload';
 import {colors} from '@lib/colors';
 import {APIResponse} from '@services/api';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {Image, StyleSheet, View} from 'react-native';
+import {ActivityIndicator, Image, StyleSheet, View} from 'react-native';
 
 type PhotoDetailImageViewerProps = {
   uri: string;
@@ -23,6 +24,7 @@ type PhotoDetailImageViewerProps = {
   zoomFaceIndex: number | null;
   imageSize?: ImageDimensions | null;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
+  onImageReady?: () => void;
 };
 
 type FaceOverlayMode = 'attached' | 'fixedBottom';
@@ -128,14 +130,21 @@ export function PhotoDetailImageViewer({
   zoomFaceIndex,
   imageSize: imageSizeProp,
   onTooltipAnchorChange,
+  onImageReady,
 }: PhotoDetailImageViewerProps) {
   const [containerSize, setContainerSize] = useState({width: 0, height: 0});
-  const [loadedImageSize, setLoadedImageSize] = useState<{
-    width: number;
-    height: number;
-  } | null>(null);
-  const imageWrapRef = useRef<View>(null);
+  const [loadedImageSize, setLoadedImageSize] = useState<ImageDimensions | null>(
+    () => getCachedImageDimensions(uri) ?? null,
+  );
+  const [imageDecoded, setImageDecoded] = useState(false);
+  const imageReadyNotifiedRef = useRef(false);
   const imageSize = imageSizeProp ?? loadedImageSize;
+  const isZoomed = zoomFaceIndex !== null;
+
+  useEffect(() => {
+    setImageDecoded(false);
+    imageReadyNotifiedRef.current = false;
+  }, [uri]);
 
   useEffect(() => {
     if (zoomFaceIndex !== null) {
@@ -148,12 +157,17 @@ export function PhotoDetailImageViewer({
       return;
     }
 
-    let cancelled = false;
-    setLoadedImageSize(null);
+    const cached = getCachedImageDimensions(uri);
+    if (cached) {
+      setLoadedImageSize(cached);
+      return;
+    }
 
-    loadImageDimensions(uri).then(dimensions => {
-      if (!cancelled && dimensions) {
-        setLoadedImageSize(dimensions);
+    let cancelled = false;
+
+    preloadImage(uri).then(() => {
+      if (!cancelled) {
+        setLoadedImageSize(getCachedImageDimensions(uri) ?? null);
       }
     });
 
@@ -161,6 +175,18 @@ export function PhotoDetailImageViewer({
       cancelled = true;
     };
   }, [imageSizeProp, uri]);
+
+  useEffect(() => {
+    void preloadImage(uri);
+  }, [uri]);
+
+  const handleImageLoad = useCallback(() => {
+    setImageDecoded(true);
+    if (!imageReadyNotifiedRef.current) {
+      imageReadyNotifiedRef.current = true;
+      onImageReady?.();
+    }
+  }, [onImageReady]);
 
   const imageLayout = useMemo(() => {
     if (!imageSize || containerSize.width <= 0 || containerSize.height <= 0) {
@@ -197,8 +223,6 @@ export function PhotoDetailImageViewer({
     return face ? [{face, index: zoomFaceIndex}] : [];
   }, [faces, zoomFaceIndex]);
 
-  const isZoomed = zoomFaceIndex !== null;
-
   const faceDisplayRects = useMemo(() => {
     if (!imageLayout) {
       return [];
@@ -211,6 +235,8 @@ export function PhotoDetailImageViewer({
     }));
   }, [imageLayout, visibleFaces]);
 
+  const canRenderOverlays = imageDecoded && imageLayout !== null;
+
   return (
     <View
       style={styles.container}
@@ -219,60 +245,59 @@ export function PhotoDetailImageViewer({
         setContainerSize({width, height});
       }}
     >
-      {imageLayout && imageSize ? (
+      <View style={styles.imageFrame}>
+        {imageLayout ? (
+          <Image
+            source={{uri}}
+            style={{
+              position: 'absolute',
+              width: imageLayout.width,
+              height: imageLayout.height,
+              left: imageLayout.left,
+              top: imageLayout.top,
+            }}
+            onLoad={handleImageLoad}
+          />
+        ) : null}
+
+        {!imageDecoded || !imageLayout ? (
+          <View pointerEvents="none" style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color={colors.accent} />
+          </View>
+        ) : null}
+      </View>
+
+      {canRenderOverlays ? (
         <View
+          pointerEvents="box-none"
           style={[
-            styles.stage,
+            styles.overlayLayer,
             {
               width: containerSize.width,
               height: containerSize.height,
             },
-          ]}>
-          <View
-            ref={imageWrapRef}
-            style={[
-              styles.imageFrame,
-              {
-                width: containerSize.width,
-                height: containerSize.height,
-              },
-            ]}>
-            <Image
-              source={{uri}}
-              style={{
-                position: 'absolute',
-                width: imageLayout.width,
-                height: imageLayout.height,
-                left: imageLayout.left,
-                top: imageLayout.top,
-              }}
+          ]}
+        >
+          {isZoomed && visibleFaces[0] ? (
+            <FaceStatusOverlay
+              key={`zoom-${visibleFaces[0].index}`}
+              face={visibleFaces[0].face}
+              mode="fixedBottom"
+              onTooltipAnchorChange={onTooltipAnchorChange}
             />
-          </View>
-
-          <View pointerEvents="box-none" style={styles.overlayLayer}>
-            {isZoomed && visibleFaces[0] ? (
+          ) : (
+            faceDisplayRects.map(({face, index, displayRect}) => (
               <FaceStatusOverlay
-                key={`zoom-${visibleFaces[0].index}`}
-                face={visibleFaces[0].face}
-                mode="fixedBottom"
+                key={index}
+                face={face}
+                displayRect={displayRect}
+                mode="attached"
                 onTooltipAnchorChange={onTooltipAnchorChange}
               />
-            ) : (
-              faceDisplayRects.map(({face, index, displayRect}) => (
-                <FaceStatusOverlay
-                  key={index}
-                  face={face}
-                  displayRect={displayRect}
-                  mode="attached"
-                  onTooltipAnchorChange={onTooltipAnchorChange}
-                />
-              ))
-            )}
-          </View>
+            ))
+          )}
         </View>
-      ) : (
-        <View style={styles.loadingPlaceholder} />
-      )}
+      ) : null}
     </View>
   );
 }
@@ -281,22 +306,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    justifyContent: 'flex-start',
-  },
-  stage: {
     position: 'relative',
   },
   imageFrame: {
-    position: 'relative',
+    flex: 1,
     overflow: 'hidden',
     backgroundColor: colors.cardBackgroundSecondary,
   },
-  overlayLayer: {
+  loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-  },
-  loadingPlaceholder: {
-    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.cardBackgroundSecondary,
+  },
+  overlayLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
   faceOverlayAttached: {
     position: 'absolute',
