@@ -3,7 +3,7 @@ import {culledAlbumStore} from '@lib/culledAlbum/store';
 import {getServerUploadBatchPhotos} from '@lib/culledAlbum/serverUploadProgress';
 import {getLocalImportBatchPhotos} from '@lib/culledAlbum/localImportProgress';
 import {getAnalysisBatchPhotos} from '@lib/culledAlbum/analysisProgress';
-import {CulledAlbumPhoto, sortPhotosByUploadedAt} from '@lib/culledAlbum/types';
+import {CulledAlbumPhoto, sortPhotosByFilename} from '@lib/culledAlbum/types';
 import {useStateStore} from '@lib/state';
 import {useMemo} from 'react';
 import {
@@ -95,7 +95,7 @@ export function useCulledAlbumPhotosState(albumId: string): CulledAlbumPhoto[] {
   const photos = useCulledAlbumStore(
     state => state.albums[albumId]?.photos ?? EMPTY_PHOTOS,
   );
-  return useMemo(() => sortPhotosByUploadedAt(photos), [photos]);
+  return useMemo(() => sortPhotosByFilename(photos), [photos]);
 }
 
 export function useCulledAlbumUploadItems(albumId: string | null) {

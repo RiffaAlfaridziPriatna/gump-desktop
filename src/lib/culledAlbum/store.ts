@@ -1,4 +1,4 @@
-import {createCullingPhotoId} from '@lib/cullingPhotoId';
+import {photoIdFromStoredFile} from '@lib/cullingPhotoId';
 import {
   filterSupportedCullingImages,
   partitionUploadablePhotoIds,
@@ -24,7 +24,7 @@ import {
   hasInFlightUploads,
   normalizePersistedAlbum,
   recomputeAlbumTotals,
-  sortPhotosByUploadedAt,
+  sortPhotosByFilename,
 } from './types';
 
 export type CulledAlbumStoreState = {
@@ -305,7 +305,7 @@ export function addPhotosToAlbum(
       const file = supportedFiles[index]!;
       const photo = createCulledAlbumPhoto(
         file,
-        createCullingPhotoId(),
+        photoIdFromStoredFile(file),
         baseUploadedAt + index,
       );
       if (options?.simulatedMinDurationMs) {
@@ -317,7 +317,7 @@ export function addPhotosToAlbum(
     }
 
     album.localImportBatchPhotoIds = addedPhotoIds;
-    album.photos = sortPhotosByUploadedAt(album.photos);
+    album.photos = sortPhotosByFilename(album.photos);
     recomputeAlbumTotals(album);
   });
 
@@ -348,7 +348,7 @@ export function updatePhoto(
 
 export function getPhotosForAlbum(albumId: string): CulledAlbumPhoto[] {
   const photos = getAlbumFromState(albumId)?.photos;
-  return photos ? sortPhotosByUploadedAt(photos) : [];
+  return photos ? sortPhotosByFilename(photos) : [];
 }
 
 export async function ensureAlbumLoaded(albumId: string): Promise<CulledAlbum> {

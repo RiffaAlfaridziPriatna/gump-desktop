@@ -137,6 +137,9 @@ function applyDuplicateFlags(albumId: string): void {
       const entry = album.photos.find(item => item.photoId === photo.photoId);
       if (entry) {
         entry.duplicated = photo.duplicated;
+        if (entry.duplicated) {
+          entry.selected = false;
+        }
       }
     }
 

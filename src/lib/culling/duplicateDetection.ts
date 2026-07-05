@@ -8,6 +8,16 @@ import {
 
 const TEMPORAL_WINDOW_MS = 60 * 60 * 1000;
 
+function photoQualityTier(photo: DuplicateDetectionPhoto): number {
+  if (photo.blurred) {
+    return 0;
+  }
+  if (photo.closedEyes) {
+    return 1;
+  }
+  return 2;
+}
+
 export function detectDuplicates(
   photos: Record<string, DuplicateDetectionPhoto>,
 ): void {
@@ -134,9 +144,12 @@ export function detectDuplicates(
       .filter(Boolean);
 
     const bestPhoto = groupPhotos.reduce((best, current) => {
-      const bestRating = best.starRating ?? 0;
-      const currentRating = current.starRating ?? 0;
-      return currentRating > bestRating ? current : best;
+      const bestTier = photoQualityTier(best);
+      const currentTier = photoQualityTier(current);
+      if (currentTier !== bestTier) {
+        return currentTier > bestTier ? current : best;
+      }
+      return (current.starRating ?? 0) > (best.starRating ?? 0) ? current : best;
     });
 
     for (const photo of groupPhotos) {

@@ -176,6 +176,22 @@ export function sortPhotosByUploadedAt(
   return [...photos].sort(comparePhotosByUploadedAtDesc);
 }
 
+export function comparePhotosByFilename(
+  a: CulledAlbumPhoto,
+  b: CulledAlbumPhoto,
+): number {
+  return a.file.name.localeCompare(b.file.name, undefined, {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
+export function sortPhotosByFilename(
+  photos: CulledAlbumPhoto[],
+): CulledAlbumPhoto[] {
+  return [...photos].sort(comparePhotosByFilename);
+}
+
 export function recomputeAlbumTotals(album: CulledAlbum): CulledAlbum {
   album.totalPhotos = album.photos.length;
   album.totalStorage = album.photos.reduce(
@@ -323,7 +339,7 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.createdAt ??= new Date(0).toISOString();
   album.totalPhotos ??= album.photos.length;
   album.totalStorage ??= 0;
-  album.photos = sortPhotosByUploadedAt(
+  album.photos = sortPhotosByFilename(
     (album.photos ?? []).map(normalizePersistedPhoto),
   );
   recomputeAlbumTotals(album);

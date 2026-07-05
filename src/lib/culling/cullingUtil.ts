@@ -71,22 +71,40 @@ export function derivePhotoFlags(faces: CullingFace[]) {
   };
 }
 
-function scoreFace(face: CullingFace): number {
-  const focusScore =
-    face.focusLevel === 'good' ? 2 : face.focusLevel === 'soft' ? 1 : 0;
-  const eyeScore =
-    face.eyeStatus === 'open' ? 2 : face.eyeStatus === 'partial' ? 1 : 0;
-  return focusScore + eyeScore + 1;
+function faceTier(face: CullingFace): 0 | 1 | 2 {
+  if (face.eyeStatus === 'closed' || face.focusLevel === 'blurred') {
+    return 0;
+  }
+  if (face.eyeStatus === 'open' && face.focusLevel === 'good') {
+    return 2;
+  }
+  return 1;
 }
 
 export function deriveStarRating(faces: CullingFace[]): number {
   if (!faces.length) {
-    return 3;
+    return 0;
   }
 
-  const average =
-    faces.reduce((sum, face) => sum + scoreFace(face), 0) / faces.length;
-  return Math.min(5, Math.max(1, Math.round(average)));
+  const tiers = faces.map(faceTier);
+  const hasLow = tiers.some(t => t === 0);
+  const hasPartialOrSoft = tiers.some(t => t === 1);
+
+  if (!hasLow && !hasPartialOrSoft) {
+    return 5;
+  }
+  if (!hasLow) {
+    return 4;
+  }
+
+  const avg = tiers.reduce((s, t) => s + t, 0 as number) / (tiers.length * 2);
+  if (avg <= 1 / 3) {
+    return 1;
+  }
+  if (avg >= 2 / 3) {
+    return 3;
+  }
+  return 2;
 }
 
 const FACE_DUPLICATE_THRESHOLD = 0.06;
@@ -139,10 +157,10 @@ export function computeStats(photos: CullingPhoto[]): APIResponse.CullingStats {
   return {
     totalPhotos: photos.length,
     mySelections: selected.length,
-    aiSelected: photos.filter(photo => photo.aiSelected).length,
-    maybe: photos.filter(photo => photo.maybe).length,
-    blurred: photos.filter(photo => photo.blurred).length,
-    closedEyes: photos.filter(photo => photo.closedEyes).length,
+    aiSelected: photos.filter(photo => photo.aiSelected && !photo.duplicated).length,
+    maybe: photos.filter(photo => photo.maybe && !photo.duplicated).length,
+    blurred: photos.filter(photo => photo.blurred && !photo.duplicated).length,
+    closedEyes: photos.filter(photo => photo.closedEyes && !photo.duplicated).length,
     duplicated: photos.filter(photo => photo.duplicated).length,
   };
 }

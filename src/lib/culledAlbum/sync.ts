@@ -7,7 +7,7 @@ import {
   CulledAlbumPhoto,
   hasInFlightUploads,
   recomputeAlbumTotals,
-  sortPhotosByUploadedAt,
+  sortPhotosByFilename,
 } from './types';
 
 export async function syncAlbumWithDisk(album: CulledAlbum): Promise<CulledAlbum> {
@@ -50,7 +50,7 @@ export async function syncAlbumWithDisk(album: CulledAlbum): Promise<CulledAlbum
 
   const nextAlbum: CulledAlbum = {
     ...album,
-    photos: sortPhotosByUploadedAt(merged),
+    photos: sortPhotosByFilename(merged),
   };
   recomputeAlbumTotals(nextAlbum);
 

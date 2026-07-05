@@ -247,8 +247,8 @@ RCT_EXPORT_MODULE();
     return NO;
   }
 
-  if (landmarks.leftEyebrow == nil || landmarks.leftEyebrow.pointCount < 3 ||
-      landmarks.rightEyebrow == nil || landmarks.rightEyebrow.pointCount < 3) {
+  if (landmarks.leftEyebrow == nil || landmarks.leftEyebrow.pointCount < 2 ||
+      landmarks.rightEyebrow == nil || landmarks.rightEyebrow.pointCount < 2) {
     return NO;
   }
 
@@ -257,16 +257,16 @@ RCT_EXPORT_MODULE();
   }
 
   CGFloat eyeDistance = rightEye.x - leftEye.x;
-  if (eyeDistance < 0.18f || eyeDistance > 0.62f) {
+  if (eyeDistance < 0.15f || eyeDistance > 0.65f) {
     return NO;
   }
 
-  if (fabs(leftEye.y - rightEye.y) > 0.10f) {
+  if (fabs(leftEye.y - rightEye.y) > 0.12f) {
     return NO;
   }
 
   CGFloat eyeCenterX = (leftEye.x + rightEye.x) / 2.0f;
-  if (fabs(nose.x - eyeCenterX) > eyeDistance * 0.40f) {
+  if (fabs(nose.x - eyeCenterX) > eyeDistance * 0.45f) {
     return NO;
   }
 
@@ -275,27 +275,27 @@ RCT_EXPORT_MODULE();
     return NO;
   }
 
-  if (eyesY < 0.52f || mouth.y > 0.48f) {
+  if (eyesY < 0.48f || mouth.y > 0.52f) {
     return NO;
   }
 
   CGFloat eyeToNose = eyesY - nose.y;
   CGFloat noseToMouth = nose.y - mouth.y;
-  if (eyeToNose < 0.14f || eyeToNose > 0.42f) {
+  if (eyeToNose < 0.12f || eyeToNose > 0.45f) {
     return NO;
   }
-  if (noseToMouth < 0.10f || noseToMouth > 0.32f) {
+  if (noseToMouth < 0.08f || noseToMouth > 0.35f) {
     return NO;
   }
 
   CGFloat leftEyeWidth = [self landmarkHorizontalSpan:landmarks.leftEye];
   CGFloat rightEyeWidth = [self landmarkHorizontalSpan:landmarks.rightEye];
   CGFloat mouthWidth = [self landmarkHorizontalSpan:mouthRegion];
-  if (leftEyeWidth < 0.08f || leftEyeWidth > 0.38f ||
-      rightEyeWidth < 0.08f || rightEyeWidth > 0.38f) {
+  if (leftEyeWidth < 0.06f || leftEyeWidth > 0.40f ||
+      rightEyeWidth < 0.06f || rightEyeWidth > 0.40f) {
     return NO;
   }
-  if (mouthWidth < eyeDistance * 0.65f) {
+  if (mouthWidth < eyeDistance * 0.55f) {
     return NO;
   }
 
@@ -389,7 +389,7 @@ RCT_EXPORT_MODULE();
   };
 }
 
-static const CGFloat kGumpFaceBoxIoUThreshold = 0.45f;
+static const CGFloat kGumpFaceBoxIoUThreshold = 0.50f;
 static const CGFloat kGumpTileOverlapFraction = 0.25f;
 static const NSUInteger kGumpMinFacesToSkipTiling = 8;
 static const NSUInteger kGumpMinPixelsForTiling = 2000000;
@@ -591,28 +591,97 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
   return [self deduplicateFaceObservations:combined];
 }
 
-- (BOOL)isAcceptableFaceObservation:(VNFaceObservation *)face
-                       imageWidth:(size_t)imageWidth
-                      imageHeight:(size_t)imageHeight
+- (BOOL)passesBaseFaceBoxChecks:(VNFaceObservation *)face
+                     imageWidth:(size_t)imageWidth
+                    imageHeight:(size_t)imageHeight
 {
-  if (face.confidence < 0.72f) {
+  if (face.confidence < 0.65f) {
     return NO;
   }
 
   CGRect box = face.boundingBox;
   CGFloat facePixelWidth = box.size.width * (CGFloat)imageWidth;
   CGFloat facePixelHeight = box.size.height * (CGFloat)imageHeight;
-  if (facePixelWidth < 40.0f || facePixelHeight < 40.0f) {
+  if (facePixelWidth < 30.0f || facePixelHeight < 30.0f) {
     return NO;
   }
 
   CGFloat faceAreaFraction =
       (box.size.width * box.size.height * (CGFloat)imageWidth * (CGFloat)imageHeight) /
       ((CGFloat)imageWidth * (CGFloat)imageHeight);
-  if (faceAreaFraction < 0.0005f) {
+  if (faceAreaFraction < 0.0003f) {
     return NO;
   }
 
+  return YES;
+}
+
+- (BOOL)hasRequiredFaceLandmarks:(VNFaceLandmarks2D *)landmarks
+{
+  if (landmarks == nil) {
+    return NO;
+  }
+
+  if (landmarks.nose == nil || landmarks.nose.pointCount < 3) {
+    return NO;
+  }
+
+  BOOL hasMouth = (landmarks.outerLips != nil && landmarks.outerLips.pointCount >= 3) ||
+                  (landmarks.innerLips != nil && landmarks.innerLips.pointCount >= 3);
+  return hasMouth;
+}
+
+- (BOOL)hasPlausibleProfileLandmarkLayout:(VNFaceLandmarks2D *)landmarks
+{
+  BOOL hasLeftEye = landmarks.leftEye != nil && landmarks.leftEye.pointCount >= 4;
+  BOOL hasRightEye = landmarks.rightEye != nil && landmarks.rightEye.pointCount >= 4;
+  if (!hasLeftEye && !hasRightEye) {
+    return NO;
+  }
+
+  if (![self hasRequiredFaceLandmarks:landmarks]) {
+    return NO;
+  }
+
+  if (landmarks.faceContour == nil || landmarks.faceContour.pointCount < 6) {
+    return NO;
+  }
+
+  CGPoint nose = [self centroidOfLandmarkRegion:landmarks.nose];
+  VNFaceLandmarkRegion2D *mouthRegion = landmarks.outerLips ?: landmarks.innerLips;
+  CGPoint mouth = [self centroidOfLandmarkRegion:mouthRegion];
+  if (nose.x < 0 || mouth.x < 0) {
+    return NO;
+  }
+
+  CGFloat eyesY;
+  if (hasLeftEye && hasRightEye) {
+    CGPoint leftEye = [self centroidOfLandmarkRegion:landmarks.leftEye];
+    CGPoint rightEye = [self centroidOfLandmarkRegion:landmarks.rightEye];
+    eyesY = (leftEye.y + rightEye.y) / 2.0f;
+  } else if (hasLeftEye) {
+    eyesY = [self centroidOfLandmarkRegion:landmarks.leftEye].y;
+  } else {
+    eyesY = [self centroidOfLandmarkRegion:landmarks.rightEye].y;
+  }
+
+  if (eyesY <= nose.y || nose.y <= mouth.y) {
+    return NO;
+  }
+
+  return YES;
+}
+
+- (BOOL)isAcceptableFrontalFaceObservation:(VNFaceObservation *)face
+                                imageWidth:(size_t)imageWidth
+                               imageHeight:(size_t)imageHeight
+                            captureQuality:(NSNumber *)captureQuality
+{
+  if (![self passesBaseFaceBoxChecks:face imageWidth:imageWidth imageHeight:imageHeight]) {
+    return NO;
+  }
+
+  CGRect box = face.boundingBox;
   CGFloat aspect = box.size.width / MAX(box.size.height, 1e-5f);
   if (aspect < 0.55f || aspect > 1.8f) {
     return NO;
@@ -629,13 +698,7 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
     return NO;
   }
 
-  if (landmarks.nose == nil || landmarks.nose.pointCount < 3) {
-    return NO;
-  }
-
-  BOOL hasMouth = (landmarks.outerLips != nil && landmarks.outerLips.pointCount >= 3) ||
-                  (landmarks.innerLips != nil && landmarks.innerLips.pointCount >= 3);
-  if (!hasMouth) {
+  if (![self hasRequiredFaceLandmarks:landmarks]) {
     return NO;
   }
 
@@ -643,15 +706,66 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
     return NO;
   }
 
-  if (face.faceCaptureQuality != nil && face.faceCaptureQuality.floatValue < 0.20f) {
+  NSNumber *effectiveQuality = captureQuality ?: face.faceCaptureQuality;
+  if (effectiveQuality != nil && effectiveQuality.floatValue < 0.15f) {
     return NO;
   }
 
-  if (face.faceCaptureQuality == nil && face.confidence < 0.88f) {
+  if (effectiveQuality == nil && face.confidence < 0.82f) {
     return NO;
   }
 
   return YES;
+}
+
+- (BOOL)isAcceptableProfileFaceObservation:(VNFaceObservation *)face
+                               imageWidth:(size_t)imageWidth
+                              imageHeight:(size_t)imageHeight
+                           captureQuality:(NSNumber *)captureQuality
+{
+  if (![self passesBaseFaceBoxChecks:face imageWidth:imageWidth imageHeight:imageHeight]) {
+    return NO;
+  }
+
+  CGRect box = face.boundingBox;
+  CGFloat aspect = box.size.width / MAX(box.size.height, 1e-5f);
+  if (aspect < 0.35f || aspect > 1.8f) {
+    return NO;
+  }
+
+  VNFaceLandmarks2D *landmarks = face.landmarks;
+  if (![self hasPlausibleProfileLandmarkLayout:landmarks]) {
+    return NO;
+  }
+
+  NSNumber *effectiveQuality = captureQuality ?: face.faceCaptureQuality;
+  if (effectiveQuality != nil && effectiveQuality.floatValue < 0.12f) {
+    return NO;
+  }
+
+  if (effectiveQuality == nil && face.confidence < 0.78f) {
+    return NO;
+  }
+
+  return YES;
+}
+
+- (BOOL)isAcceptableFaceObservation:(VNFaceObservation *)face
+                       imageWidth:(size_t)imageWidth
+                      imageHeight:(size_t)imageHeight
+                   captureQuality:(NSNumber *)captureQuality
+{
+  if ([self isAcceptableFrontalFaceObservation:face
+                                    imageWidth:imageWidth
+                                   imageHeight:imageHeight
+                                captureQuality:captureQuality]) {
+    return YES;
+  }
+
+  return [self isAcceptableProfileFaceObservation:face
+                                       imageWidth:imageWidth
+                                      imageHeight:imageHeight
+                                   captureQuality:captureQuality];
 }
 
 - (CGImageRef)orientedCGImageFromPath:(NSString *)path CF_RETURNS_RETAINED
@@ -711,15 +825,16 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
   NSMutableArray *faces = [NSMutableArray arrayWithCapacity:analysisFaces.count];
   for (NSInteger index = 0; index < (NSInteger)analysisFaces.count; index++) {
     VNFaceObservation *face = analysisFaces[index];
-    if (![self isAcceptableFaceObservation:face
-                                imageWidth:imageWidth
-                               imageHeight:imageHeight]) {
-      continue;
-    }
     NSNumber *captureQuality = qualityByFaceId[face.uuid];
     if (captureQuality == nil && qualityFaces != nil &&
         index < (NSInteger)qualityFaces.count) {
       captureQuality = qualityFaces[index].faceCaptureQuality;
+    }
+    if (![self isAcceptableFaceObservation:face
+                                imageWidth:imageWidth
+                               imageHeight:imageHeight
+                            captureQuality:captureQuality]) {
+      continue;
     }
     [faces addObject:[self faceDictionaryFromObservation:face
                                                    index:index

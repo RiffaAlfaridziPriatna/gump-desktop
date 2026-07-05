@@ -275,7 +275,7 @@ std::string FormatHashHex(uint64_t hash) {
   return buffer;
 }
 
-constexpr float kFaceBoxIoUThreshold = 0.45f;
+constexpr float kFaceBoxIoUThreshold = 0.50f;
 constexpr float kTileOverlapFraction = 0.25f;
 constexpr int kMinFacesToSkipTiling = 8;
 constexpr int kMinPixelsForTiling = 2000000;
@@ -453,19 +453,19 @@ std::vector<BitmapBounds> CollectFaceBoxes(
 }
 
 bool IsAcceptableFaceBox(const BitmapBounds &box, int imageWidth, int imageHeight) {
-  if (box.Width < 40 || box.Height < 40) {
+  if (box.Width < 30 || box.Height < 30) {
     return false;
   }
 
   const float aspect = static_cast<float>(box.Width) / static_cast<float>(std::max(1, box.Height));
-  if (aspect < 0.55f || aspect > 1.8f) {
+  if (aspect < 0.35f || aspect > 1.8f) {
     return false;
   }
 
   const float areaFraction =
       (static_cast<float>(box.Width) * static_cast<float>(box.Height)) /
       (static_cast<float>(imageWidth) * static_cast<float>(imageHeight));
-  if (areaFraction < 0.0005f) {
+  if (areaFraction < 0.0003f) {
     return false;
   }
 

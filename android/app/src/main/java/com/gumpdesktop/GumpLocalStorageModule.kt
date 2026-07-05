@@ -599,24 +599,37 @@ class GumpLocalStorageModule(
     return oriented
   }
 
-  private fun isAcceptableFace(
+  private fun passesBaseFaceBoxChecks(
       face: Face,
       imageWidth: Float,
       imageHeight: Float,
+      minAspect: Float,
   ): Boolean {
     val box = face.boundingBox
-    if (box.width() < 40 || box.height() < 40) {
+    if (box.width() < 30 || box.height() < 30) {
       return false
     }
 
     val faceAreaFraction =
         (box.width().toFloat() * box.height().toFloat()) / (imageWidth * imageHeight)
-    if (faceAreaFraction < 0.0005f) {
+    if (faceAreaFraction < 0.0003f) {
       return false
     }
 
     val aspect = box.width().toFloat() / max(box.height(), 1)
-    if (aspect < 0.55f || aspect > 1.8f) {
+    if (aspect < minAspect || aspect > 1.8f) {
+      return false
+    }
+
+    return true
+  }
+
+  private fun isAcceptableFrontalFace(
+      face: Face,
+      imageWidth: Float,
+      imageHeight: Float,
+  ): Boolean {
+    if (!passesBaseFaceBoxChecks(face, imageWidth, imageHeight, minAspect = 0.55f)) {
       return false
     }
 
@@ -644,8 +657,9 @@ class GumpLocalStorageModule(
       return false
     }
 
+    val box = face.boundingBox
     val eyeDistance = rightEye.x - leftEye.x
-    if (eyeDistance < box.width() * 0.18f || eyeDistance > box.width() * 0.62f) {
+    if (eyeDistance < box.width() * 0.15f || eyeDistance > box.width() * 0.65f) {
       return false
     }
 
@@ -654,7 +668,7 @@ class GumpLocalStorageModule(
     }
 
     val eyeCenterX = (leftEye.x + rightEye.x) / 2f
-    if (kotlin.math.abs(nose.x - eyeCenterX) > eyeDistance * 0.40f) {
+    if (kotlin.math.abs(nose.x - eyeCenterX) > eyeDistance * 0.45f) {
       return false
     }
 
@@ -666,13 +680,13 @@ class GumpLocalStorageModule(
     val relEyesY = (eyesY - box.top) / box.height().toFloat()
     val relNoseY = (nose.y - box.top) / box.height().toFloat()
     val relMouthY = (mouthBottom.y - box.top) / box.height().toFloat()
-    if (relEyesY > 0.45f || relMouthY < 0.55f) {
+    if (relEyesY > 0.52f || relMouthY < 0.48f) {
       return false
     }
 
     val eyeToNose = relNoseY - relEyesY
     val noseToMouth = relMouthY - relNoseY
-    if (eyeToNose < 0.12f || eyeToNose > 0.42f) {
+    if (eyeToNose < 0.12f || eyeToNose > 0.45f) {
       return false
     }
     if (noseToMouth < 0.08f || noseToMouth > 0.35f) {
@@ -681,12 +695,63 @@ class GumpLocalStorageModule(
 
     if (mouthLeft != null && mouthRight != null) {
       val mouthWidth = mouthRight.x - mouthLeft.x
-      if (mouthWidth < eyeDistance * 0.65f) {
+      if (mouthWidth < eyeDistance * 0.55f) {
         return false
       }
     }
 
     return true
+  }
+
+  private fun isAcceptableProfileFace(
+      face: Face,
+      imageWidth: Float,
+      imageHeight: Float,
+  ): Boolean {
+    if (!passesBaseFaceBoxChecks(face, imageWidth, imageHeight, minAspect = 0.35f)) {
+      return false
+    }
+
+    val contour = face.getContour(FaceContour.FACE)
+    if (contour == null || contour.points.size < 6) {
+      return false
+    }
+
+    val leftEye = face.getLandmark(FaceLandmark.LEFT_EYE)?.position
+    val rightEye = face.getLandmark(FaceLandmark.RIGHT_EYE)?.position
+    if (leftEye == null && rightEye == null) {
+      return false
+    }
+
+    val nose = face.getLandmark(FaceLandmark.NOSE_BASE)?.position ?: return false
+    val mouthBottom =
+        face.getLandmark(FaceLandmark.MOUTH_BOTTOM)?.position
+            ?: face.getLandmark(FaceLandmark.MOUTH_LEFT)?.position
+            ?: return false
+
+    val eyesY =
+        when {
+          leftEye != null && rightEye != null -> (leftEye.y + rightEye.y) / 2f
+          leftEye != null -> leftEye.y
+          else -> rightEye!!.y
+        }
+
+    if (eyesY >= nose.y || nose.y >= mouthBottom.y) {
+      return false
+    }
+
+    return true
+  }
+
+  private fun isAcceptableFace(
+      face: Face,
+      imageWidth: Float,
+      imageHeight: Float,
+  ): Boolean {
+    if (isAcceptableFrontalFace(face, imageWidth, imageHeight)) {
+      return true
+    }
+    return isAcceptableProfileFace(face, imageWidth, imageHeight)
   }
 
   private fun pathFromUri(uri: String): String {
@@ -935,7 +1000,7 @@ class GumpLocalStorageModule(
   }
 
   companion object {
-    private const val FACE_BOX_IOU_THRESHOLD = 0.45f
+    private const val FACE_BOX_IOU_THRESHOLD = 0.50f
     private const val TILE_OVERLAP_FRACTION = 0.25f
     private const val MIN_FACES_TO_SKIP_TILING = 8
     private const val MIN_PIXELS_FOR_TILING = 2_000_000
