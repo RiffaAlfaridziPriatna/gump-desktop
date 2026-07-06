@@ -451,7 +451,8 @@ bool IsAcceptableFaceBox(const BitmapBounds &box, int imageWidth, int imageHeigh
     return false;
   }
 
-  const float aspect = static_cast<float>(box.Width) / static_cast<float>(std::max(1, box.Height));
+  const float aspect =
+      static_cast<float>(box.Width) / static_cast<float>(std::max<uint32_t>(box.Height, 1u));
   if (aspect < 0.35f || aspect > 1.8f) {
     return false;
   }
