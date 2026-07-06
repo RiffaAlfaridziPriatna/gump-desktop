@@ -573,9 +573,9 @@ void RunAsync(Work &&work, ReactPromiseJS &&promise) {
     try {
       promise.Resolve(work());
     } catch (const winrt::hresult_error &error) {
-      promise.Reject(ToUtf8(error.message()));
+      promise.Reject(winrtRN::ReactError{"Error", ToUtf8(error.message())});
     } catch (const std::exception &error) {
-      promise.Reject(error.what());
+      promise.Reject(winrtRN::ReactError{"Error", error.what()});
     } catch (...) {
       promise.Reject("Unknown native error");
     }
@@ -589,9 +589,9 @@ void RunAsyncBool(Work &&work, winrtRN::ReactPromise<bool> &&promise) {
     try {
       promise.Resolve(work());
     } catch (const winrt::hresult_error &error) {
-      promise.Reject(ToUtf8(error.message()));
+      promise.Reject(winrtRN::ReactError{"Error", ToUtf8(error.message())});
     } catch (const std::exception &error) {
-      promise.Reject(error.what());
+      promise.Reject(winrtRN::ReactError{"Error", error.what()});
     } catch (...) {
       promise.Reject("Unknown native error");
     }

@@ -33,8 +33,10 @@ void GumpFilePicker::PickImages(
       winrtRN::JSValueArray result;
       for (const auto &file : files) {
         auto props = file.GetBasicPropertiesAsync().get();
+        std::wstring uri = L"file:///";
+        uri += file.Path().c_str();
         winrtRN::JSValueObject fileObj;
-        fileObj["uri"] = winrt::to_string(L"file:///" + file.Path());
+        fileObj["uri"] = winrt::to_string(uri);
         fileObj["name"] = winrt::to_string(file.Name());
         fileObj["size"] = static_cast<double>(props.Size());
         fileObj["type"] = winrt::to_string(file.ContentType());
@@ -43,7 +45,7 @@ void GumpFilePicker::PickImages(
 
       promise.Resolve(std::move(result));
     } catch (const winrt::hresult_error &e) {
-      promise.Reject(winrt::to_string(e.message()));
+      promise.Reject(winrtRN::ReactError{"Error", winrt::to_string(e.message())});
     }
   }).detach();
 }
