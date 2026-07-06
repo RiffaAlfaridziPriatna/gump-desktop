@@ -753,7 +753,7 @@ void GumpLocalStorage::UploadFilePart(
 
         HttpClient client;
         HttpBufferContent content(CryptographicBuffer::CreateFromByteArray(buffer));
-        HttpRequestMessage request(HttpMethod::Put(), Uri(ToWide(uploadUrl)));
+        HttpRequestMessage request(HttpMethod::Put(), winrt::Windows::Foundation::Uri(ToWide(uploadUrl)));
         request.Content(content);
         const auto response = client.SendRequestAsync(request).get();
         const auto status = response.StatusCode();
