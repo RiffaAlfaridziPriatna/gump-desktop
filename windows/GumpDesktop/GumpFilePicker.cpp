@@ -16,6 +16,7 @@ namespace GumpDesktop {
 void GumpFilePicker::PickImages(
     winrtRN::ReactPromise<winrtRN::JSValue> &&promise) noexcept {
   std::thread([promise = std::move(promise)]() mutable {
+    winrt::init_apartment(winrt::apartment_type::multi_threaded);
     try {
       FileOpenPicker picker;
       picker.SuggestedStartLocation(PickerLocationId::PicturesLibrary);
@@ -42,7 +43,7 @@ void GumpFilePicker::PickImages(
 
       promise.Resolve(std::move(result));
     } catch (const winrt::hresult_error &e) {
-      promise.Reject(winrt::to_string(e.message()).c_str());
+      promise.Reject(winrt::to_string(e.message()));
     }
   }).detach();
 }

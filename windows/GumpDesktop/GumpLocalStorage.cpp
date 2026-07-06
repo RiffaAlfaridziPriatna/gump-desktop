@@ -78,6 +78,10 @@ std::string FileUri(const std::filesystem::path &path) {
   return "file:///" + ToUtf8(wide);
 }
 
+StorageFile GetStorageFileFromPath(const std::filesystem::path &path) {
+  return StorageFile::GetFileFromPathAsync(path.wstring()).get();
+}
+
 std::string MimeTypeForPath(const std::filesystem::path &path) {
   const auto ext = path.extension().wstring();
   if (ext.empty()) {
@@ -91,8 +95,7 @@ int64_t ToUnixMillis(winrt::Windows::Foundation::DateTime const &value) {
 }
 
 std::optional<double> ReadCaptureTimestampMillis(const std::filesystem::path &path) {
-  const auto file =
-      StorageFile::GetFileFromPathAsync(winrt::to_hstring(path.wstring())).get();
+  const auto file = GetStorageFileFromPath(path);
   const auto properties = file.Properties().GetImagePropertiesAsync().get();
   const auto dateTaken = properties.DateTaken();
   if (dateTaken == winrt::Windows::Foundation::DateTime{}) {
@@ -202,7 +205,7 @@ float ComputeSharpness(const uint8_t *pixels, int width, int height, int stride,
 }
 
 SoftwareBitmap LoadSoftwareBitmap(const std::filesystem::path &path) {
-  const auto file = StorageFile::GetFileFromPathAsync(path.wstring()).get();
+  const auto file = GetStorageFileFromPath(path);
   const auto stream = file.OpenAsync(FileAccessMode::Read).get();
   const auto decoder = BitmapDecoder::CreateAsync(stream).get();
   auto bitmap = decoder.GetSoftwareBitmapAsync().get();
@@ -630,7 +633,7 @@ void GumpLocalStorage::CopyPhoto(
         const auto safeName = fileName.empty() ? "photo.jpg" : fileName;
         const auto extension = std::filesystem::path(ToWide(safeName)).extension();
         const auto destId =
-            photoId.empty() ? ToUtf8(winrt::to_hstring(winrt::Windows::Foundation::Guid::NewGuid())) : photoId;
+            photoId.empty() ? winrt::to_string(winrt::Windows::Foundation::Guid::NewGuid()) : photoId;
         const auto destName = extension.empty() ? destId : destId + ToUtf8(extension.wstring());
         const auto destPath = albumDir / ToWide(destName);
         std::filesystem::copy_file(sourcePath, destPath, std::filesystem::copy_options::overwrite_existing);
