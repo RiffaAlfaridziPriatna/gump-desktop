@@ -1,9 +1,13 @@
 #include "pch.h"
-
 #include "GumpLocalStorage.h"
 
 #include <ShlObj.h>
+#include <combaseapi.h>
+#include <MemoryBuffer.h>
+#include <cstdio>
+
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Graphics.Imaging.h>
 #include <winrt/Windows.Media.FaceAnalysis.h>
 #include <winrt/Windows.Security.Cryptography.h>
@@ -11,6 +15,7 @@
 #include <winrt/Windows.Storage.FileProperties.h>
 #include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Windows.Web.Http.h>
+#include <winrt/Windows.Web.Http.Headers.h>
 
 #include <algorithm>
 #include <cmath>
@@ -222,8 +227,13 @@ struct BitmapPixels {
 BitmapPixels ReadBitmapPixels(const SoftwareBitmap &bitmap) {
   BitmapBuffer buffer = bitmap.LockBuffer(BitmapBufferAccessMode::Read);
   const auto reference = buffer.CreateReference();
+
+  auto byteAccess = reference.as<::Windows::Foundation::IMemoryBufferByteAccess>();
+  uint8_t* data = nullptr;
+  uint32_t capacity = 0;
+  winrt::check_hresult(byteAccess->GetBuffer(&data, &capacity));
+
   const auto plane = buffer.GetPlaneDescription(0);
-  const uint8_t *data = reference.data();
 
   BitmapPixels result;
   result.width = bitmap.PixelWidth();
@@ -352,7 +362,11 @@ SoftwareBitmap CropSoftwareBitmap(
   BitmapBuffer destBuffer = cropped.LockBuffer(BitmapBufferAccessMode::Write);
   const auto destPlane = destBuffer.GetPlaneDescription(0);
   const auto destReference = destBuffer.CreateReference();
-  uint8_t *destData = destReference.data();
+
+  auto destAccess = destReference.as<::Windows::Foundation::IMemoryBufferByteAccess>();
+  uint8_t* destData = nullptr;
+  uint32_t capacity = 0;
+  winrt::check_hresult(destAccess->GetBuffer(&destData, &capacity));
 
   for (int y = 0; y < cropHeight; ++y) {
     const int sourceY = originY + y;
@@ -452,7 +466,7 @@ bool IsAcceptableFaceBox(const BitmapBounds &box, int imageWidth, int imageHeigh
   }
 
   const float aspect =
-      static_cast<float>(box.Width) / static_cast<float>(std::max<uint32_t>(box.Height, 1u));
+      static_cast<float>(box.Width) / static_cast<float>(std::max(1U, box.Height));
   if (aspect < 0.35f || aspect > 1.8f) {
     return false;
   }
@@ -624,8 +638,11 @@ void GumpLocalStorage::CopyPhoto(
 
         const auto safeName = fileName.empty() ? "photo.jpg" : fileName;
         const auto extension = std::filesystem::path(ToWide(safeName)).extension();
+        
+        winrt::guid newGuid;
+        winrt::check_hresult(CoCreateGuid(reinterpret_cast<GUID*>(&newGuid)));
         const auto destId =
-            photoId.empty() ? winrt::to_string(winrt::Windows::Foundation::Guid::NewGuid()) : photoId;
+          photoId.empty() ? winrt::to_string(winrt::to_hstring(newGuid)) : photoId;
         const auto destName = extension.empty() ? destId : destId + ToUtf8(extension.wstring());
         const auto destPath = albumDir / ToWide(destName);
         std::filesystem::copy_file(sourcePath, destPath, std::filesystem::copy_options::overwrite_existing);
