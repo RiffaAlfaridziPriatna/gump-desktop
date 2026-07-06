@@ -11,4 +11,18 @@
     <CodegenCommand Condition="'$(CodegenCommand)' == ''">node &quot;$(MSBuildThisFileDirectory)scripts\codegen-windows-msbuild.mjs&quot;</CodegenCommand>
     <BundleCliCommand Condition="'$(BundleCliCommand)' == ''">node &quot;$(MSBuildThisFileDirectory)node_modules\react-native\cli.js&quot; bundle</BundleCliCommand>
   </PropertyGroup>
+
+  <!--
+    Windows App SDK 1.7.x resolves bootstrap libs to lib\win10-\ (empty arch).
+    Pin to 1.6.x and map VS platform names to SDK lib folder names.
+    See https://github.com/microsoft/react-native-windows/issues/15562
+  -->
+  <PropertyGroup Label="Windows App SDK">
+    <WinUI3Version Condition="'$(WinUI3Version)' == ''">1.6.250205002</WinUI3Version>
+    <_WindowsAppSDKFoundationPlatform Condition="'$(_WindowsAppSDKFoundationPlatform)' == '' AND '$(Platform)' == 'Win32'">x86</_WindowsAppSDKFoundationPlatform>
+    <_WindowsAppSDKFoundationPlatform Condition="'$(_WindowsAppSDKFoundationPlatform)' == '' AND '$(Platform)' == 'x86'">x86</_WindowsAppSDKFoundationPlatform>
+    <_WindowsAppSDKFoundationPlatform Condition="'$(_WindowsAppSDKFoundationPlatform)' == '' AND '$(Platform)' == 'x64'">x64</_WindowsAppSDKFoundationPlatform>
+    <_WindowsAppSDKFoundationPlatform Condition="'$(_WindowsAppSDKFoundationPlatform)' == '' AND '$(Platform)' == 'ARM64'">arm64</_WindowsAppSDKFoundationPlatform>
+    <_WindowsAppSDKFoundationPlatform Condition="'$(_WindowsAppSDKFoundationPlatform)' == '' AND '$(Platform)' == 'ARM64EC'">x64</_WindowsAppSDKFoundationPlatform>
+  </PropertyGroup>
 </Project>
