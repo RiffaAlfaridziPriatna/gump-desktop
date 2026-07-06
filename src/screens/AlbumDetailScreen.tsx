@@ -31,7 +31,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   const {isMobileLayout, screenPaddingHorizontal} = useLayout();
   const isFocused = useIsFocused();
   const albumPhotos = useCulledAlbumPhotosState(albumId);
-  const {addPhotos, startAnalysis} = useCulledAlbumActions();
+  const {addPhotos, resumeLocalImport, startAnalysis} = useCulledAlbumActions();
   const startedRef = useRef(false);
   const [cullingActive, setCullingActive] = useState(false);
   const {photos, loadingPhotos, loadError, reloadPhotos} =
@@ -97,6 +97,10 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
       addPhotos(albumId, files);
     }
   }, [addPhotos, albumId, files]);
+
+  useEffect(() => {
+    resumeLocalImport(albumId);
+  }, [albumId, resumeLocalImport]);
 
   useEffect(() => {
     if (!isUploading && uploadedCount > 0) {

@@ -100,6 +100,25 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     });
   }
 
+  const resumeLocalImport = useCallback((albumId: string) => {
+    const album = getAlbum(albumId);
+    if (!album) {
+      return;
+    }
+
+    const hasPending = album.photos.some(
+      photo => photo.status === 'pending' || photo.status === 'uploading',
+    );
+    if (!hasPending) {
+      return;
+    }
+
+    if (album.localImportBatchPhotoIds.length > 0) {
+      setQueueOperationStatus(albumId, 'localImport', 'active');
+    }
+    uploadQueueRef.current!.processPending(albumId);
+  }, []);
+
   const addPhotos = useCallback((albumId: string, files: FileAsset[]) => {
     const perItemMinDurationMs = getSimulatedUploadPerItemMinDurationMs(
       files.length,
@@ -109,8 +128,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
     uiStoreRef.current!.setState({uploadError: null});
     setQueueOperationStatus(albumId, 'localImport', 'active');
-
-    queueMicrotask(() => uploadQueueRef.current!.processPending(albumId));
+    uploadQueueRef.current!.processPending(albumId);
   }, []);
 
   const startAnalysis = useCallback((albumId: string) => {
@@ -202,6 +220,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
   const actions: CulledAlbumActions = {
     addPhotos,
+    resumeLocalImport,
     startAnalysis,
     startSelectedUpload,
     purgeAlbum,
