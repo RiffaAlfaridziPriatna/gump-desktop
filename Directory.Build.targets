@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    Imported after project and NuGet props. Re-apply the platform mapping in case
+    Windows App SDK targets overwrote _WindowsAppSDKFoundationPlatform with empty.
+  -->
+  <PropertyGroup Label="Windows App SDK platform fix">
+    <_WindowsAppSDKFoundationPlatform Condition="'$(Platform)' == 'Win32'">x86</_WindowsAppSDKFoundationPlatform>
+    <_WindowsAppSDKFoundationPlatform Condition="'$(Platform)' != 'Win32' AND '$(Platform)' != ''">$(Platform)</_WindowsAppSDKFoundationPlatform>
+    <_WindowsAppSDKFoundationPlatform Condition="'$(_WindowsAppSDKFoundationPlatform)' == ''">x64</_WindowsAppSDKFoundationPlatform>
+  </PropertyGroup>
+</Project>
