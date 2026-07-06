@@ -9,5 +9,6 @@
   -->
   <PropertyGroup>
     <CodegenCommand Condition="'$(CodegenCommand)' == ''">node &quot;$(MSBuildThisFileDirectory)scripts\codegen-windows-msbuild.mjs&quot;</CodegenCommand>
+    <BundleCliCommand Condition="'$(BundleCliCommand)' == ''">node &quot;$(MSBuildThisFileDirectory)node_modules\react-native\cli.js&quot; bundle</BundleCliCommand>
   </PropertyGroup>
 </Project>
