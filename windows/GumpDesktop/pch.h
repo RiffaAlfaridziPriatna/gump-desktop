@@ -36,7 +36,6 @@
 #include <tchar.h>
 
 // Reference additional headers your project requires here
-#include <robuffer.h>
 #include <shlobj.h>
 
 #include <filesystem>

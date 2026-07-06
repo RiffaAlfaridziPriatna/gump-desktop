@@ -223,11 +223,7 @@ BitmapPixels ReadBitmapPixels(const SoftwareBitmap &bitmap) {
   BitmapBuffer buffer = bitmap.LockBuffer(BitmapBufferAccessMode::Read);
   const auto reference = buffer.CreateReference();
   const auto plane = buffer.GetPlaneDescription(0);
-  const auto access = reference.as<::Windows::Foundation::IMemoryBufferByteAccess>();
-
-  byte *data = nullptr;
-  uint32_t capacity = 0;
-  winrt::check_hresult(access->GetBuffer(&data, &capacity));
+  const uint8_t *data = reference.data();
 
   BitmapPixels result;
   result.width = bitmap.PixelWidth();
@@ -357,11 +353,7 @@ SoftwareBitmap CropSoftwareBitmap(
   BitmapBuffer destBuffer = cropped.LockBuffer(BitmapBufferAccessMode::Write);
   const auto destPlane = destBuffer.GetPlaneDescription(0);
   const auto destReference = destBuffer.CreateReference();
-  const auto destAccess = destReference.as<::Windows::Foundation::IMemoryBufferByteAccess>();
-
-  byte *destData = nullptr;
-  uint32_t capacity = 0;
-  winrt::check_hresult(destAccess->GetBuffer(&destData, &capacity));
+  uint8_t *destData = destReference.data();
 
   for (int y = 0; y < cropHeight; ++y) {
     const int sourceY = originY + y;
