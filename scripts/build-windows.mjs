@@ -12,6 +12,11 @@ const WINDOWS_RELEASE_EXE = path.join(
   'windows/x64/Release/GumpDesktop/GumpDesktop.exe',
 );
 const WINDOWS_MSIX_DIR = path.join(ROOT_DIR, 'windows/AppPackages');
+const REACT_NATIVE_CLI = path.join(ROOT_DIR, 'node_modules/react-native/cli.js');
+const REACT_NATIVE_WINDOWS_DIR = path.join(
+  ROOT_DIR,
+  'node_modules/react-native-windows',
+);
 
 const variant = process.argv[2] ?? 'exe';
 
@@ -43,6 +48,24 @@ function run(command, args, options = {}) {
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
+}
+
+function ensureWindowsTooling() {
+  if (!fs.existsSync(REACT_NATIVE_WINDOWS_DIR)) {
+    die(
+      'react-native-windows is not installed. Run: npm install --legacy-peer-deps',
+    );
+  }
+
+  if (!fs.existsSync(REACT_NATIVE_CLI)) {
+    die('react-native CLI is not installed. Run: npm install --legacy-peer-deps');
+  }
+}
+
+function runReactNativeWindows(args) {
+  run(process.execPath, [REACT_NATIVE_CLI, 'run-windows', ...args], {
+    shell: false,
+  });
 }
 
 function copyArtifact(sourcePath, destinationDir) {
@@ -84,10 +107,10 @@ function findLatestPackage() {
 
 function buildExe() {
   log('Building Windows release executable...');
-  run('npx', [
-    '@react-native-community/cli',
-    'run-windows',
+  runReactNativeWindows([
     '--release',
+    '--arch',
+    'x64',
     '--no-launch',
     '--logging',
   ]);
@@ -121,6 +144,7 @@ if (process.platform !== 'win32') {
   die('Windows builds must run on Windows.');
 }
 
+ensureWindowsTooling();
 ensureDir(DIST_DIR);
 
 switch (variant) {

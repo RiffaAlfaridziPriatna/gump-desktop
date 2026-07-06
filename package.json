@@ -22,7 +22,7 @@
     "build:windows": "node scripts/build-windows.mjs exe",
     "build:windows:msix": "node scripts/build-windows.mjs msix",
     "build:all": "bash scripts/build.sh all",
-    "windows": "npx @react-native-community/cli run-windows",
+    "windows": "react-native run-windows",
     "test:windows": "jest --config jest.config.windows.js"
   },
   "dependencies": {

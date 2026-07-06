@@ -12,6 +12,7 @@ module.exports = {
     'react-native-screens': {
       platforms: {
         macos: null,
+        windows: null,
       },
     },
   },
