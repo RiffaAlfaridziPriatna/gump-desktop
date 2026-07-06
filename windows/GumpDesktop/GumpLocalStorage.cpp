@@ -5,6 +5,7 @@
 #include <combaseapi.h>
 #include <MemoryBuffer.h>
 #include <cstdio>
+#include <stdexcept>
 
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
@@ -615,7 +616,8 @@ void GumpLocalStorage::DetectFacesForCulling(std::string uri, ReactPromiseJS &&p
         if (path.empty() || !std::filesystem::exists(path)) {
           throw std::runtime_error("Photo file not found");
         }
-        return winrtRN::JSValue(DetectFaces(path));
+        auto faces = DetectFaces(path);
+        return winrtRN::JSValue(std::move(faces));
       },
       std::move(promise));
 }
@@ -663,7 +665,7 @@ void GumpLocalStorage::ListPhotos(std::string albumId, ReactPromiseJS &&promise)
         const auto albumDir = CullingAlbumDirectory(albumId);
         winrtRN::JSValueArray files;
         if (!std::filesystem::exists(albumDir)) {
-          return winrtRN::JSValue(files);
+          return winrtRN::JSValue(std::move(files));
         }
 
         for (const auto &entry : std::filesystem::directory_iterator(albumDir)) {
@@ -682,7 +684,7 @@ void GumpLocalStorage::ListPhotos(std::string albumId, ReactPromiseJS &&promise)
           });
         }
 
-        return winrtRN::JSValue(files);
+        return winrtRN::JSValue(std::move(files));
       },
       std::move(promise));
 }
