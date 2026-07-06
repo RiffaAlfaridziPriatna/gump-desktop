@@ -24,4 +24,20 @@
     <ReactExperimentalFeaturesSet>true</ReactExperimentalFeaturesSet>
   </PropertyGroup>
 
+  <!--
+    Pin Windows App SDK to 1.6.x.
+
+    Windows App SDK 1.7.x ships a broken buildTransitive target that resolves the
+    bootstrap import library to `lib\win10-\` (empty architecture) instead of
+    `lib\win10-x64\`, causing LNK1104 when linking Microsoft.ReactNative.
+    See https://github.com/microsoft/react-native-windows/issues/15562
+
+    RNW's WinUI.props only sets WinUI3Version when it is empty, so defining it
+    here (imported before WinUI.props) overrides the default without touching
+    node_modules.
+  -->
+  <PropertyGroup Label="Windows App SDK version pin">
+    <WinUI3Version Condition="'$(WinUI3Version)' == ''">1.6.250205002</WinUI3Version>
+  </PropertyGroup>
+
 </Project>
