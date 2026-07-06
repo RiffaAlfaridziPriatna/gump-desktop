@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <!--
-    RNW native module builds invoke codegen-windows via MSBuild. The default
-    CodegenCommand uses `npx @react-native-community/cli`, which does not load
-    the react-native-windows CLI plugin and fails with:
-      unknown command 'codegen-windows'
+    RNW Codegen.targets runs in each native module's package root. The default
+    CodegenCommand shells out to the community CLI, which does not register RNW
+    commands from that cwd and fails with unknown command 'codegen-windows'.
+    scripts/codegen-windows-msbuild.mjs invokes RNW codegen directly while
+    preserving MSBuild's module working directory for codegenConfig.
   -->
   <PropertyGroup>
-    <CodegenCommand Condition="'$(CodegenCommand)' == ''">node &quot;$(MSBuildThisFileDirectory)node_modules\react-native\cli.js&quot; codegen-windows</CodegenCommand>
+    <CodegenCommand Condition="'$(CodegenCommand)' == ''">node &quot;$(MSBuildThisFileDirectory)scripts\codegen-windows-msbuild.mjs&quot;</CodegenCommand>
   </PropertyGroup>
 </Project>
