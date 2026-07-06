@@ -348,8 +348,7 @@ SoftwareBitmap CropSoftwareBitmap(
     int originY,
     int cropWidth,
     int cropHeight) {
-  auto cropped =
-      SoftwareBitmap::Create(BitmapPixelFormat::Bgra8, cropWidth, cropHeight, BitmapAlphaMode::Premultiplied);
+  SoftwareBitmap cropped(BitmapPixelFormat::Bgra8, cropWidth, cropHeight, BitmapAlphaMode::Premultiplied);
   BitmapBuffer destBuffer = cropped.LockBuffer(BitmapBufferAccessMode::Write);
   const auto destPlane = destBuffer.GetPlaneDescription(0);
   const auto destReference = destBuffer.CreateReference();
