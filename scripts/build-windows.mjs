@@ -7,10 +7,6 @@ import url from 'node:url';
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
-const WINDOWS_RELEASE_EXE = path.join(
-  ROOT_DIR,
-  'windows/x64/Release/GumpDesktop/GumpDesktop.exe',
-);
 const WINDOWS_MSIX_DIR = path.join(ROOT_DIR, 'windows/AppPackages');
 const REACT_NATIVE_CLI = path.join(ROOT_DIR, 'node_modules/react-native/cli.js');
 const REACT_NATIVE_WINDOWS_DIR = path.join(
@@ -28,6 +24,73 @@ function die(message) {
   console.error(`✗ ${message}`);
   process.exit(1);
 }
+
+function resolveWindowsArch() {
+  const override = process.env.WINDOWS_ARCH?.trim();
+  if (override) {
+    const normalized = override.toLowerCase();
+    if (normalized === 'arm64') {
+      return 'ARM64';
+    }
+    if (normalized === 'x86' || normalized === 'win32') {
+      return 'x86';
+    }
+    if (normalized === 'x64' || normalized === 'amd64') {
+      return 'x64';
+    }
+    die(`Unknown WINDOWS_ARCH value: ${override}. Use: x64 | x86 | ARM64`);
+  }
+
+  // Prefer the OS CPU arch. On ARM PCs, x64 Node reports process.arch=x64 but
+  // PROCESSOR_ARCHITEW6432=ARM64 (common in Parallels with x64 Node).
+  const osArch = (
+    process.env.PROCESSOR_ARCHITEW6432 ??
+    process.env.PROCESSOR_ARCHITECTURE ??
+    ''
+  ).toUpperCase();
+
+  if (osArch === 'ARM64') {
+    return 'ARM64';
+  }
+  if (osArch === 'X86') {
+    return 'x86';
+  }
+  if (osArch === 'AMD64' || osArch === 'X64') {
+    return 'x64';
+  }
+
+  switch (process.arch) {
+    case 'arm64':
+      return 'ARM64';
+    case 'ia32':
+      return 'x86';
+    default:
+      return 'x64';
+  }
+}
+
+function getWasdkPlatform(arch) {
+  switch (arch) {
+    case 'x86':
+      return 'x86';
+    case 'ARM64':
+      return 'arm64';
+    default:
+      return 'x64';
+  }
+}
+
+function getReleaseExePath(arch) {
+  const platformDir = arch === 'x86' ? 'Win32' : arch;
+  return path.join(
+    ROOT_DIR,
+    `windows/${platformDir}/Release/GumpDesktop/GumpDesktop.exe`,
+  );
+}
+
+const windowsArch = resolveWindowsArch();
+const wasdkPlatform = getWasdkPlatform(windowsArch);
+const WINDOWS_RELEASE_EXE = getReleaseExePath(windowsArch);
 
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
@@ -106,15 +169,16 @@ function findLatestPackage() {
 }
 
 function buildExe() {
-  log('Building Windows release executable...');
+  log(`Building Windows release executable (${windowsArch})...`);
   runReactNativeWindows([
     '--release',
     '--arch',
-    'x64',
+    windowsArch,
     '--no-launch',
+    '--no-deploy',
     '--logging',
     '--msbuildprops',
-    '_WindowsAppSDKFoundationPlatform=x64,UseExperimentalNuget=true',
+    `_WindowsAppSDKFoundationPlatform=${wasdkPlatform},UseExperimentalNuget=true`,
   ]);
 
   if (!fs.existsSync(WINDOWS_RELEASE_EXE)) {
@@ -125,12 +189,13 @@ function buildExe() {
 }
 
 function buildMsix() {
-  log('Building Windows MSIX package...');
+  const msbuildPlatform = windowsArch === 'x86' ? 'Win32' : windowsArch;
+  log(`Building Windows MSIX package (${windowsArch})...`);
   run('msbuild', [
     'windows/GumpDesktop.sln',
     '/p:Configuration=Release',
-    '/p:Platform=x64',
-    '/p:_WindowsAppSDKFoundationPlatform=x64',
+    `/p:Platform=${msbuildPlatform}`,
+    `/p:_WindowsAppSDKFoundationPlatform=${wasdkPlatform}`,
     '/p:UseExperimentalNuget=true',
     '/p:AppxBundle=Always',
     '/p:UapAppxPackageBuildMode=StoreUpload',
@@ -150,6 +215,8 @@ if (process.platform !== 'win32') {
 
 ensureWindowsTooling();
 ensureDir(DIST_DIR);
+
+log(`Detected Windows target architecture: ${windowsArch}`);
 
 switch (variant) {
   case 'exe':
