@@ -1,5 +1,6 @@
 import {AlbumCard, AlbumGrid} from '@components/album';
 import {UploadModal} from '@components/modals/UploadModal';
+import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {useAuthState} from '@context/auth';
 import {useCulledAlbumActions} from '@context/culledAlbum';
 import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
@@ -34,7 +35,10 @@ import GumpLogo from '../assets/images/logo.svg';
 type Props = StackScreenProps<MainStackParamList, 'SelectAlbum'>;
 
 export default function SelectAlbumScreen({navigation, route}: Props) {
-  useUploadAwareModalScreen(navigation, route.params?.instant);
+  const {shellProps, handleBack} = useUploadAwareModalScreen(
+    navigation,
+    route.params?.instant,
+  );
   const user = useAuthState(state => state.user);
   const {
     isMobileLayout,
@@ -119,7 +123,8 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <UploadAwareModalShell {...shellProps}>
+      <SafeAreaView style={styles.container}>
       <View
         style={[
           styles.header,
@@ -128,7 +133,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
         ]}>
         <GumpLogo width={112} height={40} />
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
           activeOpacity={0.7}
           disabled={starting}>
@@ -228,6 +233,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
         onSelect={handleFilesSelected}
       />
     </SafeAreaView>
+    </UploadAwareModalShell>
   );
 }
 

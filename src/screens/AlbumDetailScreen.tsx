@@ -1,4 +1,5 @@
 import {PhotoMasonryGrid} from '@components/photo/PhotoMasonryGrid';
+import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {UploadToast} from '@components/upload/UploadToast';
 import {
   useCulledAlbumActions,
@@ -119,7 +120,10 @@ function AlbumDetailBody({
 }
 
 export default function AlbumDetailScreen({navigation, route}: Props) {
-  useUploadAwareModalScreen(navigation, route.params.instant);
+  const {shellProps, handleBack} = useUploadAwareModalScreen(
+    navigation,
+    route.params.instant,
+  );
   const {albumId, albumName, ownerName, skipResumeImport} = route.params;
   const {isMobileLayout, screenPaddingHorizontal} = useLayout();
   const isFocused = useIsFocused();
@@ -231,7 +235,8 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <UploadAwareModalShell {...shellProps}>
+      <SafeAreaView style={styles.container}>
       <View
         style={[
           styles.header,
@@ -241,7 +246,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         <GumpLogo width={112} height={40} />
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           activeOpacity={0.7}>
           <IconChevronLeft width={24} height={24} color={colors.accent} />
           <Text style={styles.backText}>Back</Text>
@@ -304,6 +309,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         skipInitialLoad={totalPhotos > 0}
       />
     </SafeAreaView>
+    </UploadAwareModalShell>
   );
 }
 

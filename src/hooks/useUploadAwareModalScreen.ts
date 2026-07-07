@@ -1,8 +1,13 @@
-import {endUploadNavigationCoop} from '@lib/navigation/uploadAwareNavigation';
+import type {ModalSlideEnterHandle} from '@components/navigation/ModalSlideEnter';
+import type {UploadAwareModalShellProps} from '@components/navigation/UploadAwareModalShell';
+import {
+  endUploadNavigationCoop,
+  usesCustomModalEnterAnimation,
+} from '@lib/navigation/uploadAwareNavigation';
 import type {ParamListBase} from '@react-navigation/native';
 import {useIsFocused} from '@react-navigation/native';
 import type {StackNavigationProp} from '@react-navigation/stack';
-import {useEffect} from 'react';
+import {useCallback, useEffect, useRef} from 'react';
 
 export function useUploadAwareModalScreen<
   ParamList extends ParamListBase,
@@ -10,11 +15,20 @@ export function useUploadAwareModalScreen<
 >(
   navigation: StackNavigationProp<ParamList, RouteName>,
   instant?: boolean,
-): void {
+) {
   const isFocused = useIsFocused();
+  const customEnterAnimation = usesCustomModalEnterAnimation();
+  const slideRef = useRef<ModalSlideEnterHandle | null>(null);
+  const closingRef = useRef(false);
+
+  const onEnterAnimationEnd = useCallback(() => {
+    if (customEnterAnimation) {
+      endUploadNavigationCoop();
+    }
+  }, [customEnterAnimation]);
 
   useEffect(() => {
-    if (instant) {
+    if (instant || customEnterAnimation) {
       return;
     }
 
@@ -25,7 +39,7 @@ export function useUploadAwareModalScreen<
     };
 
     return navigation.addListener('transitionEnd', onTransitionEnd);
-  }, [instant, navigation]);
+  }, [customEnterAnimation, instant, navigation]);
 
   useEffect(() => {
     if (!instant || !isFocused) {
@@ -38,4 +52,29 @@ export function useUploadAwareModalScreen<
 
     return () => cancelAnimationFrame(frame);
   }, [instant, isFocused]);
+
+  const handleBack = useCallback(() => {
+    if (closingRef.current) {
+      return;
+    }
+
+    const goBack = () => navigation.goBack();
+
+    if (!customEnterAnimation || instant || !slideRef.current) {
+      goBack();
+      return;
+    }
+
+    closingRef.current = true;
+    slideRef.current.slideOut(goBack);
+  }, [customEnterAnimation, instant, navigation]);
+
+  const shellProps: UploadAwareModalShellProps = {
+    slideRef,
+    enabled: customEnterAnimation,
+    instant,
+    onEnterComplete: onEnterAnimationEnd,
+  };
+
+  return {shellProps, handleBack};
 }

@@ -1,4 +1,5 @@
 import {CulledAlbumFilterBar} from '@components/culling/CulledAlbumFilterBar';
+import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {
   CulledAlbumDetailSidebar,
   KeyFaceWithSource,
@@ -42,7 +43,10 @@ const DESKTOP_SIDEBAR_WIDTH = 246;
 const CONTENT_COLUMN_GAP = 24;
 
 export default function CulledAlbumDetailScreen({navigation, route}: Props) {
-  useUploadAwareModalScreen(navigation, route.params.instant);
+  const {shellProps, handleBack} = useUploadAwareModalScreen(
+    navigation,
+    route.params.instant,
+  );
   const {albumId} = route.params;
   const {startSelectedUpload} = useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
@@ -247,14 +251,15 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   }, [analyzedPhotoList, filesByPhotoId, keyFaces]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <UploadAwareModalShell {...shellProps}>
+      <SafeAreaView style={styles.container}>
       <View style={styles.screenShell}>
         <View
           ref={screenRootRef}
           style={styles.screenRoot}
           onLayout={syncScreenOrigin}>
         <CulledAlbumDetailHeader
-          onBack={() => navigation.goBack()}
+          onBack={handleBack}
           isMobileLayout={isMobileLayout}
           paddingHorizontal={screenPaddingHorizontal}
         />
@@ -421,6 +426,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         </View>
       </View>
     </SafeAreaView>
+    </UploadAwareModalShell>
   );
 }
 

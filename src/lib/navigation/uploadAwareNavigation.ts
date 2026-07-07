@@ -3,6 +3,8 @@ import {
   StackNavigationOptions,
   TransitionPresets,
 } from '@react-navigation/stack';
+import {Platform} from 'react-native';
+import {beginUploadNavigationCoop} from './uploadNavigationCoop';
 
 export type InstantNavParams = {
   instant?: boolean;
@@ -10,69 +12,14 @@ export type InstantNavParams = {
 
 export type WithInstantNav<T> = T & InstantNavParams;
 
-const deferred: Array<() => void> = [];
-let coopDepth = 0;
-let safetyTimer: ReturnType<typeof setTimeout> | null = null;
+export {
+  endUploadNavigationCoop,
+  isUploadNavigationActive,
+  runDeferredDuringUploadNavigation,
+} from './uploadNavigationCoop';
 
-const COOP_SAFETY_MS = 1000;
-
-function flushDeferred(): void {
-  const pending = deferred.splice(0);
-  if (pending.length === 0) {
-    return;
-  }
-
-  queueMicrotask(() => {
-    for (const work of pending) {
-      work();
-    }
-  });
-}
-
-export function isUploadNavigationActive(): boolean {
-  return coopDepth > 0;
-}
-
-function beginUploadNavigationCoop(): void {
-  coopDepth++;
-
-  if (safetyTimer) {
-    clearTimeout(safetyTimer);
-  }
-
-  safetyTimer = setTimeout(() => {
-    if (coopDepth > 0) {
-      coopDepth = 0;
-      flushDeferred();
-    }
-    safetyTimer = null;
-  }, COOP_SAFETY_MS);
-}
-
-export function endUploadNavigationCoop(): void {
-  if (coopDepth === 0) {
-    return;
-  }
-
-  coopDepth--;
-  if (coopDepth > 0) {
-    return;
-  }
-
-  if (safetyTimer) {
-    clearTimeout(safetyTimer);
-    safetyTimer = null;
-  }
-
-  flushDeferred();
-}
-
-export function runDeferredDuringUploadNavigation(work: () => void): void {
-  if (!isUploadNavigationActive()) {
-    work();
-    return;
-  }
-  deferred.push(work);
+function shouldUseInstantStackNavigation(): boolean {
+  return !usesCustomModalEnterAnimation();
 }
 
 export function uploadAwareParams<T extends object>(params: T): T & InstantNavParams {
@@ -81,7 +28,12 @@ export function uploadAwareParams<T extends object>(params: T): T & InstantNavPa
   }
 
   beginUploadNavigationCoop();
-  return {...params, instant: true};
+
+  if (shouldUseInstantStackNavigation()) {
+    return {...params, instant: true};
+  }
+
+  return params;
 }
 
 export function uploadAwareRouteParams(): InstantNavParams | undefined {
@@ -90,7 +42,12 @@ export function uploadAwareRouteParams(): InstantNavParams | undefined {
   }
 
   beginUploadNavigationCoop();
-  return {instant: true};
+
+  if (shouldUseInstantStackNavigation()) {
+    return {instant: true};
+  }
+
+  return undefined;
 }
 
 const modalSlideOptions: StackNavigationOptions = {
@@ -100,11 +57,33 @@ const modalSlideOptions: StackNavigationOptions = {
   gestureEnabled: true,
 };
 
+export function usesCustomModalEnterAnimation(): boolean {
+  // RNW does not reliably run ModalSlideEnter transform animations with the
+  // native driver, which leaves modal screens off-screen on Windows.
+  return Platform.OS === 'macos';
+}
+
 export function uploadAwareModalScreenOptions({
   route,
 }: {
   route: {params?: InstantNavParams};
 }): StackNavigationOptions {
+  if (Platform.OS === 'windows') {
+    return {
+      animation: 'none',
+      gestureEnabled: true,
+    };
+  }
+
+  if (usesCustomModalEnterAnimation()) {
+    return {
+      animation: 'none',
+      gestureEnabled: true,
+      cardStyle: {backgroundColor: 'transparent'},
+      cardOverlayEnabled: false,
+    };
+  }
+
   if (route.params?.instant) {
     return {
       animation: 'none',
