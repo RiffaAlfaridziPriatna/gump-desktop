@@ -7,12 +7,14 @@ import GumpLogo from '../../assets/images/logo.svg';
 
 type Props = {
   onBack: () => void;
+  onBackPressIn?: () => void;
   isMobileLayout: boolean;
   paddingHorizontal: number;
 };
 
 export function CulledAlbumDetailHeader({
   onBack,
+  onBackPressIn,
   isMobileLayout,
   paddingHorizontal,
 }: Props) {
@@ -26,6 +28,7 @@ export function CulledAlbumDetailHeader({
       <GumpLogo width={112} height={40} />
       <TouchableOpacity
         style={styles.backButton}
+        onPressIn={onBackPressIn}
         onPress={onBack}
         activeOpacity={0.7}>
         <IconChevronLeft width={24} height={24} color={colors.accent} />

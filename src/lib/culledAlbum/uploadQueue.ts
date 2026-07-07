@@ -3,6 +3,7 @@ import {enrichPhotoCaptureTime} from '@lib/imageCaptureTime';
 import {
   isUploadNavigationActive,
   runDeferredDuringUploadNavigation,
+  shouldYieldUploadQueueForNavigation,
 } from '@lib/navigation/uploadAwareNavigation';
 import {checkLocalImportBatchComplete, type UpdatePhotoOptions} from './store';
 import {FileAsset} from '@services/upload/types';
@@ -10,6 +11,7 @@ import {countByUploadStatus, CulledAlbumPhoto} from './types';
 
 const PERSIST_BATCH_SIZE = 50;
 const COPY_TIMEOUT_MS = 120_000;
+const QUEUE_YIELD_MS = 32;
 
 function withTimeout<T>(
   promise: Promise<T>,
@@ -175,6 +177,11 @@ export function createUploadQueue(deps: UploadQueueDeps) {
   }
 
   function processPending(albumId: string): void {
+    if (shouldYieldUploadQueueForNavigation()) {
+      setTimeout(() => processPending(albumId), QUEUE_YIELD_MS);
+      return;
+    }
+
     if (isUploadNavigationActive()) {
       runDeferredDuringUploadNavigation(() => processPending(albumId));
       return;

@@ -1,7 +1,11 @@
 import type {ModalSlideEnterHandle} from '@components/navigation/ModalSlideEnter';
 import type {UploadAwareModalShellProps} from '@components/navigation/UploadAwareModalShell';
+import {hasAnyInFlightAlbumWork} from '@lib/culledAlbum/store';
 import {
+  beginUploadNavigationCoop,
   endUploadNavigationCoop,
+  isUploadNavigationActive,
+  prioritizeNavigationInteraction,
   usesCustomModalEnterAnimation,
 } from '@lib/navigation/uploadAwareNavigation';
 import type {ParamListBase} from '@react-navigation/native';
@@ -53,20 +57,45 @@ export function useUploadAwareModalScreen<
     return () => cancelAnimationFrame(frame);
   }, [instant, isFocused]);
 
+  const handleBackPressIn = useCallback(() => {
+    if (!hasAnyInFlightAlbumWork()) {
+      return;
+    }
+
+    prioritizeNavigationInteraction();
+    beginUploadNavigationCoop();
+  }, []);
+
   const handleBack = useCallback(() => {
     if (closingRef.current) {
       return;
     }
 
-    const goBack = () => navigation.goBack();
+    const uploadActive = hasAnyInFlightAlbumWork();
+    if (uploadActive) {
+      prioritizeNavigationInteraction();
+      if (!isUploadNavigationActive()) {
+        beginUploadNavigationCoop();
+      }
+    }
+
+    const finishBack = () => {
+      navigation.goBack();
+      if (uploadActive) {
+        requestAnimationFrame(() => {
+          endUploadNavigationCoop();
+        });
+      }
+    };
+
+    closingRef.current = true;
 
     if (!customEnterAnimation || instant || !slideRef.current) {
-      goBack();
+      finishBack();
       return;
     }
 
-    closingRef.current = true;
-    slideRef.current.slideOut(goBack);
+    slideRef.current.slideOut(finishBack);
   }, [customEnterAnimation, instant, navigation]);
 
   const shellProps: UploadAwareModalShellProps = {
@@ -76,5 +105,5 @@ export function useUploadAwareModalScreen<
     onEnterComplete: onEnterAnimationEnd,
   };
 
-  return {shellProps, handleBack};
+  return {shellProps, handleBack, handleBackPressIn};
 }

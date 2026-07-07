@@ -43,7 +43,7 @@ const DESKTOP_SIDEBAR_WIDTH = 246;
 const CONTENT_COLUMN_GAP = 24;
 
 export default function CulledAlbumDetailScreen({navigation, route}: Props) {
-  const {shellProps, handleBack} = useUploadAwareModalScreen(
+  const {shellProps, handleBack, handleBackPressIn} = useUploadAwareModalScreen(
     navigation,
     route.params.instant,
   );
@@ -260,6 +260,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           onLayout={syncScreenOrigin}>
         <CulledAlbumDetailHeader
           onBack={handleBack}
+          onBackPressIn={handleBackPressIn}
           isMobileLayout={isMobileLayout}
           paddingHorizontal={screenPaddingHorizontal}
         />

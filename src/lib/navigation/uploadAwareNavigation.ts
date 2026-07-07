@@ -13,9 +13,12 @@ export type InstantNavParams = {
 export type WithInstantNav<T> = T & InstantNavParams;
 
 export {
+  beginUploadNavigationCoop,
   endUploadNavigationCoop,
   isUploadNavigationActive,
+  prioritizeNavigationInteraction,
   runDeferredDuringUploadNavigation,
+  shouldYieldUploadQueueForNavigation,
 } from './uploadNavigationCoop';
 
 function shouldUseInstantStackNavigation(): boolean {

@@ -120,7 +120,7 @@ function AlbumDetailBody({
 }
 
 export default function AlbumDetailScreen({navigation, route}: Props) {
-  const {shellProps, handleBack} = useUploadAwareModalScreen(
+  const {shellProps, handleBack, handleBackPressIn} = useUploadAwareModalScreen(
     navigation,
     route.params.instant,
   );
@@ -246,6 +246,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         <GumpLogo width={112} height={40} />
         <TouchableOpacity
           style={styles.backButton}
+          onPressIn={handleBackPressIn}
           onPress={handleBack}
           activeOpacity={0.7}>
           <IconChevronLeft width={24} height={24} color={colors.accent} />

@@ -35,7 +35,7 @@ import GumpLogo from '../assets/images/logo.svg';
 type Props = StackScreenProps<MainStackParamList, 'SelectAlbum'>;
 
 export default function SelectAlbumScreen({navigation, route}: Props) {
-  const {shellProps, handleBack} = useUploadAwareModalScreen(
+  const {shellProps, handleBack, handleBackPressIn} = useUploadAwareModalScreen(
     navigation,
     route.params?.instant,
   );
@@ -133,6 +133,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
         ]}>
         <GumpLogo width={112} height={40} />
         <TouchableOpacity
+          onPressIn={handleBackPressIn}
           onPress={handleBack}
           hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
           activeOpacity={0.7}
