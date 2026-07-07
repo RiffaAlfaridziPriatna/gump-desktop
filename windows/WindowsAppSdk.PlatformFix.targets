@@ -2,8 +2,8 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <!--
     Windows App SDK 1.7.x can bake lib\win10-\ paths when _WindowsAppSDKFoundationPlatform
-    is empty during NuGet buildTransitive evaluation. Re-apply after those imports and patch
-    linker inputs immediately before Link.
+    is empty during NuGet buildTransitive evaluation. Re-apply after those imports and again
+    immediately before Link for native C++ projects.
     See https://github.com/microsoft/react-native-windows/issues/15562
   -->
   <PropertyGroup>
@@ -14,17 +14,16 @@
     <_MrtCoreRuntimeIdentifier Condition="'$(_MrtCoreRuntimeIdentifier)' == ''">$(_GumpWasdkArch)</_MrtCoreRuntimeIdentifier>
   </PropertyGroup>
 
-  <Target Name="GumpFixWasdkLinkPaths" BeforeTargets="Link">
+  <Target
+    Name="GumpFixWasdkLinkPaths"
+    BeforeTargets="Link"
+    Condition="'$(MSBuildProjectExtension)' == '.vcxproj'">
     <PropertyGroup>
       <_GumpWasdkArch Condition="'$(Platform)' == 'Win32'">x86</_GumpWasdkArch>
       <_GumpWasdkArch Condition="'$(Platform)' == 'ARM64'">arm64</_GumpWasdkArch>
       <_GumpWasdkArch Condition="'$(_GumpWasdkArch)' == ''">x64</_GumpWasdkArch>
       <_WindowsAppSDKFoundationPlatform>$(_GumpWasdkArch)</_WindowsAppSDKFoundationPlatform>
+      <_MrtCoreRuntimeIdentifier Condition="'$(_MrtCoreRuntimeIdentifier)' == ''">$(_GumpWasdkArch)</_MrtCoreRuntimeIdentifier>
     </PropertyGroup>
-    <ItemDefinitionGroup>
-      <Link>
-        <AdditionalDependencies>$([System.Text.RegularExpressions.Regex]::Replace('%(Link.AdditionalDependencies)', 'win10-\\', 'win10-$(_GumpWasdkArch)\\'))</AdditionalDependencies>
-      </Link>
-    </ItemDefinitionGroup>
   </Target>
 </Project>
