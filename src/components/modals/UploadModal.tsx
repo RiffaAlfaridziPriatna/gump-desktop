@@ -46,7 +46,6 @@ export function UploadModal({visible, onClose, onSelect}: UploadModalProps) {
       const files = await pickImages();
       if (files.length > 0) {
         onSelect(files);
-        onClose();
       }
     } catch (error) {
       console.error('[UploadModal] Failed to pick images', error);
