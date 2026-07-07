@@ -20,8 +20,6 @@ const rnwPath = fs.realpathSync(
   path.resolve(require.resolve('react-native-windows/package.json'), '..'),
 );
 
-const USE_NATIVE_SVG = process.env.USE_NATIVE_SVG === '1';
-
 const windowsShims = {
   'react-native-screens': path.resolve(
     __dirname,
@@ -36,13 +34,6 @@ const windowsShims = {
     'src/shims/react-native-community-blur.windows.tsx',
   ),
 };
-
-if (!USE_NATIVE_SVG) {
-  windowsShims['react-native-svg'] = path.resolve(
-    __dirname,
-    'src/shims/react-native-svg.windows.tsx',
-  );
-}
 
 const config = {
   resolver: {

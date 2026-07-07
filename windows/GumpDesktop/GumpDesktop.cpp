@@ -118,6 +118,16 @@ static winrt::Windows::Graphics::SizeInt32 GetInitialSizePx(HWND hwnd) noexcept 
   const int32_t h = workArea.cy > 0 ? static_cast<int32_t>(workArea.cy) : 800;
   return winrt::Windows::Graphics::SizeInt32{w, h};
 }
+
+static void PreloadAutolinkedModuleDlls(PCWSTR appDirectory) noexcept {
+  static constexpr PCWSTR kModuleDlls[] = {L"RNSVG.dll", L"ReactNativeAsyncStorage.dll"};
+  for (PCWSTR dllName : kModuleDlls) {
+    WCHAR dllPath[MAX_PATH];
+    if (SUCCEEDED(PathCchCombine(dllPath, MAX_PATH, appDirectory, dllName))) {
+      LoadLibraryW(dllPath);
+    }
+  }
+}
 } // namespace
 
 // A PackageProvider containing any turbo modules you define within this app project
@@ -147,6 +157,8 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
 
   // Configure the initial InstanceSettings for the app's ReactNativeHost
   auto settings{reactNativeWin32App.ReactNativeHost().InstanceSettings()};
+  // Ensure autolinked WinRT module DLLs are loaded before package registration.
+  PreloadAutolinkedModuleDlls(appDirectory);
   // Register any autolinked native modules
   RegisterAutolinkedNativeModulePackages(settings.PackageProviders());
   // Register any native modules defined within this app project
