@@ -13,6 +13,16 @@
   </PropertyGroup>
 
   <!--
+    New-arch RNW apps must consume prebuilt Microsoft.ReactNative NuGet packages.
+    If UseExperimentalNuget is left false, autolinked modules project-reference
+    Microsoft.ReactNative.vcxproj and hit the WASDK 1.7 win10-\ linker bug.
+  -->
+  <PropertyGroup Label="React Native Windows">
+    <RnwNewArch Condition="'$(RnwNewArch)' == ''">true</RnwNewArch>
+    <UseExperimentalNuget>true</UseExperimentalNuget>
+  </PropertyGroup>
+
+  <!--
     Windows App SDK 1.7.x can resolve bootstrap libs to lib\win10-\ when Platform is
     empty during transitive imports. Map VS platform names and default to x64.
     See https://github.com/microsoft/react-native-windows/issues/15562
@@ -22,5 +32,6 @@
     <_WindowsAppSDKFoundationPlatform Condition="'$(Platform)' == 'Win32'">x86</_WindowsAppSDKFoundationPlatform>
     <_WindowsAppSDKFoundationPlatform Condition="'$(Platform)' != 'Win32' AND '$(Platform)' != ''">$(Platform)</_WindowsAppSDKFoundationPlatform>
     <_WindowsAppSDKFoundationPlatform Condition="'$(_WindowsAppSDKFoundationPlatform)' == ''">x64</_WindowsAppSDKFoundationPlatform>
+    <ForceImportAfterCppTargets>$(MSBuildThisFileDirectory)windows\WindowsAppSdk.PlatformFix.targets</ForceImportAfterCppTargets>
   </PropertyGroup>
 </Project>

@@ -113,6 +113,8 @@ function buildExe() {
     'x64',
     '--no-launch',
     '--logging',
+    '--msbuildprops',
+    '_WindowsAppSDKFoundationPlatform=x64,UseExperimentalNuget=true',
   ]);
 
   if (!fs.existsSync(WINDOWS_RELEASE_EXE)) {
@@ -128,6 +130,8 @@ function buildMsix() {
     'windows/GumpDesktop.sln',
     '/p:Configuration=Release',
     '/p:Platform=x64',
+    '/p:_WindowsAppSDKFoundationPlatform=x64',
+    '/p:UseExperimentalNuget=true',
     '/p:AppxBundle=Always',
     '/p:UapAppxPackageBuildMode=StoreUpload',
   ]);
