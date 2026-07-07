@@ -51,13 +51,13 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
 #else
   // Load the JS bundle from Metro
   settings.JavaScriptBundleFile(L"index");
+  settings.DebugBundlePath(L"index");
   // Enable hot reload
   settings.UseFastRefresh(true);
 #endif
 #if _DEBUG
-  // For Debug builds
-  // Enable Direct Debugging of JS
-  settings.UseDirectDebugger(true);
+  // Direct debugger can crash new-arch RNW on ARM64; keep dev menu only.
+  settings.UseDirectDebugger(false);
   // Enable the Developer Menu
   settings.UseDeveloperSupport(true);
 #else

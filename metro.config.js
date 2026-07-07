@@ -29,6 +29,10 @@ const windowsShims = {
     __dirname,
     'src/shims/react-native-safe-area-context.windows.tsx',
   ),
+  'react-native-svg': path.resolve(
+    __dirname,
+    'src/shims/react-native-svg.windows.tsx',
+  ),
 };
 
 const config = {
