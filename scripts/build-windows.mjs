@@ -80,17 +80,59 @@ function getWasdkPlatform(arch) {
   }
 }
 
-function getReleaseExePath(arch) {
+function getReleaseExeCandidates(arch) {
   const platformDir = arch === 'x86' ? 'Win32' : arch;
-  return path.join(
-    ROOT_DIR,
-    `windows/${platformDir}/Release/GumpDesktop/GumpDesktop.exe`,
-  );
+  return [
+    path.join(ROOT_DIR, `windows/${platformDir}/Release/GumpDesktop.exe`),
+    path.join(
+      ROOT_DIR,
+      `windows/${platformDir}/Release/GumpDesktop/GumpDesktop.exe`,
+    ),
+    path.join(
+      ROOT_DIR,
+      `windows/GumpDesktop/${platformDir}/Release/GumpDesktop.exe`,
+    ),
+    path.join(
+      ROOT_DIR,
+      `windows/GumpDesktop/${platformDir}/Release/GumpDesktop/GumpDesktop.exe`,
+    ),
+  ];
+}
+
+function findReleaseExe(arch) {
+  const candidates = getReleaseExeCandidates(arch);
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  const platformDir = arch === 'x86' ? 'Win32' : arch;
+  const releaseRoot = path.join(ROOT_DIR, 'windows', platformDir, 'Release');
+  if (!fs.existsSync(releaseRoot)) {
+    return null;
+  }
+
+  const stack = [releaseRoot];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const entryPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(entryPath);
+        continue;
+      }
+      if (entry.name === 'GumpDesktop.exe') {
+        return entryPath;
+      }
+    }
+  }
+
+  return null;
 }
 
 const windowsArch = resolveWindowsArch();
 const wasdkPlatform = getWasdkPlatform(windowsArch);
-const WINDOWS_RELEASE_EXE = getReleaseExePath(windowsArch);
 
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
@@ -181,11 +223,14 @@ function buildExe() {
     `_WindowsAppSDKFoundationPlatform=${wasdkPlatform},UseExperimentalNuget=true`,
   ]);
 
-  if (!fs.existsSync(WINDOWS_RELEASE_EXE)) {
-    die(`Windows executable not found at ${WINDOWS_RELEASE_EXE}`);
+  const releaseExe = findReleaseExe(windowsArch);
+  if (!releaseExe) {
+    die(
+      `Windows executable not found under windows/${windowsArch === 'x86' ? 'Win32' : windowsArch}/Release. Expected GumpDesktop.exe`,
+    );
   }
 
-  copyArtifact(WINDOWS_RELEASE_EXE, path.join(DIST_DIR, 'windows'));
+  copyArtifact(releaseExe, path.join(DIST_DIR, 'windows'));
 }
 
 function buildMsix() {
