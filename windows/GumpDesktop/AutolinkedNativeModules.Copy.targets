@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Copy autolinked module DLLs beside GumpDesktop.exe in the native build output. -->
+  <PropertyGroup>
+    <_NativeModulePlatform Condition="'$(Platform)' == 'Win32'">Win32</_NativeModulePlatform>
+    <_NativeModulePlatform Condition="'$(Platform)' != 'Win32'">$(Platform)</_NativeModulePlatform>
+    <_NativeModuleOutputDir>$(SolutionDir)$(_NativeModulePlatform)\$(Configuration)</_NativeModuleOutputDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <_AutolinkedModuleDllCandidate Include="$(_NativeModuleOutputDir)\RNSVG.dll" />
+    <_AutolinkedModuleDllCandidate Include="$(_NativeModuleOutputDir)\RNSVG\RNSVG.dll" />
+    <_AutolinkedModuleDllCandidate Include="$(_NativeModuleOutputDir)\ReactNativeAsyncStorage.dll" />
+    <_AutolinkedModuleDllCandidate Include="$(_NativeModuleOutputDir)\ReactNativeAsyncStorage\ReactNativeAsyncStorage.dll" />
+  </ItemGroup>
+
+  <Target Name="CopyAutolinkedNativeModuleDllsToAppOutput" AfterTargets="Build">
+    <ItemGroup>
+      <_AutolinkedModuleDllToCopy Include="@(_AutolinkedModuleDllCandidate)" Condition="Exists('%(Identity)')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_AutolinkedModuleDllToCopy->Distinct())"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>
