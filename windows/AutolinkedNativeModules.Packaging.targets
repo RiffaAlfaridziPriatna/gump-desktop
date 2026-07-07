@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    Shared autolinked native module packaging for RNW apps.
+    Ensures RNSVG / AsyncStorage DLLs are built and copied beside GumpDesktop.exe.
+  -->
+  <PropertyGroup>
+    <_AutolinkRepoRoot>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)..\'))</_AutolinkRepoRoot>
+    <_AutolinkNativePlatform Condition="'$(Platform)' == 'x86'">Win32</_AutolinkNativePlatform>
+    <_AutolinkNativePlatform Condition="'$(Platform)' == 'Win32'">Win32</_AutolinkNativePlatform>
+    <_AutolinkNativePlatform Condition="'$(_AutolinkNativePlatform)' == ''">$(Platform)</_AutolinkNativePlatform>
+    <_AutolinkSolutionOutputDir>$([MSBuild]::NormalizePath('$(SolutionDir)$(_AutolinkNativePlatform)\$(Configuration)\'))</_AutolinkSolutionOutputDir>
+    <_AutolinkAppxEntryName>GumpDesktop</_AutolinkAppxEntryName>
+    <_AutolinkAppxEntryDir>$([MSBuild]::NormalizePath('$(OutDir)AppX\$(_AutolinkAppxEntryName)\'))</_AutolinkAppxEntryDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <_AutolinkedNativeModuleProject Include="$(_AutolinkRepoRoot)node_modules\react-native-svg\windows\RNSVG\RNSVG.vcxproj" />
+    <_AutolinkedNativeModuleProject Include="$(_AutolinkRepoRoot)node_modules\@react-native-async-storage\async-storage\windows\ReactNativeAsyncStorage\ReactNativeAsyncStorage.vcxproj" />
+  </ItemGroup>
+
+  <Target Name="BuildAutolinkedNativeModuleProjects">
+    <MSBuild Projects="@(_AutolinkedNativeModuleProject)"
+             Properties="Configuration=$(Configuration);Platform=$(_AutolinkNativePlatform);UseExperimentalNuget=true;RnwNewArch=true"
+             Targets="Build"
+             BuildInParallel="false">
+      <Output TaskParameter="TargetOutputs" ItemName="_AutolinkedBuiltOutput" />
+    </MSBuild>
+    <Message Importance="high" Text="Autolinked native module outputs: @(_AutolinkedBuiltOutput)" />
+  </Target>
+
+  <Target Name="CollectAutolinkedNativeModuleDlls"
+          DependsOnTargets="BuildAutolinkedNativeModuleProjects">
+    <ItemGroup>
+      <_AutolinkedModuleDllCandidate Include="@(_AutolinkedBuiltOutput)" Condition="'%(Extension)' == '.dll'" />
+      <_AutolinkedModuleDllCandidate Include="$(_AutolinkSolutionOutputDir)RNSVG.dll" />
+      <_AutolinkedModuleDllCandidate Include="$(_AutolinkSolutionOutputDir)RNSVG\RNSVG.dll" />
+      <_AutolinkedModuleDllCandidate Include="$(_AutolinkSolutionOutputDir)ReactNativeAsyncStorage.dll" />
+      <_AutolinkedModuleDllCandidate Include="$(_AutolinkSolutionOutputDir)ReactNativeAsyncStorage\ReactNativeAsyncStorage.dll" />
+      <_AutolinkedModuleDllCandidate Include="$(_AutolinkRepoRoot)node_modules\react-native-svg\windows\RNSVG\$(_AutolinkNativePlatform)\$(Configuration)\RNSVG.dll" />
+      <_AutolinkedModuleDllCandidate Include="$(_AutolinkRepoRoot)node_modules\@react-native-async-storage\async-storage\windows\ReactNativeAsyncStorage\$(_AutolinkNativePlatform)\$(Configuration)\ReactNativeAsyncStorage.dll" />
+    </ItemGroup>
+    <ItemGroup>
+      <_ResolvedAutolinkedModuleDll Include="@(_AutolinkedModuleDllCandidate)" Condition="Exists('%(Identity)')" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="CopyAutolinkedNativeModuleDllsToAppOutput"
+          AfterTargets="Build"
+          DependsOnTargets="CollectAutolinkedNativeModuleDlls"
+          Condition="'$(MSBuildProjectName)' == 'GumpDesktop'">
+    <Copy SourceFiles="@(_ResolvedAutolinkedModuleDll->Distinct())"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
+    <Error Condition="!Exists('$(OutDir)RNSVG.dll')"
+           Text="RNSVG.dll was not copied to $(OutDir). The RNSVG project may have failed to build for $(_AutolinkNativePlatform)/$(Configuration)." />
+  </Target>
+
+  <Target Name="IncludeAutolinkedNativeModuleDllsInPackage"
+          BeforeTargets="_ConvertItems"
+          DependsOnTargets="CollectAutolinkedNativeModuleDlls"
+          Condition="'$(MSBuildProjectExtension)' == '.wapproj'">
+    <ItemGroup>
+      <Content Include="@(_ResolvedAutolinkedModuleDll->Distinct())">
+        <Link>$(_AutolinkAppxEntryName)\%(Filename)%(Extension)</Link>
+        <DeploymentContent>true</DeploymentContent>
+      </Content>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="StageAutolinkedNativeModuleDllsInAppX"
+          BeforeTargets="CreateAppxPackage"
+          DependsOnTargets="CollectAutolinkedNativeModuleDlls"
+          Condition="'$(MSBuildProjectExtension)' == '.wapproj'">
+    <MakeDir Directories="$(_AutolinkAppxEntryDir)" Condition="!Exists('$(_AutolinkAppxEntryDir)')" />
+    <Copy SourceFiles="@(_ResolvedAutolinkedModuleDll->Distinct())"
+          DestinationFolder="$(_AutolinkAppxEntryDir)"
+          SkipUnchangedFiles="true" />
+    <Error Condition="!Exists('$(_AutolinkAppxEntryDir)RNSVG.dll')"
+           Text="RNSVG.dll was not staged to $(_AutolinkAppxEntryDir). Check that the RNSVG project builds for $(_AutolinkNativePlatform)/$(Configuration)." />
+  </Target>
+</Project>

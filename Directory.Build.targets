@@ -1,4 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildThisFileDirectory)windows\WindowsAppSdk.PlatformFix.targets" />
+  <!--
+    When autolinked module projects build, also publish their DLLs to the
+  solution output folder (windows\ARM64/Debug, etc.) for packaging targets.
+  -->
+  <Target Name="PublishAutolinkedModuleToSolutionOutput"
+          AfterTargets="Build"
+          Condition="'$(ConfigurationType)' == 'DynamicLibrary' And ('$(ProjectName)' == 'RNSVG' Or '$(ProjectName)' == 'ReactNativeAsyncStorage')">
+    <PropertyGroup>
+      <_PublishNativePlatform Condition="'$(Platform)' == 'Win32'">Win32</_PublishNativePlatform>
+      <_PublishNativePlatform Condition="'$(Platform)' != 'Win32'">$(Platform)</_PublishNativePlatform>
+      <_PublishSolutionOutputDir>$([MSBuild]::NormalizePath('$(SolutionDir)$(_PublishNativePlatform)\$(Configuration)\'))</_PublishSolutionOutputDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(_PublishSolutionOutputDir)" />
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFolder="$(_PublishSolutionOutputDir)"
+          SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="Published $(TargetFileName) to $(_PublishSolutionOutputDir)" />
+  </Target>
 </Project>

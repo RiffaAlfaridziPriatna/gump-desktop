@@ -1,48 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <!--
-    Autolinked native module DLLs (RNSVG, AsyncStorage, etc.) must be deployed
-    next to GumpDesktop.exe inside the AppX layout (AppX\GumpDesktop\).
-    Placing them at the AppX root causes REGDB_E_CLASSNOTREG / abort() at startup.
-  -->
-  <PropertyGroup>
-    <_NativeModulePlatform Condition="'$(Platform)' == 'x86'">Win32</_NativeModulePlatform>
-    <_NativeModulePlatform Condition="'$(Platform)' != 'x86'">$(Platform)</_NativeModulePlatform>
-    <_NativeModuleOutputDir>$(SolutionDir)$(_NativeModulePlatform)\$(Configuration)</_NativeModuleOutputDir>
-    <_RepoRoot>$(SolutionDir)..\</_RepoRoot>
-    <_AppxEntryName>GumpDesktop</_AppxEntryName>
-    <_AppxEntryDir>$(OutDir)AppX\$(_AppxEntryName)\</_AppxEntryDir>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <_AutolinkedModuleDllCandidate Include="$(_NativeModuleOutputDir)\RNSVG.dll" />
-    <_AutolinkedModuleDllCandidate Include="$(_NativeModuleOutputDir)\RNSVG\RNSVG.dll" />
-    <_AutolinkedModuleDllCandidate Include="$(_NativeModuleOutputDir)\ReactNativeAsyncStorage.dll" />
-    <_AutolinkedModuleDllCandidate Include="$(_NativeModuleOutputDir)\ReactNativeAsyncStorage\ReactNativeAsyncStorage.dll" />
-    <_AutolinkedModuleDllCandidate Include="$(_RepoRoot)node_modules\react-native-svg\windows\RNSVG\$(_NativeModulePlatform)\$(Configuration)\RNSVG.dll" />
-    <_AutolinkedModuleDllCandidate Include="$(_RepoRoot)node_modules\@react-native-async-storage\async-storage\windows\ReactNativeAsyncStorage\$(_NativeModulePlatform)\$(Configuration)\ReactNativeAsyncStorage.dll" />
-  </ItemGroup>
-
-  <Target Name="IncludeAutolinkedNativeModuleDllsInPackage" BeforeTargets="_ConvertItems">
-    <ItemGroup>
-      <_FoundAutolinkedModuleDll Include="@(_AutolinkedModuleDllCandidate)" Condition="Exists('%(Identity)')" />
-    </ItemGroup>
-    <ItemGroup>
-      <Content Include="@(_FoundAutolinkedModuleDll->Distinct())">
-        <Link>$(_AppxEntryName)\%(Filename)%(Extension)</Link>
-        <DeploymentContent>true</DeploymentContent>
-      </Content>
-    </ItemGroup>
-  </Target>
-
-  <!-- Ensure DLLs land beside GumpDesktop.exe even if Content staging misses them. -->
-  <Target Name="StageAutolinkedNativeModuleDllsInAppX" BeforeTargets="CreateAppxPackage">
-    <ItemGroup>
-      <_StageAutolinkedModuleDll Include="@(_AutolinkedModuleDllCandidate)" Condition="Exists('%(Identity)')" />
-    </ItemGroup>
-    <MakeDir Directories="$(_AppxEntryDir)" Condition="!Exists('$(_AppxEntryDir)')" />
-    <Copy SourceFiles="@(_StageAutolinkedModuleDll->Distinct())"
-          DestinationFolder="$(_AppxEntryDir)"
-          SkipUnchangedFiles="true" />
-  </Target>
+  <Import Project="AutolinkedNativeModules.Packaging.targets" />
 </Project>
