@@ -2,16 +2,20 @@ import {PhotoMasonryGrid} from '@components/photo/PhotoMasonryGrid';
 import {UploadToast} from '@components/upload/UploadToast';
 import {
   useCulledAlbumActions,
+  useCulledAlbumLocalImportProgress,
   useCulledAlbumPhotosState,
+  useCulledAlbumStore,
 } from '@context/culledAlbum';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
+import {useThrottledValue} from '@hooks/useThrottledValue';
+import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {useLayout} from '@hooks/useLayout';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useIsFocused} from '@react-navigation/native';
-import {useEffect, useMemo, useRef, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
@@ -24,18 +28,26 @@ import IconChevronLeft from '../assets/images/icon_chevron_left.svg';
 import IconScissors from '../assets/images/icon_scissors.svg';
 import GumpLogo from '../assets/images/logo.svg';
 
+const GRID_UPDATE_THROTTLE_MS = 300;
+
 type Props = StackScreenProps<MainStackParamList, 'AlbumDetail'>;
 
-export default function AlbumDetailScreen({navigation, route}: Props) {
-  const {albumId, albumName, ownerName, files} = route.params;
-  const {isMobileLayout, screenPaddingHorizontal} = useLayout();
-  const isFocused = useIsFocused();
+type AlbumDetailBodyProps = {
+  albumId: string;
+  screenPaddingHorizontal: number;
+  skipInitialLoad: boolean;
+};
+
+function AlbumDetailBody({
+  albumId,
+  screenPaddingHorizontal,
+  skipInitialLoad,
+}: AlbumDetailBodyProps) {
   const albumPhotos = useCulledAlbumPhotosState(albumId);
-  const {addPhotos, resumeLocalImport, startAnalysis} = useCulledAlbumActions();
-  const startedRef = useRef(false);
-  const [cullingActive, setCullingActive] = useState(false);
-  const {photos, loadingPhotos, loadError, reloadPhotos} =
-    useCulledAlbumPhotos(albumId, {skipInitialLoad: Boolean(files?.length)});
+  const {photos, loadingPhotos, loadError, reloadPhotos} = useCulledAlbumPhotos(
+    albumId,
+    {skipInitialLoad: skipInitialLoad || albumPhotos.length > 0},
+  );
 
   const isUploading = albumPhotos.some(
     photo => photo.status === 'pending' || photo.status === 'uploading',
@@ -43,20 +55,6 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   const uploadedCount = albumPhotos.filter(
     photo => photo.status === 'uploaded',
   ).length;
-  const analyzePhotos = useMemo(
-    () => albumPhotos.filter(photo => photo.analysisStatus !== 'idle'),
-    [albumPhotos],
-  );
-  const isAnalysisComplete =
-    analyzePhotos.length > 0 &&
-    analyzePhotos.every(
-      photo =>
-        photo.analysisStatus === 'analyzed' ||
-        photo.analysisStatus === 'failed',
-    );
-  const hasAnalyzedPhotos = analyzePhotos.some(
-    photo => photo.analysisStatus === 'analyzed',
-  );
 
   const displayPhotos = useMemo(() => {
     const uploaded = albumPhotos
@@ -76,31 +74,14 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     [albumPhotos],
   );
 
-  const totalPhotos =
-    albumPhotos.length > 0 ? albumPhotos.length : photos.length;
-  const isAnalysisInProgress = albumPhotos.some(
-    photo =>
-      photo.analysisStatus === 'pending' || photo.analysisStatus === 'analyzing',
+  const throttledDisplayPhotos = useThrottledValue(
+    displayPhotos,
+    GRID_UPDATE_THROTTLE_MS,
   );
-  const isCullingInProgress =
-    (cullingActive || isAnalysisInProgress) && !isAnalysisComplete;
-
-  useEffect(() => {
-    if (isAnalysisInProgress) {
-      setCullingActive(true);
-    }
-  }, [isAnalysisInProgress]);
-
-  useEffect(() => {
-    if (files && files.length > 0 && !startedRef.current) {
-      startedRef.current = true;
-      addPhotos(albumId, files);
-    }
-  }, [addPhotos, albumId, files]);
-
-  useEffect(() => {
-    resumeLocalImport(albumId);
-  }, [albumId, resumeLocalImport]);
+  const throttledPlaceholderCount = useThrottledValue(
+    placeholderCount,
+    GRID_UPDATE_THROTTLE_MS,
+  );
 
   useEffect(() => {
     if (!isUploading && uploadedCount > 0) {
@@ -108,19 +89,126 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     }
   }, [isUploading, reloadPhotos, uploadedCount]);
 
+  if (loadingPhotos && photos.length === 0 && albumPhotos.length === 0) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <View style={styles.loading}>
+        <Text style={styles.errorText}>{loadError}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <>
+      <PhotoMasonryGrid
+        items={throttledDisplayPhotos}
+        placeholderCount={Math.min(throttledPlaceholderCount, 12)}
+        horizontalPadding={screenPaddingHorizontal}
+      />
+      <UploadToast mode="upload" albumId={albumId} />
+      <UploadToast mode="analyze" albumId={albumId} />
+    </>
+  );
+}
+
+export default function AlbumDetailScreen({navigation, route}: Props) {
+  useUploadAwareModalScreen(navigation, route.params.instant);
+  const {albumId, albumName, ownerName, skipResumeImport} = route.params;
+  const {isMobileLayout, screenPaddingHorizontal} = useLayout();
+  const isFocused = useIsFocused();
+  const {resumeLocalImport, startAnalysis} = useCulledAlbumActions();
+  const [cullingActive, setCullingActive] = useState(false);
+
+  const localImportProgress = useCulledAlbumLocalImportProgress(albumId);
+  const totalPhotos = useCulledAlbumStore(
+    state => state.albums[albumId]?.totalPhotos ?? 0,
+  );
+
+  const isUploading =
+    (localImportProgress?.pending ?? 0) + (localImportProgress?.uploading ?? 0) >
+    0;
+  const hasUploadedPhotos =
+    (localImportProgress?.uploaded ?? 0) > 0 ||
+    (!isUploading && totalPhotos > 0);
+
+  const cullingSnapshot = useCulledAlbumStore(state => {
+    const album = state.albums[albumId];
+    if (!album?.analysisBatchPhotoIds.length) {
+      return {
+        inProgress: false,
+        complete: false,
+        hasAnalyzed: false,
+      };
+    }
+
+    let inProgress = false;
+    let complete = true;
+    let hasAnalyzed = false;
+
+    for (const photoId of album.analysisBatchPhotoIds) {
+      const photo = album.photos.find(entry => entry.photoId === photoId);
+      if (!photo) {
+        continue;
+      }
+      if (
+        photo.analysisStatus === 'pending' ||
+        photo.analysisStatus === 'analyzing'
+      ) {
+        inProgress = true;
+        complete = false;
+      }
+      if (
+        photo.analysisStatus !== 'analyzed' &&
+        photo.analysisStatus !== 'failed'
+      ) {
+        complete = false;
+      }
+      if (photo.analysisStatus === 'analyzed') {
+        hasAnalyzed = true;
+      }
+    }
+
+    return {inProgress, complete, hasAnalyzed};
+  });
+
+  const isCullingInProgress =
+    (cullingActive || cullingSnapshot.inProgress) && !cullingSnapshot.complete;
+
+  const displayTotalPhotos = totalPhotos;
+
   useEffect(() => {
-    if (!cullingActive || !isAnalysisComplete || hasAnalyzedPhotos) {
+    if (cullingSnapshot.inProgress) {
+      setCullingActive(true);
+    }
+  }, [cullingSnapshot.inProgress]);
+
+  useEffect(() => {
+    if (skipResumeImport) {
+      return;
+    }
+    resumeLocalImport(albumId);
+  }, [albumId, resumeLocalImport, skipResumeImport]);
+
+  useEffect(() => {
+    if (!cullingActive || !cullingSnapshot.complete || cullingSnapshot.hasAnalyzed) {
       return;
     }
     setCullingActive(false);
-  }, [cullingActive, hasAnalyzedPhotos, isAnalysisComplete]);
+  }, [cullingActive, cullingSnapshot.complete, cullingSnapshot.hasAnalyzed]);
 
   useEffect(() => {
     if (
       !isFocused ||
       !cullingActive ||
-      !isAnalysisComplete ||
-      !hasAnalyzedPhotos
+      !cullingSnapshot.complete ||
+      !cullingSnapshot.hasAnalyzed
     ) {
       return;
     }
@@ -128,14 +216,14 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   }, [
     albumId,
     cullingActive,
-    hasAnalyzedPhotos,
-    isAnalysisComplete,
+    cullingSnapshot.complete,
+    cullingSnapshot.hasAnalyzed,
     isFocused,
     navigation,
   ]);
 
-  async function handleStartCulling() {
-    if (displayPhotos.length === 0 || isUploading || cullingActive) {
+  function handleStartCulling() {
+    if (!hasUploadedPhotos || isUploading || cullingActive) {
       return;
     }
     setCullingActive(true);
@@ -177,19 +265,19 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
           ]}>
           <Text style={styles.totalPhotos}>
             Total Photos{' '}
-            <Text style={styles.totalPhotosValue}>{totalPhotos}</Text>
+            <Text style={styles.totalPhotosValue}>{displayTotalPhotos}</Text>
           </Text>
           <TouchableOpacity
             style={[
               styles.cullingButton,
               isCullingInProgress && styles.cullingButtonInProgress,
-              (isUploading || displayPhotos.length === 0 || cullingActive) &&
+              (isUploading || !hasUploadedPhotos || cullingActive) &&
                 !isCullingInProgress &&
                 styles.cullingButtonDisabled,
             ]}
             disabled={
               isUploading ||
-              displayPhotos.length === 0 ||
+              !hasUploadedPhotos ||
               (cullingActive && !isCullingInProgress)
             }
             onPress={handleStartCulling}
@@ -210,23 +298,11 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         </View>
       </View>
 
-      {loadingPhotos && photos.length === 0 && albumPhotos.length === 0 ? (
-        <View style={styles.loading}>
-          <ActivityIndicator size="large" color={colors.accent} />
-        </View>
-      ) : loadError ? (
-        <View style={styles.loading}>
-          <Text style={styles.errorText}>{loadError}</Text>
-        </View>
-      ) : isFocused ? (
-        <PhotoMasonryGrid
-          items={displayPhotos}
-          placeholderCount={Math.min(placeholderCount, 12)}
-          horizontalPadding={screenPaddingHorizontal}
-        />
-      ) : null}
-      <UploadToast mode="upload" albumId={albumId} />
-      <UploadToast mode="analyze" albumId={albumId} />
+      <AlbumDetailBody
+        albumId={albumId}
+        screenPaddingHorizontal={screenPaddingHorizontal}
+        skipInitialLoad={totalPhotos > 0}
+      />
     </SafeAreaView>
   );
 }
