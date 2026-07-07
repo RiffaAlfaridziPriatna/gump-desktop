@@ -72,6 +72,11 @@ const config = {
       }
 
       if (platform === 'windows') {
+        const origin = (context && context.originModulePath) || '';
+        const isFromBlur =
+          origin.includes(`${path.sep}node_modules${path.sep}@react-native-community${path.sep}blur${path.sep}`) ||
+          origin.includes(`/node_modules/@react-native-community/blur/`);
+
         for (const [prefix, shimPath] of Object.entries(windowsShims)) {
           if (moduleName === prefix || moduleName.startsWith(`${prefix}/`)) {
             return {
@@ -79,6 +84,18 @@ const config = {
               type: 'sourceFile',
             };
           }
+        }
+
+        // Some packages (e.g. @react-native-community/blur) publish a generic
+        // react-native entry which imports platform-specific files. On Windows
+        // they may not exist, causing relative imports to fail. If we are
+        // currently resolving a relative import from within the blur package,
+        // redirect it to our Windows shim.
+        if (isFromBlur && moduleName.startsWith('./components/')) {
+          return {
+            filePath: windowsShims['@react-native-community/blur'],
+            type: 'sourceFile',
+          };
         }
 
         if (
