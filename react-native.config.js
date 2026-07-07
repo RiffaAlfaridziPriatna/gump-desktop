@@ -37,7 +37,7 @@ module.exports = {
     },
     'react-native-svg': {
       platforms: {
-        windows: null,
+        windows: process.env.USE_NATIVE_SVG === '1' ? {} : null,
       },
     },
   },
