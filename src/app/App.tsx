@@ -5,7 +5,6 @@ import {ErrorToast} from '@components/error';
 import {colors} from '@lib/colors';
 import {DefaultTheme, NavigationContainer} from '@react-navigation/native';
 import {ActivityIndicator, Platform, StyleSheet, View} from 'react-native';
-import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import 'reflect-metadata';
 import {AuthNavigator} from './AuthNavigator';
@@ -48,7 +47,10 @@ function RootNavigator() {
   return isAuthenticated ? <MainNavigator /> : <AuthNavigator />;
 }
 
-const AppRoot = Platform.OS === 'windows' ? View : GestureHandlerRootView;
+const AppRoot =
+  Platform?.OS === 'windows'
+    ? View
+    : require('react-native-gesture-handler').GestureHandlerRootView;
 
 export default function App() {
   return (

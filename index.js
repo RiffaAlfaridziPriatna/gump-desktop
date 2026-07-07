@@ -1,10 +1,10 @@
-import {AppRegistry, Platform} from 'react-native';
+const ReactNative = require('react-native');
 
-if (Platform.OS !== 'windows') {
+if (ReactNative.Platform?.OS && ReactNative.Platform.OS !== 'windows') {
   require('react-native-gesture-handler');
 }
 
-import App from './src/app/App';
-import {name as appName} from './app.json';
+const App = require('./src/app/App').default;
+const {name: appName} = require('./app.json');
 
-AppRegistry.registerComponent(appName, () => App);
+ReactNative.AppRegistry.registerComponent(appName, () => App);
