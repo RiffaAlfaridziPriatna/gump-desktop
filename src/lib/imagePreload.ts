@@ -6,6 +6,10 @@ const DEFAULT_CONCURRENCY = 4;
 const prefetchedUris = new Set<string>();
 const inflight = new Map<string, Promise<void>>();
 
+export function isImagePrefetched(uri: string): boolean {
+  return Boolean(uri) && prefetchedUris.has(uri);
+}
+
 export function preloadImage(uri: string): Promise<void> {
   if (!uri) {
     return Promise.resolve();

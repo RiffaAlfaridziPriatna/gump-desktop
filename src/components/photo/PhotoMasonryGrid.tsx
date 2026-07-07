@@ -1,29 +1,28 @@
+import {MasonryPhotoColumn} from '@components/photo/MasonryPhotoColumn';
+import {MasonryPhotoTileItem} from '@components/photo/MasonryPhotoTile';
 import {usePhotoDimensions} from '@hooks/usePhotoDimensions';
-import {colors} from '@lib/colors';
+import {useThrottledValue} from '@hooks/useThrottledValue';
 import {
   DEFAULT_ASPECT_HEIGHT,
   DEFAULT_ASPECT_WIDTH,
   distributeToColumns,
   getColumnCount,
   getColumnWidth,
-  getItemHeight,
+  getMasonryColumnContentHeight,
   MASONRY_GAP,
-  MasonryLayoutItem,
 } from '@lib/masonryLayout';
 import {FileAsset} from '@services/upload/types';
-import {useMemo, useState} from 'react';
+import {useCallback, useMemo, useState} from 'react';
 import {
-  Image,
   LayoutChangeEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
 
-type MasonryPhotoItem = MasonryLayoutItem & {
-  uri: string;
-  isPlaceholder?: boolean;
-};
+type MasonryPhotoItem = MasonryPhotoTileItem;
 
 export type PhotoMasonryGridProps = {
   items: FileAsset[];
@@ -31,6 +30,10 @@ export type PhotoMasonryGridProps = {
   horizontalPadding?: number;
   placeholderCount?: number;
 };
+
+const CONTENT_PADDING_TOP = 16;
+const CONTENT_PADDING_BOTTOM = 32;
+const SCROLL_WINDOW_THROTTLE_MS = 32;
 
 function buildLayoutItems(
   items: FileAsset[],
@@ -70,6 +73,12 @@ export function PhotoMasonryGrid({
 }: PhotoMasonryGridProps) {
   const {dimensions} = usePhotoDimensions(items);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const throttledScrollOffset = useThrottledValue(
+    scrollOffset,
+    SCROLL_WINDOW_THROTTLE_MS,
+  );
 
   const layoutItems = useMemo(
     () => buildLayoutItems(items, dimensions, placeholderCount),
@@ -90,10 +99,38 @@ export function PhotoMasonryGrid({
     return distributeToColumns(layoutItems, columnCount, columnWidth, gap);
   }, [columnCount, columnWidth, gap, layoutItems]);
 
-  function onLayout(event: LayoutChangeEvent) {
-    const width = event.nativeEvent.layout.width;
+  const maxColumnHeight = useMemo(() => {
+    if (columnWidth <= 0 || columns.length === 0) {
+      return 0;
+    }
+
+    return Math.max(
+      ...columns.map(column =>
+        getMasonryColumnContentHeight(
+          column,
+          columnWidth,
+          gap,
+          CONTENT_PADDING_TOP,
+          CONTENT_PADDING_BOTTOM,
+        ),
+      ),
+    );
+  }, [columnWidth, columns, gap]);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      setScrollOffset(event.nativeEvent.contentOffset.y);
+    },
+    [],
+  );
+
+  function onContainerLayout(event: LayoutChangeEvent) {
+    const {width, height} = event.nativeEvent.layout;
     if (width > 0 && width !== containerWidth) {
       setContainerWidth(width);
+    }
+    if (height > 0 && height !== viewportHeight) {
+      setViewportHeight(height);
     }
   }
 
@@ -102,66 +139,49 @@ export function PhotoMasonryGrid({
   }
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={[
-        styles.content,
-        {paddingHorizontal: horizontalPadding},
-      ]}>
-      <View style={[styles.row, {gap}]} onLayout={onLayout}>
-        {columnWidth > 0
-          ? columns.map((column, columnIndex) => (
-              <View key={columnIndex} style={[styles.column, {gap}]}>
-                {column.map(item => {
-                  const height = getItemHeight(
-                    columnWidth,
-                    item.width,
-                    item.height,
-                  );
-                  if (item.isPlaceholder) {
-                    return (
-                      <View
-                        key={item.id}
-                        style={[
-                          styles.placeholder,
-                          {width: columnWidth, height},
-                        ]}
-                      />
-                    );
-                  }
-                  return (
-                    <Image
-                      key={item.id}
-                      source={{uri: item.uri}}
-                      style={{width: columnWidth, height}}
-                      resizeMode="cover"
-                    />
-                  );
-                })}
-              </View>
-            ))
-          : null}
-      </View>
-    </ScrollView>
+    <View
+      style={[styles.container, {paddingHorizontal: horizontalPadding}]}
+      onLayout={onContainerLayout}>
+      {columnWidth > 0 && maxColumnHeight > 0 ? (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={{height: maxColumnHeight}}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator
+          bounces={false}
+          alwaysBounceVertical={false}
+          overScrollMode="never"
+          onScroll={handleScroll}>
+          <View style={[styles.row, {gap, height: maxColumnHeight}]}>
+            {columns.map((column, columnIndex) => (
+              <MasonryPhotoColumn
+                key={columnIndex}
+                items={column}
+                columnWidth={columnWidth}
+                gap={gap}
+                columnHeight={maxColumnHeight}
+                contentPaddingTop={CONTENT_PADDING_TOP}
+                contentPaddingBottom={CONTENT_PADDING_BOTTOM}
+                scrollOffset={throttledScrollOffset}
+                viewportHeight={viewportHeight}
+              />
+            ))}
+          </View>
+        </ScrollView>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: {
+  container: {
     flex: 1,
   },
-  content: {
-    paddingTop: 16,
-    paddingBottom: 32,
+  scroll: {
+    flex: 1,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-  },
-  column: {
-    flex: 1,
-  },
-  placeholder: {
-    backgroundColor: colors.border,
   },
 });

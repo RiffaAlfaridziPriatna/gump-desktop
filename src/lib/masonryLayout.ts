@@ -36,6 +36,49 @@ export function getItemHeight(
   return columnWidth * (height / width);
 }
 
+export type MasonryColumnLayoutEntry = {
+  length: number;
+  offset: number;
+  index: number;
+  itemHeight: number;
+};
+
+export function buildMasonryColumnLayouts(
+  items: MasonryLayoutItem[],
+  columnWidth: number,
+  gap: number,
+): MasonryColumnLayoutEntry[] {
+  let offset = 0;
+
+  return items.map((item, index) => {
+    const itemHeight = getItemHeight(columnWidth, item.width, item.height);
+    const entry = {
+      length: itemHeight + gap,
+      offset,
+      index,
+      itemHeight,
+    };
+    offset += entry.length;
+    return entry;
+  });
+}
+
+export function getMasonryColumnContentHeight(
+  items: MasonryLayoutItem[],
+  columnWidth: number,
+  gap: number,
+  paddingTop: number,
+  paddingBottom: number,
+): number {
+  if (items.length === 0) {
+    return paddingTop + paddingBottom;
+  }
+
+  const layouts = buildMasonryColumnLayouts(items, columnWidth, gap);
+  const last = layouts[layouts.length - 1];
+  return paddingTop + last.offset + last.itemHeight + paddingBottom;
+}
+
 export function distributeToColumns<T extends MasonryLayoutItem>(
   items: T[],
   columnCount: number,
