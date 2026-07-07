@@ -5,10 +5,9 @@ import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useDeleteCulledAlbum} from '@hooks/useDeleteCulledAlbum';
 import {useLayout} from '@hooks/useLayout';
 import {toAlbumCardModel} from '@lib/culledAlbum/format';
-import {resolveCulledAlbumRoute} from '@lib/culledAlbum/service';
-import {culledAlbumStore} from '@lib/culledAlbum/store';
+import {navigateToCulledAlbum} from '@lib/culledAlbum/navigateToCulledAlbum';
 import {CulledAlbumListItem} from '@lib/culledAlbum/types';
-import {preloadImages} from '@lib/imagePreload';
+import {uploadAwareRouteParams} from '@lib/navigation/uploadAwareNavigation';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
 import {MainStackParamList} from '../app/MainNavigator';
@@ -61,25 +60,11 @@ export default function HomeScreen({navigation}: Props) {
       return;
     }
 
-    const params = {
-      albumId: album.albumId,
-      albumName: album.title ?? album.name,
-      ownerName: user && user.role !== 'guest' ? user.name : album.name,
-    };
-
-    const route = await resolveCulledAlbumRoute(album.albumId);
-
-    if (route === 'CulledAlbumDetail') {
-      const storedPhotos =
-        culledAlbumStore.getState().albums[album.albumId]?.photos ?? [];
-      const uris = storedPhotos
-        .filter(photo => photo.status === 'uploaded')
-        .slice(0, 8)
-        .map(photo => photo.file.uri);
-      preloadImages(uris).catch(() => undefined);
-    }
-
-    navigation.navigate(route, params);
+    await navigateToCulledAlbum(
+      navigation,
+      album,
+      user && user.role !== 'guest' ? user.name : album.name,
+    );
   }
 
   function handlePressMore(albumId: string) {
@@ -138,7 +123,9 @@ export default function HomeScreen({navigation}: Props) {
             </View>
             <TouchableOpacity
               style={styles.cullingButton}
-              onPress={() => navigation.navigate('SelectAlbum')}
+              onPress={() =>
+                navigation.navigate('SelectAlbum', uploadAwareRouteParams())
+              }
               activeOpacity={0.8}>
               <Text style={styles.cullingButtonText}>Start New Culling</Text>
               <IconChevronRight width={24} height={24} color={colors.white} />
@@ -207,7 +194,9 @@ export default function HomeScreen({navigation}: Props) {
 
             <TouchableOpacity
               style={styles.emptyCard}
-              onPress={() => navigation.navigate('SelectAlbum')}
+              onPress={() =>
+                navigation.navigate('SelectAlbum', uploadAwareRouteParams())
+              }
               activeOpacity={0.7}>
               <ImageCheckIcon width={40} height={40} color={colors.accent} />
               <Text style={styles.emptyCardLabel}>Select Existing Album</Text>

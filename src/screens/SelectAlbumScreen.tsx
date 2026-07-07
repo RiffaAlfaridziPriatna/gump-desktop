@@ -5,8 +5,10 @@ import {useCulledAlbumActions} from '@context/culledAlbum';
 import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useSiteAlbumList} from '@hooks/useSiteAlbumList';
 import {useLayout} from '@hooks/useLayout';
+import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {filterAvailableSourceAlbums} from '@lib/culledAlbum/selectAlbum';
 import {registerLocalAlbum} from '@lib/culledAlbum/store';
+import {uploadAwareParams} from '@lib/navigation/uploadAwareNavigation';
 import {createCulledAlbumFromSelection} from '@lib/culledAlbum/types';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
@@ -14,7 +16,7 @@ import {MainStackParamList} from '../app/MainNavigator';
 import {APIResponse, FileAsset} from '@services/api';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useFocusEffect} from '@react-navigation/native';
-import {useCallback, useMemo, useState} from 'react';
+import {useCallback, useMemo, useRef, useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
@@ -31,7 +33,8 @@ import GumpLogo from '../assets/images/logo.svg';
 
 type Props = StackScreenProps<MainStackParamList, 'SelectAlbum'>;
 
-export default function SelectAlbumScreen({navigation}: Props) {
+export default function SelectAlbumScreen({navigation, route}: Props) {
+  useUploadAwareModalScreen(navigation, route.params?.instant);
   const user = useAuthState(state => state.user);
   const {
     isMobileLayout,
@@ -48,9 +51,13 @@ export default function SelectAlbumScreen({navigation}: Props) {
   );
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const isLeavingRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
+      if (isLeavingRef.current) {
+        return;
+      }
       refresh();
       refreshLocalAlbums();
     }, [refresh, refreshLocalAlbums]),
@@ -89,21 +96,25 @@ export default function SelectAlbumScreen({navigation}: Props) {
       const localAlbum = createCulledAlbumFromSelection(selectedAlbum);
       await registerLocalAlbum(localAlbum);
       addPhotos(localAlbum.albumId, files);
-      navigation.replace('AlbumDetail', {
-        albumId: localAlbum.albumId,
-        albumName: localAlbum.title ?? localAlbum.name,
-        ownerName:
-          user && user.role !== 'guest' ? user.name : selectedAlbum.name,
-      });
+      isLeavingRef.current = true;
+      navigation.replace(
+        'AlbumDetail',
+        uploadAwareParams({
+          albumId: localAlbum.albumId,
+          albumName: localAlbum.title ?? localAlbum.name,
+          ownerName:
+            user && user.role !== 'guest' ? user.name : selectedAlbum.name,
+          skipResumeImport: true,
+        }),
+      );
     } catch (error) {
+      setStarting(false);
       setStartError(
         error instanceof Error
           ? error.message
           : 'Failed to start culling session',
       );
       setShowUploadModal(true);
-    } finally {
-      setStarting(false);
     }
   }
 

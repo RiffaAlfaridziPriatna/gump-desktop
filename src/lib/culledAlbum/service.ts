@@ -1,5 +1,5 @@
 import {deleteLocalAlbumFiles} from '@lib/localStorage';
-import {clearAlbumData, loadAlbumIntoStore} from './store';
+import {clearAlbumData, culledAlbumStore, loadAlbumIntoStore} from './store';
 import {CulledAlbum, hasInFlightAnalysis} from './types';
 
 export async function purgeLocalCulledAlbum(albumId: string): Promise<void> {
@@ -25,6 +25,19 @@ export function shouldOpenCulledDetailScreen(
   }
 
   return localAlbum.photos.some(photo => photo.analysisStatus === 'analyzed');
+}
+
+export function resolveCulledAlbumRouteFromMemory(
+  albumId: string,
+): 'AlbumDetail' | 'CulledAlbumDetail' | null {
+  const localAlbum = culledAlbumStore.getState().albums[albumId] ?? null;
+  if (!localAlbum) {
+    return null;
+  }
+
+  return shouldOpenCulledDetailScreen(localAlbum)
+    ? 'CulledAlbumDetail'
+    : 'AlbumDetail';
 }
 
 export async function resolveCulledAlbumRoute(

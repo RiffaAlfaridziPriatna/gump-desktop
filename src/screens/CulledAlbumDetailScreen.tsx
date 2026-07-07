@@ -19,7 +19,7 @@ import {useCulledAlbumDetailData} from '@hooks/useCulledAlbumDetailData';
 import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
 import {usePreloadGridImages} from '@hooks/usePreloadGridImages';
 import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
-import {useScreenTransitionEnd} from '@hooks/useScreenTransitionEnd';
+import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {resolveKeyFaceSource} from '@lib/cullingFaceCrop';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {preloadImage} from '@lib/imagePreload';
@@ -32,7 +32,7 @@ import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useLayout} from '@hooks/useLayout';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {ActivityIndicator, StyleSheet, Text, View} from 'react-native';
+import {StyleSheet, Text, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import IconNoPhoto from '../assets/images/icon_no_photo.svg';
 
@@ -42,8 +42,8 @@ const DESKTOP_SIDEBAR_WIDTH = 246;
 const CONTENT_COLUMN_GAP = 24;
 
 export default function CulledAlbumDetailScreen({navigation, route}: Props) {
+  useUploadAwareModalScreen(navigation, route.params.instant);
   const {albumId} = route.params;
-  const transitionEnded = useScreenTransitionEnd(navigation);
   const {startSelectedUpload} = useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
 
@@ -259,31 +259,26 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           paddingHorizontal={screenPaddingHorizontal}
         />
 
-        {!transitionEnded ? (
-          <>
-            <View style={styles.mainLoading}>
-              <ActivityIndicator size="large" color={colors.accent} />
-            </View>
-            <View style={styles.layoutProbe} pointerEvents="none">
+        {mainContentWidth === 0 && (
+          <View style={styles.layoutProbe} pointerEvents="none">
+            <View
+              style={[
+                styles.content,
+                {paddingHorizontal: screenPaddingHorizontal},
+                isMobileLayout && styles.contentMobile,
+              ]}>
+              {!isMobileLayout && <View style={styles.sidebarProbe} />}
               <View
-                style={[
-                  styles.content,
-                  {paddingHorizontal: screenPaddingHorizontal},
-                  isMobileLayout && styles.contentMobile,
-                ]}>
-                {!isMobileLayout && (
-                  <View style={styles.sidebarProbe} />
-                )}
-                <View
-                  style={styles.mainColumn}
-                  onLayout={event =>
-                    setMainContentWidth(event.nativeEvent.layout.width)
-                  }
-                />
-              </View>
+                style={styles.mainColumn}
+                onLayout={event =>
+                  setMainContentWidth(event.nativeEvent.layout.width)
+                }
+              />
             </View>
-          </>
-        ) : loadError ? (
+          </View>
+        )}
+
+        {loadError ? (
           <View style={styles.mainLoading}>
             <Text style={styles.errorText}>{loadError}</Text>
           </View>
