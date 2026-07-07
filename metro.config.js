@@ -20,6 +20,17 @@ const rnwPath = fs.realpathSync(
   path.resolve(require.resolve('react-native-windows/package.json'), '..'),
 );
 
+const windowsShims = {
+  'react-native-screens': path.resolve(
+    __dirname,
+    'src/shims/react-native-screens.windows.tsx',
+  ),
+  'react-native-safe-area-context': path.resolve(
+    __dirname,
+    'src/shims/react-native-safe-area-context.windows.tsx',
+  ),
+};
+
 const config = {
   resolver: {
     ...defaultConfig.resolver,
@@ -52,21 +63,14 @@ const config = {
         }
       }
 
-      // react-native-screens has no Windows native module on RNW new arch.
-      // @react-navigation/stack still requires it, so use a View-based shim.
       if (platform === 'windows') {
-        const targetIsScreens =
-          moduleName === 'react-native-screens' ||
-          moduleName.startsWith('react-native-screens/');
-
-        if (targetIsScreens) {
-          return {
-            filePath: path.resolve(
-              __dirname,
-              'src/shims/react-native-screens.windows.tsx',
-            ),
-            type: 'sourceFile',
-          };
+        for (const [prefix, shimPath] of Object.entries(windowsShims)) {
+          if (moduleName === prefix || moduleName.startsWith(`${prefix}/`)) {
+            return {
+              filePath: shimPath,
+              type: 'sourceFile',
+            };
+          }
         }
       }
 

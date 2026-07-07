@@ -1,6 +1,13 @@
 import {colors} from '@lib/colors';
+import {
+  InstantNavParams,
+  modalSlideFromBottomOptions,
+  uploadAwareModalScreenOptions,
+  WithInstantNav,
+} from '@lib/navigation/uploadAwareNavigation';
 import {FileAsset} from '@services/api';
-import {createStackNavigator, TransitionPresets} from '@react-navigation/stack';
+import {createStackNavigator} from '@react-navigation/stack';
+import {Platform} from 'react-native';
 import AlbumDetailScreen from '@screens/AlbumDetailScreen';
 import CulledAlbumDetailScreen from '@screens/CulledAlbumDetailScreen';
 import CulledAlbumPhotoDetailScreen from '@screens/CulledAlbumPhotoDetailScreen';
@@ -11,16 +18,17 @@ import SelectAlbumScreen from '@screens/SelectAlbumScreen';
 
 export type MainStackParamList = {
   Home: undefined;
-  SelectAlbum: undefined;
-  AlbumDetail: {
+  SelectAlbum: InstantNavParams | undefined;
+  AlbumDetail: WithInstantNav<{
     albumId: string;
     albumName: string;
     ownerName: string;
     files?: FileAsset[];
-  };
-  CulledAlbumDetail: {
+    skipResumeImport?: boolean;
+  }>;
+  CulledAlbumDetail: WithInstantNav<{
     albumId: string;
-  };
+  }>;
   CulledAlbumPhotoDetail: {
     albumId: string;
     photoId: string;
@@ -46,67 +54,39 @@ export function MainNavigator() {
       screenOptions={{
         headerShown: false,
         cardStyle: {backgroundColor: colors.background},
+        animationTypeForReplace: 'push',
+        freezeOnBlur: Platform.OS !== 'windows',
       }}>
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen
         name="SelectAlbum"
         component={SelectAlbumScreen}
-        options={{
-          animation: 'slide_from_bottom',
-          ...TransitionPresets.ModalSlideFromBottomIOS,
-          cardOverlayEnabled: true,
-          gestureEnabled: true,
-        }}
+        options={uploadAwareModalScreenOptions}
       />
       <Stack.Screen
         name="AlbumDetail"
         component={AlbumDetailScreen}
-        options={{
-          animation: 'slide_from_bottom',
-          ...TransitionPresets.ModalSlideFromBottomIOS,
-          cardOverlayEnabled: true,
-          gestureEnabled: true,
-        }}
+        options={uploadAwareModalScreenOptions}
       />
       <Stack.Screen
         name="CulledAlbumDetail"
         component={CulledAlbumDetailScreen}
-        options={{
-          animation: 'slide_from_bottom',
-          ...TransitionPresets.ModalSlideFromBottomIOS,
-          cardOverlayEnabled: true,
-          gestureEnabled: true,
-        }}
+        options={uploadAwareModalScreenOptions}
       />
       <Stack.Screen
         name="CulledAlbumPhotoDetail"
         component={CulledAlbumPhotoDetailScreen}
-        options={{
-          animation: 'slide_from_bottom',
-          ...TransitionPresets.ModalSlideFromBottomIOS,
-          cardOverlayEnabled: true,
-          gestureEnabled: true,
-        }}
+        options={modalSlideFromBottomOptions}
       />
       <Stack.Screen
         name="CulledAlbumUploadProgress"
         component={CulledAlbumUploadProgressScreen}
-        options={{
-          animation: 'slide_from_bottom',
-          ...TransitionPresets.ModalSlideFromBottomIOS,
-          cardOverlayEnabled: true,
-          gestureEnabled: true,
-        }}
+        options={modalSlideFromBottomOptions}
       />
       <Stack.Screen
         name="CulledAlbumUploadSuccess"
         component={CulledAlbumUploadSuccessScreen}
-        options={{
-          animation: 'slide_from_bottom',
-          ...TransitionPresets.ModalSlideFromBottomIOS,
-          cardOverlayEnabled: true,
-          gestureEnabled: true,
-        }}
+        options={modalSlideFromBottomOptions}
       />
     </Stack.Navigator>
   );

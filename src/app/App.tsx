@@ -4,7 +4,7 @@ import {ErrorProvider} from '@context/error';
 import {ErrorToast} from '@components/error';
 import {colors} from '@lib/colors';
 import {DefaultTheme, NavigationContainer} from '@react-navigation/native';
-import {ActivityIndicator, StyleSheet, View} from 'react-native';
+import {ActivityIndicator, Platform, StyleSheet, View} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import 'reflect-metadata';
@@ -48,9 +48,11 @@ function RootNavigator() {
   return isAuthenticated ? <MainNavigator /> : <AuthNavigator />;
 }
 
+const AppRoot = Platform.OS === 'windows' ? View : GestureHandlerRootView;
+
 export default function App() {
   return (
-    <GestureHandlerRootView style={styles.root}>
+    <AppRoot style={styles.root}>
       <QueryClientProvider client={queryClient}>
         <ErrorProvider>
           <AuthProvider>
@@ -63,7 +65,7 @@ export default function App() {
           </AuthProvider>
         </ErrorProvider>
       </QueryClientProvider>
-    </GestureHandlerRootView>
+    </AppRoot>
   );
 }
 
