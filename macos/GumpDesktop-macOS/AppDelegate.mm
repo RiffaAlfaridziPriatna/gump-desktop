@@ -69,8 +69,9 @@ static void RegisterCustomFonts(void)
     if (minW > 0 && minH > 0) {
       [window setMinSize:NSMakeSize(minW, minH)];
 
-      // Default size: 100% of visible work area (but still resizable down to min).
-      [window setFrame:visible display:YES];
+      // Default: top-left of visible work area, 100% size.
+      [window setFrame:NSMakeRect(visible.origin.x, visible.origin.y, visible.size.width, visible.size.height)
+               display:YES];
     }
   }
 

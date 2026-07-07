@@ -17,19 +17,31 @@ static WNDPROC g_originalWndProc{nullptr};
 // 60% of the monitor *work area* (excludes taskbar).
 static constexpr double kMinSizeRatio = 0.60;
 
-static SIZE GetMonitorWorkAreaSizePx(HWND hwnd) noexcept {
+static bool GetMonitorWorkArea(HWND hwnd, RECT &workArea) noexcept {
   MONITORINFO mi{};
   mi.cbSize = sizeof(mi);
   const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
   if (monitor && GetMonitorInfo(monitor, &mi)) {
-    const LONG w = (mi.rcWork.right - mi.rcWork.left);
-    const LONG h = (mi.rcWork.bottom - mi.rcWork.top);
-    return SIZE{w > 0 ? w : 0, h > 0 ? h : 0};
+    workArea = mi.rcWork;
+    return (workArea.right > workArea.left) && (workArea.bottom > workArea.top);
   }
 
-  // Fallback: primary screen size.
-  const int w = GetSystemMetrics(SM_CXSCREEN);
-  const int h = GetSystemMetrics(SM_CYSCREEN);
+  // Fallback: primary screen bounds.
+  workArea.left = 0;
+  workArea.top = 0;
+  workArea.right = GetSystemMetrics(SM_CXSCREEN);
+  workArea.bottom = GetSystemMetrics(SM_CYSCREEN);
+  return workArea.right > 0 && workArea.bottom > 0;
+}
+
+static SIZE GetMonitorWorkAreaSizePx(HWND hwnd) noexcept {
+  RECT workArea{};
+  if (!GetMonitorWorkArea(hwnd, workArea)) {
+    return SIZE{0, 0};
+  }
+
+  const LONG w = (workArea.right - workArea.left);
+  const LONG h = (workArea.bottom - workArea.top);
   return SIZE{w > 0 ? w : 0, h > 0 ? h : 0};
 }
 
@@ -111,12 +123,19 @@ static void ApplyWindowIcons(HWND hwnd, HINSTANCE hInstance) noexcept {
   }
 }
 
-static winrt::Windows::Graphics::SizeInt32 GetInitialSizePx(HWND hwnd) noexcept {
-  const SIZE workArea = GetMonitorWorkAreaSizePx(hwnd);
-  // Default size: 100% of work area.
-  const int32_t w = workArea.cx > 0 ? static_cast<int32_t>(workArea.cx) : 1000;
-  const int32_t h = workArea.cy > 0 ? static_cast<int32_t>(workArea.cy) : 800;
-  return winrt::Windows::Graphics::SizeInt32{w, h};
+static void ApplyInitialWindowPlacement(
+    winrt::Microsoft::UI::Windowing::AppWindow const &appWindow, HWND hwnd) noexcept {
+  RECT workArea{};
+  if (!GetMonitorWorkArea(hwnd, workArea)) {
+    appWindow.Resize({1000, 800});
+    return;
+  }
+
+  const int32_t w = static_cast<int32_t>(workArea.right - workArea.left);
+  const int32_t h = static_cast<int32_t>(workArea.bottom - workArea.top);
+  // Default: top-left of work area, 100% size.
+  appWindow.Move({workArea.left, workArea.top});
+  appWindow.Resize({w, h});
 }
 
 static PCWSTR FindSubpath(PCWSTR haystack, PCWSTR needle) noexcept {
@@ -263,7 +282,7 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
   InstallMinSizeHook(appWindow);
   if (const HWND hwnd = GetHwnd(appWindow)) {
     ApplyWindowIcons(hwnd, instance);
-    appWindow.Resize(GetInitialSizePx(hwnd));
+    ApplyInitialWindowPlacement(appWindow, hwnd);
   } else {
     appWindow.Resize({1000, 800});
   }
