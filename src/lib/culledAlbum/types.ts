@@ -40,6 +40,19 @@ export type CulledAlbumPhotoAnalysisStatus =
   | 'analyzed'
   | 'failed';
 
+export type LocalImportBatchCounts = {
+  total: number;
+  pending: number;
+  uploading: number;
+  uploaded: number;
+  failed: number;
+};
+
+export type LocalImportCountKey = keyof Omit<
+  LocalImportBatchCounts,
+  'total'
+>;
+
 export type CulledAlbumPhoto = {
   photoId: string;
   file: FileAsset;
@@ -85,6 +98,7 @@ export type CulledAlbum = {
   link: string;
   uploadBatchPhotoIds: string[];
   localImportBatchPhotoIds: string[];
+  localImportBatchCounts?: LocalImportBatchCounts;
   analysisBatchPhotoIds: string[];
   nextFaceClusterId: number;
   createdAt: string;
@@ -154,6 +168,7 @@ export function createCulledAlbumFromSelection(
     link: source.link,
     uploadBatchPhotoIds: [],
     localImportBatchPhotoIds: [],
+    localImportBatchCounts: undefined,
     analysisBatchPhotoIds: [],
     nextFaceClusterId: 0,
     createdAt: new Date().toISOString(),
@@ -335,6 +350,7 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.link ??= '';
   album.uploadBatchPhotoIds ??= [];
   album.localImportBatchPhotoIds ??= [];
+  album.localImportBatchCounts = undefined;
   album.analysisBatchPhotoIds ??= [];
   album.createdAt ??= new Date(0).toISOString();
   album.totalPhotos ??= album.photos.length;

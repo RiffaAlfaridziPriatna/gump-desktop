@@ -1,6 +1,7 @@
 import {useServerAlbumSync} from '@lib/culledAlbum/serverSync';
 import {
   culledAlbumStore,
+  hasAnyInFlightAlbumWork,
   loadAllLocalAlbumsIntoStore,
 } from '@lib/culledAlbum/store';
 import {CulledAlbumListItem} from '@lib/culledAlbum/types';
@@ -105,7 +106,9 @@ export function useLocalCulledAlbumList() {
     setError(null);
     setEnableSync(false);
     try {
-      await loadAllLocalAlbumsIntoStore();
+      if (!hasAnyInFlightAlbumWork()) {
+        await loadAllLocalAlbumsIntoStore();
+      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Failed to load local albums',

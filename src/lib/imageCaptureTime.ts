@@ -46,6 +46,6 @@ export async function enrichPhotoCaptureTime(
 
   updatePhoto(albumId, photoId, entry => {
     entry.capturedAt = capturedAt;
-  });
+  }, {recomputeTotals: false});
   return capturedAt;
 }

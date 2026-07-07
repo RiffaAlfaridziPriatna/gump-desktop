@@ -11,6 +11,7 @@ import {
   markCullingCompleted,
   persistAlbum,
   queuePhotosForAnalysis,
+  reconcileLocalImportBatchCounts,
   startServerUploadBatch,
   updatePhoto,
 } from '@lib/culledAlbum/store';
@@ -25,7 +26,6 @@ import {
   setQueueOperationStatus,
 } from '@lib/culledAlbum/uploadQueueStore';
 import {createStateStore, StateStore} from '@lib/state';
-import {getSimulatedUploadPerItemMinDurationMs} from '@lib/uploadToast';
 import {FileAsset} from '@services/upload/types';
 import {PropsWithChildren, useCallback, useRef} from 'react';
 import {
@@ -36,7 +36,7 @@ import {
   CulledAlbumUiState,
 } from './culledAlbumContext';
 
-const MAX_CONCURRENT_UPLOADS = 4;
+const MAX_CONCURRENT_UPLOADS = 6;
 const MAX_CONCURRENT_SERVER_UPLOADS = 4;
 const MAX_CONCURRENT_ANALYSIS = 2;
 
@@ -114,17 +114,14 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     }
 
     if (album.localImportBatchPhotoIds.length > 0) {
+      reconcileLocalImportBatchCounts(albumId);
       setQueueOperationStatus(albumId, 'localImport', 'active');
     }
     uploadQueueRef.current!.processPending(albumId);
   }, []);
 
   const addPhotos = useCallback((albumId: string, files: FileAsset[]) => {
-    const perItemMinDurationMs = getSimulatedUploadPerItemMinDurationMs(
-      files.length,
-      MAX_CONCURRENT_UPLOADS,
-    );
-    addPhotosToAlbum(albumId, files, {simulatedMinDurationMs: perItemMinDurationMs});
+    addPhotosToAlbum(albumId, files);
 
     uiStoreRef.current!.setState({uploadError: null});
     setQueueOperationStatus(albumId, 'localImport', 'active');
@@ -182,6 +179,11 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
             .map(photo => photo.photoId);
 
     for (const photoId of photoIds) {
+      const photo = getPhotoById(albumId, photoId);
+      if (!photo || photo.status === 'uploaded') {
+        continue;
+      }
+
       updatePhoto(albumId, photoId, entry => {
         if (entry.status !== 'uploaded') {
           entry.status = 'failed';
@@ -189,9 +191,10 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
             entry.error = error;
           }
         }
-      });
+      }, {recomputeTotals: false});
     }
 
+    reconcileLocalImportBatchCounts(albumId);
     setQueueOperationStatus(albumId, 'localImport', 'failed');
   }, []);
 

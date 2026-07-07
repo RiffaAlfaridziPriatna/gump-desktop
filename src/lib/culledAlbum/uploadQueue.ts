@@ -1,18 +1,15 @@
-import { copyPhotoToAlbum } from '@lib/localStorage';
-import { enrichPhotoCaptureTime } from '@lib/imageCaptureTime';
-import { checkLocalImportBatchComplete } from './store';
-import { FileAsset } from '@services/upload/types';
-import { countByUploadStatus, CulledAlbumPhoto } from './types';
+import {copyPhotoToAlbum} from '@lib/localStorage';
+import {enrichPhotoCaptureTime} from '@lib/imageCaptureTime';
+import {
+  isUploadNavigationActive,
+  runDeferredDuringUploadNavigation,
+} from '@lib/navigation/uploadAwareNavigation';
+import {checkLocalImportBatchComplete, type UpdatePhotoOptions} from './store';
+import {FileAsset} from '@services/upload/types';
+import {countByUploadStatus, CulledAlbumPhoto} from './types';
 
-const FAKE_PROGRESS_CAP = 95;
-const FAKE_PROGRESS_TICK_MS = 120;
-const MIN_VISUAL_PROGRESS_MS = 150;
-const PERSIST_BATCH_SIZE = 10;
+const PERSIST_BATCH_SIZE = 50;
 const COPY_TIMEOUT_MS = 120_000;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 function withTimeout<T>(
   promise: Promise<T>,
@@ -46,13 +43,13 @@ export type UploadQueueDeps = {
     albumId: string,
     photoId: string,
     updater: (photo: CulledAlbumPhoto) => void,
+    options?: UpdatePhotoOptions,
   ) => boolean;
   persistAlbum: (albumId: string) => Promise<void>;
 };
 
 export function createUploadQueue(deps: UploadQueueDeps) {
-  const { maxConcurrent, getPhotos, getPhoto, updatePhoto, persistAlbum } =
-    deps;
+  const {maxConcurrent, getPhotos, getPhoto, updatePhoto, persistAlbum} = deps;
   const completedSincePersistByAlbum = new Map<string, number>();
 
   function isUploadQueueIdle(albumId: string): boolean {
@@ -78,21 +75,28 @@ export function createUploadQueue(deps: UploadQueueDeps) {
     });
   }
 
-  function setProgress(albumId: string, photoId: string, progress: number) {
-    updatePhoto(albumId, photoId, photo => {
-      if (photo.status !== 'failed') {
-        photo.progress = progress;
-        photo.status = progress >= 100 ? 'uploaded' : 'uploading';
-      }
-    });
-  }
-
   function failPhoto(albumId: string, photoId: string, error?: string) {
-    updatePhoto(albumId, photoId, photo => {
-      if (photo.status !== 'uploaded') {
-        photo.status = 'failed';
-        photo.error = error;
-      }
+    const photo = getPhoto(albumId, photoId);
+    if (!photo || photo.status === 'uploaded') {
+      return;
+    }
+
+    const fromStatus = photo.status === 'uploading' ? 'uploading' : 'pending';
+    runDeferredDuringUploadNavigation(() => {
+      updatePhoto(
+        albumId,
+        photoId,
+        entry => {
+          if (entry.status !== 'uploaded') {
+            entry.status = 'failed';
+            entry.error = error;
+          }
+        },
+        {
+          recomputeTotals: false,
+          batchCountShift: {from: fromStatus, to: 'failed'},
+        },
+      );
     });
   }
 
@@ -103,85 +107,79 @@ export function createUploadQueue(deps: UploadQueueDeps) {
     }
 
     const sourceFile = photo.file;
-    const minDurationMs = photo.simulatedMinDurationMs ?? 0;
-    const progressDurationMs = Math.max(minDurationMs, MIN_VISUAL_PROGRESS_MS);
 
-    updatePhoto(albumId, photoId, entry => {
-      entry.progress = 0;
-      entry.status = 'uploading';
-      entry.error = undefined;
+    runDeferredDuringUploadNavigation(() => {
+      updatePhoto(
+        albumId,
+        photoId,
+        entry => {
+          entry.progress = 0;
+          entry.status = 'uploading';
+          entry.error = undefined;
+        },
+        {
+          recomputeTotals: false,
+          batchCountShift: {from: 'pending', to: 'uploading'},
+        },
+      );
     });
 
-    let fakeProgress = 0;
-    let interval: ReturnType<typeof setInterval> | null = null;
-    const startedAt = Date.now();
+    const captureTimePromise = enrichPhotoCaptureTime(
+      albumId,
+      photoId,
+      sourceFile.uri,
+      sourceFile.capturedAt ?? photo.capturedAt,
+    ).catch(error => {
+      console.error(
+        '[uploadQueue] Failed to enrich capture time',
+        albumId,
+        photoId,
+        error,
+      );
+      return null;
+    });
 
-    return new Promise<void>((resolve, reject) => {
-      interval = setInterval(() => {
-        const elapsed = Date.now() - startedAt;
-        const t = Math.min(1, elapsed / progressDurationMs);
-        const eased = 1 - Math.pow(1 - t, 2);
-        const target = Math.floor(eased * FAKE_PROGRESS_CAP);
-        fakeProgress = Math.max(
-          fakeProgress,
-          Math.min(FAKE_PROGRESS_CAP, target),
-        );
-        if (fakeProgress > 0) {
-          setProgress(albumId, photoId, fakeProgress);
-        }
-      }, FAKE_PROGRESS_TICK_MS);
-
-      withTimeout(
+    return withTimeout(
+      Promise.all([
         copyPhotoToAlbum(albumId, sourceFile, photoId),
-        COPY_TIMEOUT_MS,
-        'Local photo copy',
-      )
-        .then(async (localFile: FileAsset) => {
-          if (interval) {
-            clearInterval(interval);
-          }
-
-          const elapsed = Date.now() - startedAt;
-          const remaining = Math.max(0, progressDurationMs - elapsed);
-          if (remaining > 0) {
-            await sleep(remaining);
-          }
-
-          updatePhoto(albumId, photoId, entry => {
-            entry.file = localFile;
-            entry.progress = 100;
-            entry.status = 'uploaded';
-          });
-          void enrichPhotoCaptureTime(
+        captureTimePromise,
+      ]),
+      COPY_TIMEOUT_MS,
+      'Local photo copy',
+    )
+      .then(async ([localFile]: [FileAsset, number | null]) => {
+        runDeferredDuringUploadNavigation(() => {
+          updatePhoto(
             albumId,
             photoId,
-            localFile.uri,
-            sourceFile.capturedAt ?? photo.capturedAt,
-          ).catch(error => {
-            console.error(
-              '[uploadQueue] Failed to enrich capture time',
-              albumId,
-              photoId,
-              error,
-            );
-          });
-          scheduleAlbumPersist(albumId);
-          void checkLocalImportBatchComplete(albumId);
-          resolve();
-        })
-        .catch(err => {
-          if (interval) {
-            clearInterval(interval);
-          }
-          if (isUploadQueueIdle(albumId)) {
-            scheduleAlbumPersist(albumId);
-          }
-          reject(err);
+            entry => {
+              entry.file = localFile;
+              entry.progress = 100;
+              entry.status = 'uploaded';
+            },
+            {
+              recomputeTotals: true,
+              batchCountShift: {from: 'uploading', to: 'uploaded'},
+            },
+          );
         });
-    });
+        scheduleAlbumPersist(albumId);
+        await checkLocalImportBatchComplete(albumId);
+      })
+      .catch(err => {
+        if (isUploadQueueIdle(albumId)) {
+          scheduleAlbumPersist(albumId);
+        }
+        throw err;
+      });
   }
 
   function processPending(albumId: string): void {
+    if (isUploadNavigationActive()) {
+      runDeferredDuringUploadNavigation(() => processPending(albumId));
+      return;
+    }
+
     let uploadingCount = countByUploadStatus(getPhotos(albumId), 'uploading');
 
     for (const photo of getPhotos(albumId)) {
@@ -208,5 +206,5 @@ export function createUploadQueue(deps: UploadQueueDeps) {
     }
   }
 
-  return { processPending, failPhoto };
+  return {processPending, failPhoto};
 }

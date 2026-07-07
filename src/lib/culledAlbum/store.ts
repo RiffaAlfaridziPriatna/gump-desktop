@@ -7,8 +7,14 @@ import {
 import {createStateStore} from '@lib/state';
 import {FileAsset} from '@services/upload/types';
 import {mergeAlbumPhotos, mergeWithMemoryAlbum} from './merge';
-import {isLocalImportBatchFinished, getLocalImportBatchPhotos} from './localImportProgress';
+import {
+  createLocalImportBatchCounts,
+  computeLocalImportBatchCounts,
+  isLocalImportBatchFinished,
+  getLocalImportBatchPhotos,
+} from './localImportProgress';
 import {readAlbum, readAllAlbums, removeAlbum, saveAlbum} from './storage';
+import {toPersistableAlbum} from './toPersistableAlbum';
 import {syncAlbumWithDisk} from './sync';
 import {setQueueOperationStatus} from './uploadQueueStore';
 import {
@@ -22,6 +28,7 @@ import {
   hasInFlightAnalysis,
   hasInFlightServerUploads,
   hasInFlightUploads,
+  LocalImportCountKey,
   normalizePersistedAlbum,
   recomputeAlbumTotals,
   sortPhotosByFilename,
@@ -102,8 +109,51 @@ export async function loadAlbumIntoStore(albumId: string): Promise<CulledAlbum> 
 export async function persistAlbum(albumId: string): Promise<void> {
   const album = getAlbumFromState(albumId);
   if (album) {
-    await saveAlbum(JSON.parse(JSON.stringify(album)) as CulledAlbum);
+    await saveAlbum(toPersistableAlbum(album));
   }
+}
+
+export type UpdatePhotoOptions = {
+  recomputeTotals?: boolean;
+  batchCountShift?: {
+    from: LocalImportCountKey;
+    to: LocalImportCountKey;
+  };
+};
+
+export function shiftLocalImportBatchCount(
+  albumId: string,
+  from: LocalImportCountKey,
+  to: LocalImportCountKey,
+): void {
+  culledAlbumStore.setState(state => {
+    const counts = state.albums[albumId]?.localImportBatchCounts;
+    if (!counts) {
+      return;
+    }
+    if (counts[from] > 0) {
+      counts[from]--;
+    }
+    counts[to]++;
+  });
+}
+
+export function reconcileLocalImportBatchCounts(albumId: string): void {
+  const album = getAlbumFromState(albumId);
+  if (!album || album.localImportBatchPhotoIds.length === 0) {
+    return;
+  }
+
+  culledAlbumStore.setState(state => {
+    const entry = state.albums[albumId];
+    if (!entry) {
+      return;
+    }
+    entry.localImportBatchCounts = computeLocalImportBatchCounts(
+      entry.photos,
+      entry.localImportBatchPhotoIds,
+    );
+  });
 }
 
 export async function clearAlbumData(albumId: string): Promise<void> {
@@ -117,7 +167,16 @@ export async function registerLocalAlbum(album: CulledAlbum): Promise<void> {
   culledAlbumStore.setState(state => {
     state.albums[album.albumId] = album;
   });
-  await saveAlbum(album);
+  await saveAlbum(toPersistableAlbum(album));
+}
+
+export function hasAnyInFlightAlbumWork(): boolean {
+  return Object.values(culledAlbumStore.getState().albums).some(
+    album =>
+      hasInFlightUploads(album) ||
+      hasInFlightAnalysis(album) ||
+      hasInFlightServerUploads(album),
+  );
 }
 
 export async function loadAllLocalAlbumsIntoStore(): Promise<void> {
@@ -140,6 +199,12 @@ export async function loadAllLocalAlbumsIntoStore(): Promise<void> {
       }
       if (!current) {
         state.albums[albumId] = incoming;
+        if (hasInFlightUploads(incoming)) {
+          incoming.localImportBatchCounts = computeLocalImportBatchCounts(
+            incoming.photos,
+            incoming.localImportBatchPhotoIds,
+          );
+        }
         continue;
       }
       current.photos = mergeAlbumPhotos(incoming.photos, current.photos);
@@ -273,6 +338,7 @@ export function clearLocalImportBatch(albumId: string): void {
     const album = state.albums[albumId];
     if (album) {
       album.localImportBatchPhotoIds = [];
+      album.localImportBatchCounts = undefined;
     }
   });
 }
@@ -284,7 +350,6 @@ export function getAlbum(albumId: string): CulledAlbum | null {
 export function addPhotosToAlbum(
   albumId: string,
   files: FileAsset[],
-  options?: {simulatedMinDurationMs?: number},
 ): CulledAlbumPhoto[] {
   if (!getAlbumFromState(albumId)) {
     throw new Error(`Album ${albumId} is not registered locally`);
@@ -308,15 +373,13 @@ export function addPhotosToAlbum(
         photoIdFromStoredFile(file),
         baseUploadedAt + index,
       );
-      if (options?.simulatedMinDurationMs) {
-        photo.simulatedMinDurationMs = options.simulatedMinDurationMs;
-      }
       album.photos.push(photo);
       added.push(photo);
       addedPhotoIds.push(photo.photoId);
     }
 
     album.localImportBatchPhotoIds = addedPhotoIds;
+    album.localImportBatchCounts = createLocalImportBatchCounts(addedPhotoIds.length);
     album.photos = sortPhotosByFilename(album.photos);
     recomputeAlbumTotals(album);
   });
@@ -328,7 +391,10 @@ export function updatePhoto(
   albumId: string,
   photoId: string,
   updater: (photo: CulledAlbumPhoto) => void,
+  options?: UpdatePhotoOptions,
 ): boolean {
+  const recomputeTotals = options?.recomputeTotals ?? true;
+  const batchCountShift = options?.batchCountShift;
   let found = false;
   culledAlbumStore.setState(state => {
     const album = state.albums[albumId];
@@ -341,14 +407,22 @@ export function updatePhoto(
     }
     updater(photo);
     found = true;
-    recomputeAlbumTotals(album);
+    if (batchCountShift) {
+      const counts = album.localImportBatchCounts;
+      if (counts && counts[batchCountShift.from] > 0) {
+        counts[batchCountShift.from]--;
+        counts[batchCountShift.to]++;
+      }
+    }
+    if (recomputeTotals) {
+      recomputeAlbumTotals(album);
+    }
   });
   return found;
 }
 
 export function getPhotosForAlbum(albumId: string): CulledAlbumPhoto[] {
-  const photos = getAlbumFromState(albumId)?.photos;
-  return photos ? sortPhotosByFilename(photos) : [];
+  return getAlbumFromState(albumId)?.photos ?? [];
 }
 
 export async function ensureAlbumLoaded(albumId: string): Promise<CulledAlbum> {
@@ -383,7 +457,9 @@ export function getPhotoById(
   albumId: string,
   photoId: string,
 ): CulledAlbumPhoto | undefined {
-  return getPhotosForAlbum(albumId).find(photo => photo.photoId === photoId);
+  return getAlbumFromState(albumId)?.photos.find(
+    photo => photo.photoId === photoId,
+  );
 }
 
 export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {
