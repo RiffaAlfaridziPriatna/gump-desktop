@@ -76,6 +76,21 @@ const config = {
             };
           }
         }
+
+        if (
+          moduleName.endsWith('ReactDevToolsSettingsManager') ||
+          moduleName.includes(
+            'rndevtools/ReactDevToolsSettingsManager',
+          )
+        ) {
+          return {
+            filePath: path.resolve(
+              __dirname,
+              'src/shims/ReactDevToolsSettingsManager.windows.js',
+            ),
+            type: 'sourceFile',
+          };
+        }
       }
 
       return context.resolveRequest(context, moduleName, platform);
