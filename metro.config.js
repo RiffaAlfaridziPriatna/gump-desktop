@@ -91,6 +91,25 @@ const config = {
             type: 'sourceFile',
           };
         }
+
+        // react-native-windows is an out-of-tree platform. Its
+        // react-native.config declares npmPackageName: 'react-native-windows',
+        // so core imports (including react-native's internal getter that does
+        // require('./Libraries/Utilities/Platform')) must resolve to RNW.
+        // Without this redirect, Platform resolves to undefined and the app
+        // aborts with "Cannot read property 'OS' of undefined".
+        const rnwModuleName =
+          moduleName === 'react-native'
+            ? 'react-native-windows'
+            : moduleName.startsWith('react-native/')
+              ? `react-native-windows/${moduleName.slice(
+                  'react-native/'.length,
+                )}`
+              : null;
+
+        if (rnwModuleName) {
+          return context.resolveRequest(context, rnwModuleName, platform);
+        }
       }
 
       return context.resolveRequest(context, moduleName, platform);
