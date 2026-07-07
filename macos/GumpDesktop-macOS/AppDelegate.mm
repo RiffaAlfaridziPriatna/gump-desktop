@@ -59,14 +59,23 @@ static void RegisterCustomFonts(void)
     return;
   }
 
-  [window setMinSize:NSMakeSize(900, 600)];
+  // Desktop: enforce a minimum size relative to the current screen's usable area.
+  static const CGFloat kMinSizeRatio = 0.60;
+  NSScreen *screen = window.screen ?: [NSScreen mainScreen];
+  if (screen) {
+    NSRect visible = [screen visibleFrame];
+    CGFloat minW = floor(visible.size.width * kMinSizeRatio);
+    CGFloat minH = floor(visible.size.height * kMinSizeRatio);
+    if (minW > 0 && minH > 0) {
+      [window setMinSize:NSMakeSize(minW, minH)];
+
+      // Default size: 100% of visible work area (but still resizable down to min).
+      [window setFrame:visible display:YES];
+    }
+  }
+
   [window setTitle:@"GUMP - Cull Your Photos"];
   [window setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
-
-  NSRect frame = [window frame];
-  if (frame.size.width < 900 || frame.size.height < 600) {
-    [window setFrame:NSMakeRect(frame.origin.x, frame.origin.y, 1100, 700) display:YES];
-  }
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification

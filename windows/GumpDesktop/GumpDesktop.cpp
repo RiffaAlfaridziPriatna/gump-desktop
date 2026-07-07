@@ -8,6 +8,92 @@
 
 #include "NativeModules.h"
 
+namespace {
+// Keep original Win32 WndProc so we can delegate messages.
+static WNDPROC g_originalWndProc{nullptr};
+
+// 60% of the monitor *work area* (excludes taskbar).
+static constexpr double kMinSizeRatio = 0.60;
+
+static SIZE GetMonitorWorkAreaSizePx(HWND hwnd) noexcept {
+  MONITORINFO mi{};
+  mi.cbSize = sizeof(mi);
+  const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+  if (monitor && GetMonitorInfo(monitor, &mi)) {
+    const LONG w = (mi.rcWork.right - mi.rcWork.left);
+    const LONG h = (mi.rcWork.bottom - mi.rcWork.top);
+    return SIZE{w > 0 ? w : 0, h > 0 ? h : 0};
+  }
+
+  // Fallback: primary screen size.
+  const int w = GetSystemMetrics(SM_CXSCREEN);
+  const int h = GetSystemMetrics(SM_CYSCREEN);
+  return SIZE{w > 0 ? w : 0, h > 0 ? h : 0};
+}
+
+static void ApplyMinTrackSize(MINMAXINFO *mmi, HWND hwnd) noexcept {
+  if (!mmi || !hwnd) {
+    return;
+  }
+
+  const SIZE workArea = GetMonitorWorkAreaSizePx(hwnd);
+  if (workArea.cx <= 0 || workArea.cy <= 0) {
+    return;
+  }
+
+  const LONG minW = static_cast<LONG>(workArea.cx * kMinSizeRatio);
+  const LONG minH = static_cast<LONG>(workArea.cy * kMinSizeRatio);
+  if (minW > 0) {
+    mmi->ptMinTrackSize.x = minW;
+  }
+  if (minH > 0) {
+    mmi->ptMinTrackSize.y = minH;
+  }
+}
+
+static LRESULT CALLBACK MinSizeWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  if (msg == WM_GETMINMAXINFO) {
+    auto *mmi = reinterpret_cast<MINMAXINFO *>(lParam);
+    ApplyMinTrackSize(mmi, hwnd);
+  }
+
+  return g_originalWndProc ? CallWindowProc(g_originalWndProc, hwnd, msg, wParam, lParam)
+                           : DefWindowProc(hwnd, msg, wParam, lParam);
+}
+
+static void InstallMinSizeHook(winrt::Microsoft::UI::Windowing::AppWindow const &appWindow) noexcept {
+  // Get HWND from WinUI AppWindow id.
+  const auto windowId = appWindow.Id();
+  const HWND hwnd = winrt::Microsoft::UI::GetWindowFromWindowId(windowId);
+  if (!hwnd) {
+    return;
+  }
+
+  // Install only once.
+  if (!g_originalWndProc) {
+    g_originalWndProc =
+        reinterpret_cast<WNDPROC>(SetWindowLongPtr(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&MinSizeWndProc)));
+  }
+
+  // Force a re-evaluation of min/max constraints.
+  SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+}
+
+static HWND GetHwnd(winrt::Microsoft::UI::Windowing::AppWindow const &appWindow) noexcept {
+  const auto windowId = appWindow.Id();
+  return winrt::Microsoft::UI::GetWindowFromWindowId(windowId);
+}
+
+static winrt::Windows::Graphics::SizeInt32 GetInitialSizePx(HWND hwnd) noexcept {
+  const SIZE workArea = GetMonitorWorkAreaSizePx(hwnd);
+  // Default size: 100% of work area.
+  const int32_t w = workArea.cx > 0 ? static_cast<int32_t>(workArea.cx) : 1000;
+  const int32_t h = workArea.cy > 0 ? static_cast<int32_t>(workArea.cy) : 800;
+  return winrt::Windows::Graphics::SizeInt32{w, h};
+}
+} // namespace
+
 // A PackageProvider containing any turbo modules you define within this app project
 struct CompReactPackageProvider
     : winrt::implements<CompReactPackageProvider, winrt::Microsoft::ReactNative::IReactPackageProvider> {
@@ -71,7 +157,12 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
   // Get the AppWindow so we can configure its initial title and size
   auto appWindow{reactNativeWin32App.AppWindow()};
   appWindow.Title(L"GUMP - Cull Your Photos");
-  appWindow.Resize({1000, 1000});
+  InstallMinSizeHook(appWindow);
+  if (const HWND hwnd = GetHwnd(appWindow)) {
+    appWindow.Resize(GetInitialSizePx(hwnd));
+  } else {
+    appWindow.Resize({1000, 800});
+  }
 
   // Get the ReactViewOptions so we can set the initial RN component to load
   auto viewOptions{reactNativeWin32App.ReactViewOptions()};
