@@ -56,6 +56,17 @@
            Text="RNSVG.dll was not copied to $(OutDir). The RNSVG project may have failed to build for $(_AutolinkNativePlatform)/$(Configuration)." />
   </Target>
 
+  <Target Name="AddAutolinkedDllsToAppxPayload"
+          BeforeTargets="_GenerateAppxRecipeFile;GenerateAppxRecipeFile;CreateAppxPackage"
+          DependsOnTargets="CollectAutolinkedNativeModuleDlls"
+          Condition="'$(MSBuildProjectExtension)' == '.wapproj'">
+    <ItemGroup>
+      <AppxPackagedFile Include="@(_ResolvedAutolinkedModuleDll->Distinct())">
+        <PackagePath>$(_AutolinkAppxEntryName)\%(Filename)%(Extension)</PackagePath>
+      </AppxPackagedFile>
+    </ItemGroup>
+  </Target>
+
   <Target Name="IncludeAutolinkedNativeModuleDllsInPackage"
           BeforeTargets="_ConvertItems"
           DependsOnTargets="CollectAutolinkedNativeModuleDlls"
@@ -69,7 +80,7 @@
   </Target>
 
   <Target Name="StageAutolinkedNativeModuleDllsInAppX"
-          BeforeTargets="CreateAppxPackage"
+          AfterTargets="Build"
           DependsOnTargets="CollectAutolinkedNativeModuleDlls"
           Condition="'$(MSBuildProjectExtension)' == '.wapproj'">
     <MakeDir Directories="$(_AutolinkAppxEntryDir)" Condition="!Exists('$(_AutolinkAppxEntryDir)')" />

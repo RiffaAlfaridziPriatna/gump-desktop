@@ -119,13 +119,78 @@ static winrt::Windows::Graphics::SizeInt32 GetInitialSizePx(HWND hwnd) noexcept 
   return winrt::Windows::Graphics::SizeInt32{w, h};
 }
 
+static PCWSTR FindSubpath(PCWSTR haystack, PCWSTR needle) noexcept {
+  const size_t needleLength = wcslen(needle);
+  for (PCWSTR cursor = haystack; *cursor != L'\0'; ++cursor) {
+    if (_wcsnicmp(cursor, needle, needleLength) == 0) {
+      return cursor;
+    }
+  }
+  return nullptr;
+}
+
+static bool TryLoadDllFromDirectory(PCWSTR directory, PCWSTR dllName) noexcept {
+  if (!directory || !dllName) {
+    return false;
+  }
+
+  WCHAR dllPath[MAX_PATH];
+  if (FAILED(PathCchCombine(dllPath, MAX_PATH, directory, dllName))) {
+    return false;
+  }
+
+  if (GetFileAttributesW(dllPath) == INVALID_FILE_ATTRIBUTES) {
+    return false;
+  }
+
+  return LoadLibraryW(dllPath) != nullptr;
+}
+
+static void TryLoadDllFromWindowsBuildOutputs(PCWSTR dllName) noexcept {
+  WCHAR modulePath[MAX_PATH];
+  if (GetModuleFileNameW(NULL, modulePath, MAX_PATH) == 0) {
+    return;
+  }
+
+  PCWSTR windowsPos = FindSubpath(modulePath, L"\\windows\\");
+  if (!windowsPos) {
+    return;
+  }
+
+  const size_t windowsDirLength = static_cast<size_t>(windowsPos - modulePath) + 8;
+  if (windowsDirLength >= MAX_PATH) {
+    return;
+  }
+
+  WCHAR windowsDir[MAX_PATH];
+  wmemcpy(windowsDir, modulePath, windowsDirLength);
+  windowsDir[windowsDirLength] = L'\0';
+
+  static constexpr PCWSTR kPlatforms[] = {L"ARM64", L"x64", L"Win32"};
+  static constexpr PCWSTR kConfigs[] = {L"Debug", L"Release"};
+  for (PCWSTR platform : kPlatforms) {
+    for (PCWSTR config : kConfigs) {
+      WCHAR buildDir[MAX_PATH];
+      if (FAILED(PathCchCombine(buildDir, MAX_PATH, windowsDir, platform))) {
+        continue;
+      }
+      if (FAILED(PathCchAppend(buildDir, MAX_PATH, config))) {
+        continue;
+      }
+      if (TryLoadDllFromDirectory(buildDir, dllName)) {
+        return;
+      }
+    }
+  }
+}
+
 static void PreloadAutolinkedModuleDlls(PCWSTR appDirectory) noexcept {
   static constexpr PCWSTR kModuleDlls[] = {L"RNSVG.dll", L"ReactNativeAsyncStorage.dll"};
   for (PCWSTR dllName : kModuleDlls) {
-    WCHAR dllPath[MAX_PATH];
-    if (SUCCEEDED(PathCchCombine(dllPath, MAX_PATH, appDirectory, dllName))) {
-      LoadLibraryW(dllPath);
+    if (TryLoadDllFromDirectory(appDirectory, dllName)) {
+      continue;
     }
+    TryLoadDllFromWindowsBuildOutputs(dllName);
   }
 }
 } // namespace
