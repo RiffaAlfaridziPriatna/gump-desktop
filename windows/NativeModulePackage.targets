@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    Autolinked native module DLLs (RNSVG, AsyncStorage, etc.) must be deployed
+    next to GumpDesktop.exe inside the AppX layout. Without them, WinRT package
+    providers fail at startup with REGDB_E_CLASSNOTREG / abort().
+  -->
+  <PropertyGroup>
+    <_NativeModulePlatform Condition="'$(Platform)' == 'x86'">Win32</_NativeModulePlatform>
+    <_NativeModulePlatform Condition="'$(Platform)' != 'x86'">$(Platform)</_NativeModulePlatform>
+    <_NativeModuleOutputDir>$(SolutionDir)$(_NativeModulePlatform)\$(Configuration)</_NativeModuleOutputDir>
+    <_RepoRoot>$(SolutionDir)..\</_RepoRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <_AutolinkedModuleDllCandidate Include="$(_NativeModuleOutputDir)\RNSVG.dll" />
+    <_AutolinkedModuleDllCandidate Include="$(_NativeModuleOutputDir)\RNSVG\RNSVG.dll" />
+    <_AutolinkedModuleDllCandidate Include="$(_NativeModuleOutputDir)\ReactNativeAsyncStorage.dll" />
+    <_AutolinkedModuleDllCandidate Include="$(_NativeModuleOutputDir)\ReactNativeAsyncStorage\ReactNativeAsyncStorage.dll" />
+    <_AutolinkedModuleDllCandidate Include="$(_RepoRoot)node_modules\react-native-svg\windows\RNSVG\$(_NativeModulePlatform)\$(Configuration)\RNSVG.dll" />
+    <_AutolinkedModuleDllCandidate Include="$(_RepoRoot)node_modules\@react-native-async-storage\async-storage\windows\ReactNativeAsyncStorage\$(_NativeModulePlatform)\$(Configuration)\ReactNativeAsyncStorage.dll" />
+  </ItemGroup>
+
+  <Target Name="IncludeAutolinkedNativeModuleDllsInPackage" BeforeTargets="_ConvertItems">
+    <ItemGroup>
+      <_FoundAutolinkedModuleDll Include="@(_AutolinkedModuleDllCandidate)" Condition="Exists('%(Identity)')" />
+    </ItemGroup>
+    <ItemGroup>
+      <Content Include="@(_FoundAutolinkedModuleDll->Distinct())">
+        <Link>%(Filename)%(Extension)</Link>
+        <DeploymentContent>true</DeploymentContent>
+      </Content>
+    </ItemGroup>
+  </Target>
+</Project>
