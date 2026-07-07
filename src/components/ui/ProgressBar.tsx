@@ -1,6 +1,6 @@
 import {colors} from '@lib/colors';
-import {useEffect, useRef} from 'react';
-import {Animated, Easing, StyleSheet, View, ViewStyle} from 'react-native';
+import {useState} from 'react';
+import {LayoutChangeEvent, StyleSheet, View, ViewStyle} from 'react-native';
 
 type ProgressBarProps = {
   progress: number;
@@ -17,35 +17,34 @@ export function ProgressBar({
   fillColor = colors.accent,
   style,
 }: ProgressBarProps) {
-  const animatedWidth = useRef(new Animated.Value(0)).current;
+  const [trackWidth, setTrackWidth] = useState(0);
   const clampedProgress = Math.min(Math.max(progress, 0), 1);
+  const fillWidthPx = trackWidth > 0 ? clampedProgress * trackWidth : 0;
 
-  useEffect(() => {
-    Animated.timing(animatedWidth, {
-      toValue: clampedProgress,
-      duration: 300,
-      easing: Easing.linear,
-      useNativeDriver: false,
-    }).start();
-  }, [animatedWidth, clampedProgress]);
+  function handleTrackLayout(event: LayoutChangeEvent) {
+    const {width} = event.nativeEvent.layout;
+    if (width > 0 && width !== trackWidth) {
+      setTrackWidth(width);
+    }
+  }
 
   return (
     <View
+      collapsable={false}
+      onLayout={handleTrackLayout}
       style={[
         styles.track,
         {height, backgroundColor: trackColor},
         style,
       ]}>
-      <Animated.View
+      <View
+        collapsable={false}
         style={[
           styles.fill,
           {
             height,
             backgroundColor: fillColor,
-            width: animatedWidth.interpolate({
-              inputRange: [0, 1],
-              outputRange: ['0%', '100%'],
-            }),
+            width: fillWidthPx,
           },
         ]}
       />
@@ -56,6 +55,7 @@ export function ProgressBar({
 const styles = StyleSheet.create({
   track: {
     width: '100%',
+    alignSelf: 'stretch',
     overflow: 'hidden',
   },
   fill: {

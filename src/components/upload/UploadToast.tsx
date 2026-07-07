@@ -2,14 +2,15 @@ import {ProgressBar} from '@components/ui';
 import {
   useCulledAlbumActions,
   useCulledAlbumAnalyzeItems,
+  useCulledAlbumLocalImportProgress,
   useCulledAlbumServerUploadBatch,
   useCulledAlbumUiState,
-  useCulledAlbumUploadItems,
 } from '@context/culledAlbum';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
+import {computeLocalImportBatchProgress} from '@lib/culledAlbum/localImportProgress';
 import {computeServerUploadBatchProgress} from '@lib/culledAlbum/serverUploadProgress';
-import {CulledAlbumPhoto} from '@lib/culledAlbum/types';
+import {CulledAlbumPhoto, LocalImportBatchCounts} from '@lib/culledAlbum/types';
 import {
   QueueToastMode,
   useAlbumQueueOperation,
@@ -35,17 +36,27 @@ type UploadToastProps = {
   albumId: string;
 };
 
-function countItems(photos: CulledAlbumPhoto[], mode: QueueToastMode) {
-  const counts = {pending: 0, completed: 0, inProgress: 0, failed: 0};
-  for (const photo of photos) {
-    if (mode === 'upload') {
-      if (photo.status === 'pending') counts.pending++;
-      else if (photo.status === 'failed') counts.failed++;
-      else if (photo.status === 'uploaded') counts.completed++;
-      else counts.inProgress++;
-      continue;
-    }
+type ItemCounts = {
+  pending: number;
+  completed: number;
+  inProgress: number;
+  failed: number;
+};
 
+function countsFromLocalImportProgress(
+  progress: LocalImportBatchCounts,
+): ItemCounts {
+  return {
+    pending: progress.pending,
+    inProgress: progress.uploading,
+    completed: progress.uploaded,
+    failed: progress.failed,
+  };
+}
+
+function countItems(photos: CulledAlbumPhoto[], mode: QueueToastMode): ItemCounts {
+  const counts: ItemCounts = {pending: 0, completed: 0, inProgress: 0, failed: 0};
+  for (const photo of photos) {
     if (mode === 'analyze') {
       if (photo.analysisStatus === 'pending') counts.pending++;
       else if (photo.analysisStatus === 'failed') counts.failed++;
@@ -67,7 +78,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   const queueOperation = useAlbumQueueOperation(albumId, mode);
   const analyzeError = useCulledAlbumUiState(state => state.analyzeError);
 
-  const uploadItems = useCulledAlbumUploadItems(
+  const localImportProgress = useCulledAlbumLocalImportProgress(
     mode === 'upload' ? albumId : null,
   );
   const analyzeItems = useCulledAlbumAnalyzeItems(
@@ -84,57 +95,85 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   } = useCulledAlbumActions();
 
   const items =
-    mode === 'upload'
-      ? uploadItems
-      : mode === 'analyze'
-        ? analyzeItems
-        : serverUploadItems;
+    mode === 'analyze' ? analyzeItems : serverUploadItems;
 
   const visible =
     queueOperation.status === 'active' ||
     ((queueOperation.status === 'completed' ||
       queueOperation.status === 'failed') &&
       !queueOperation.completionSeen);
-  const shouldBeVisible = visible && items.length > 0;
-  const [mounted, setMounted] = useState(false);
 
-  const translateY = useRef(new Animated.Value(SLIDE_DISTANCE)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
-  const wasVisibleRef = useRef(false);
+  const hasRenderableBatch =
+    mode === 'upload'
+      ? queueOperation.status === 'active' ||
+        (localImportProgress?.total ?? 0) > 0
+      : items.length > 0;
 
-  const lastItemsRef = useRef<typeof items>([]);
+  const shouldBeVisible = visible && hasRenderableBatch;
+  const [mounted, setMounted] = useState(shouldBeVisible);
+
+  const translateY = useRef(
+    new Animated.Value(shouldBeVisible ? 0 : SLIDE_DISTANCE),
+  ).current;
+  const opacity = useRef(new Animated.Value(shouldBeVisible ? 1 : 0)).current;
+  const wasVisibleRef = useRef(shouldBeVisible);
   const shouldClearCompletedAfterCloseRef = useRef(false);
+
+  const lastItemsRef = useRef(items);
+  const lastLocalImportProgressRef = useRef(localImportProgress);
   if (items.length > 0) {
     lastItemsRef.current = items;
   }
-  const renderItems = items.length > 0 ? items : lastItemsRef.current;
+  if (localImportProgress) {
+    lastLocalImportProgressRef.current = localImportProgress;
+  }
 
-  const counts = useMemo(
-    () => countItems(renderItems, mode),
-    [mode, renderItems],
-  );
+  const renderItems = items.length > 0 ? items : lastItemsRef.current;
+  const renderLocalImportProgress =
+    localImportProgress ?? lastLocalImportProgressRef.current;
+
+  const counts = useMemo(() => {
+    if (mode === 'upload' && renderLocalImportProgress) {
+      return countsFromLocalImportProgress(renderLocalImportProgress);
+    }
+    return countItems(renderItems, mode);
+  }, [mode, renderItems, renderLocalImportProgress]);
+
+  const batchTotal =
+    mode === 'upload'
+      ? (renderLocalImportProgress?.total ?? 0)
+      : renderItems.length;
 
   const completed =
-    renderItems.length > 0 &&
-    counts.completed + counts.failed >= renderItems.length;
+    batchTotal > 0 && counts.completed + counts.failed >= batchTotal;
   const allAnalyzeFailed =
     mode === 'analyze' &&
     completed &&
     counts.completed === 0 &&
     counts.failed > 0;
   const totalProgress = useMemo(() => {
+    if (mode === 'upload' && renderLocalImportProgress) {
+      return computeLocalImportBatchProgress(renderLocalImportProgress);
+    }
+
     if (mode === 'serverUpload') {
       return computeServerUploadBatchProgress(renderItems, serverBatchPhotoIds);
     }
 
-    const totalItems = renderItems.length;
-    if (totalItems === 0) {
+    if (batchTotal === 0) {
       return 0;
     }
     const progressCount = counts.pending + counts.inProgress;
-    const progressRatio = progressCount / totalItems;
+    const progressRatio = progressCount / batchTotal;
     return 1 - +progressRatio.toFixed(2);
-  }, [counts, mode, renderItems, serverBatchPhotoIds]);
+  }, [
+    batchTotal,
+    counts,
+    mode,
+    renderItems,
+    renderLocalImportProgress,
+    serverBatchPhotoIds,
+  ]);
 
   const inProgressLabel =
     mode === 'upload'
@@ -152,7 +191,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
         : `Uploaded ${counts.completed} photos to server`;
 
   useEffect(() => {
-    if (!visible || !completed || renderItems.length === 0) {
+    if (!visible || !completed || batchTotal === 0) {
       return;
     }
     const timer = setTimeout(() => {
@@ -160,7 +199,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
       hideToast(mode, albumId);
     }, AUTO_CLOSE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [albumId, completed, hideToast, mode, renderItems.length, visible]);
+  }, [albumId, batchTotal, completed, hideToast, mode, visible]);
 
   useEffect(() => {
     const wasVisible = wasVisibleRef.current;
@@ -169,21 +208,13 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     if (shouldBeVisible && !wasVisible) {
       setMounted(true);
       translateY.setValue(SLIDE_DISTANCE);
-      opacity.setValue(0);
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: 0,
-          duration: ANIMATION_MS,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: ANIMATION_MS,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
+      opacity.setValue(1);
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: ANIMATION_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
       return;
     }
 
@@ -260,7 +291,11 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
       {allAnalyzeFailed && analyzeError ? (
         <Text style={styles.errorText}>{analyzeError}</Text>
       ) : null}
-      {!completed && <ProgressBar progress={totalProgress} />}
+      {!completed ? (
+        <View collapsable={false} style={styles.progressBarContainer}>
+          <ProgressBar progress={totalProgress} />
+        </View>
+      ) : null}
     </Animated.View>
   );
 }
@@ -313,5 +348,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.textMuted,
+  },
+  progressBarContainer: {
+    width: '100%',
+    alignSelf: 'stretch',
   },
 });
