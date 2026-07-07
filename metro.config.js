@@ -33,6 +33,10 @@ const windowsShims = {
     __dirname,
     'src/shims/react-native-svg.windows.tsx',
   ),
+  '@react-native-community/blur': path.resolve(
+    __dirname,
+    'src/shims/react-native-community-blur.windows.tsx',
+  ),
 };
 
 const config = {
