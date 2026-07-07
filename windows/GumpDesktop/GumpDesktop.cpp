@@ -4,6 +4,8 @@
 #include "pch.h"
 #include "GumpDesktop.h"
 
+#include "resource.h"
+
 #include "AutolinkedNativeModules.g.h"
 
 #include "NativeModules.h"
@@ -85,6 +87,30 @@ static HWND GetHwnd(winrt::Microsoft::UI::Windowing::AppWindow const &appWindow)
   return winrt::Microsoft::UI::GetWindowFromWindowId(windowId);
 }
 
+static void ApplyWindowIcons(HWND hwnd, HINSTANCE hInstance) noexcept {
+  if (!hwnd || !hInstance) {
+    return;
+  }
+
+  // Load the app icon from resources and apply to the native window. This
+  // ensures the title bar shows the correct icon even when running via the
+  // packaged AppX launcher.
+  const HICON iconSmall = reinterpret_cast<HICON>(LoadImageW(
+      hInstance, MAKEINTRESOURCEW(IDI_ICON1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
+      GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
+
+  const HICON iconBig = reinterpret_cast<HICON>(LoadImageW(
+      hInstance, MAKEINTRESOURCEW(IDI_ICON1), IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON),
+      LR_DEFAULTCOLOR));
+
+  if (iconSmall) {
+    SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(iconSmall));
+  }
+  if (iconBig) {
+    SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(iconBig));
+  }
+}
+
 static winrt::Windows::Graphics::SizeInt32 GetInitialSizePx(HWND hwnd) noexcept {
   const SIZE workArea = GetMonitorWorkAreaSizePx(hwnd);
   // Default size: 100% of work area.
@@ -159,6 +185,7 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
   appWindow.Title(L"GUMP - Cull Your Photos");
   InstallMinSizeHook(appWindow);
   if (const HWND hwnd = GetHwnd(appWindow)) {
+    ApplyWindowIcons(hwnd, instance);
     appWindow.Resize(GetInitialSizePx(hwnd));
   } else {
     appWindow.Resize({1000, 800});
