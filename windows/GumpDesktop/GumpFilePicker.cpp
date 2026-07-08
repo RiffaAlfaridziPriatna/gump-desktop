@@ -6,6 +6,7 @@
 #include <winrt/Windows.Storage.FileProperties.h>
 #include <winrt/Windows.Storage.Pickers.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.UI.Popups.h>
 
 namespace winrtRN = winrt::Microsoft::ReactNative;
 using namespace winrt::Windows::Storage;
@@ -33,6 +34,17 @@ void GumpFilePicker::PickImages(
     picker.FileTypeFilter().Append(L".gif");
     picker.FileTypeFilter().Append(L".heic");
     picker.FileTypeFilter().Append(L".tiff");
+
+    // WinRT FileOpenPicker needs window context. Without initializing it with
+    // an HWND, it may silently fail or never show the dialog.
+    if (const HWND hwnd = GetActiveWindow() ? GetActiveWindow() : GetForegroundWindow()) {
+      try {
+        picker.as<winrt::Windows::UI::Popups::IInitializeWithWindow>()->Initialize(
+            hwnd);
+      } catch (...) {
+        // If initialization fails, still attempt the picker normally.
+      }
+    }
 
     auto op = picker.PickMultipleFilesAsync();
     op.Completed(
