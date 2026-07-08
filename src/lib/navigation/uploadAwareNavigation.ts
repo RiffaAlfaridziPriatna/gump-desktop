@@ -1,9 +1,9 @@
 import {hasAnyInFlightAlbumWork} from '@lib/culledAlbum/store';
+import {isDesktopPlatform} from '@lib/platform';
 import {
   StackNavigationOptions,
   TransitionPresets,
 } from '@react-navigation/stack';
-import {Platform} from 'react-native';
 import {beginUploadNavigationCoop} from './uploadNavigationCoop';
 
 export type InstantNavParams = {
@@ -61,9 +61,7 @@ const modalSlideOptions: StackNavigationOptions = {
 };
 
 export function usesCustomModalEnterAnimation(): boolean {
-  // RNW does not reliably run ModalSlideEnter transform animations with the
-  // native driver, which leaves modal screens off-screen on Windows.
-  return Platform.OS === 'macos';
+  return isDesktopPlatform();
 }
 
 export function uploadAwareModalScreenOptions({
@@ -71,13 +69,6 @@ export function uploadAwareModalScreenOptions({
 }: {
   route: {params?: InstantNavParams};
 }): StackNavigationOptions {
-  if (Platform.OS === 'windows') {
-    return {
-      animation: 'none',
-      gestureEnabled: true,
-    };
-  }
-
   if (usesCustomModalEnterAnimation()) {
     return {
       animation: 'none',

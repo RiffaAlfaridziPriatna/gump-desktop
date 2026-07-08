@@ -232,11 +232,9 @@ export const cullingEngine = {
       photo.duplicated = existing.duplicated ?? false;
       photo.starRating = initialStarRating;
       photo.selected = isFirstAnalysis ? flags.selected : existing.selected;
-    });
+    }, {recomputeTotals: false});
 
     assignFaceClusterIdsIncremental(albumId, photoId);
-
-    await persistAlbum(albumId);
 
     const updated = getPhotoById(albumId, photoId);
     if (!updated) {

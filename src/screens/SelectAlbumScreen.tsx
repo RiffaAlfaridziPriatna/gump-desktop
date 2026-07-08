@@ -123,6 +123,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
   }
 
   return (
+    <View style={styles.screen}>
     <UploadAwareModalShell {...shellProps}>
       <SafeAreaView style={styles.container}>
       <View
@@ -227,18 +228,22 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
           <Text style={styles.errorText}>{startError}</Text>
         </View>
       )}
-
-      <UploadModal
-        visible={showUploadModal}
-        onClose={() => setShowUploadModal(false)}
-        onSelect={handleFilesSelected}
-      />
     </SafeAreaView>
     </UploadAwareModalShell>
+
+    <UploadModal
+      visible={showUploadModal}
+      onClose={() => setShowUploadModal(false)}
+      onSelect={handleFilesSelected}
+    />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,

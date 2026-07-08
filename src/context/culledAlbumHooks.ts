@@ -18,6 +18,16 @@ import {
 const EMPTY_PHOTO_IDS: string[] = [];
 const EMPTY_PHOTOS: CulledAlbumPhoto[] = [];
 
+function trackMemoDependencies(..._values: unknown[]): void {}
+
+export type CulledAlbumAnalysisCounts = {
+  pending: number;
+  completed: number;
+  inProgress: number;
+  failed: number;
+  total: number;
+};
+
 function buildServerUploadStateSignature(
   albumId: string,
   state: ReturnType<typeof culledAlbumStore.getState>,
@@ -56,6 +66,46 @@ function buildAnalysisStateSignature(
       return `${photoId}:${photo.analysisStatus}:${photo.analysisProgress}`;
     })
     .join('|');
+}
+
+function countAnalysisBatch(
+  albumId: string | null,
+  state: ReturnType<typeof culledAlbumStore.getState>,
+): CulledAlbumAnalysisCounts | null {
+  if (!albumId) {
+    return null;
+  }
+
+  const album = state.albums[albumId];
+  if (!album?.analysisBatchPhotoIds.length) {
+    return null;
+  }
+
+  const batchIds = new Set(album.analysisBatchPhotoIds);
+  const counts: CulledAlbumAnalysisCounts = {
+    pending: 0,
+    completed: 0,
+    inProgress: 0,
+    failed: 0,
+    total: batchIds.size,
+  };
+
+  for (const photo of album.photos) {
+    if (!batchIds.has(photo.photoId)) {
+      continue;
+    }
+    if (photo.analysisStatus === 'pending') {
+      counts.pending++;
+    } else if (photo.analysisStatus === 'failed') {
+      counts.failed++;
+    } else if (photo.analysisStatus === 'analyzed') {
+      counts.completed++;
+    } else if (photo.analysisStatus === 'analyzing') {
+      counts.inProgress++;
+    }
+  }
+
+  return counts;
 }
 
 export function useCulledAlbumUiState<R = CulledAlbumUiState>(
@@ -112,6 +162,7 @@ export function useCulledAlbumUploadItems(albumId: string | null) {
   });
 
   return useMemo(() => {
+    trackMemoDependencies(batchCounts);
     if (!albumId || batchPhotoIds.length === 0) {
       return EMPTY_PHOTOS;
     }
@@ -131,6 +182,7 @@ export function useCulledAlbumServerUploadBatch(albumId: string) {
   );
 
   return useMemo(() => {
+    trackMemoDependencies(uploadStateSignature);
     if (batchPhotoIds.length === 0) {
       return {batchPhotoIds: EMPTY_PHOTO_IDS, photos: EMPTY_PHOTOS};
     }
@@ -145,6 +197,10 @@ export function useCulledAlbumServerUploadBatch(albumId: string) {
 export function useCulledAlbumAnalyzeItems(albumId: string | null) {
   const batch = useCulledAlbumAnalysisBatch(albumId);
   return batch.photos;
+}
+
+export function useCulledAlbumAnalysisCounts(albumId: string | null) {
+  return useCulledAlbumStore(state => countAnalysisBatch(albumId, state));
 }
 
 function useCulledAlbumAnalysisBatch(albumId: string | null) {
@@ -168,6 +224,7 @@ function useCulledAlbumAnalysisBatch(albumId: string | null) {
   });
 
   return useMemo(() => {
+    trackMemoDependencies(analysisStateSignature);
     if (!albumId || batchPhotoIds.length === 0) {
       return {batchPhotoIds: EMPTY_PHOTO_IDS, photos: EMPTY_PHOTOS};
     }

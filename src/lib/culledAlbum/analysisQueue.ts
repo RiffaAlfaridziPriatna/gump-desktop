@@ -12,6 +12,11 @@ import {
 
 const ANALYSIS_PROGRESS_TICK_MS = 150;
 const ANALYSIS_FAKE_PROGRESS_CAP = 90;
+const ANALYSIS_PERSIST_DEBOUNCE_MS = 3000;
+
+type AnalysisUpdatePhotoOptions = {
+  recomputeTotals?: boolean;
+};
 
 export type AnalysisQueueDeps = {
   maxConcurrent: number;
@@ -20,6 +25,7 @@ export type AnalysisQueueDeps = {
     albumId: string,
     photoId: string,
     updater: (photo: CulledAlbumPhoto) => void,
+    options?: AnalysisUpdatePhotoOptions,
   ) => boolean;
   persistAlbum: (albumId: string) => Promise<void>;
   isSynced: (albumId: string) => boolean;
@@ -41,6 +47,31 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     onComplete,
     onError,
   } = deps;
+  const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function schedulePersist(albumId: string): void {
+    if (persistTimers.has(albumId)) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      persistTimers.delete(albumId);
+      persistAlbum(albumId).catch(err => {
+        console.error('[CulledAlbum] Failed to persist analysis progress', err);
+      });
+    }, ANALYSIS_PERSIST_DEBOUNCE_MS);
+
+    persistTimers.set(albumId, timer);
+  }
+
+  async function flushPersist(albumId: string): Promise<void> {
+    const timer = persistTimers.get(albumId);
+    if (timer) {
+      clearTimeout(timer);
+      persistTimers.delete(albumId);
+    }
+    await persistAlbum(albumId);
+  }
 
   function tryCompleteAlbum(albumId: string): void {
     if (isSynced(albumId)) {
@@ -69,13 +100,15 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     }
 
     markSynced(albumId);
-    void onComplete(albumId).catch(err => {
-      unmarkSynced(albumId);
-      const message =
-        err instanceof Error ? err.message : 'Failed to complete culling analysis';
-      onError(albumId, message);
-      console.error('[CulledAlbum] Failed to complete culling analysis', err);
-    });
+    flushPersist(albumId)
+      .then(() => onComplete(albumId))
+      .catch(err => {
+        unmarkSynced(albumId);
+        const message =
+          err instanceof Error ? err.message : 'Failed to complete culling analysis';
+        onError(albumId, message);
+        console.error('[CulledAlbum] Failed to complete culling analysis', err);
+      });
   }
 
   function analyzePhoto(
@@ -87,7 +120,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       photo.analysisProgress = 0;
       photo.analysisStatus = 'analyzing';
       photo.analysisError = undefined;
-    });
+    }, {recomputeTotals: false});
 
     let interval: ReturnType<typeof setInterval> | null = setInterval(() => {
       updatePhoto(albumId, photoId, photo => {
@@ -101,7 +134,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         if (next > photo.analysisProgress) {
           photo.analysisProgress = next;
         }
-      });
+      }, {recomputeTotals: false});
     }, ANALYSIS_PROGRESS_TICK_MS);
 
     const stopProgress = () => {
@@ -118,8 +151,8 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         updatePhoto(albumId, photoId, photo => {
           photo.analysisProgress = 100;
           photo.analysisStatus = 'analyzed';
-        });
-        void persistAlbum(albumId);
+        }, {recomputeTotals: false});
+        schedulePersist(albumId);
         tryCompleteAlbum(albumId);
       })
       .catch(err => {
@@ -154,7 +187,8 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
               entry.analysisError = message;
               entry.analysisProgress = 0;
             }
-          });
+          }, {recomputeTotals: false});
+          schedulePersist(albumId);
           onError(albumId, message);
           tryCompleteAlbum(albumId);
           processPending(albumId);
