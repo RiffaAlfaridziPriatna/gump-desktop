@@ -34,7 +34,7 @@ void GumpFilePicker::PickImages(
     ofn.lpstrFilter = filter;
     ofn.nFilterIndex = 1;
     ofn.lpstrFile = fileBuffer;
-    ofn.nMaxFile = static_cast<DWORD>(std::size(fileBuffer));
+    ofn.nMaxFile = static_cast<DWORD>(sizeof(fileBuffer) / sizeof(fileBuffer[0]));
     ofn.Flags = OFN_ALLOWMULTISELECT | OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
     ofn.lpstrTitle = L"Select photos";
 
