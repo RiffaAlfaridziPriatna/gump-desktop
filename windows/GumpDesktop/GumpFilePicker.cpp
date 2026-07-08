@@ -4,84 +4,109 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Storage.h>
 #include <winrt/Windows.Storage.FileProperties.h>
-#include <winrt/Windows.Storage.Pickers.h>
-#include <winrt/Windows.Foundation.h>
-#include <winrt/Windows.UI.Popups.h>
+#include <commdlg.h>
+#include <algorithm>
+#include <cwctype>
 
 namespace winrtRN = winrt::Microsoft::ReactNative;
-using namespace winrt::Windows::Storage;
-using namespace winrt::Windows::Storage::Pickers;
 
 namespace GumpDesktop {
 
 void GumpFilePicker::PickImages(
     winrtRN::ReactPromise<winrtRN::JSValue> &&promise) noexcept {
   try {
-    try {
-      winrt::init_apartment(winrt::apartment_type::single_threaded);
-    } catch (const winrt::hresult_error &e) {
-      if (e.code() != 0x80010106 /* RPC_E_CHANGED_MODE */) {
-        throw;
-      }
+    // Using Win32 dialog to avoid WinRT "Invalid window handle" and SDK/projection
+    // inconsistencies across environments. This runs synchronously but is a
+    // modal system picker, so the user experience is consistent.
+
+    // Buffer format (multi-select):
+    // - either: <full_path>\0
+    // - or: <dir>\0<file1>\0<file2>\0...\0\0
+    wchar_t fileBuffer[65536] = {};
+
+    static constexpr wchar_t filter[] =
+        L"Images (*.jpg;*.jpeg;*.png;*.gif;*.heic;*.tiff)\0"
+        L"*.jpg;*.jpeg;*.png;*.gif;*.heic;*.tiff\0";
+
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = GetActiveWindow();
+    ofn.lpstrFilter = filter;
+    ofn.nFilterIndex = 1;
+    ofn.lpstrFile = fileBuffer;
+    ofn.nMaxFile = static_cast<DWORD>(std::size(fileBuffer));
+    ofn.Flags = OFN_ALLOWMULTISELECT | OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    ofn.lpstrTitle = L"Select photos";
+
+    BOOL ok = GetOpenFileNameW(&ofn);
+    if (!ok) {
+      // Cancel or error: treat as empty selection.
+      promise.Resolve(winrtRN::JSValueArray{});
+      return;
     }
 
-    FileOpenPicker picker;
-    picker.SuggestedStartLocation(PickerLocationId::PicturesLibrary);
-    picker.ViewMode(PickerViewMode::Thumbnail);
-    picker.FileTypeFilter().Append(L".jpg");
-    picker.FileTypeFilter().Append(L".jpeg");
-    picker.FileTypeFilter().Append(L".png");
-    picker.FileTypeFilter().Append(L".gif");
-    picker.FileTypeFilter().Append(L".heic");
-    picker.FileTypeFilter().Append(L".tiff");
+    auto parseSelectedPaths = [&](wchar_t *buf) {
+      std::vector<std::wstring> paths;
 
-    // WinRT FileOpenPicker needs window context. Without initializing it with
-    // an HWND, it may silently fail or never show the dialog.
-    if (const HWND hwnd = GetActiveWindow() ? GetActiveWindow() : GetForegroundWindow()) {
+      std::wstring first(buf);
+      wchar_t *cursor = buf + first.size() + 1;
+      if (*cursor == L'\0') {
+        // single selection (first is full path)
+        paths.push_back(std::move(first));
+        return paths;
+      }
+
+      // multi selection
+      std::wstring dir = std::move(first);
+      while (*cursor != L'\0') {
+        std::wstring name(cursor);
+        paths.push_back(dir + L"\\" + name);
+        cursor += name.size() + 1;
+      }
+      return paths;
+    };
+
+    std::vector<std::wstring> paths = parseSelectedPaths(fileBuffer);
+
+    auto mimeTypeForPath = [](const std::wstring &path) -> std::wstring {
+      std::wstring ext = std::filesystem::path(path).extension().wstring();
+      std::transform(ext.begin(), ext.end(), ext.begin(), ::towlower);
+
+      if (ext == L".jpg" || ext == L".jpeg") return L"image/jpeg";
+      if (ext == L".png") return L"image/png";
+      if (ext == L".gif") return L"image/gif";
+      if (ext == L".heic") return L"image/heic";
+      if (ext == L".tif" || ext == L".tiff") return L"image/tiff";
+      return L"image/*";
+    };
+
+    winrtRN::JSValueArray result;
+    for (const auto &path : paths) {
+      std::wstring uriPath = path;
+      std::replace(uriPath.begin(), uriPath.end(), L'\\', L'/');
+
+      double size = 0;
       try {
-        picker.as<winrt::Windows::UI::Popups::IInitializeWithWindow>()->Initialize(
-            hwnd);
+        size = static_cast<double>(std::filesystem::file_size(path));
       } catch (...) {
-        // If initialization fails, still attempt the picker normally.
+        size = 0;
       }
+
+      std::wstring name = std::filesystem::path(path).filename().wstring();
+
+      winrtRN::JSValueObject fileObj;
+      fileObj["uri"] = winrt::to_string(L"file:///" + uriPath);
+      fileObj["name"] = winrt::to_string(name);
+      fileObj["size"] = size;
+      fileObj["type"] = winrt::to_string(mimeTypeForPath(path));
+
+      result.push_back(std::move(fileObj));
     }
 
-    auto op = picker.PickMultipleFilesAsync();
-    op.Completed(
-        [promise = std::move(promise)](
-            auto const &asyncOp,
-            winrt::Windows::Foundation::AsyncStatus status) mutable {
-          try {
-            if (status != winrt::Windows::Foundation::AsyncStatus::Completed) {
-              promise.Resolve(winrtRN::JSValueArray{});
-              return;
-            }
-
-            auto files = asyncOp.GetResults();
-
-            winrtRN::JSValueArray result;
-            for (const auto &file : files) {
-              auto props = file.GetBasicPropertiesAsync().get();
-              std::wstring uri = L"file:///";
-              uri += file.Path().c_str();
-              winrtRN::JSValueObject fileObj;
-              fileObj["uri"] = winrt::to_string(uri);
-              fileObj["name"] = winrt::to_string(file.Name());
-              fileObj["size"] = static_cast<double>(props.Size());
-              fileObj["type"] = winrt::to_string(file.ContentType());
-              result.push_back(std::move(fileObj));
-            }
-
-            promise.Resolve(std::move(result));
-          } catch (const winrt::hresult_error &e) {
-            promise.Reject(
-                winrtRN::ReactError{"Error", winrt::to_string(e.message())});
-          } catch (...) {
-            promise.Reject("Unknown native error");
-          }
-        });
+    promise.Resolve(std::move(result));
   } catch (const winrt::hresult_error &e) {
-    promise.Reject(winrtRN::ReactError{"Error", winrt::to_string(e.message())});
+    promise.Reject(
+        winrtRN::ReactError{"Error", winrt::to_string(e.message())});
   } catch (...) {
     promise.Reject("Unknown native error");
   }
