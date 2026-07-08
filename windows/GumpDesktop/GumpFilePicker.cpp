@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cwctype>
 
+#pragma comment(lib, "Comdlg32.lib")
+
 namespace winrtRN = winrt::Microsoft::ReactNative;
 
 namespace GumpDesktop {
@@ -15,13 +17,6 @@ namespace GumpDesktop {
 void GumpFilePicker::PickImages(
     winrtRN::ReactPromise<winrtRN::JSValue> &&promise) noexcept {
   try {
-    // Using Win32 dialog to avoid WinRT "Invalid window handle" and SDK/projection
-    // inconsistencies across environments. This runs synchronously but is a
-    // modal system picker, so the user experience is consistent.
-
-    // Buffer format (multi-select):
-    // - either: <full_path>\0
-    // - or: <dir>\0<file1>\0<file2>\0...\0\0
     wchar_t fileBuffer[65536] = {};
 
     static constexpr wchar_t filter[] =
@@ -40,7 +35,6 @@ void GumpFilePicker::PickImages(
 
     BOOL ok = GetOpenFileNameW(&ofn);
     if (!ok) {
-      // Cancel or error: treat as empty selection.
       promise.Resolve(winrtRN::JSValueArray{});
       return;
     }
@@ -51,12 +45,10 @@ void GumpFilePicker::PickImages(
       std::wstring first(buf);
       wchar_t *cursor = buf + first.size() + 1;
       if (*cursor == L'\0') {
-        // single selection (first is full path)
         paths.push_back(std::move(first));
         return paths;
       }
 
-      // multi selection
       std::wstring dir = std::move(first);
       while (*cursor != L'\0') {
         std::wstring name(cursor);
