@@ -5,6 +5,7 @@ import {
   Animated,
   Easing,
   Modal as RNModal,
+  Platform,
   StyleSheet,
   TouchableWithoutFeedback,
   useWindowDimensions,
@@ -13,6 +14,8 @@ import {
 } from 'react-native';
 import {TouchableOpacity} from './TouchableOpacity';
 import IconClose from '../../assets/images/icon_close.svg';
+
+const useNativeDriver = Platform.OS !== 'windows';
 
 export type ModalDecorativeProps = {
   width?: string | number;
@@ -136,13 +139,13 @@ function DesktopModal(props: ModalProps) {
           toValue: 1,
           duration: ENTER_DURATION,
           easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
+          useNativeDriver,
         }),
         Animated.timing(translateY, {
           toValue: 0,
           duration: ENTER_DURATION,
           easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
+          useNativeDriver,
         }),
       ]).start();
 
@@ -158,13 +161,13 @@ function DesktopModal(props: ModalProps) {
         toValue: 0,
         duration: EXIT_DURATION,
         easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
+        useNativeDriver,
       }),
       Animated.timing(translateY, {
         toValue: offset,
         duration: EXIT_DURATION,
         easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
+        useNativeDriver,
       }),
     ]).start(({finished}) => {
       if (finished) {

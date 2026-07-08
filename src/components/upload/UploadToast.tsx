@@ -20,12 +20,15 @@ import {TouchableOpacity} from '@components/ui';
 import {
   Animated,
   Easing,
+  Platform,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
 import IconClose from '../../assets/images/icon_close.svg';
+
+const useNativeDriver = Platform.OS !== 'windows';
 
 const SLIDE_DISTANCE = 120;
 const ANIMATION_MS = 220;
@@ -213,7 +216,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
         toValue: 0,
         duration: ANIMATION_MS,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
+        useNativeDriver,
       }).start();
       return;
     }
@@ -224,13 +227,13 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
           toValue: SLIDE_DISTANCE,
           duration: ANIMATION_MS,
           easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
+          useNativeDriver,
         }),
         Animated.timing(opacity, {
           toValue: 0,
           duration: ANIMATION_MS,
           easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
+          useNativeDriver,
         }),
       ]).start(({finished}) => {
         if (finished) {

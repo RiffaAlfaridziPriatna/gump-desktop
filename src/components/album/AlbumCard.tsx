@@ -11,6 +11,7 @@ import {TouchableOpacity} from '@components/ui';
 import {
   Animated,
   Image,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -23,6 +24,8 @@ import IconTrash from '../../assets/images/icon_trash.svg';
 import {Checkbox} from '@components/ui';
 import type {FrostedBackdrop} from '@components/ui/frosted';
 import {useAlbumGridItemWidth} from './AlbumGrid';
+
+const useNativeDriver = Platform.OS !== 'windows';
 
 type AlbumCardAlbum = APIResponse.Album | LocalAlbumCardModel;
 
@@ -132,7 +135,7 @@ export function AlbumCard(props: AlbumCardProps) {
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 150,
-        useNativeDriver: true,
+        useNativeDriver,
       }).start();
     } else {
       fadeAnim.setValue(0);

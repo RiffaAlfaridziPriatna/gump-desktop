@@ -2,6 +2,7 @@ import {useEffect, useRef} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
   Animated,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -9,6 +10,8 @@ import {
 import {useErrorState, useErrorActions} from '@context/error';
 import {colors} from '@lib/colors';
 import {fonts} from '@lib/typography';
+
+const useNativeDriver = Platform.OS !== 'windows';
 
 const TOAST_DURATION = 5000;
 
@@ -25,12 +28,12 @@ export function ErrorToast() {
         Animated.timing(translateY, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver,
         }),
         Animated.timing(opacity, {
           toValue: 1,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver,
         }),
       ]).start();
 
@@ -47,12 +50,12 @@ export function ErrorToast() {
       Animated.timing(translateY, {
         toValue: -100,
         duration: 300,
-        useNativeDriver: true,
+        useNativeDriver,
       }),
       Animated.timing(opacity, {
         toValue: 0,
         duration: 300,
-        useNativeDriver: true,
+        useNativeDriver,
       }),
     ]).start(() => {
       clearError();
