@@ -1,4 +1,4 @@
-import {hammingDistance} from '@lib/perceptualHash';
+import {hammingDistance} from '@lib/media/perceptualHash';
 
 type BKNode = {
   hash: string;

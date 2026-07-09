@@ -19,3 +19,4 @@ export function photoIdFromStoredFile(file: FileAsset): string {
   }
   return file.name;
 }
+

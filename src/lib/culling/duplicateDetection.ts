@@ -1,4 +1,5 @@
 import {BKTree} from './bkTree';
+import {yieldToMain} from '@lib/async/yieldToMain';
 import {
   areFacesSimilar,
   arePerceptualHashesSimilar,
@@ -7,6 +8,7 @@ import {
 } from './cullingUtil';
 
 const TEMPORAL_WINDOW_MS = 60 * 60 * 1000;
+const YIELD_EVERY_N_PHOTOS = 25;
 
 function photoQualityTier(photo: DuplicateDetectionPhoto): number {
   if (photo.blurred) {
@@ -21,6 +23,19 @@ function photoQualityTier(photo: DuplicateDetectionPhoto): number {
 export function detectDuplicates(
   photos: Record<string, DuplicateDetectionPhoto>,
 ): void {
+  runDuplicateDetection(photos);
+}
+
+export async function detectDuplicatesAsync(
+  photos: Record<string, DuplicateDetectionPhoto>,
+): Promise<void> {
+  await runDuplicateDetection(photos, true);
+}
+
+async function runDuplicateDetection(
+  photos: Record<string, DuplicateDetectionPhoto>,
+  yieldBetweenChunks = false,
+): Promise<void> {
   const records = Object.values(photos);
 
   for (const record of records) {
@@ -39,63 +54,52 @@ export function detectDuplicates(
 
   const tree = new BKTree();
   const photoIdToRecord = new Map<string, DuplicateDetectionPhoto>();
-
   for (const record of sorted) {
-    if (record.perceptualHash) {
-      tree.insert(record.perceptualHash, record.photoId);
-    }
     photoIdToRecord.set(record.photoId, record);
   }
 
   const duplicateGroups: Set<string>[] = [];
   const photoIdToGroupIndex = new Map<string, number>();
-  const checkedPairs = new Set<string>();
+
+  const processed: DuplicateDetectionPhoto[] = [];
+  let windowStart = 0;
 
   for (let i = 0; i < sorted.length; i++) {
     const photoA = sorted[i]!;
     const aTime = photoA.capturedAt ?? 0;
 
-    const hashCandidates = photoA.perceptualHash
-      ? tree.findWithinDistance(
-          photoA.perceptualHash,
-          PERCEPTUAL_HASH_DUPLICATE_THRESHOLD,
-        )
-      : [];
-
-    const candidateSet = new Set<DuplicateDetectionPhoto>();
-
-    for (const candidateId of hashCandidates) {
-      if (candidateId === photoA.photoId) {
-        continue;
-      }
-      const candidate = photoIdToRecord.get(candidateId);
-      if (candidate) {
-        candidateSet.add(candidate);
-      }
-    }
-
-    for (let j = i + 1; j < sorted.length; j++) {
-      const photoB = sorted[j]!;
-      const bTime = photoB.capturedAt ?? 0;
-
-      if (Math.abs(bTime - aTime) > TEMPORAL_WINDOW_MS) {
+    while (windowStart < processed.length) {
+      const candidate = processed[windowStart]!;
+      const candidateTime = candidate.capturedAt ?? 0;
+      if (aTime - candidateTime <= TEMPORAL_WINDOW_MS) {
         break;
       }
-
-      candidateSet.add(photoB);
+      windowStart++;
     }
 
-    for (const photoB of candidateSet) {
-      const pairKey =
-        photoA.photoId < photoB.photoId
-          ? `${photoA.photoId}:${photoB.photoId}`
-          : `${photoB.photoId}:${photoA.photoId}`;
+    const candidateIds = new Set<string>();
 
-      if (checkedPairs.has(pairKey)) {
+    if (photoA.perceptualHash) {
+      const hashCandidates = tree.findWithinDistance(
+        photoA.perceptualHash,
+        PERCEPTUAL_HASH_DUPLICATE_THRESHOLD,
+      );
+      for (const candidateId of hashCandidates) {
+        if (candidateId !== photoA.photoId) {
+          candidateIds.add(candidateId);
+        }
+      }
+    }
+
+    for (let p = windowStart; p < processed.length; p++) {
+      candidateIds.add(processed[p]!.photoId);
+    }
+
+    for (const candidateId of candidateIds) {
+      const photoB = photoIdToRecord.get(candidateId);
+      if (!photoB || photoB.photoId === photoA.photoId) {
         continue;
       }
-
-      checkedPairs.add(pairKey);
 
       const hasSimilarHash = arePerceptualHashesSimilar(
         photoA.perceptualHash,
@@ -103,38 +107,50 @@ export function detectDuplicates(
       );
       const hasSimilarFaces = areFacesSimilar(photoA.faces, photoB.faces);
 
-      if (hasSimilarHash || hasSimilarFaces) {
-        const groupIndexA = photoIdToGroupIndex.get(photoA.photoId);
-        const groupIndexB = photoIdToGroupIndex.get(photoB.photoId);
-
-        if (groupIndexA !== undefined && groupIndexB !== undefined) {
-          if (groupIndexA !== groupIndexB) {
-            const groupA = duplicateGroups[groupIndexA]!;
-            const groupB = duplicateGroups[groupIndexB]!;
-            for (const id of groupB) {
-              groupA.add(id);
-              photoIdToGroupIndex.set(id, groupIndexA);
-            }
-            groupB.clear();
-          }
-        } else if (groupIndexA !== undefined) {
-          duplicateGroups[groupIndexA]!.add(photoB.photoId);
-          photoIdToGroupIndex.set(photoB.photoId, groupIndexA);
-        } else if (groupIndexB !== undefined) {
-          duplicateGroups[groupIndexB]!.add(photoA.photoId);
-          photoIdToGroupIndex.set(photoA.photoId, groupIndexB);
-        } else {
-          const newGroup = new Set([photoA.photoId, photoB.photoId]);
-          const newIndex = duplicateGroups.length;
-          duplicateGroups.push(newGroup);
-          photoIdToGroupIndex.set(photoA.photoId, newIndex);
-          photoIdToGroupIndex.set(photoB.photoId, newIndex);
-        }
+      if (!hasSimilarHash && !hasSimilarFaces) {
+        continue;
       }
+
+      const groupIndexA = photoIdToGroupIndex.get(photoA.photoId);
+      const groupIndexB = photoIdToGroupIndex.get(photoB.photoId);
+
+      if (groupIndexA !== undefined && groupIndexB !== undefined) {
+        if (groupIndexA !== groupIndexB) {
+          const groupA = duplicateGroups[groupIndexA]!;
+          const groupB = duplicateGroups[groupIndexB]!;
+          for (const id of groupB) {
+            groupA.add(id);
+            photoIdToGroupIndex.set(id, groupIndexA);
+          }
+          groupB.clear();
+        }
+      } else if (groupIndexA !== undefined) {
+        duplicateGroups[groupIndexA]!.add(photoB.photoId);
+        photoIdToGroupIndex.set(photoB.photoId, groupIndexA);
+      } else if (groupIndexB !== undefined) {
+        duplicateGroups[groupIndexB]!.add(photoA.photoId);
+        photoIdToGroupIndex.set(photoA.photoId, groupIndexB);
+      } else {
+        const newGroup = new Set([photoA.photoId, photoB.photoId]);
+        const newIndex = duplicateGroups.length;
+        duplicateGroups.push(newGroup);
+        photoIdToGroupIndex.set(photoA.photoId, newIndex);
+        photoIdToGroupIndex.set(photoB.photoId, newIndex);
+      }
+    }
+
+    if (photoA.perceptualHash) {
+      tree.insert(photoA.perceptualHash, photoA.photoId);
+    }
+    processed.push(photoA);
+
+    if (yieldBetweenChunks && i > 0 && i % YIELD_EVERY_N_PHOTOS === 0) {
+      await yieldToMain();
     }
   }
 
-  for (const group of duplicateGroups) {
+  for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex++) {
+    const group = duplicateGroups[groupIndex]!;
     if (group.size <= 1) {
       continue;
     }
@@ -154,6 +170,14 @@ export function detectDuplicates(
 
     for (const photo of groupPhotos) {
       photo.duplicated = photo.photoId !== bestPhoto.photoId;
+    }
+
+    if (
+      yieldBetweenChunks &&
+      groupIndex > 0 &&
+      groupIndex % YIELD_EVERY_N_PHOTOS === 0
+    ) {
+      await yieldToMain();
     }
   }
 }

@@ -1,5 +1,7 @@
-import {deleteLocalPhotoFile} from '@lib/localStorage';
+import {syncPhotosFromStore, syncPhotoFromStore} from '@/application/syncPhotoRepository';
+import {deleteLocalPhotoFile} from '@lib/storage/localStorage';
 import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
+import {hydrateAllPhotos} from '@lib/culledAlbum/photoLoader';
 import {
   culledAlbumStore,
   ensureAlbumLoaded,
@@ -10,7 +12,8 @@ import {
   removePhotoFromAlbum,
   updatePhoto,
 } from '@lib/culledAlbum/store';
-import {toCullingPhoto, isCulledPhotoDisabled, recomputeAlbumTotals} from '@lib/culledAlbum/types';
+import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
+import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 import {NativeModules, Platform} from 'react-native';
@@ -25,12 +28,16 @@ import {
   deriveStarRating,
   DuplicateDetectionPhoto,
   assignFaceClustersToSinglePhoto,
-  faceFingerprint,
 } from './cullingUtil';
-import {detectDuplicates} from './duplicateDetection';
+import {detectDuplicates, detectDuplicatesAsync} from './duplicateDetection';
+import {
+  clearFaceClusterIndex,
+  getFaceClusterIndex,
+  seedFaceClusterIndex,
+} from './faceClusterIndex';
 import {NativeDetectedFace} from '@lib/culledAlbum/types';
-import {readImageCaptureTime} from '@lib/imageCaptureTime';
-import {computeImagePerceptualHash} from '@lib/perceptualHash';
+import {readImageCaptureTime} from '@lib/media/imageCaptureTime';
+import {computeImagePerceptualHash} from '@lib/media/perceptualHash';
 
 type NativeLocalStorageModule = {
   detectFacesForCulling: (uri: string) => Promise<NativeDetectedFace[]>;
@@ -108,12 +115,15 @@ const detector = createPlatformDetector();
 
 async function getAnalyzedPhotos(albumId: string): Promise<CullingPhoto[]> {
   await ensureAlbumLoaded(albumId);
+  hydrateAllPhotos(albumId);
+  seedFaceClusterIndex(albumId, getPhotosForAlbum(albumId));
   return getPhotosForAlbum(albumId)
     .filter(photo => photo.analysisStatus === 'analyzed')
     .map(toCullingPhoto);
 }
 
-function applyDuplicateFlags(albumId: string): void {
+async function applyDuplicateFlags(albumId: string): Promise<void> {
+  hydrateAllPhotos(albumId);
   const photoMap: Record<string, DuplicateDetectionPhoto> = {};
   for (const photo of getPhotosForAlbum(albumId).filter(
     entry => entry.analysisStatus === 'analyzed',
@@ -125,7 +135,22 @@ function applyDuplicateFlags(albumId: string): void {
     };
   }
 
-  detectDuplicates(photoMap);
+  await detectDuplicatesAsync(photoMap);
+
+  const syncedPhotoIds: string[] = [];
+  photoStateStore.setState(state => {
+    for (const photo of Object.values(photoMap)) {
+      const entry = state.photoState[photoKey(albumId, photo.photoId)];
+      if (!entry) {
+        continue;
+      }
+      entry.duplicated = photo.duplicated;
+      if (entry.duplicated) {
+        entry.selected = false;
+      }
+      syncedPhotoIds.push(photo.photoId);
+    }
+  });
 
   culledAlbumStore.setState(state => {
     const album = state.albums[albumId];
@@ -135,54 +160,61 @@ function applyDuplicateFlags(albumId: string): void {
 
     for (const photo of Object.values(photoMap)) {
       const entry = album.photos.find(item => item.photoId === photo.photoId);
-      if (entry) {
-        entry.duplicated = photo.duplicated;
-        if (entry.duplicated) {
-          entry.selected = false;
-        }
+      if (!entry) {
+        continue;
+      }
+      entry.duplicated = photo.duplicated;
+      if (entry.duplicated) {
+        entry.selected = false;
       }
     }
-
-    recomputeAlbumTotals(album);
   });
+
+  if (syncedPhotoIds.length > 0) {
+    syncPhotosFromStore(albumId, syncedPhotoIds);
+  }
 }
 
 function assignFaceClusterIdsIncremental(
   albumId: string,
   photoId: string,
 ): void {
+  const album = getAlbum(albumId);
+  if (!album) {
+    return;
+  }
+
+  const clusterRepresentatives = getFaceClusterIndex(albumId);
+  let nextFaceClusterId = album.nextFaceClusterId;
+
+  const updated = updatePhoto(
+    albumId,
+    photoId,
+    photo => {
+      if (photo.faces.length === 0) {
+        return;
+      }
+      nextFaceClusterId = assignFaceClustersToSinglePhoto(
+        photo.faces,
+        clusterRepresentatives,
+        nextFaceClusterId,
+      );
+    },
+    {recomputeTotals: false},
+  );
+
+  if (!updated) {
+    return;
+  }
+
   culledAlbumStore.setState(state => {
     const albumState = state.albums[albumId];
-    if (!albumState) {
-      return;
+    if (albumState) {
+      albumState.nextFaceClusterId = nextFaceClusterId;
     }
-
-    const photo = albumState.photos.find(entry => entry.photoId === photoId);
-    if (!photo || photo.faces.length === 0) {
-      return;
-    }
-
-    const previousPhotos = albumState.photos.filter(
-      entry =>
-        entry.analysisStatus === 'analyzed' && entry.photoId !== photoId,
-    );
-
-    const clusterRepresentatives = new Map<string, number[]>();
-    for (const previousPhoto of previousPhotos) {
-      for (const face of previousPhoto.faces) {
-        const clusterId = face.rekognitionFaceId;
-        if (clusterId && !clusterRepresentatives.has(clusterId)) {
-          clusterRepresentatives.set(clusterId, faceFingerprint(face));
-        }
-      }
-    }
-
-    albumState.nextFaceClusterId = assignFaceClustersToSinglePhoto(
-      photo.faces,
-      clusterRepresentatives,
-      albumState.nextFaceClusterId,
-    );
   });
+
+  syncPhotoFromStore(albumId, photoId);
 }
 
 export const cullingEngine = {
@@ -233,6 +265,8 @@ export const cullingEngine = {
       photo.starRating = initialStarRating;
       photo.selected = isFirstAnalysis ? flags.selected : existing.selected;
     }, {recomputeTotals: false});
+
+    syncPhotoFromStore(albumId, photoId);
 
     assignFaceClusterIdsIncremental(albumId, photoId);
 
@@ -318,7 +352,7 @@ export const cullingEngine = {
 
     const remaining = await getAnalyzedPhotos(albumId);
     if (remaining.length > 0) {
-      applyDuplicateFlags(albumId);
+      await applyDuplicateFlags(albumId);
       await persistAlbum(albumId);
     }
   },
@@ -328,8 +362,12 @@ export const cullingEngine = {
     if (photos.length === 0) {
       throw new Error('No analyzed photos');
     }
-    applyDuplicateFlags(albumId);
+    await applyDuplicateFlags(albumId);
     await persistAlbum(albumId);
+  },
+
+  async refreshDuplicateFlags(albumId: string): Promise<void> {
+    await applyDuplicateFlags(albumId);
   },
 
   async finalize(
@@ -343,6 +381,7 @@ export const cullingEngine = {
   },
 
   async clearAlbum(albumId: string): Promise<void> {
+    clearFaceClusterIndex(albumId);
     await purgeLocalCulledAlbum(albumId);
   },
 };

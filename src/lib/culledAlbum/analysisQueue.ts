@@ -1,4 +1,10 @@
+import {AnalyzePhotoUseCase} from '@/application/useCases/AnalyzePhotoUseCase';
 import {cullingEngine} from '@lib/culling/cullingEngine';
+import {
+  runDeferredDuringUploadNavigation,
+  runOrDeferHeavyWorkForNavigation,
+  shouldYieldUploadQueueForNavigation,
+} from '@lib/navigation/uploadAwareNavigation';
 import {FileAsset} from '@services/upload/types';
 import {
   getAnalysisBatchPhotos,
@@ -10,9 +16,8 @@ import {
   CulledAlbumPhoto,
 } from './types';
 
-const ANALYSIS_PROGRESS_TICK_MS = 150;
-const ANALYSIS_FAKE_PROGRESS_CAP = 90;
 const ANALYSIS_PERSIST_DEBOUNCE_MS = 3000;
+const QUEUE_YIELD_MS = 32;
 
 type AnalysisUpdatePhotoOptions = {
   recomputeTotals?: boolean;
@@ -20,6 +25,7 @@ type AnalysisUpdatePhotoOptions = {
 
 export type AnalysisQueueDeps = {
   maxConcurrent: number;
+  analyzePhotoUseCase: AnalyzePhotoUseCase;
   getPhotos: (albumId: string) => CulledAlbumPhoto[];
   updatePhoto: (
     albumId: string,
@@ -38,6 +44,7 @@ export type AnalysisQueueDeps = {
 export function createAnalysisQueue(deps: AnalysisQueueDeps) {
   const {
     maxConcurrent,
+    analyzePhotoUseCase,
     getPhotos,
     updatePhoto,
     persistAlbum,
@@ -121,47 +128,36 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       photo.analysisStatus = 'analyzing';
       photo.analysisError = undefined;
     }, {recomputeTotals: false});
-
-    let interval: ReturnType<typeof setInterval> | null = setInterval(() => {
-      updatePhoto(albumId, photoId, photo => {
-        if (photo.analysisStatus !== 'analyzing') {
-          return;
-        }
-        const next = Math.min(
-          ANALYSIS_FAKE_PROGRESS_CAP,
-          photo.analysisProgress + 4,
-        );
-        if (next > photo.analysisProgress) {
-          photo.analysisProgress = next;
-        }
-      }, {recomputeTotals: false});
-    }, ANALYSIS_PROGRESS_TICK_MS);
-
-    const stopProgress = () => {
-      if (interval) {
-        clearInterval(interval);
-        interval = null;
-      }
-    };
+    runOrDeferHeavyWorkForNavigation(() => {
+      analyzePhotoUseCase.startAnalysis(albumId, photoId);
+    });
 
     return cullingEngine
       .analyzePhoto(albumId, photoId, file)
       .then(() => {
-        stopProgress();
-        updatePhoto(albumId, photoId, photo => {
-          photo.analysisProgress = 100;
-          photo.analysisStatus = 'analyzed';
-        }, {recomputeTotals: false});
-        schedulePersist(albumId);
+        runDeferredDuringUploadNavigation(() => {
+          updatePhoto(albumId, photoId, photo => {
+            photo.analysisProgress = 100;
+            photo.analysisStatus = 'analyzed';
+          }, {recomputeTotals: false});
+        });
+        runOrDeferHeavyWorkForNavigation(() => {
+          analyzePhotoUseCase.markAnalyzed(albumId, photoId);
+          schedulePersist(albumId);
+        });
         tryCompleteAlbum(albumId);
       })
       .catch(err => {
-        stopProgress();
         throw err;
       });
   }
 
   function processPending(albumId: string): void {
+    if (shouldYieldUploadQueueForNavigation()) {
+      setTimeout(() => processPending(albumId), QUEUE_YIELD_MS);
+      return;
+    }
+
     let runningCount = countByAnalysisStatus(getPhotos(albumId), 'analyzing');
 
     for (const photo of getPhotos(albumId)) {
@@ -188,6 +184,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
               entry.analysisProgress = 0;
             }
           }, {recomputeTotals: false});
+          analyzePhotoUseCase.markFailed(albumId, photo.photoId, message);
           schedulePersist(albumId);
           onError(albumId, message);
           tryCompleteAlbum(albumId);

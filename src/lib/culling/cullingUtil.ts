@@ -1,5 +1,5 @@
 import { APIResponse } from '@services/api';
-import { hammingDistance } from '@lib/perceptualHash';
+import { hammingDistance } from '@lib/media/perceptualHash';
 
 export type CullingFace = APIResponse.CullingFace;
 export type CullingPhoto = APIResponse.CullingPhoto;
