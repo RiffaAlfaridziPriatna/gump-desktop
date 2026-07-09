@@ -3,7 +3,9 @@ import {
   getPhotoIdsForAlbum,
   hydratePhotos,
 } from '@lib/culledAlbum/photoLoader';
+import {bumpPhotoGridRevision} from '@lib/culledAlbum/photoStateStore';
 import {getPhotoById, updatePhoto} from '@lib/culledAlbum/store';
+import {shouldDeferHeavyWorkForNavigation} from '@lib/navigation/uploadAwareNavigation';
 import {
   ensureThumbnail,
 } from '@lib/storage/localStorage';
@@ -22,12 +24,17 @@ export async function backfillAlbumThumbnails(albumId: string): Promise<void> {
   hydratePhotos(albumId, photoIds.slice(0, BATCH_SIZE));
 
   for (let index = 0; index < photoIds.length; index += BATCH_SIZE) {
+    if (shouldDeferHeavyWorkForNavigation()) {
+      scheduleThumbnailBackfillForPhotos(albumId, photoIds.slice(index));
+      return;
+    }
+
     const batchIds = photoIds.slice(index, index + BATCH_SIZE);
     hydratePhotos(albumId, batchIds);
 
     for (const photoId of batchIds) {
       const photo = getPhotoById(albumId, photoId);
-      if (!photo) {
+      if (!photo || photo.file.thumbnailUri) {
         continue;
       }
 
@@ -43,6 +50,8 @@ export async function backfillAlbumThumbnails(albumId: string): Promise<void> {
         );
       }
     }
+
+    bumpPhotoGridRevision(albumId);
 
     if (index + BATCH_SIZE < photoIds.length) {
       await yieldToMain();
@@ -111,12 +120,17 @@ async function backfillPhotoThumbnails(
   photoIds: string[],
 ): Promise<void> {
   for (let index = 0; index < photoIds.length; index += BATCH_SIZE) {
+    if (shouldDeferHeavyWorkForNavigation()) {
+      scheduleThumbnailBackfillForPhotos(albumId, photoIds.slice(index));
+      return;
+    }
+
     const batchIds = photoIds.slice(index, index + BATCH_SIZE);
     hydratePhotos(albumId, batchIds);
 
     for (const photoId of batchIds) {
       const photo = getPhotoById(albumId, photoId);
-      if (!photo) {
+      if (!photo || photo.file.thumbnailUri) {
         continue;
       }
 
@@ -132,6 +146,8 @@ async function backfillPhotoThumbnails(
         );
       }
     }
+
+    bumpPhotoGridRevision(albumId);
 
     if (index + BATCH_SIZE < photoIds.length) {
       await yieldToMain();

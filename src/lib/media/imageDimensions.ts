@@ -1,4 +1,5 @@
 import {NativeModules, Platform, Image} from 'react-native';
+import {LruCache} from './lruCache';
 
 export type ImageDimensions = {
   width: number;
@@ -13,7 +14,8 @@ const NativeLocalStorage = NativeModules.GumpLocalStorage as
   | NativeLocalStorageModule
   | undefined;
 
-const dimensionCache = new Map<string, ImageDimensions>();
+const DIMENSION_CACHE_MAX = 400;
+const dimensionCache = new LruCache<string, ImageDimensions>(DIMENSION_CACHE_MAX);
 
 export function getCachedImageDimensions(
   uri: string,
@@ -118,4 +120,3 @@ export function getCulledAlbumThumbnailLayout(
     top: (containerHeight - height) / 2,
   };
 }
-

@@ -2,15 +2,21 @@ import {
   CulledAlbumPhotoHoverContext,
   createCulledAlbumPhotoHoverStore,
 } from '@lib/culledAlbum/photoHover';
+import {scheduleThumbnailBackfillForPhotos} from '@lib/culledAlbum/thumbnailBackfill';
 import {scheduleHydrateVisiblePhotos} from '@hooks/useVisiblePhotos';
-import {preloadFileAssets} from '@lib/media/imagePreload';
+import {
+  cancelScrollImagePreload,
+  getScrollPreloadRange,
+  scheduleScrollImagePreload,
+  SCROLL_GRID_VISIBLE_PADDING,
+} from '@lib/media/scrollImagePreload';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 import {
   CulledAlbumPhotoCard,
   CulledAlbumPhotoCardProps,
 } from '@components/culling/CulledAlbumPhotoCard';
-import {useCallback, useMemo, useRef} from 'react';
+import {useCallback, useEffect, useMemo, useRef} from 'react';
 import {
   FlatList,
   ListRenderItemInfo,
@@ -47,7 +53,7 @@ const THUMBNAIL_ASPECT_RATIO = 3 / 2;
 const GRID_GAP = 16;
 const CARD_INTERNAL_GAP = 8;
 const CARD_INFO_ROW_HEIGHT = 28;
-const VISIBLE_PADDING = 9;
+const VISIBLE_PADDING = SCROLL_GRID_VISIBLE_PADDING;
 const SCROLL_END_DELAY_MS = 150;
 const SCROLLBAR_GUTTER = 24;
 
@@ -94,6 +100,7 @@ export function CulledAlbumPhotoGrid({
   const onScrollInteractionStartRef = useRef(onScrollInteractionStart);
   const lastPreloadRangeRef = useRef('');
   const lastHydrateRangeRef = useRef('');
+  const lastThumbnailRangeRef = useRef('');
 
   onScrollInteractionStartRef.current = onScrollInteractionStart;
 
@@ -147,6 +154,13 @@ export function CulledAlbumPhotoGrid({
     }, SCROLL_END_DELAY_MS);
   }, [clearScrollEndTimer]);
 
+  useEffect(() => {
+    return () => {
+      cancelScrollImagePreload();
+      clearScrollEndTimer();
+    };
+  }, [clearScrollEndTimer]);
+
   const beginScrollInteraction = useCallback(() => {
     if (!isScrollActiveRef.current) {
       isScrollActiveRef.current = true;
@@ -180,14 +194,28 @@ export function CulledAlbumPhotoGrid({
 
       const minIndex = Math.min(...indices);
       const maxIndex = Math.max(...indices);
-      const padding = VISIBLE_PADDING * COLUMNS;
-      const start = Math.max(0, minIndex - padding);
-      const end = Math.min(listItems.length, maxIndex + padding + 1);
+      const {start, end} = getScrollPreloadRange(
+        minIndex,
+        maxIndex,
+        listItems.length,
+        COLUMNS,
+      );
       const rangeKey = `${start}:${end}`;
 
       if (lastHydrateRangeRef.current !== rangeKey) {
         lastHydrateRangeRef.current = rangeKey;
         scheduleHydrateVisiblePhotos(albumId, indices, VISIBLE_PADDING);
+      }
+
+      if (lastThumbnailRangeRef.current !== rangeKey) {
+        lastThumbnailRangeRef.current = rangeKey;
+        const photoIdsNeedingThumbnail = listItems
+          .slice(start, end)
+          .filter(item => !item.file.thumbnailUri)
+          .map(item => item.photoId);
+        if (photoIdsNeedingThumbnail.length > 0) {
+          scheduleThumbnailBackfillForPhotos(albumId, photoIdsNeedingThumbnail);
+        }
       }
 
       if (lastPreloadRangeRef.current === rangeKey) {
@@ -196,7 +224,7 @@ export function CulledAlbumPhotoGrid({
       lastPreloadRangeRef.current = rangeKey;
 
       const files = listItems.slice(start, end).map(item => item.file);
-      preloadFileAssets(files).catch(() => undefined);
+      scheduleScrollImagePreload(files);
     },
     [albumId, listItems],
   );
@@ -253,10 +281,10 @@ export function CulledAlbumPhotoGrid({
         getItemLayout={getItemLayout}
         contentContainerStyle={contentContainerStyle}
         style={styles.list}
-        initialNumToRender={6}
-        maxToRenderPerBatch={4}
-        windowSize={5}
-        updateCellsBatchingPeriod={100}
+        initialNumToRender={4}
+        maxToRenderPerBatch={2}
+        windowSize={3}
+        updateCellsBatchingPeriod={150}
         removeClippedSubviews
         showsVerticalScrollIndicator
         scrollEventThrottle={64}

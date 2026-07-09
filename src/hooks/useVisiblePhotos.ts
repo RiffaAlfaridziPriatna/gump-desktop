@@ -1,8 +1,8 @@
 import {hydratePhotos, getPhotoIdsForAlbum} from '@lib/culledAlbum/photoLoader';
 import {useEffect} from 'react';
 
-const DEFAULT_PADDING = 9;
-const HYDRATE_DEBOUNCE_MS = 120;
+const DEFAULT_PADDING = 3;
+const HYDRATE_DEBOUNCE_MS = 200;
 
 const hydrateTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const lastHydrateKeyByAlbum = new Map<string, string>();

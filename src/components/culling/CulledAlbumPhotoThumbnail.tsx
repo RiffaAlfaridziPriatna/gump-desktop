@@ -3,7 +3,7 @@ import {
   getCachedImageDimensions,
   type ImageDimensions,
 } from '@lib/media/imageDimensions';
-import {resolveDisplayUri} from '@lib/storage/localStorage';
+import {resolveGridDisplayUri} from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
 import {FileAsset} from '@services/upload/types';
 import {memo, useCallback, useMemo, useState} from 'react';
@@ -27,10 +27,10 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
   width,
 }: CulledAlbumPhotoThumbnailProps) {
   const [isLoaded, setIsLoaded] = useState(false);
-  const uri = resolveDisplayUri(file);
+  const uri = resolveGridDisplayUri(file) ?? '';
   const height = width / THUMBNAIL_ASPECT_RATIO;
   const [imageSize, setImageSize] = useState<ImageDimensions | null>(
-    () => getCachedImageDimensions(uri) ?? null,
+    () => (uri ? getCachedImageDimensions(uri) ?? null : null),
   );
 
   const imageLayout = useMemo(() => {
@@ -74,25 +74,27 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
 
   return (
     <View style={[styles.container, {width, height}]}>
-      <Image
-        source={{uri}}
-        onLoad={handleLoad}
-        onError={handleError}
-        style={
-          imageLayout
-            ? [
-                styles.containedImage,
-                {
-                  width: imageLayout.width,
-                  height: imageLayout.height,
-                  left: imageLayout.left,
-                  top: imageLayout.top,
-                  opacity: isLoaded ? 1 : 0,
-                },
-              ]
-            : styles.imageHidden
-        }
-      />
+      {uri ? (
+        <Image
+          source={{uri}}
+          onLoad={handleLoad}
+          onError={handleError}
+          style={
+            imageLayout
+              ? [
+                  styles.containedImage,
+                  {
+                    width: imageLayout.width,
+                    height: imageLayout.height,
+                    left: imageLayout.left,
+                    top: imageLayout.top,
+                    opacity: isLoaded ? 1 : 0,
+                  },
+                ]
+              : styles.imageHidden
+          }
+        />
+      ) : null}
     </View>
   );
 });

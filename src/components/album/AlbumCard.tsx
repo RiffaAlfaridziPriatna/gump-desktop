@@ -1,4 +1,5 @@
 import {Badge} from '@components/ui';
+import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
 import {formatStorageSizeGb, LocalAlbumCardModel} from '@lib/culledAlbum/format';
 import {
   getCoverImageLayout,
@@ -9,6 +10,7 @@ import {fonts} from '@lib/ui/typography';
 import {APIResponse} from '@services/api';
 import {TouchableOpacity} from '@components/ui';
 import {
+  ActivityIndicator,
   Animated,
   Image,
   Platform,
@@ -129,6 +131,21 @@ export function AlbumCard(props: AlbumCardProps) {
   const itemWidth = useAlbumGridItemWidth();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const ownerName = props.ownerName ?? props.album.name;
+  const localImportQueue = useAlbumQueueOperation(props.album.id, 'upload');
+  const serverUploadQueue = useAlbumQueueOperation(props.album.id, 'serverUpload');
+  const analysisQueue = useAlbumQueueOperation(props.album.id, 'analyze');
+  const isHomepage = props.variant === 'homepage';
+  const isUploading =
+    isHomepage &&
+    (localImportQueue.status === 'active' ||
+      serverUploadQueue.status === 'active');
+  const isAnalyzing = isHomepage && analysisQueue.status === 'active';
+  const isBusy = isUploading || isAnalyzing;
+  const busyLabel = isAnalyzing
+    ? 'Analyzing...'
+    : isUploading
+      ? 'Uploading...'
+      : null;
 
   useEffect(() => {
     if (props.variant === 'homepage' && props.isExpanded) {
@@ -216,6 +233,12 @@ export function AlbumCard(props: AlbumCardProps) {
       ]}>
       <View ref={coverRef} style={styles.coverWrapper} onLayout={syncCoverBackdrop}>
         <AlbumCover album={props.album} width={itemWidth} />
+        {busyLabel && (
+          <View style={styles.analyzingOverlay}>
+            <ActivityIndicator size="small" color={colors.accent} />
+            <Text style={styles.analyzingText}>{busyLabel}</Text>
+          </View>
+        )}
         {(showUploaded || showCulled) && (
           <View style={styles.badges}>
             {showUploaded && (
@@ -241,7 +264,8 @@ export function AlbumCard(props: AlbumCardProps) {
             </Text>
             <View style={styles.moreMenu}>
               <TouchableOpacity
-                onPress={props.onPressMore}
+                onPress={isBusy ? undefined : props.onPressMore}
+                disabled={isBusy}
                 hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
                 activeOpacity={0.7}>
                 <IconMore
@@ -271,7 +295,7 @@ export function AlbumCard(props: AlbumCardProps) {
           </View>
         </View>
 
-        {props.isExpanded && (
+        {props.isExpanded && !isBusy && (
           <Animated.View
             style={[styles.deletePopup, {opacity: fadeAnim}]}
             pointerEvents="box-none">
@@ -332,6 +356,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 6,
+  },
+  analyzingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    zIndex: 5,
+  },
+  analyzingText: {
+    fontFamily: fonts.sansBold,
+    fontSize: 12,
+    color: colors.white,
   },
   
   footer: {

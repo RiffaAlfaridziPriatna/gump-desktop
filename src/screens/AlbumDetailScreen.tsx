@@ -1,22 +1,23 @@
 import {PhotoGrid} from '@components/photo/PhotoGrid';
+import {PhotoGridSkeleton} from '@components/photo/PhotoGridSkeleton';
 import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {UploadToast} from '@components/upload/UploadToast';
 import {
   useCulledAlbumActions,
   useCulledAlbumLocalImportProgress,
-  useCulledAlbumPhotosState,
   useCulledAlbumStore,
 } from '@context/culledAlbum';
+import {useAlbumDetailGridPhotos} from '@hooks/useAlbumDetailGridPhotos';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
-import {useThrottledValue} from '@hooks/useThrottledValue';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {useLayout} from '@hooks/useLayout';
+import {scheduleThumbnailBackfill} from '@lib/culledAlbum/thumbnailBackfill';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useIsFocused} from '@react-navigation/native';
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
@@ -29,71 +30,41 @@ import IconChevronLeft from '../assets/images/icon_chevron_left.svg';
 import IconScissors from '../assets/images/icon_scissors.svg';
 import GumpLogo from '../assets/images/logo.svg';
 
-const GRID_UPDATE_THROTTLE_MS = 300;
-
 type Props = StackScreenProps<MainStackParamList, 'AlbumDetail'>;
 
 type AlbumDetailBodyProps = {
   albumId: string;
   screenPaddingHorizontal: number;
-  skipInitialLoad: boolean;
+  isLocalImportActive: boolean;
 };
 
-function AlbumDetailBody({
+function AlbumDetailUploadingBody({
+  screenPaddingHorizontal,
+}: {
+  screenPaddingHorizontal: number;
+}) {
+  return <PhotoGridSkeleton horizontalPadding={screenPaddingHorizontal} />;
+}
+
+function AlbumDetailGridBody({
   albumId,
   screenPaddingHorizontal,
-  skipInitialLoad,
-}: AlbumDetailBodyProps) {
-  const albumPhotos = useCulledAlbumPhotosState(albumId);
-  const {photos, loadingPhotos, loadError, reloadPhotos} = useCulledAlbumPhotos(
-    albumId,
-    {skipInitialLoad: skipInitialLoad || albumPhotos.length > 0},
-  );
-
-  const isUploading = albumPhotos.some(
-    photo => photo.status === 'pending' || photo.status === 'uploading',
-  );
-  const uploadedCount = albumPhotos.filter(
-    photo => photo.status === 'uploaded',
-  ).length;
-
-  const displayPhotos = useMemo(() => {
-    const uploaded = albumPhotos
-      .filter(photo => photo.status === 'uploaded')
-      .map(photo => photo.file);
-    if (uploaded.length > 0) {
-      return uploaded;
-    }
-    if (photos.length > 0) {
-      return photos;
-    }
-    return albumPhotos.map(photo => photo.file);
-  }, [albumPhotos, photos]);
-
-  const placeholderCount = useMemo(
-    () =>
-      albumPhotos.filter(
-        photo => photo.status === 'pending' || photo.status === 'uploading',
-      ).length,
-    [albumPhotos],
-  );
-
-  const throttledDisplayPhotos = useThrottledValue(
-    displayPhotos,
-    GRID_UPDATE_THROTTLE_MS,
-  );
-  const throttledPlaceholderCount = useThrottledValue(
-    placeholderCount,
-    GRID_UPDATE_THROTTLE_MS,
-  );
+}: {
+  albumId: string;
+  screenPaddingHorizontal: number;
+}) {
+  const gridPhotos = useAlbumDetailGridPhotos(albumId);
+  const {loadingPhotos, loadError} = useCulledAlbumPhotos(albumId, {
+    skipInitialLoad: gridPhotos.length > 0,
+  });
 
   useEffect(() => {
-    if (!isUploading && uploadedCount > 0) {
-      reloadPhotos();
+    if (gridPhotos.length > 0) {
+      scheduleThumbnailBackfill(albumId);
     }
-  }, [isUploading, reloadPhotos, uploadedCount]);
+  }, [albumId, gridPhotos.length]);
 
-  if (loadingPhotos && photos.length === 0 && albumPhotos.length === 0) {
+  if (loadingPhotos && gridPhotos.length === 0) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color={colors.accent} />
@@ -110,24 +81,39 @@ function AlbumDetailBody({
   }
 
   return (
-    <>
-      <PhotoGrid
-        items={throttledDisplayPhotos}
-        albumId={albumId}
-        horizontalPadding={screenPaddingHorizontal}
+    <PhotoGrid
+      items={gridPhotos}
+      albumId={albumId}
+      horizontalPadding={screenPaddingHorizontal}
+    />
+  );
+}
+
+function AlbumDetailBody({
+  albumId,
+  screenPaddingHorizontal,
+  isLocalImportActive,
+}: AlbumDetailBodyProps) {
+  if (isLocalImportActive) {
+    return (
+      <AlbumDetailUploadingBody
+        screenPaddingHorizontal={screenPaddingHorizontal}
       />
-      <UploadToast mode="upload" albumId={albumId} />
-      <UploadToast mode="analyze" albumId={albumId} />
-    </>
+    );
+  }
+
+  return (
+    <AlbumDetailGridBody
+      albumId={albumId}
+      screenPaddingHorizontal={screenPaddingHorizontal}
+    />
   );
 }
 
 export default function AlbumDetailScreen({navigation, route}: Props) {
-  const {shellProps, handleBack, handleBackPressIn} = useUploadAwareModalScreen(
-    navigation,
-    route.params.instant,
-  );
   const {albumId, albumName, ownerName, skipResumeImport} = route.params;
+  const {shellProps, handleBack, handleBackPressIn} =
+    useUploadAwareModalScreen(navigation, route.params.instant, {albumId});
   const {isMobileLayout, screenPaddingHorizontal} = useLayout();
   const isFocused = useIsFocused();
   const {resumeInFlightWork, startAnalysis} = useCulledAlbumActions();
@@ -137,6 +123,9 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   const totalPhotos = useCulledAlbumStore(
     state => state.albums[albumId]?.totalPhotos ?? 0,
   );
+  const batchTotal = useCulledAlbumStore(
+    state => state.albums[albumId]?.localImportBatchTotal ?? 0,
+  );
 
   const isUploading =
     (localImportProgress?.pending ?? 0) + (localImportProgress?.uploading ?? 0) >
@@ -144,6 +133,8 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   const hasUploadedPhotos =
     (localImportProgress?.uploaded ?? 0) > 0 ||
     (!isUploading && totalPhotos > 0);
+
+  const displayTotalPhotos = Math.max(totalPhotos, batchTotal);
 
   const cullingSnapshot = useCulledAlbumStore(state => {
     const album = state.albums[albumId];
@@ -187,8 +178,6 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
 
   const isCullingInProgress =
     (cullingActive || cullingSnapshot.inProgress) && !cullingSnapshot.complete;
-
-  const displayTotalPhotos = totalPhotos;
 
   useEffect(() => {
     if (cullingSnapshot.inProgress) {
@@ -307,11 +296,17 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         </View>
       </View>
 
-      <AlbumDetailBody
-        albumId={albumId}
-        screenPaddingHorizontal={screenPaddingHorizontal}
-        skipInitialLoad={totalPhotos > 0}
-      />
+      <View style={styles.body}>
+        <AlbumDetailBody
+          albumId={albumId}
+          screenPaddingHorizontal={screenPaddingHorizontal}
+          isLocalImportActive={isUploading}
+        />
+      </View>
+      <UploadToast mode="upload" albumId={albumId} />
+      {isCullingInProgress ? (
+        <UploadToast mode="analyze" albumId={albumId} />
+      ) : null}
     </SafeAreaView>
     </UploadAwareModalShell>
   );
@@ -321,6 +316,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  body: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',

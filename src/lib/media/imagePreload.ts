@@ -2,10 +2,12 @@ import {Image} from 'react-native';
 import {FileAsset} from '@services/upload/types';
 import {resolveDisplayUri} from '@lib/storage/localStorage';
 import {loadImageDimensions} from './imageDimensions';
+import {LruCache} from './lruCache';
 
 const DEFAULT_CONCURRENCY = 4;
+const PREFETCH_CACHE_MAX = 200;
 
-const prefetchedUris = new Set<string>();
+const prefetchedUris = new LruCache<string, true>(PREFETCH_CACHE_MAX);
 const inflight = new Map<string, Promise<void>>();
 
 export function isImagePrefetched(uri: string): boolean {
@@ -31,7 +33,7 @@ export function preloadImage(uri: string): Promise<void> {
     Image.prefetch(uri).catch(() => undefined),
   ])
     .then(() => {
-      prefetchedUris.add(uri);
+      prefetchedUris.set(uri, true);
     })
     .finally(() => {
       inflight.delete(uri);
@@ -64,4 +66,3 @@ export function preloadFileAssets(
 ): Promise<void> {
   return preloadImages(files.map(resolveDisplayUri), options);
 }
-

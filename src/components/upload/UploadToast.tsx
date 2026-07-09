@@ -1,7 +1,7 @@
 import {ProgressBar} from '@components/ui';
 import {
   useCulledAlbumActions,
-  useCulledAlbumAnalyzeItems,
+  useCulledAlbumAnalysisCounts,
   useCulledAlbumLocalImportProgress,
   useCulledAlbumServerUploadBatch,
   useCulledAlbumUiState,
@@ -84,7 +84,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   const localImportProgress = useCulledAlbumLocalImportProgress(
     mode === 'upload' ? albumId : null,
   );
-  const analyzeItems = useCulledAlbumAnalyzeItems(
+  const analysisCounts = useCulledAlbumAnalysisCounts(
     mode === 'analyze' ? albumId : null,
   );
   const {batchPhotoIds: serverBatchPhotoIds, photos: serverUploadItems} =
@@ -97,8 +97,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     clearCompleted,
   } = useCulledAlbumActions();
 
-  const items =
-    mode === 'analyze' ? analyzeItems : serverUploadItems;
+  const items = mode === 'serverUpload' ? serverUploadItems : [];
 
   const visible =
     queueOperation.status === 'active' ||
@@ -108,9 +107,10 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
 
   const hasRenderableBatch =
     mode === 'upload'
-      ? queueOperation.status === 'active' ||
-        (localImportProgress?.total ?? 0) > 0
-      : items.length > 0;
+      ? queueOperation.status !== 'idle' || queueOperation.batchTotal > 0
+      : mode === 'analyze'
+        ? (analysisCounts?.total ?? 0) > 0
+        : items.length > 0;
 
   const shouldBeVisible = visible && hasRenderableBatch;
   const [mounted, setMounted] = useState(shouldBeVisible);
@@ -139,24 +139,57 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     if (mode === 'upload' && renderLocalImportProgress) {
       return countsFromLocalImportProgress(renderLocalImportProgress);
     }
+    if (mode === 'analyze' && analysisCounts) {
+      return {
+        pending: analysisCounts.pending,
+        inProgress: analysisCounts.inProgress,
+        completed: analysisCounts.completed,
+        failed: analysisCounts.failed,
+      };
+    }
     return countItems(renderItems, mode);
-  }, [mode, renderItems, renderLocalImportProgress]);
+  }, [analysisCounts, mode, renderItems, renderLocalImportProgress]);
 
   const batchTotal =
     mode === 'upload'
-      ? (renderLocalImportProgress?.total ?? 0)
-      : renderItems.length;
+      ? queueOperation.batchTotal
+      : mode === 'analyze'
+        ? (analysisCounts?.total ?? 0)
+        : renderItems.length;
 
+  const importFinished =
+    mode === 'upload' &&
+    (queueOperation.status === 'completed' || queueOperation.status === 'failed');
   const completed =
-    batchTotal > 0 && counts.completed + counts.failed >= batchTotal;
+    mode === 'upload'
+      ? importFinished
+      : batchTotal > 0 && counts.completed + counts.failed >= batchTotal;
+  const uploadCompletedCount =
+    mode === 'upload' && importFinished
+      ? queueOperation.uploadedCount
+      : counts.completed;
+  const uploadInProgressRemaining =
+    mode === 'upload' && localImportProgress
+      ? localImportProgress.pending + localImportProgress.uploading
+      : counts.pending + counts.inProgress;
   const allAnalyzeFailed =
     mode === 'analyze' &&
     completed &&
     counts.completed === 0 &&
     counts.failed > 0;
   const totalProgress = useMemo(() => {
-    if (mode === 'upload' && renderLocalImportProgress) {
-      return computeLocalImportBatchProgress(renderLocalImportProgress);
+    if (mode === 'upload') {
+      if (importFinished) {
+        return 1;
+      }
+      if (localImportProgress) {
+        return computeLocalImportBatchProgress(localImportProgress);
+      }
+      if (queueOperation.batchTotal === 0) {
+        return 0;
+      }
+      const done = queueOperation.uploadedCount + queueOperation.failedCount;
+      return done / queueOperation.batchTotal;
     }
 
     if (mode === 'serverUpload') {
@@ -172,21 +205,27 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   }, [
     batchTotal,
     counts,
+    importFinished,
+    localImportProgress,
     mode,
+    queueOperation.batchTotal,
+    queueOperation.failedCount,
+    queueOperation.uploadedCount,
     renderItems,
-    renderLocalImportProgress,
     serverBatchPhotoIds,
   ]);
 
   const inProgressLabel =
     mode === 'upload'
-      ? `Uploading ${counts.pending + counts.inProgress} photos`
+      ? `Uploading ${uploadInProgressRemaining} photos`
       : mode === 'analyze'
         ? `Analyzing ${counts.pending + counts.inProgress} photos`
         : `Uploading ${counts.pending + counts.inProgress} photos to server`;
   const completedLabel =
     mode === 'upload'
-      ? `Uploaded ${counts.completed} photos`
+      ? queueOperation.failedCount > 0
+        ? `Uploaded ${uploadCompletedCount} of ${queueOperation.batchTotal} photos`
+        : `Uploaded ${uploadCompletedCount} photos`
       : mode === 'analyze'
         ? allAnalyzeFailed
           ? `Failed to analyze ${counts.failed} photo${counts.failed === 1 ? '' : 's'}`
@@ -210,6 +249,8 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
 
     if (shouldBeVisible && !wasVisible) {
       setMounted(true);
+      translateY.stopAnimation();
+      opacity.stopAnimation();
       translateY.setValue(SLIDE_DISTANCE);
       opacity.setValue(1);
       Animated.timing(translateY, {
@@ -222,6 +263,11 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     }
 
     if (!shouldBeVisible && wasVisible) {
+      if (!queueOperation.completionSeen) {
+        wasVisibleRef.current = true;
+        return;
+      }
+
       Animated.parallel([
         Animated.timing(translateY, {
           toValue: SLIDE_DISTANCE,
@@ -245,7 +291,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
         }
       });
     }
-  }, [albumId, clearCompleted, mode, opacity, shouldBeVisible, translateY]);
+  }, [albumId, clearCompleted, mode, opacity, queueOperation.completionSeen, shouldBeVisible, translateY]);
 
   if (!mounted) {
     return null;
@@ -265,7 +311,11 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   }
 
   const showCompletedBadge =
-    completed && !allAnalyzeFailed && queueOperation.status === 'completed';
+    completed &&
+    !allAnalyzeFailed &&
+    (mode === 'upload'
+      ? queueOperation.status === 'completed'
+      : queueOperation.status === 'completed');
 
   return (
     <Animated.View
