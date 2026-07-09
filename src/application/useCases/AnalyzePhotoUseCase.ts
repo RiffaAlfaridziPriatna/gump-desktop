@@ -35,7 +35,7 @@ export class AnalyzePhotoUseCase {
     }
 
     photo.markAnalyzed(faces, aiFlags);
-    this.photoRepo.save(photo);
+    await this.photoRepo.save(photo);
   }
 
   startAnalysis(albumId: string, photoId: string): void {

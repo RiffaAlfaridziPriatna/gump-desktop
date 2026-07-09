@@ -1,7 +1,38 @@
 import TurboSqlite, {type Database, type Params} from 'react-native-turbo-sqlite';
 import {SQLiteAdapter} from './SQLiteAdapter';
+import type {PhotoStorageRow} from './photoStorageMeta';
+import {
+  ensurePhotoIndexColumnsTurbo,
+  statusColumnForField,
+} from './photoSchemaMigration';
+import {enqueueSQLiteWrite} from './sqliteWriteQueue';
 
 const DB_NAME = 'gump.db';
+
+const INSERT_PHOTO_SQL = `
+  INSERT OR REPLACE INTO photos (
+    album_id,
+    photo_id,
+    data,
+    updated_at,
+    file_size,
+    upload_status,
+    analysis_status,
+    server_upload_status
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`;
+
+function runDeferred<T>(work: () => T): Promise<T> {
+  return new Promise((resolve, reject) => {
+    setImmediate(() => {
+      try {
+        resolve(work());
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
 
 export class TurboSQLiteAdapter implements SQLiteAdapter {
   private db: Database;
@@ -12,7 +43,9 @@ export class TurboSQLiteAdapter implements SQLiteAdapter {
   }
 
   initialize(): void {
-    if (this.initialized) return;
+    if (this.initialized) {
+      return;
+    }
 
     this.db.executeSql(`
       CREATE TABLE IF NOT EXISTS albums (
@@ -36,13 +69,21 @@ export class TurboSQLiteAdapter implements SQLiteAdapter {
       CREATE INDEX IF NOT EXISTS idx_photos_album ON photos(album_id);
     `, [] as Params);
 
+    ensurePhotoIndexColumnsTurbo((query, params) =>
+      this.db.executeSql(query, (params ?? []) as Params),
+    );
+
     this.initialized = true;
   }
 
-  saveAlbum(albumId: string, data: string): void {
-    this.db.executeSql(
-      'INSERT OR REPLACE INTO albums (album_id, data, updated_at) VALUES (?, ?, ?)',
-      [albumId, data, Date.now()]
+  saveAlbum(albumId: string, data: string): Promise<void> {
+    return enqueueSQLiteWrite(() =>
+      runDeferred(() => {
+        this.db.executeSql(
+          'INSERT OR REPLACE INTO albums (album_id, data, updated_at) VALUES (?, ?, ?)',
+          [albumId, data, Date.now()],
+        );
+      }),
     );
   }
 
@@ -54,11 +95,14 @@ export class TurboSQLiteAdapter implements SQLiteAdapter {
     const row = result.rows?.[0];
     const value = row?.data;
     return typeof value === 'string' ? value : null;
-    return null;
   }
 
-  deleteAlbum(albumId: string): void {
-    this.db.executeSql('DELETE FROM albums WHERE album_id = ?', [albumId]);
+  deleteAlbum(albumId: string): Promise<void> {
+    return enqueueSQLiteWrite(() =>
+      runDeferred(() => {
+        this.db.executeSql('DELETE FROM albums WHERE album_id = ?', [albumId]);
+      }),
+    );
   }
 
   listAlbumIds(): string[] {
@@ -66,14 +110,11 @@ export class TurboSQLiteAdapter implements SQLiteAdapter {
       'SELECT album_id FROM albums ORDER BY updated_at DESC',
       [] as Params,
     );
-    return result.rows.map((row: any) => String(row.album_id));
+    return result.rows.map(row => String(row.album_id));
   }
 
-  savePhoto(albumId: string, photoId: string, data: string): void {
-    this.db.executeSql(
-      'INSERT OR REPLACE INTO photos (album_id, photo_id, data, updated_at) VALUES (?, ?, ?, ?)',
-      [albumId, photoId, data, Date.now()]
-    );
+  savePhoto(albumId: string, row: PhotoStorageRow): Promise<void> {
+    return this.savePhotos(albumId, [row]);
   }
 
   loadPhoto(albumId: string, photoId: string): string | null {
@@ -84,31 +125,48 @@ export class TurboSQLiteAdapter implements SQLiteAdapter {
     const row = result.rows?.[0];
     const value = row?.data;
     return typeof value === 'string' ? value : null;
-    return null;
   }
 
-  deletePhoto(albumId: string, photoId: string): void {
-    this.db.executeSql(
-      'DELETE FROM photos WHERE album_id = ? AND photo_id = ?',
-      [albumId, photoId]
+  deletePhoto(albumId: string, photoId: string): Promise<void> {
+    return enqueueSQLiteWrite(() =>
+      runDeferred(() => {
+        this.db.executeSql(
+          'DELETE FROM photos WHERE album_id = ? AND photo_id = ?',
+          [albumId, photoId],
+        );
+      }),
     );
   }
 
-  savePhotos(albumId: string, photos: Array<{photoId: string; data: string}>): void {
-    const now = Date.now();
-    this.db.executeSql('BEGIN TRANSACTION', [] as Params);
-    try {
-      for (const photo of photos) {
-        this.db.executeSql(
-          'INSERT OR REPLACE INTO photos (album_id, photo_id, data, updated_at) VALUES (?, ?, ?, ?)',
-          [albumId, photo.photoId, photo.data, now],
-        );
-      }
-      this.db.executeSql('COMMIT', [] as Params);
-    } catch (error) {
-      this.db.executeSql('ROLLBACK', [] as Params);
-      throw error;
+  savePhotos(albumId: string, rows: PhotoStorageRow[]): Promise<void> {
+    if (rows.length === 0) {
+      return Promise.resolve();
     }
+
+    return enqueueSQLiteWrite(() =>
+      runDeferred(() => {
+        const now = Date.now();
+        this.db.executeSql('BEGIN TRANSACTION', [] as Params);
+        try {
+          for (const row of rows) {
+            this.db.executeSql(INSERT_PHOTO_SQL, [
+              albumId,
+              row.photoId,
+              row.data,
+              now,
+              row.fileSize,
+              row.uploadStatus,
+              row.analysisStatus,
+              row.serverUploadStatus,
+            ]);
+          }
+          this.db.executeSql('COMMIT', [] as Params);
+        } catch (error) {
+          this.db.executeSql('ROLLBACK', [] as Params);
+          throw error;
+        }
+      }),
+    );
   }
 
   loadPhotoIds(albumId: string): string[] {
@@ -116,19 +174,24 @@ export class TurboSQLiteAdapter implements SQLiteAdapter {
       'SELECT photo_id FROM photos WHERE album_id = ? ORDER BY updated_at ASC',
       [albumId],
     );
-    return result.rows.map((row: any) => String(row.photo_id));
+    return result.rows.map(row => String(row.photo_id));
   }
 
-  loadPhotos(albumId: string, photoIds: string[]): Array<{photoId: string; data: string}> {
-    if (photoIds.length === 0) return [];
+  loadPhotos(
+    albumId: string,
+    photoIds: string[],
+  ): Array<{photoId: string; data: string}> {
+    if (photoIds.length === 0) {
+      return [];
+    }
 
     const placeholders = photoIds.map(() => '?').join(',');
     const result = this.db.executeSql(
       `SELECT photo_id, data FROM photos WHERE album_id = ? AND photo_id IN (${placeholders})`,
-      [albumId, ...photoIds]
+      [albumId, ...photoIds],
     );
 
-    return result.rows.map((row: any) => ({
+    return result.rows.map(row => ({
       photoId: String(row.photo_id),
       data: String(row.data),
     }));
@@ -146,26 +209,30 @@ export class TurboSQLiteAdapter implements SQLiteAdapter {
 
   sumPhotoFileSizeByAlbum(albumId: string): number {
     const result = this.db.executeSql(
-      'SELECT data FROM photos WHERE album_id = ?',
+      'SELECT COALESCE(SUM(file_size), 0) as total FROM photos WHERE album_id = ?',
       [albumId],
     );
-
-    let total = 0;
-    for (const row of result.rows) {
-      try {
-        const data = JSON.parse(String((row as {data?: unknown}).data));
-        const size = data?.file?.size;
-        if (typeof size === 'number' && Number.isFinite(size)) {
-          total += size;
-        }
-      } catch {
-        continue;
-      }
-    }
-    return total;
+    const row = result.rows?.[0];
+    const value = row?.total;
+    return typeof value === 'number' ? value : Number(value);
   }
 
-  countByStatus(albumId: string, statusField: string, statusValue: string): number {
+  countByStatus(
+    albumId: string,
+    statusField: string,
+    statusValue: string,
+  ): number {
+    const column = statusColumnForField(statusField);
+    if (column) {
+      const result = this.db.executeSql(
+        `SELECT COUNT(*) as count FROM photos WHERE album_id = ? AND ${column} = ?`,
+        [albumId, statusValue],
+      );
+      const row = result.rows?.[0];
+      const value = row?.count;
+      return typeof value === 'number' ? value : Number(value);
+    }
+
     const result = this.db.executeSql(
       'SELECT data FROM photos WHERE album_id = ?',
       [albumId],
@@ -173,7 +240,7 @@ export class TurboSQLiteAdapter implements SQLiteAdapter {
     let count = 0;
     for (const row of result.rows) {
       try {
-        const data = JSON.parse(String((row as any).data));
+        const data = JSON.parse(String((row as {data?: unknown}).data));
         if (data[statusField] === statusValue) {
           count++;
         }
@@ -184,7 +251,11 @@ export class TurboSQLiteAdapter implements SQLiteAdapter {
     return count;
   }
 
-  deletePhotosByAlbum(albumId: string): void {
-    this.db.executeSql('DELETE FROM photos WHERE album_id = ?', [albumId]);
+  deletePhotosByAlbum(albumId: string): Promise<void> {
+    return enqueueSQLiteWrite(() =>
+      runDeferred(() => {
+        this.db.executeSql('DELETE FROM photos WHERE album_id = ?', [albumId]);
+      }),
+    );
   }
 }

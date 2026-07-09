@@ -2,30 +2,30 @@ import {IPhotoRepository} from '../../domain/repositories/IPhotoRepository';
 import {CulledPhoto} from '../../domain/entities/CulledPhoto';
 import {AnalysisStatus, UploadStatus} from '../../domain/valueObjects/Status';
 import {SQLiteAdapter} from '../storage/SQLiteAdapter';
+import {photoStorageRowFromPhoto} from '../storage/photoStorageMeta';
 
 export class SQLitePhotoRepository implements IPhotoRepository {
   constructor(private adapter: SQLiteAdapter) {}
 
-  save(photo: CulledPhoto): void {
-    const data = JSON.stringify(photo.toPlain());
-    this.adapter.savePhoto(photo.albumId, photo.photoId, data);
+  save(photo: CulledPhoto): Promise<void> {
+    return this.adapter.savePhoto(photo.albumId, photoStorageRowFromPhoto(photo));
   }
 
-  saveMany(photos: CulledPhoto[]): void {
-    if (photos.length === 0) return;
+  saveMany(photos: CulledPhoto[]): Promise<void> {
+    if (photos.length === 0) {
+      return Promise.resolve();
+    }
 
     const albumId = photos[0]!.albumId;
-    const photoData = photos.map(photo => ({
-      photoId: photo.photoId,
-      data: JSON.stringify(photo.toPlain()),
-    }));
-
-    this.adapter.savePhotos(albumId, photoData);
+    const rows = photos.map(photo => photoStorageRowFromPhoto(photo));
+    return this.adapter.savePhotos(albumId, rows);
   }
 
   findById(albumId: string, photoId: string): CulledPhoto | null {
     const data = this.adapter.loadPhoto(albumId, photoId);
-    if (!data) return null;
+    if (!data) {
+      return null;
+    }
 
     try {
       const plain = JSON.parse(data);
@@ -38,7 +38,9 @@ export class SQLitePhotoRepository implements IPhotoRepository {
 
   findByAlbum(albumId: string): CulledPhoto[] {
     const photoIds = this.adapter.loadPhotoIds(albumId);
-    if (photoIds.length === 0) return [];
+    if (photoIds.length === 0) {
+      return [];
+    }
 
     const photoData = this.adapter.loadPhotos(albumId, photoIds);
     return photoData
@@ -58,12 +60,12 @@ export class SQLitePhotoRepository implements IPhotoRepository {
     return this.adapter.loadPhotoIds(albumId);
   }
 
-  delete(albumId: string, photoId: string): void {
-    this.adapter.deletePhoto(albumId, photoId);
+  delete(albumId: string, photoId: string): Promise<void> {
+    return this.adapter.deletePhoto(albumId, photoId);
   }
 
-  deleteByAlbum(albumId: string): void {
-    this.adapter.deletePhotosByAlbum(albumId);
+  deleteByAlbum(albumId: string): Promise<void> {
+    return this.adapter.deletePhotosByAlbum(albumId);
   }
 
   countByAlbum(albumId: string): number {

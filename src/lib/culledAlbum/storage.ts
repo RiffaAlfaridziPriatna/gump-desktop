@@ -60,6 +60,7 @@ function domainAlbumToLegacy(
     link: album.link,
     uploadBatchPhotoIds: [],
     localImportBatchPhotoIds: [],
+    localImportBatchTotal: 0,
     analysisBatchPhotoIds: [],
     nextFaceClusterId: album.nextFaceClusterId,
     createdAt: album.createdAt,
@@ -113,7 +114,7 @@ async function ensureMigrated(): Promise<void> {
           syncedStorageGb: normalized.syncedStorageGb,
         });
 
-        albumRepo.save(album);
+        await albumRepo.save(album);
 
         const photos = normalized.photos.map(legacyPhoto =>
           new CulledPhoto({
@@ -148,7 +149,7 @@ async function ensureMigrated(): Promise<void> {
           })
         );
 
-        photoRepo.saveMany(photos);
+        await photoRepo.saveMany(photos);
       }
 
       await AsyncStorage.removeItem(CULLED_ALBUMS_KEY);
@@ -205,7 +206,7 @@ export async function writeAllAlbums(
       syncedStorageGb: legacyAlbum.syncedStorageGb,
     });
 
-    albumRepo.save(album);
+    await albumRepo.save(album);
 
     const photos = legacyAlbum.photos.map(legacyPhoto =>
       new CulledPhoto({
@@ -240,7 +241,7 @@ export async function writeAllAlbums(
       })
     );
 
-    photoRepo.saveMany(photos);
+    await photoRepo.saveMany(photos);
   }
 }
 
@@ -297,19 +298,19 @@ export async function saveAlbum(
   await ensureMigrated();
 
   const albumRepo = container.resolve<IAlbumRepository>(TOKENS.IAlbumRepository);
-  albumRepo.save(legacyAlbumToDomainAlbum(album));
+  await albumRepo.save(legacyAlbumToDomainAlbum(album));
 
   if (!includePhotos || album.photos.length === 0) {
     return;
   }
 
   const photoRepo = container.resolve<IPhotoRepository>(TOKENS.IPhotoRepository);
-  photoRepo.saveMany(legacyPhotosToDomainPhotos(album.albumId, album.photos));
+  await photoRepo.saveMany(legacyPhotosToDomainPhotos(album.albumId, album.photos));
 }
 
 export async function removeAlbum(albumId: string): Promise<void> {
   await ensureMigrated();
   
   const albumRepo = container.resolve<IAlbumRepository>(TOKENS.IAlbumRepository);
-  albumRepo.delete(albumId);
+  await albumRepo.delete(albumId);
 }

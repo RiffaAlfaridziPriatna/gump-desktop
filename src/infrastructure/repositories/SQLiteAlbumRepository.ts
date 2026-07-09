@@ -5,14 +5,16 @@ import {SQLiteAdapter} from '../storage/SQLiteAdapter';
 export class SQLiteAlbumRepository implements IAlbumRepository {
   constructor(private adapter: SQLiteAdapter) {}
 
-  save(album: CulledAlbum): void {
+  save(album: CulledAlbum): Promise<void> {
     const data = JSON.stringify(album.toPlain());
-    this.adapter.saveAlbum(album.albumId, data);
+    return this.adapter.saveAlbum(album.albumId, data);
   }
 
   findById(albumId: string): CulledAlbum | null {
     const data = this.adapter.loadAlbum(albumId);
-    if (!data) return null;
+    if (!data) {
+      return null;
+    }
 
     try {
       const plain = JSON.parse(data);
@@ -34,9 +36,10 @@ export class SQLiteAlbumRepository implements IAlbumRepository {
     return this.adapter.listAlbumIds();
   }
 
-  delete(albumId: string): void {
-    this.adapter.deleteAlbum(albumId);
-    this.adapter.deletePhotosByAlbum(albumId);
+  delete(albumId: string): Promise<void> {
+    return this.adapter.deleteAlbum(albumId).then(() =>
+      this.adapter.deletePhotosByAlbum(albumId),
+    );
   }
 
   exists(albumId: string): boolean {
