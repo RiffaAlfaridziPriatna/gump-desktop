@@ -1,8 +1,8 @@
 import {
   getCachedImageDimensions,
   ImageDimensions,
-} from '@lib/imageDimensions';
-import {preloadImage} from '@lib/imagePreload';
+} from '@lib/media/imageDimensions';
+import {preloadImage} from '@lib/media/imagePreload';
 import {useLayoutEffect, useState} from 'react';
 
 export function useImageDimensions(uri: string | undefined) {

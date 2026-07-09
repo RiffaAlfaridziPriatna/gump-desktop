@@ -1,4 +1,4 @@
-import {preloadImages} from '@lib/imagePreload';
+import {preloadImages} from '@lib/media/imagePreload';
 import {useEffect, useMemo} from 'react';
 
 export function usePreloadGridImages(uris: string[]) {

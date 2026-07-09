@@ -85,3 +85,4 @@ export function useCulledAlbumPhotoHovered(photoId: string): boolean {
     () => store.isPhotoHovered(photoId),
   );
 }
+
