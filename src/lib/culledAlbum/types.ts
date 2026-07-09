@@ -245,25 +245,47 @@ export function isServerUploadInFlight(photo: CulledAlbumPhoto): boolean {
 
 export function hasInFlightUploads(
   album: CulledAlbum | null | undefined,
+  photos?: CulledAlbumPhoto[],
 ): boolean {
-  return album?.photos.some(isUploadInFlight) ?? false;
+  if (!album) {
+    return false;
+  }
+
+  const counts = album.localImportBatchCounts;
+  if (counts && (counts.pending > 0 || counts.uploading > 0)) {
+    return true;
+  }
+
+  const source = photos ?? album.photos;
+  return source.some(isUploadInFlight);
 }
 
 export function hasInFlightAnalysis(
   album: CulledAlbum | null | undefined,
+  photos?: CulledAlbumPhoto[],
 ): boolean {
-  return album?.photos.some(isAnalysisInFlight) ?? false;
+  if (!album || album.analysisBatchPhotoIds.length === 0) {
+    return false;
+  }
+
+  const source = photos ?? album.photos;
+  const batchIds = new Set(album.analysisBatchPhotoIds);
+  return source.some(
+    photo => batchIds.has(photo.photoId) && isAnalysisInFlight(photo),
+  );
 }
 
 export function hasInFlightServerUploads(
   album: CulledAlbum | null | undefined,
+  photos?: CulledAlbumPhoto[],
 ): boolean {
   if (!album || album.uploadBatchPhotoIds.length === 0) {
     return false;
   }
 
   const batchIds = new Set(album.uploadBatchPhotoIds);
-  return album.photos.some(
+  const source = photos ?? album.photos;
+  return source.some(
     photo =>
       batchIds.has(photo.photoId) &&
       photo.serverUploadStatus !== 'uploaded' &&
@@ -358,6 +380,8 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.photos = sortPhotosByFilename(
     (album.photos ?? []).map(normalizePersistedPhoto),
   );
-  recomputeAlbumTotals(album);
+  if (album.photos.length > 0) {
+    recomputeAlbumTotals(album);
+  }
   return album;
 }
