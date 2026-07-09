@@ -10,7 +10,7 @@ import {
 } from '@lib/navigation/uploadAwareNavigation';
 import {CulledAlbumListItem} from '@lib/culledAlbum/types';
 import {useIsFocused} from '@react-navigation/native';
-import {useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore} from 'react';
+import {useCallback, useEffect, useMemo, useState, useSyncExternalStore} from 'react';
 
 function sortAlbums(albums: CulledAlbumListItem[]): CulledAlbumListItem[] {
   return [...albums].sort(
@@ -84,20 +84,12 @@ function getAlbumListSnapshot(): CulledAlbumListItem[] {
   return albumListSnapshot;
 }
 
-function useAlbumListItems(isActive: boolean): CulledAlbumListItem[] {
-  const snapshotRef = useRef<CulledAlbumListItem[]>([]);
-
-  const albums = useSyncExternalStore(
-    isActive ? culledAlbumStore.subscribe : () => () => undefined,
+function useAlbumListItems(): CulledAlbumListItem[] {
+  return useSyncExternalStore(
+    culledAlbumStore.subscribe,
     getAlbumListSnapshot,
     getAlbumListSnapshot,
   );
-
-  if (isActive) {
-    snapshotRef.current = albums;
-  }
-
-  return isActive ? albums : snapshotRef.current;
 }
 
 export function useLocalCulledAlbumList() {
@@ -106,7 +98,7 @@ export function useLocalCulledAlbumList() {
   const [error, setError] = useState<string | null>(null);
   const [enableSync, setEnableSync] = useState(false);
 
-  const albums = useAlbumListItems(isFocused);
+  const albums = useAlbumListItems();
 
   const albumIds = useMemo(
     () => albums.map(album => album.albumId),
@@ -127,6 +119,8 @@ export function useLocalCulledAlbumList() {
     setError(null);
     setEnableSync(false);
     try {
+      // Keep in-memory albums (including ones just registered) visible even
+      // while the upload queue is busy; only skip the heavier disk reload.
       if (!hasActiveQueueWork()) {
         await loadAllLocalAlbumsIntoStore();
       }
