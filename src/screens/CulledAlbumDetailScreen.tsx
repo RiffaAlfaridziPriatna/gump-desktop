@@ -44,11 +44,12 @@ const DESKTOP_SIDEBAR_WIDTH = 246;
 const CONTENT_COLUMN_GAP = 24;
 
 export default function CulledAlbumDetailScreen({navigation, route}: Props) {
+  const {albumId} = route.params;
   const {shellProps, handleBack, handleBackPressIn} = useUploadAwareModalScreen(
     navigation,
     route.params.instant,
+    {albumId},
   );
-  const {albumId} = route.params;
   const isFocused = useIsFocused();
   const {resumeInFlightWork, startSelectedUpload} = useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();

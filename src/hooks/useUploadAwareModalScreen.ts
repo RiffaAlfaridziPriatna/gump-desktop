@@ -1,6 +1,11 @@
 import type {ModalSlideEnterHandle} from '@components/navigation/ModalSlideEnter';
 import type {UploadAwareModalShellProps} from '@components/navigation/UploadAwareModalShell';
 import {
+  hasActiveQueueWork,
+  hasActiveQueueWorkForAlbum,
+} from '@lib/culledAlbum/uploadQueueStore';
+import {cancelScrollImagePreload} from '@lib/media/scrollImagePreload';
+import {
   beginUploadNavigationCoop,
   endUploadNavigationCoop,
   prioritizeNavigationInteraction,
@@ -11,12 +16,19 @@ import {useIsFocused} from '@react-navigation/native';
 import type {StackNavigationProp} from '@react-navigation/stack';
 import {useCallback, useEffect, useRef} from 'react';
 
+export type UploadAwareModalScreenResult = {
+  shellProps: UploadAwareModalShellProps;
+  handleBack: () => void;
+  handleBackPressIn: () => void;
+};
+
 export function useUploadAwareModalScreen<
   ParamList extends ParamListBase,
   RouteName extends keyof ParamList & string,
 >(
   navigation: StackNavigationProp<ParamList, RouteName>,
   instant?: boolean,
+  options?: {albumId?: string},
 ) {
   const isFocused = useIsFocused();
   const customEnterAnimation = usesCustomModalEnterAnimation();
@@ -55,29 +67,60 @@ export function useUploadAwareModalScreen<
     return () => cancelAnimationFrame(frame);
   }, [instant, isFocused]);
 
-  const handleBackPressIn = useCallback(() => {
-    prioritizeNavigationInteraction();
-    beginUploadNavigationCoop();
-  }, []);
+  const finishBack = useCallback(() => {
+    navigation.goBack();
+    endUploadNavigationCoop();
+  }, [navigation]);
 
-  const handleBack = useCallback(() => {
-    if (closingRef.current) {
-      return;
-    }
-    closingRef.current = true;
-
-    const finishBack = () => {
-      navigation.goBack();
-      endUploadNavigationCoop();
-    };
-
+  const startSlideOut = useCallback(() => {
     if (!customEnterAnimation || instant || !slideRef.current) {
       finishBack();
       return;
     }
 
     slideRef.current.slideOut(finishBack);
-  }, [customEnterAnimation, instant, navigation]);
+  }, [customEnterAnimation, finishBack, instant]);
+
+  const needsUploadNavigationCoop = useCallback(() => {
+    const albumId = options?.albumId;
+    if (albumId && hasActiveQueueWorkForAlbum(albumId)) {
+      return true;
+    }
+    return hasActiveQueueWork();
+  }, [options?.albumId]);
+
+  const prepareBackNavigation = useCallback(() => {
+    if (closingRef.current) {
+      return false;
+    }
+
+    closingRef.current = true;
+    cancelScrollImagePreload();
+
+    const needsCoop = needsUploadNavigationCoop();
+    if (needsCoop) {
+      prioritizeNavigationInteraction();
+      beginUploadNavigationCoop();
+    }
+
+    return true;
+  }, [needsUploadNavigationCoop]);
+
+  const handleBackPressIn = useCallback(() => {
+    if (!prepareBackNavigation()) {
+      return;
+    }
+
+    startSlideOut();
+  }, [prepareBackNavigation, startSlideOut]);
+
+  const handleBack = useCallback(() => {
+    if (!prepareBackNavigation()) {
+      return;
+    }
+
+    startSlideOut();
+  }, [prepareBackNavigation, startSlideOut]);
 
   const shellProps: UploadAwareModalShellProps = {
     slideRef,

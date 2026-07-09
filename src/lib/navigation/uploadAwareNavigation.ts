@@ -1,4 +1,4 @@
-import {hasAnyInFlightAlbumWork} from '@lib/culledAlbum/store';
+import {hasActiveQueueWork} from '@lib/culledAlbum/uploadQueueStore';
 import {isDesktopPlatform} from '@lib/system/platform';
 import {
   StackNavigationOptions,
@@ -17,6 +17,7 @@ export {
   clearNavigationInteractionPriority,
   endUploadNavigationCoop,
   isUploadNavigationActive,
+  onUploadNavigationCoopEnd,
   prioritizeNavigationInteraction,
   runDeferredDuringUploadNavigation,
   runOrDeferHeavyWorkForNavigation,
@@ -29,7 +30,7 @@ function shouldUseInstantStackNavigation(): boolean {
 }
 
 export function uploadAwareParams<T extends object>(params: T): T & InstantNavParams {
-  if (!hasAnyInFlightAlbumWork()) {
+  if (!hasActiveQueueWork()) {
     return params;
   }
 
@@ -43,7 +44,7 @@ export function uploadAwareParams<T extends object>(params: T): T & InstantNavPa
 }
 
 export function uploadAwareRouteParams(): InstantNavParams | undefined {
-  if (!hasAnyInFlightAlbumWork()) {
+  if (!hasActiveQueueWork()) {
     return undefined;
   }
 

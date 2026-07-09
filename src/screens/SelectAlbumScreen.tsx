@@ -108,7 +108,6 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
           albumName: localAlbum.title ?? localAlbum.name,
           ownerName:
             user && user.role !== 'guest' ? user.name : selectedAlbum.name,
-          skipResumeImport: true,
         }),
       );
     } catch (error) {

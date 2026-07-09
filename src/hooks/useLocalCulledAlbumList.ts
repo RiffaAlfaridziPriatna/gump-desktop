@@ -1,9 +1,13 @@
 import {useServerAlbumSync} from '@lib/culledAlbum/serverSync';
 import {
   culledAlbumStore,
-  hasAnyInFlightAlbumWork,
   loadAllLocalAlbumsIntoStore,
 } from '@lib/culledAlbum/store';
+import {hasActiveQueueWork} from '@lib/culledAlbum/uploadQueueStore';
+import {
+  runOrDeferHeavyWorkForNavigation,
+  shouldDeferHeavyWorkForNavigation,
+} from '@lib/navigation/uploadAwareNavigation';
 import {CulledAlbumListItem} from '@lib/culledAlbum/types';
 import {useIsFocused} from '@react-navigation/native';
 import {useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore} from 'react';
@@ -112,11 +116,18 @@ export function useLocalCulledAlbumList() {
   useServerAlbumSync(albumIds, enableSync && isFocused);
 
   const refresh = useCallback(async () => {
+    if (shouldDeferHeavyWorkForNavigation()) {
+      runOrDeferHeavyWorkForNavigation(() => {
+        void refresh();
+      });
+      return;
+    }
+
     setLoadingAlbums(true);
     setError(null);
     setEnableSync(false);
     try {
-      if (!hasAnyInFlightAlbumWork()) {
+      if (!hasActiveQueueWork()) {
         await loadAllLocalAlbumsIntoStore();
       }
     } catch (err) {

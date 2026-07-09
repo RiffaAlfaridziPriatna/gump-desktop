@@ -68,10 +68,8 @@ export const ModalSlideEnter = forwardRef<
             easing: Easing.in(Easing.cubic),
             useNativeDriver,
           }),
-        ]).start(({finished}) => {
-          if (finished) {
-            onDone();
-          }
+        ]).start(() => {
+          onDone();
         });
       },
     }),

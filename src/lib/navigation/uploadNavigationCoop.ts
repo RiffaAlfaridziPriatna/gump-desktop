@@ -1,11 +1,14 @@
+import {flushScheduledPhotoUpdates} from '@lib/culledAlbum/photoUpdateBatcher';
+
 const deferred: Array<() => void> = [];
+const coopEndListeners = new Set<() => void>();
 let coopDepth = 0;
 let safetyTimer: ReturnType<typeof setTimeout> | null = null;
 let navigationPriorityUntil = 0;
 
 const COOP_SAFETY_MS = 30_000;
 const FLUSH_STEP_MS = 16;
-const NAVIGATION_PRIORITY_MS = 600;
+const NAVIGATION_PRIORITY_MS = 800;
 const DEFERRED_FLUSH_DELAY_MS = 300;
 
 function flushDeferred(): void {
@@ -37,7 +40,7 @@ export function isUploadNavigationActive(): boolean {
 }
 
 export function shouldYieldUploadQueueForNavigation(): boolean {
-  return isUploadNavigationActive();
+  return Date.now() < navigationPriorityUntil || isUploadNavigationActive();
 }
 
 export function shouldDeferHeavyWorkForNavigation(): boolean {
@@ -52,6 +55,19 @@ export function prioritizeNavigationInteraction(
 
 export function clearNavigationInteractionPriority(): void {
   navigationPriorityUntil = 0;
+}
+
+export function onUploadNavigationCoopEnd(listener: () => void): () => void {
+  coopEndListeners.add(listener);
+  return () => {
+    coopEndListeners.delete(listener);
+  };
+}
+
+function notifyCoopEndListeners(): void {
+  for (const listener of coopEndListeners) {
+    listener();
+  }
 }
 
 export function beginUploadNavigationCoop(): void {
@@ -85,7 +101,11 @@ export function endUploadNavigationCoop(): void {
   }
 
   clearNavigationInteractionPriority();
-  setTimeout(() => flushDeferred(), DEFERRED_FLUSH_DELAY_MS);
+  flushScheduledPhotoUpdates();
+  setTimeout(() => {
+    flushDeferred();
+    notifyCoopEndListeners();
+  }, DEFERRED_FLUSH_DELAY_MS);
 }
 
 export function runDeferredDuringUploadNavigation(work: () => void): void {

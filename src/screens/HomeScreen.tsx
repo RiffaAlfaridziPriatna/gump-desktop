@@ -7,7 +7,10 @@ import {useLayout} from '@hooks/useLayout';
 import {toAlbumCardModel} from '@lib/culledAlbum/format';
 import {navigateToCulledAlbum} from '@lib/culledAlbum/navigateToCulledAlbum';
 import {CulledAlbumListItem} from '@lib/culledAlbum/types';
-import {uploadAwareRouteParams} from '@lib/navigation/uploadAwareNavigation';
+import {
+  uploadAwareRouteParams,
+  shouldDeferHeavyWorkForNavigation,
+} from '@lib/navigation/uploadAwareNavigation';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
@@ -51,6 +54,13 @@ export default function HomeScreen({navigation}: Props) {
 
   useFocusEffect(
     useCallback(() => {
+      if (shouldDeferHeavyWorkForNavigation()) {
+        const timer = setTimeout(() => {
+          refresh();
+        }, 400);
+        return () => clearTimeout(timer);
+      }
+
       refresh();
     }, [refresh]),
   );
@@ -60,7 +70,7 @@ export default function HomeScreen({navigation}: Props) {
       return;
     }
 
-    await navigateToCulledAlbum(
+    navigateToCulledAlbum(
       navigation,
       album,
       user && user.role !== 'guest' ? user.name : album.name,
