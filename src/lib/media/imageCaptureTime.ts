@@ -1,5 +1,5 @@
 import {getPhotoById, updatePhoto} from '@lib/culledAlbum/store';
-import {readImageCaptureTime as readNativeImageCaptureTime} from '@lib/localStorage';
+import {readImageCaptureTime as readNativeImageCaptureTime} from '@lib/storage/localStorage';
 
 export function parsePickerCaptureTime(timestamp?: string): number | null {
   if (!timestamp) {
@@ -44,8 +44,15 @@ export async function enrichPhotoCaptureTime(
     return null;
   }
 
-  updatePhoto(albumId, photoId, entry => {
-    entry.capturedAt = capturedAt;
-  }, {recomputeTotals: false});
+  updatePhoto(
+    albumId,
+    photoId,
+    entry => {
+      entry.capturedAt = capturedAt;
+    },
+    {recomputeTotals: false},
+  );
+
   return capturedAt;
 }
+

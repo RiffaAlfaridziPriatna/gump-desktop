@@ -24,3 +24,4 @@ export function useStateStore<S, R = S>(
     shallow,
   );
 }
+

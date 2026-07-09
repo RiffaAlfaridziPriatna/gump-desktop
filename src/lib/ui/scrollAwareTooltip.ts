@@ -120,3 +120,4 @@ export function isScrollAwareTooltipLocked(
 ): boolean {
   return store?.isLocked() ?? false;
 }
+

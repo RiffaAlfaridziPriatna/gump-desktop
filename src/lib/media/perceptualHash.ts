@@ -1,4 +1,4 @@
-import {computePerceptualHash as computeNativePerceptualHash} from '@lib/localStorage';
+import {computePerceptualHash as computeNativePerceptualHash} from '@lib/storage/localStorage';
 
 export function hammingDistance(hexA: string, hexB: string): number {
   const valueA = BigInt(`0x${hexA}`);
@@ -23,3 +23,4 @@ export async function computeImagePerceptualHash(
   }
   return hash.toLowerCase();
 }
+

@@ -15,3 +15,4 @@ export function getSimulatedUploadPerItemMinDurationMs(
   const batchMs = getSimulatedUploadBatchDurationMs(photoCount);
   return Math.ceil((batchMs * c) / photoCount);
 }
+

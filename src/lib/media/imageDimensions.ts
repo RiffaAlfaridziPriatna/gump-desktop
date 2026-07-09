@@ -118,3 +118,4 @@ export function getCulledAlbumThumbnailLayout(
     top: (containerHeight - height) / 2,
   };
 }
+

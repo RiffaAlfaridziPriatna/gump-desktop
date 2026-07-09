@@ -13,3 +13,4 @@ export async function setAuthToken(value: string): Promise<void> {
 export async function deleteAuthToken(): Promise<void> {
   await AsyncStorage.removeItem(TOKEN_KEY);
 }
+

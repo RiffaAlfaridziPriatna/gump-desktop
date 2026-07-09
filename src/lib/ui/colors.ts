@@ -37,3 +37,4 @@ export const colors = {
 } as const;
 
 export type AppColor = (typeof colors)[keyof typeof colors];
+

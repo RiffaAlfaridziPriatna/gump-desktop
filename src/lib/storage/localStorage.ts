@@ -11,6 +11,12 @@ type NativeLocalStorageModule = {
   listPhotos: (albumId: string) => Promise<FileAsset[]>;
   deletePhoto: (uri: string) => Promise<boolean>;
   deleteAlbum: (albumId: string) => Promise<boolean>;
+  getThumbnailUri: (albumId: string, photoId: string) => Promise<string | null>;
+  ensureThumbnail: (
+    albumId: string,
+    sourceUri: string,
+    photoId: string,
+  ) => Promise<{thumbnailUri: string | null}>;
   getImageDimensions: (
     uri: string,
   ) => Promise<{width: number; height: number}>;
@@ -23,6 +29,7 @@ const NativeLocalStorage = NativeModules.GumpLocalStorage as
   | undefined;
 
 const NATIVE_STORAGE_PLATFORMS = new Set(['macos', 'ios', 'android', 'windows']);
+const THUMBNAIL_CACHE_VERSION = '1920';
 
 function hasNativeLocalStorage(): boolean {
   return (
@@ -82,3 +89,56 @@ export async function computePerceptualHash(uri: string): Promise<string | null>
   }
   return null;
 }
+
+export function resolveDisplayUri(file: FileAsset): string {
+  return file.thumbnailUri ?? file.uri;
+}
+
+export async function getThumbnailUri(
+  albumId: string,
+  photoId: string,
+): Promise<string | null> {
+  if (hasNativeLocalStorage() && NativeLocalStorage?.getThumbnailUri) {
+    return NativeLocalStorage.getThumbnailUri(albumId, photoId);
+  }
+  return null;
+}
+
+export async function ensureThumbnail(
+  albumId: string,
+  file: FileAsset,
+  photoId: string,
+  options?: {regenerate?: boolean},
+): Promise<FileAsset> {
+  // If thumbnail is already set, keep it unless caller explicitly requests regeneration.
+  if (file.thumbnailUri && !options?.regenerate) {
+    return file;
+  }
+
+  // If we are not regenerating, try to reuse any existing thumbnail URI from native storage.
+  if (!options?.regenerate) {
+    const existing = await getThumbnailUri(albumId, photoId);
+    if (existing) {
+      return {...file, thumbnailUri: existing};
+    }
+  }
+
+  if (hasNativeLocalStorage() && NativeLocalStorage?.ensureThumbnail) {
+    const result = await NativeLocalStorage.ensureThumbnail(
+      albumId,
+      file.uri,
+      photoId,
+    );
+
+    if (result.thumbnailUri) {
+      // Cache-buster to avoid React Native Image caching older thumbnails.
+      const thumbnailUri = options?.regenerate
+        ? `${result.thumbnailUri}?v=${THUMBNAIL_CACHE_VERSION}`
+        : result.thumbnailUri;
+      return {...file, thumbnailUri};
+    }
+  }
+
+  return file;
+}
+

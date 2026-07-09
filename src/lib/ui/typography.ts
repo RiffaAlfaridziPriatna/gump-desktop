@@ -4,3 +4,4 @@ export const fonts = {
   sans: 'RedHatDisplay-Regular',
   sansBold: 'RedHatDisplay-Bold',
 } as const;
+

@@ -4,3 +4,4 @@ export const clickableStyle: ViewStyle = {
   cursor: 'pointer',
   userSelect: 'none',
 };
+

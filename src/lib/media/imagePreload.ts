@@ -1,4 +1,6 @@
 import {Image} from 'react-native';
+import {FileAsset} from '@services/upload/types';
+import {resolveDisplayUri} from '@lib/storage/localStorage';
 import {loadImageDimensions} from './imageDimensions';
 
 const DEFAULT_CONCURRENCY = 4;
@@ -55,3 +57,11 @@ export async function preloadImages(
     await Promise.all(batch.map(uri => preloadImage(uri)));
   }
 }
+
+export function preloadFileAssets(
+  files: FileAsset[],
+  options?: {concurrency?: number},
+): Promise<void> {
+  return preloadImages(files.map(resolveDisplayUri), options);
+}
+

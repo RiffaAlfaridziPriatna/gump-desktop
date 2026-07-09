@@ -51,3 +51,4 @@ export function getAlbumGridColumns(deviceType: DeviceType): number {
       return 4;
   }
 }
+
