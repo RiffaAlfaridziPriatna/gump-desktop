@@ -6,3 +6,4 @@ export function make<T>(serviceClass: {new (...args: any[]): T}): T {
 }
 
 export {Injectable, Container};
+
