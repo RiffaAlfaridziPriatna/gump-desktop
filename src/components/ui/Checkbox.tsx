@@ -2,7 +2,7 @@ import {StyleSheet, ViewStyle} from 'react-native';
 import {TouchableOpacity} from './TouchableOpacity';
 import CheckboxChecked from '../../assets/images/checkbox_checked.svg';
 import CheckboxUnchecked from '../../assets/images/checkbox_unchecked.svg';
-import { colors } from '@lib/colors';
+import { colors } from '@lib/ui/colors';
 import { ReactNode } from 'react';
 
 type CheckboxProps = {

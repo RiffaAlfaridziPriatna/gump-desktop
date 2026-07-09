@@ -8,8 +8,8 @@ import {
   View,
 } from 'react-native';
 import {useErrorState, useErrorActions} from '@context/error';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 
 const useNativeDriver = Platform.OS !== 'windows';
 

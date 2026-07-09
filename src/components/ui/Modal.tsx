@@ -1,5 +1,5 @@
-import {colors} from '@lib/colors';
-import {isDesktopPlatform} from '@lib/platform';
+import {colors} from '@lib/ui/colors';
+import {isDesktopPlatform} from '@lib/system/platform';
 import {ReactNode, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Animated,

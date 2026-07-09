@@ -1,4 +1,4 @@
-import {make} from '@lib/di';
+import {make} from '@di/tsyringe';
 import {APIService, APIResponse, assertAPIException} from '@services/api';
 import {useInfiniteQuery} from '@tanstack/react-query';
 import {useCallback, useMemo} from 'react';

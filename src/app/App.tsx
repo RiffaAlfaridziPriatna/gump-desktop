@@ -2,11 +2,10 @@ import {AuthProvider, useAuthState} from '@context/auth';
 import {CulledAlbumProvider} from '@context/culledAlbum';
 import {ErrorProvider} from '@context/error';
 import {ErrorToast} from '@components/error';
-import {colors} from '@lib/colors';
+import {colors} from '@lib/ui/colors';
 import {DefaultTheme, NavigationContainer} from '@react-navigation/native';
 import {ActivityIndicator, Platform, StyleSheet, View} from 'react-native';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import 'reflect-metadata';
 import {AuthNavigator} from './AuthNavigator';
 import {MainNavigator} from './MainNavigator';
 

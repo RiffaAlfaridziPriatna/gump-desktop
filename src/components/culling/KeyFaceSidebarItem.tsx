@@ -1,7 +1,7 @@
 import {FaceCropAvatar} from '@components/culling/FaceCropAvatar';
 import {FaceStatusIconBadge} from '@components/culling/FaceStatusIconBadge';
 import {type KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
-import {CullingBoundingBox} from '@lib/cullingFaceCrop';
+import {CullingBoundingBox} from '@lib/culling/cullingFaceCrop';
 import {
   getEyeStatusMeta,
   getFocusStatusMeta,
@@ -9,9 +9,9 @@ import {
 import {
   isScrollAwareTooltipLocked,
   useScrollAwareTooltipStore,
-} from '@lib/scrollAwareTooltip';
-import {colors} from '@lib/colors';
-import {ImageDimensions} from '@lib/imageDimensions';
+} from '@lib/ui/scrollAwareTooltip';
+import {colors} from '@lib/ui/colors';
+import {ImageDimensions} from '@lib/media/imageDimensions';
 import {APIResponse} from '@services/api';
 import {memo, useCallback, useRef} from 'react';
 import {Pressable} from '@components/ui';

@@ -1,5 +1,5 @@
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {TouchableOpacity} from '@components/ui';

@@ -1,5 +1,5 @@
-import {Injectable} from '@lib/di';
-import {API_BASE_URL} from '@lib/constants';
+import {Injectable} from '@di/tsyringe';
+import {API_BASE_URL} from '@lib/config/constants';
 import {APIException} from './exception';
 import {APIResponse} from './types';
 

@@ -7,7 +7,7 @@ import {
   getScreenPaddingHorizontal,
   getAlbumGridColumns,
   DeviceType,
-} from '@lib/platform';
+} from '@lib/system/platform';
 
 type LayoutInfo = {
   isDesktopPlatform: boolean;

@@ -4,19 +4,19 @@ import {PhotoDetailImageViewer} from '@components/culling/PhotoDetailImageViewer
 import {useCulledAlbumPhotosState, useCulledAlbumStore} from '@context/culledAlbum';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {
   ScrollAwareTooltipContext,
   createScrollAwareTooltipStore,
   useScrollAwareTooltipHandlers,
-} from '@lib/scrollAwareTooltip';
+} from '@lib/ui/scrollAwareTooltip';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {useLayout} from '@hooks/useLayout';
 import {useImageDimensions} from '@hooks/useImageDimensions';
-import {preloadImage} from '@lib/imagePreload';
+import {preloadImage} from '@lib/media/imagePreload';
 import {Pressable, TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,

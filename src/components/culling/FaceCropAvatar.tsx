@@ -1,13 +1,13 @@
 import {
   CullingBoundingBox,
   getFaceCropImageStyle,
-} from '@lib/cullingFaceCrop';
+} from '@lib/culling/cullingFaceCrop';
 import {
   getCachedImageDimensions,
   ImageDimensions,
-} from '@lib/imageDimensions';
-import {preloadImage} from '@lib/imagePreload';
-import {colors} from '@lib/colors';
+} from '@lib/media/imageDimensions';
+import {preloadImage} from '@lib/media/imagePreload';
+import {colors} from '@lib/ui/colors';
 import React, {useEffect, useMemo, useState} from 'react';
 import {Image, StyleSheet, View} from 'react-native';
 

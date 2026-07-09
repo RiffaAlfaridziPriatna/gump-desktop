@@ -1,4 +1,4 @@
-import {colors} from '@lib/colors';
+import {colors} from '@lib/ui/colors';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {Image, StyleSheet, View} from 'react-native';
 

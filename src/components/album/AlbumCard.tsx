@@ -3,9 +3,9 @@ import {formatStorageSizeGb, LocalAlbumCardModel} from '@lib/culledAlbum/format'
 import {
   getCoverImageLayout,
   loadImageDimensions,
-} from '@lib/imageDimensions';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+} from '@lib/media/imageDimensions';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {APIResponse} from '@services/api';
 import {TouchableOpacity} from '@components/ui';
 import {

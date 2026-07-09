@@ -3,8 +3,8 @@ import {
   StarRating,
   StarRatingFilter,
 } from '@lib/culling/culledAlbumPhotoFilters';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {Pressable} from '@components/ui';
 import {
   ActivityIndicator,

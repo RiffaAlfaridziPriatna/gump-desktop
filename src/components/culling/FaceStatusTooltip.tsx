@@ -1,6 +1,6 @@
 import {FaceStatusMeta} from '@lib/culling/faceStatus';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {StyleSheet, Text, View} from 'react-native';
 
 export type KeyFaceTooltipAnchor = {

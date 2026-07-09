@@ -1,4 +1,4 @@
-import {Injectable} from '@lib/di';
+import {Injectable} from '@di/tsyringe';
 import {FileAsset, getFileContentType} from '@services/upload/types';
 import {uploadPartFromFile} from '@services/upload/multipart';
 import {APIAgent} from '../agent';

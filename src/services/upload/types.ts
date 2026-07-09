@@ -6,6 +6,7 @@ export type FileAsset = {
   size: number;
   type: string;
   capturedAt?: number | null;
+  thumbnailUri?: string;
 };
 
 type NativeLocalStorageReader = {

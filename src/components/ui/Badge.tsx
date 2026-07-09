@@ -1,5 +1,5 @@
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {StyleSheet, Text} from 'react-native';
 import IconCheck from '../../assets/images/icon_check_circle.svg';
 import IconScissors from '../../assets/images/icon_scissors.svg';

@@ -1,6 +1,6 @@
 import {Modal} from '@components/ui';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {CulledAlbumListItem} from '@lib/culledAlbum/types';
 import {useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
@@ -22,19 +22,21 @@ export function DeleteAlbumModal({
 }: DeleteAlbumModalProps) {
   const [deleting, setDeleting] = useState(false);
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!album || deleting) {
       return;
     }
+
     setDeleting(true);
-    try {
-      await onDelete();
-      onClose();
-    } catch (error) {
-      console.error('[DeleteAlbumModal] Failed to delete album', error);
-    } finally {
-      setDeleting(false);
-    }
+    onClose();
+
+    void onDelete()
+      .catch(error => {
+        console.error('[DeleteAlbumModal] Failed to delete album', error);
+      })
+      .finally(() => {
+        setDeleting(false);
+      });
   }
 
   return (

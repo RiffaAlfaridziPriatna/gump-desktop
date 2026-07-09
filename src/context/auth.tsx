@@ -9,10 +9,10 @@ import {
   deleteAuthToken,
   getAuthToken,
   setAuthToken,
-} from '@lib/authTokenStorage';
-import {createStateStore, StateStore, useStateStore} from '@lib/state';
-import {useContextOrThrow} from '@lib/context';
-import {make} from '@lib/di';
+} from '@lib/auth/authTokenStorage';
+import {createStateStore, StateStore, useStateStore} from '@lib/react/state';
+import {useContextOrThrow} from '@lib/react/context';
+import {make} from '@di/tsyringe';
 import {APIService, APIResponse} from '@services/api';
 import {useQuery, useQueryClient} from '@tanstack/react-query';
 

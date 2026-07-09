@@ -1,5 +1,5 @@
-import {Injectable, Container} from '@lib/di';
-import {API_BASE_URL} from '@lib/constants';
+import {Injectable, Container} from '@di/tsyringe';
+import {API_BASE_URL} from '@lib/config/constants';
 import {APIAgent} from './agent';
 import {AlbumResource} from './resources/album';
 import {AuthResource} from './resources/auth';

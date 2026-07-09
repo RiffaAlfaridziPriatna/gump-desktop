@@ -1,6 +1,6 @@
 import {createContext, PropsWithChildren, useCallback, useRef} from 'react';
-import {createStateStore, StateStore, useStateStore} from '@lib/state';
-import {useContextOrThrow} from '@lib/context';
+import {createStateStore, StateStore, useStateStore} from '@lib/react/state';
+import {useContextOrThrow} from '@lib/react/context';
 import {APIException} from '@services/api/exception';
 
 export type ErrorState = {
@@ -68,10 +68,9 @@ export function ErrorProvider({children}: PropsWithChildren) {
   }, []);
 
   const hideError = useCallback(() => {
-    storeRef.current!.setState(state => ({
-      ...state,
-      visible: false,
-    }));
+    storeRef.current!.setState(state => {
+      state.visible = false;
+    });
   }, []);
 
   const clearError = useCallback(() => {

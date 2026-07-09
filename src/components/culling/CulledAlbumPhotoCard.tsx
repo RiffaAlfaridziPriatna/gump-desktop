@@ -3,9 +3,9 @@ import {Pressable} from '@components/ui';
 import {
   useCulledAlbumPhotoHovered,
   useCulledAlbumPhotoHoverStore,
-} from '@lib/culledAlbumPhotoHover';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+} from '@lib/culledAlbum/photoHover';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 import {memo, useCallback} from 'react';
@@ -77,7 +77,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
       onHoverOut={isMobileLayout ? undefined : handleHoverOut}
       onPress={handleOpenDetail}>
       <View style={styles.thumbnailWrapper}>
-        <CulledAlbumPhotoThumbnail uri={file.uri} width={cardWidth} />
+        <CulledAlbumPhotoThumbnail file={file} width={cardWidth} />
         {showDeleteButton && (
           <Pressable
             style={styles.deletePhotoButton}

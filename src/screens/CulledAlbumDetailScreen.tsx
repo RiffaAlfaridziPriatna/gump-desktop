@@ -21,20 +21,21 @@ import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
 import {usePreloadGridImages} from '@hooks/usePreloadGridImages';
 import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
-import {resolveKeyFaceSource} from '@lib/cullingFaceCrop';
+import {resolveKeyFaceSource} from '@lib/culling/cullingFaceCrop';
 import {cullingEngine} from '@lib/culling/cullingEngine';
-import {preloadImage} from '@lib/imagePreload';
-import {getCulledAlbumGridLayout} from '@lib/culledAlbumGridLayout';
-import {stabilizeGridPhotos} from '@lib/stableCulledAlbumGridPhotos';
+import {preloadImage} from '@lib/media/imagePreload';
+import {resolveDisplayUri} from '@lib/storage/localStorage';
+import {stabilizeGridPhotos} from '@lib/culledAlbum/stableGridPhotos';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useLayout} from '@hooks/useLayout';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {useIsFocused} from '@react-navigation/native';
 import IconNoPhoto from '../assets/images/icon_no_photo.svg';
 
 type Props = StackScreenProps<MainStackParamList, 'CulledAlbumDetail'>;
@@ -48,8 +49,16 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     route.params.instant,
   );
   const {albumId} = route.params;
-  const {startSelectedUpload} = useCulledAlbumActions();
+  const isFocused = useIsFocused();
+  const {resumeInFlightWork, startSelectedUpload} = useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
+
+  useEffect(() => {
+    if (!isFocused) {
+      return;
+    }
+    resumeInFlightWork(albumId);
+  }, [albumId, isFocused, resumeInFlightWork]);
 
   const {photos, loadError} = useCulledAlbumPhotos(albumId);
   const albumPhotos = useCulledAlbumPhotosState(albumId);
@@ -112,29 +121,19 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     return Math.max(0, contentWidth - DESKTOP_SIDEBAR_WIDTH - CONTENT_COLUMN_GAP);
   }, [isMobileLayout, screenPaddingHorizontal, screenWidth]);
 
-  const estimatedGridLayout = useMemo(
-    () => getCulledAlbumGridLayout(estimatedMainContentWidth, isMobileLayout),
-    [estimatedMainContentWidth, isMobileLayout],
-  );
-
-  const initialPreloadUris = useMemo(() => {
-    const photoCount = Math.max(1, estimatedGridLayout.columnCount * 2);
-    return albumPhotos
-      .filter(photo => photo.status === 'uploaded')
-      .slice(0, photoCount)
-      .map(photo => photo.file.uri);
-  }, [albumPhotos, estimatedGridLayout.columnCount]);
-
-  usePreloadGridImages(initialPreloadUris);
-
   const layoutWidth =
     mainContentWidth > 0 ? mainContentWidth : estimatedMainContentWidth;
 
-  const gridLayout = useMemo(
-    () => getCulledAlbumGridLayout(layoutWidth, isMobileLayout),
-    [isMobileLayout, layoutWidth],
+  const initialPreloadUris = useMemo(
+    () =>
+      albumPhotos
+        .filter(photo => photo.status === 'uploaded')
+        .slice(0, 9)
+        .map(photo => resolveDisplayUri(photo.file)),
+    [albumPhotos],
   );
-  const {cardWidth, columnCount, gap, itemHeight, rowHeight} = gridLayout;
+
+  usePreloadGridImages(initialPreloadUris);
 
   const canDeletePhoto = cullingCompleted && !isAnalyzing;
 
@@ -180,8 +179,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const handleOpenPhotoDetail = useCallback(
     (photoId: string) => {
       const entry = gridPhotos.find(photo => photo.photoId === photoId);
-      if (entry?.file.uri) {
-        preloadImage(entry.file.uri).catch(() => undefined);
+      if (entry?.file) {
+        preloadImage(resolveDisplayUri(entry.file)).catch(() => undefined);
       }
       navigation.navigate('CulledAlbumPhotoDetail', {albumId, photoId});
     },
@@ -345,11 +344,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             ) : (
               <CulledAlbumPhotoGrid
                 photos={filteredPhotos}
-                cardWidth={cardWidth}
-                columnCount={columnCount}
-                gap={gap}
-                itemHeight={itemHeight}
-                rowHeight={rowHeight}
+                albumId={albumId}
+                containerWidth={layoutWidth}
                 isMobileLayout={isMobileLayout}
                 canDeletePhoto={canDeletePhoto}
                 contentContainerStyle={[

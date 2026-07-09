@@ -6,8 +6,8 @@ import {
   useCulledAlbumServerUploadBatch,
   useCulledAlbumUiState,
 } from '@context/culledAlbum';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {computeLocalImportBatchProgress} from '@lib/culledAlbum/localImportProgress';
 import {computeServerUploadBatchProgress} from '@lib/culledAlbum/serverUploadProgress';
 import {CulledAlbumPhoto, LocalImportBatchCounts} from '@lib/culledAlbum/types';

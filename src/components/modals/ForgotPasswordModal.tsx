@@ -1,7 +1,7 @@
 import {Modal, TouchableOpacity} from '@components/ui';
-import {colors} from '@lib/colors';
-import {make} from '@lib/di';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {make} from '@di/tsyringe';
+import {fonts} from '@lib/ui/typography';
 import {APIException, APIService, flattenValidationErrors} from '@services/api';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {

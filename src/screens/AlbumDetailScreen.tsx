@@ -1,4 +1,4 @@
-import {PhotoMasonryGrid} from '@components/photo/PhotoMasonryGrid';
+import {PhotoGrid} from '@components/photo/PhotoGrid';
 import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {UploadToast} from '@components/upload/UploadToast';
 import {
@@ -11,8 +11,8 @@ import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
 import {useThrottledValue} from '@hooks/useThrottledValue';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {useLayout} from '@hooks/useLayout';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useIsFocused} from '@react-navigation/native';
@@ -64,7 +64,10 @@ function AlbumDetailBody({
     if (uploaded.length > 0) {
       return uploaded;
     }
-    return photos;
+    if (photos.length > 0) {
+      return photos;
+    }
+    return albumPhotos.map(photo => photo.file);
   }, [albumPhotos, photos]);
 
   const placeholderCount = useMemo(
@@ -108,9 +111,9 @@ function AlbumDetailBody({
 
   return (
     <>
-      <PhotoMasonryGrid
+      <PhotoGrid
         items={throttledDisplayPhotos}
-        placeholderCount={Math.min(throttledPlaceholderCount, 12)}
+        albumId={albumId}
         horizontalPadding={screenPaddingHorizontal}
       />
       <UploadToast mode="upload" albumId={albumId} />
@@ -127,7 +130,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   const {albumId, albumName, ownerName, skipResumeImport} = route.params;
   const {isMobileLayout, screenPaddingHorizontal} = useLayout();
   const isFocused = useIsFocused();
-  const {resumeLocalImport, startAnalysis} = useCulledAlbumActions();
+  const {resumeInFlightWork, startAnalysis} = useCulledAlbumActions();
   const [cullingActive, setCullingActive] = useState(false);
 
   const localImportProgress = useCulledAlbumLocalImportProgress(albumId);
@@ -194,11 +197,11 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   }, [cullingSnapshot.inProgress]);
 
   useEffect(() => {
-    if (skipResumeImport) {
+    if (!isFocused || skipResumeImport) {
       return;
     }
-    resumeLocalImport(albumId);
-  }, [albumId, resumeLocalImport, skipResumeImport]);
+    resumeInFlightWork(albumId);
+  }, [albumId, isFocused, resumeInFlightWork, skipResumeImport]);
 
   useEffect(() => {
     if (!cullingActive || !cullingSnapshot.complete || cullingSnapshot.hasAnalyzed) {

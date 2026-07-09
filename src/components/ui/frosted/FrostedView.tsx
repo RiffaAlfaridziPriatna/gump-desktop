@@ -1,4 +1,4 @@
-import {colors} from '@lib/colors';
+import {colors} from '@lib/ui/colors';
 import {Platform, StyleSheet, View} from 'react-native';
 import {BlurView} from '@react-native-community/blur';
 

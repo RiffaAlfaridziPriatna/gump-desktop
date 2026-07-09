@@ -1,4 +1,4 @@
-import {colors} from '@lib/colors';
+import {colors} from '@lib/ui/colors';
 import {useState} from 'react';
 import {LayoutChangeEvent, StyleSheet, View, ViewStyle} from 'react-native';
 

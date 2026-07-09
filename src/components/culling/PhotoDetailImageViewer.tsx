@@ -5,15 +5,18 @@ import {
   DisplayRect,
   getContainedImageLayout,
   getFaceZoomImageLayout,
-} from '@lib/cullingFaceCrop';
+} from '@lib/culling/cullingFaceCrop';
 import {
   getEyeStatusMeta,
   getFocusStatusMeta,
 } from '@lib/culling/faceStatus';
-import {isScrollAwareTooltipLocked, useScrollAwareTooltipStore} from '@lib/scrollAwareTooltip';
-import {getCachedImageDimensions, ImageDimensions} from '@lib/imageDimensions';
-import {preloadImage} from '@lib/imagePreload';
-import {colors} from '@lib/colors';
+import {
+  isScrollAwareTooltipLocked,
+  useScrollAwareTooltipStore,
+} from '@lib/ui/scrollAwareTooltip';
+import {getCachedImageDimensions, ImageDimensions} from '@lib/media/imageDimensions';
+import {preloadImage} from '@lib/media/imagePreload';
+import {colors} from '@lib/ui/colors';
 import {APIResponse} from '@services/api';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {ActivityIndicator, Image, StyleSheet, View} from 'react-native';

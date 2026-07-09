@@ -1,4 +1,4 @@
-import {Injectable} from '@lib/di';
+import {Injectable} from '@di/tsyringe';
 import {APIAgent} from '../agent';
 import {APIRequest, APIResponse} from '../types';
 import {assertAPIException} from '../exception';

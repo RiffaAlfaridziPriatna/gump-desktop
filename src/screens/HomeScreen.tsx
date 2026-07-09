@@ -8,8 +8,8 @@ import {toAlbumCardModel} from '@lib/culledAlbum/format';
 import {navigateToCulledAlbum} from '@lib/culledAlbum/navigateToCulledAlbum';
 import {CulledAlbumListItem} from '@lib/culledAlbum/types';
 import {uploadAwareRouteParams} from '@lib/navigation/uploadAwareNavigation';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useFocusEffect} from '@react-navigation/native';
@@ -76,10 +76,14 @@ export default function HomeScreen({navigation}: Props) {
       return;
     }
 
-    await deleteCulledAlbum(albumToDelete);
-    setExpandedCardId(null);
+    const album = albumToDelete;
     setAlbumToDelete(null);
-    await refresh();
+    setExpandedCardId(null);
+
+    void deleteCulledAlbum(album).catch(error => {
+      console.error('[HomeScreen] Failed to delete album', error);
+      void refresh();
+    });
   }
 
   return (

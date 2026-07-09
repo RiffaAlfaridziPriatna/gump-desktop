@@ -2,16 +2,16 @@ import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
 import {KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
 import {Accordion} from '@components/ui/Accordion';
 import {Checkbox, Pressable} from '@components/ui';
-import {CullingBoundingBox} from '@lib/cullingFaceCrop';
+import {CullingBoundingBox} from '@lib/culling/cullingFaceCrop';
 import {SelectionFilter} from '@lib/culling/culledAlbumPhotoFilters';
 import {CullFilterKey} from '@lib/culling/cullingUtil';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {
   ScrollAwareTooltipContext,
   createScrollAwareTooltipStore,
   useScrollAwareTooltipHandlers,
-} from '@lib/scrollAwareTooltip';
+} from '@lib/ui/scrollAwareTooltip';
 import {APIResponse} from '@services/api';
 import {memo, useCallback, useRef} from 'react';
 import {ScrollView, StyleSheet, Text, View} from 'react-native';

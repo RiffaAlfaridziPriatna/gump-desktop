@@ -1,6 +1,6 @@
 import {Modal} from '@components/ui';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {StyleSheet, Text, View} from 'react-native';

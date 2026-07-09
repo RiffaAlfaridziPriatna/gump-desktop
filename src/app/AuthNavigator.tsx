@@ -1,5 +1,5 @@
 import {createStackNavigator} from '@react-navigation/stack';
-import {colors} from '@lib/colors';
+import {colors} from '@lib/ui/colors';
 import LoginScreen from '@screens/LoginScreen';
 
 export type AuthStackParamList = {

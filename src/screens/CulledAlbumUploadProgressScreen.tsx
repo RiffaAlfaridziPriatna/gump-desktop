@@ -5,8 +5,8 @@ import {
   isServerUploadBatchFinished,
   isServerUploadBatchSuccessful,
 } from '@lib/culledAlbum/serverUploadProgress';
-import {colors} from '@lib/colors';
-import {fonts} from '@lib/typography';
+import {colors} from '@lib/ui/colors';
+import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useEffect, useState} from 'react';

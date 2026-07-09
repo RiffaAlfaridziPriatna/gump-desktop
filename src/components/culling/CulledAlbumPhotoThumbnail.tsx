@@ -1,106 +1,114 @@
+import {getContainedImageLayout} from '@lib/culling/cullingFaceCrop';
 import {
-  CULLED_ALBUM_THUMBNAIL_ASPECT_RATIO,
   getCachedImageDimensions,
-  getCulledAlbumThumbnailLayout,
-  ImageDimensions,
-  loadImageDimensions,
-} from '@lib/imageDimensions';
-import {colors} from '@lib/colors';
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {Image, StyleSheet, View} from 'react-native';
+  type ImageDimensions,
+} from '@lib/media/imageDimensions';
+import {resolveDisplayUri} from '@lib/storage/localStorage';
+import {colors} from '@lib/ui/colors';
+import {FileAsset} from '@services/upload/types';
+import {memo, useCallback, useMemo, useState} from 'react';
+import {
+  Image,
+  type ImageLoadEventData,
+  StyleSheet,
+  View,
+  type NativeSyntheticEvent,
+} from 'react-native';
+
+const THUMBNAIL_ASPECT_RATIO = 3 / 2;
 
 type CulledAlbumPhotoThumbnailProps = {
-  uri: string;
+  file: FileAsset;
   width: number;
 };
 
-export const CulledAlbumPhotoThumbnail = React.memo(
-  function CulledAlbumPhotoThumbnail({uri, width}: CulledAlbumPhotoThumbnailProps) {
-    const [imageSize, setImageSize] = useState<ImageDimensions | null>(() =>
-      getCachedImageDimensions(uri) ?? null,
-    );
-    const [isLoaded, setIsLoaded] = useState(false);
+export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail({
+  file,
+  width,
+}: CulledAlbumPhotoThumbnailProps) {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const uri = resolveDisplayUri(file);
+  const height = width / THUMBNAIL_ASPECT_RATIO;
+  const [imageSize, setImageSize] = useState<ImageDimensions | null>(
+    () => getCachedImageDimensions(uri) ?? null,
+  );
 
-    useEffect(() => {
-      setIsLoaded(false);
-      const cached = getCachedImageDimensions(uri);
-      if (cached) {
-        setImageSize(cached);
-        return;
-      }
-
-      setImageSize(null);
-      let cancelled = false;
-
-      loadImageDimensions(uri).then(size => {
-        if (!cancelled && size) {
-          setImageSize(size);
-        }
-      });
-
-      return () => {
-        cancelled = true;
-      };
-    }, [uri]);
-
-    const imageLayout = useMemo(() => {
-      if (!imageSize || width <= 0) {
-        return null;
-      }
-
-      return getCulledAlbumThumbnailLayout(
-        width,
-        imageSize.width,
-        imageSize.height,
-      );
-    }, [imageSize, width]);
-
-    const handleLoad = useCallback(() => {
-      setIsLoaded(true);
-    }, []);
-
-    const handleError = useCallback(() => {
-      setIsLoaded(true);
-    }, []);
-
-    if (width <= 0) {
+  const imageLayout = useMemo(() => {
+    if (!imageSize) {
       return null;
     }
 
-    return (
-      <View style={[styles.container, {width}]}>
-        {imageLayout ? (
-          <Image
-            source={{uri}}
-            onLoad={handleLoad}
-            onError={handleError}
-            style={[
-              styles.image,
-              {
-                width: imageLayout.width,
-                height: imageLayout.height,
-                left: imageLayout.left,
-                top: imageLayout.top,
-              },
-              !isLoaded && styles.imageHidden,
-            ]}
-          />
-        ) : null}
-      </View>
+    return getContainedImageLayout(
+      width,
+      height,
+      imageSize.width,
+      imageSize.height,
     );
-  },
-);
+  }, [height, imageSize, width]);
+
+  const handleLoad = useCallback(
+    (event: NativeSyntheticEvent<ImageLoadEventData>) => {
+      const cached = getCachedImageDimensions(uri);
+      if (cached) {
+        setImageSize(cached);
+      } else {
+        const {width: loadedWidth, height: loadedHeight} = event.nativeEvent.source;
+
+        if (loadedWidth > 0 && loadedHeight > 0) {
+          setImageSize({width: loadedWidth, height: loadedHeight});
+        }
+      }
+
+      setIsLoaded(true);
+    },
+    [uri],
+  );
+
+  const handleError = useCallback(() => {
+    setIsLoaded(true);
+  }, []);
+
+  if (width <= 0) {
+    return null;
+  }
+
+  return (
+    <View style={[styles.container, {width, height}]}>
+      <Image
+        source={{uri}}
+        onLoad={handleLoad}
+        onError={handleError}
+        style={
+          imageLayout
+            ? [
+                styles.containedImage,
+                {
+                  width: imageLayout.width,
+                  height: imageLayout.height,
+                  left: imageLayout.left,
+                  top: imageLayout.top,
+                  opacity: isLoaded ? 1 : 0,
+                },
+              ]
+            : styles.imageHidden
+        }
+      />
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   container: {
-    aspectRatio: CULLED_ALBUM_THUMBNAIL_ASPECT_RATIO,
     overflow: 'hidden',
     backgroundColor: colors.cardBackgroundSecondary,
   },
-  image: {
+  containedImage: {
     position: 'absolute',
   },
   imageHidden: {
+    position: 'absolute',
+    width: 0,
+    height: 0,
     opacity: 0,
   },
 });

@@ -1,4 +1,4 @@
-import {clickableStyle} from '@lib/clickable';
+import {clickableStyle} from '@lib/ui/clickable';
 import {
   Pressable as RNPressable,
   PressableProps,
