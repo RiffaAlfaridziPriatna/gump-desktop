@@ -54,6 +54,8 @@ static void RegisterCustomFonts(void)
 
 - (void)configureMainWindow
 {
+  static BOOL didApplyInitialFrame = NO;
+
   NSWindow *window = [[NSApplication sharedApplication] mainWindow];
   if (!window) {
     return;
@@ -69,9 +71,13 @@ static void RegisterCustomFonts(void)
     if (minW > 0 && minH > 0) {
       [window setMinSize:NSMakeSize(minW, minH)];
 
-      // Default: top-left of visible work area, 100% size.
-      [window setFrame:NSMakeRect(visible.origin.x, visible.origin.y, visible.size.width, visible.size.height)
-               display:YES];
+      // Apply an initial default frame only once. Otherwise we'd override the user's resize
+      // whenever the app loses/regains focus (e.g. applicationDidBecomeActive).
+      if (!didApplyInitialFrame) {
+        didApplyInitialFrame = YES;
+        [window setFrame:NSMakeRect(visible.origin.x, visible.origin.y, visible.size.width, visible.size.height)
+                 display:YES];
+      }
     }
   }
 
