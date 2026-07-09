@@ -1,3 +1,4 @@
+import {UploadSelectedPhotosUseCase} from '@/application/useCases/UploadSelectedPhotosUseCase';
 import {
   checkServerUploadBatchComplete,
   getAlbum,
@@ -9,6 +10,7 @@ import {CulledAlbumPhoto} from './types';
 
 export type ServerUploadQueueDeps = {
   maxConcurrent: number;
+  uploadSelectedPhotosUseCase: UploadSelectedPhotosUseCase;
   getPhoto: (
     albumId: string,
     photoId: string,
@@ -23,7 +25,7 @@ export type ServerUploadQueueDeps = {
 };
 
 export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
-  const {maxConcurrent, getPhoto, updatePhoto, persistAlbum, uploadPhoto} =
+  const {maxConcurrent, uploadSelectedPhotosUseCase, getPhoto, updatePhoto, persistAlbum, uploadPhoto} =
     deps;
   const activeUploadCounts = new Map<string, number>();
 
@@ -38,6 +40,7 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
         photo.serverUploadError = error;
       }
     });
+    uploadSelectedPhotosUseCase.markFailed(albumId, photoId, error ?? 'Upload failed');
   }
 
   function processPending(albumId: string): void {
@@ -63,6 +66,7 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
         entry.serverUploadProgress = 0;
         entry.serverUploadError = undefined;
       });
+      uploadSelectedPhotosUseCase.startUpload(albumId, photoId);
 
       uploadingCount++;
       activeUploadCounts.set(albumId, uploadingCount);

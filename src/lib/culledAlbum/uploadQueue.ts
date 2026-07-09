@@ -1,11 +1,14 @@
-import {copyPhotoToAlbum} from '@lib/localStorage';
-import {enrichPhotoCaptureTime} from '@lib/imageCaptureTime';
+import {ImportPhotosUseCase} from '@/application/useCases/ImportPhotosUseCase';
+import {syncPhotosFromStore} from '@/application/syncPhotoRepository';
+import {copyPhotoToAlbum} from '@lib/storage/localStorage';
+import {enrichPhotoCaptureTime} from '@lib/media/imageCaptureTime';
 import {
   isUploadNavigationActive,
   runDeferredDuringUploadNavigation,
+  runOrDeferHeavyWorkForNavigation,
   shouldYieldUploadQueueForNavigation,
 } from '@lib/navigation/uploadAwareNavigation';
-import {checkLocalImportBatchComplete, type UpdatePhotoOptions} from './store';
+import {checkLocalImportBatchComplete, getAlbum, type UpdatePhotoOptions} from './store';
 import {FileAsset} from '@services/upload/types';
 import {countByUploadStatus, CulledAlbumPhoto} from './types';
 
@@ -39,6 +42,7 @@ function withTimeout<T>(
 
 export type UploadQueueDeps = {
   maxConcurrent: number;
+  importPhotosUseCase: ImportPhotosUseCase;
   getPhotos: (albumId: string) => CulledAlbumPhoto[];
   getPhoto: (albumId: string, photoId: string) => CulledAlbumPhoto | undefined;
   updatePhoto: (
@@ -50,14 +54,40 @@ export type UploadQueueDeps = {
   persistAlbum: (albumId: string) => Promise<void>;
 };
 
-export function createUploadQueue(deps: UploadQueueDeps) {
-  const {maxConcurrent, getPhotos, getPhoto, updatePhoto, persistAlbum} = deps;
-  const completedSincePersistByAlbum = new Map<string, number>();
+function getUploadingCount(albumId: string, photos: CulledAlbumPhoto[]): number {
+  const counts = getAlbum(albumId)?.localImportBatchCounts;
+  if (counts) {
+    return counts.uploading;
+  }
+  return countByUploadStatus(photos, 'uploading');
+}
 
-  function isUploadQueueIdle(albumId: string): boolean {
-    return !getPhotos(albumId).some(
-      photo => photo.status === 'pending' || photo.status === 'uploading',
-    );
+export function createUploadQueue(deps: UploadQueueDeps) {
+  const {maxConcurrent, importPhotosUseCase, getPhotos, getPhoto, updatePhoto, persistAlbum} = deps;
+  const completedSincePersistByAlbum = new Map<string, number>();
+  const pendingPhotoPersistByAlbum = new Map<string, string[]>();
+
+  function queuePhotoPersist(albumId: string, photoId: string): void {
+    const pending = pendingPhotoPersistByAlbum.get(albumId) ?? [];
+    pending.push(photoId);
+    pendingPhotoPersistByAlbum.set(albumId, pending);
+  }
+
+  function flushPendingPhotoPersist(albumId: string): void {
+    const pending = pendingPhotoPersistByAlbum.get(albumId);
+    if (!pending || pending.length === 0) {
+      return;
+    }
+    pendingPhotoPersistByAlbum.set(albumId, []);
+    syncPhotosFromStore(albumId, pending);
+  }
+
+  function flushAlbumPersist(albumId: string): void {
+    completedSincePersistByAlbum.set(albumId, 0);
+    flushPendingPhotoPersist(albumId);
+    void persistAlbum(albumId).catch(error => {
+      console.error('[uploadQueue] Failed to persist album', albumId, error);
+    });
   }
 
   function scheduleAlbumPersist(albumId: string): void {
@@ -71,10 +101,13 @@ export function createUploadQueue(deps: UploadQueueDeps) {
       return;
     }
 
-    completedSincePersistByAlbum.set(albumId, 0);
-    void persistAlbum(albumId).catch(error => {
-      console.error('[uploadQueue] Failed to persist album', albumId, error);
-    });
+    runOrDeferHeavyWorkForNavigation(() => flushAlbumPersist(albumId));
+  }
+
+  function isUploadQueueIdle(albumId: string): boolean {
+    return !getPhotos(albumId).some(
+      photo => photo.status === 'pending' || photo.status === 'uploading',
+    );
   }
 
   function failPhoto(albumId: string, photoId: string, error?: string) {
@@ -100,6 +133,8 @@ export function createUploadQueue(deps: UploadQueueDeps) {
         },
       );
     });
+    importPhotosUseCase.markUploadFailed(albumId, photoId, error ?? 'Upload failed');
+    queuePhotoPersist(albumId, photoId);
   }
 
   function uploadPhoto(albumId: string, photoId: string): Promise<void> {
@@ -109,6 +144,7 @@ export function createUploadQueue(deps: UploadQueueDeps) {
     }
 
     const sourceFile = photo.file;
+    const previousSize = sourceFile.size ?? 0;
 
     runDeferredDuringUploadNavigation(() => {
       updatePhoto(
@@ -125,6 +161,7 @@ export function createUploadQueue(deps: UploadQueueDeps) {
         },
       );
     });
+    importPhotosUseCase.markUploading(albumId, photoId, 0);
 
     const captureTimePromise = enrichPhotoCaptureTime(
       albumId,
@@ -150,6 +187,7 @@ export function createUploadQueue(deps: UploadQueueDeps) {
       'Local photo copy',
     )
       .then(async ([localFile]: [FileAsset, number | null]) => {
+        const nextSize = localFile.size ?? 0;
         runDeferredDuringUploadNavigation(() => {
           updatePhoto(
             albumId,
@@ -160,13 +198,18 @@ export function createUploadQueue(deps: UploadQueueDeps) {
               entry.status = 'uploaded';
             },
             {
-              recomputeTotals: true,
+              recomputeTotals: false,
+              storageDelta: nextSize - previousSize,
               batchCountShift: {from: 'uploading', to: 'uploaded'},
             },
           );
         });
-        scheduleAlbumPersist(albumId);
-        await checkLocalImportBatchComplete(albumId);
+        runOrDeferHeavyWorkForNavigation(() => {
+          importPhotosUseCase.markUploaded(albumId, photoId);
+          queuePhotoPersist(albumId, photoId);
+          scheduleAlbumPersist(albumId);
+          void checkLocalImportBatchComplete(albumId);
+        });
       })
       .catch(err => {
         if (isUploadQueueIdle(albumId)) {
@@ -187,9 +230,10 @@ export function createUploadQueue(deps: UploadQueueDeps) {
       return;
     }
 
-    let uploadingCount = countByUploadStatus(getPhotos(albumId), 'uploading');
+    const photos = getPhotos(albumId);
+    let uploadingCount = getUploadingCount(albumId, photos);
 
-    for (const photo of getPhotos(albumId)) {
+    for (const photo of photos) {
       if (uploadingCount >= maxConcurrent) {
         break;
       }
@@ -198,8 +242,7 @@ export function createUploadQueue(deps: UploadQueueDeps) {
       }
 
       uploadPhoto(albumId, photo.photoId)
-        .then(async () => {
-          await checkLocalImportBatchComplete(albumId);
+        .then(() => {
           processPending(albumId);
         })
         .catch(err => {

@@ -1,4 +1,4 @@
-import {createStateStore, useStateStore} from '@lib/state';
+import {createStateStore, useStateStore} from '@lib/react/state';
 
 export type QueueOperationStatus = 'idle' | 'active' | 'completed' | 'failed';
 

@@ -1,5 +1,6 @@
-import {useContextOrThrow} from '@lib/context';
+import {useContextOrThrow} from '@lib/react/context';
 import {culledAlbumStore} from '@lib/culledAlbum/store';
+import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
 import {getServerUploadBatchPhotos} from '@lib/culledAlbum/serverUploadProgress';
 import {getAnalysisBatchPhotos} from '@lib/culledAlbum/analysisProgress';
 import {getLocalImportBatchPhotos} from '@lib/culledAlbum/localImportProgress';
@@ -7,7 +8,7 @@ import {
   CulledAlbumPhoto,
   LocalImportBatchCounts,
 } from '@lib/culledAlbum/types';
-import {useStateStore} from '@lib/state';
+import {useStateStore} from '@lib/react/state';
 import {useMemo} from 'react';
 import {
   CulledAlbumActionsContext,
@@ -28,6 +29,19 @@ export type CulledAlbumAnalysisCounts = {
   total: number;
 };
 
+function findBatchPhoto(
+  albumId: string,
+  album: ReturnType<typeof culledAlbumStore.getState>['albums'][string],
+  photoId: string,
+): CulledAlbumPhoto | undefined {
+  const fromPhotoState =
+    photoStateStore.getState().photoState[photoKey(albumId, photoId)];
+  if (fromPhotoState) {
+    return fromPhotoState;
+  }
+  return album?.photos.find(entry => entry.photoId === photoId);
+}
+
 function buildServerUploadStateSignature(
   albumId: string,
   state: ReturnType<typeof culledAlbumStore.getState>,
@@ -39,7 +53,7 @@ function buildServerUploadStateSignature(
 
   return album.uploadBatchPhotoIds
     .map(photoId => {
-      const photo = album.photos.find(entry => entry.photoId === photoId);
+      const photo = findBatchPhoto(albumId, album, photoId);
       if (!photo) {
         return `${photoId}:missing`;
       }
@@ -59,7 +73,7 @@ function buildAnalysisStateSignature(
 
   return album.analysisBatchPhotoIds
     .map(photoId => {
-      const photo = album.photos.find(entry => entry.photoId === photoId);
+      const photo = findBatchPhoto(albumId, album, photoId);
       if (!photo) {
         return `${photoId}:missing`;
       }
@@ -90,8 +104,9 @@ function countAnalysisBatch(
     total: batchIds.size,
   };
 
-  for (const photo of album.photos) {
-    if (!batchIds.has(photo.photoId)) {
+  for (const photoId of batchIds) {
+    const photo = findBatchPhoto(albumId, album, photoId);
+    if (!photo) {
       continue;
     }
     if (photo.analysisStatus === 'pending') {
@@ -125,9 +140,28 @@ export function useCulledAlbumStore<R>(
 }
 
 export function useCulledAlbumPhotosState(albumId: string): CulledAlbumPhoto[] {
-  return useCulledAlbumStore(
+  const photoOrder = useStateStore(
+    photoStateStore,
+    state => state.photoOrder[albumId] ?? EMPTY_PHOTO_IDS,
+  );
+  const photoStateEntries = useStateStore(photoStateStore, state => {
+    const order = state.photoOrder[albumId] ?? EMPTY_PHOTO_IDS;
+    return order.map(photoId => state.photoState[photoKey(albumId, photoId)]);
+  });
+  const albumPhotos = useCulledAlbumStore(
     state => state.albums[albumId]?.photos ?? EMPTY_PHOTOS,
   );
+
+  return useMemo(() => {
+    if (photoOrder.length === 0) {
+      return albumPhotos;
+    }
+
+    const albumById = new Map(albumPhotos.map(photo => [photo.photoId, photo]));
+    return photoOrder
+      .map((photoId, index) => photoStateEntries[index] ?? albumById.get(photoId))
+      .filter((photo): photo is CulledAlbumPhoto => Boolean(photo));
+  }, [albumPhotos, photoOrder, photoStateEntries]);
 }
 
 export function useCulledAlbumLocalImportProgress(
@@ -154,11 +188,17 @@ export function useCulledAlbumUploadItems(albumId: string | null) {
     return state.albums[albumId]?.localImportBatchPhotoIds ?? EMPTY_PHOTO_IDS;
   });
   const batchCounts = useCulledAlbumLocalImportProgress(albumId);
-  const albumPhotos = useCulledAlbumStore(state => {
+  const albumPhotos = useStateStore(photoStateStore, state => {
     if (!albumId) {
       return EMPTY_PHOTOS;
     }
-    return state.albums[albumId]?.photos ?? EMPTY_PHOTOS;
+    const order = state.photoOrder[albumId] ?? [];
+    const photos = order.map(photoId =>
+      state.photoState[photoKey(albumId, photoId)],
+    );
+    return photos.filter(
+      (photo): photo is CulledAlbumPhoto => Boolean(photo),
+    );
   });
 
   return useMemo(() => {
@@ -177,9 +217,15 @@ export function useCulledAlbumServerUploadBatch(albumId: string) {
   const uploadStateSignature = useCulledAlbumStore(state =>
     buildServerUploadStateSignature(albumId, state),
   );
-  const albumPhotos = useCulledAlbumStore(
-    state => state.albums[albumId]?.photos ?? EMPTY_PHOTOS,
-  );
+  const albumPhotos = useStateStore(photoStateStore, state => {
+    const order = state.photoOrder[albumId] ?? [];
+    const photos = order.map(photoId =>
+      state.photoState[photoKey(albumId, photoId)],
+    );
+    return photos.filter(
+      (photo): photo is CulledAlbumPhoto => Boolean(photo),
+    );
+  });
 
   return useMemo(() => {
     trackMemoDependencies(uploadStateSignature);
@@ -216,11 +262,17 @@ function useCulledAlbumAnalysisBatch(albumId: string | null) {
     }
     return buildAnalysisStateSignature(albumId, state);
   });
-  const albumPhotos = useCulledAlbumStore(state => {
+  const albumPhotos = useStateStore(photoStateStore, state => {
     if (!albumId) {
       return EMPTY_PHOTOS;
     }
-    return state.albums[albumId]?.photos ?? EMPTY_PHOTOS;
+    const order = state.photoOrder[albumId] ?? [];
+    const photos = order.map(photoId =>
+      state.photoState[photoKey(albumId, photoId)],
+    );
+    return photos.filter(
+      (photo): photo is CulledAlbumPhoto => Boolean(photo),
+    );
   });
 
   return useMemo(() => {

@@ -1,7 +1,12 @@
-import {make} from '@lib/di';
+import {resolveUseCases} from '@di/useCases';
+import {make} from '@di/tsyringe';
 import {APIException, APIService} from '@services/api';
 import {CulledAlbumPhoto} from './types';
 import {getPhotoById, updatePhoto} from './store';
+
+function getUploadSelectedPhotosUseCase() {
+  return resolveUseCases().uploadSelectedPhotos;
+}
 
 function isRetryableServerError(err: unknown): boolean {
   return err instanceof APIException && err.statusCode >= 500;
@@ -30,6 +35,7 @@ export async function uploadServerPhoto(
     entry.serverUploadProgress = 0;
     entry.serverUploadError = undefined;
   });
+  getUploadSelectedPhotosUseCase().startUpload(albumId, photoId);
 
   const onProgress = (progress: number) => {
     updatePhoto(albumId, photoId, entry => {
@@ -39,6 +45,7 @@ export async function uploadServerPhoto(
       entry.serverUploadProgress = progress;
       entry.serverUploadStatus = progress >= 100 ? 'uploaded' : 'uploading';
     });
+    getUploadSelectedPhotosUseCase().updateProgress(albumId, photoId, progress);
   };
 
   try {
@@ -60,4 +67,5 @@ export async function uploadServerPhoto(
     entry.serverUploadProgress = 100;
     entry.serverUploadStatus = 'uploaded';
   });
+  getUploadSelectedPhotosUseCase().markUploaded(albumId, photoId);
 }

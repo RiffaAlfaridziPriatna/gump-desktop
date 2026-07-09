@@ -1,4 +1,4 @@
-import {make} from '@lib/di';
+import {make} from '@di/tsyringe';
 import {APIService, APIResponse} from '@services/api';
 import {culledAlbumStore, persistAlbum} from './store';
 import {

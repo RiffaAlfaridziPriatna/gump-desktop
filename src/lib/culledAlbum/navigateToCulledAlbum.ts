@@ -1,4 +1,4 @@
-import {preloadImages} from '@lib/imagePreload';
+import {preloadImages} from '@lib/media/imagePreload';
 import {uploadAwareParams} from '@lib/navigation/uploadAwareNavigation';
 import type {MainStackParamList} from '../../app/MainNavigator';
 import type {StackNavigationProp} from '@react-navigation/stack';

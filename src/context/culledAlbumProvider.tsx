@@ -1,4 +1,5 @@
 import {cullingEngine} from '@lib/culling/cullingEngine';
+import {resolveUseCases} from '@di/useCases';
 import {createAnalysisQueue} from '@lib/culledAlbum/analysisQueue';
 import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
 import {
@@ -15,6 +16,11 @@ import {
   startServerUploadBatch,
   updatePhoto,
 } from '@lib/culledAlbum/store';
+import {
+  hasInFlightAnalysis,
+  hasInFlightServerUploads,
+  hasInFlightUploads,
+} from '@lib/culledAlbum/types';
 import {createServerUploadQueue} from '@lib/culledAlbum/serverUploadQueue';
 import {uploadServerPhoto} from '@lib/culledAlbum/serverUpload';
 import {createUploadQueue} from '@lib/culledAlbum/uploadQueue';
@@ -25,7 +31,7 @@ import {
   resetQueueOperation,
   setQueueOperationStatus,
 } from '@lib/culledAlbum/uploadQueueStore';
-import {createStateStore, StateStore} from '@lib/state';
+import {createStateStore, StateStore} from '@lib/react/state';
 import {FileAsset} from '@services/upload/types';
 import {PropsWithChildren, useCallback, useRef} from 'react';
 import {
@@ -36,9 +42,18 @@ import {
   CulledAlbumUiState,
 } from './culledAlbumContext';
 
-const MAX_CONCURRENT_UPLOADS = 6;
+const MAX_CONCURRENT_UPLOADS = 8;
 const MAX_CONCURRENT_SERVER_UPLOADS = 4;
-const MAX_CONCURRENT_ANALYSIS = 2;
+const MAX_CONCURRENT_ANALYSIS = 4;
+
+let cachedUseCases: ReturnType<typeof resolveUseCases> | null = null;
+
+function getUseCases() {
+  if (!cachedUseCases) {
+    cachedUseCases = resolveUseCases();
+  }
+  return cachedUseCases;
+}
 
 export function CulledAlbumProvider({children}: PropsWithChildren) {
   const uiStoreRef = useRef<StateStore<CulledAlbumUiState>>(null);
@@ -58,6 +73,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
   if (!uploadQueueRef.current) {
     uploadQueueRef.current = createUploadQueue({
       maxConcurrent: MAX_CONCURRENT_UPLOADS,
+      importPhotosUseCase: getUseCases().importPhotos,
       getPhotos: getPhotosForAlbum,
       getPhoto: getPhotoById,
       updatePhoto,
@@ -68,6 +84,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
   if (!serverUploadQueueRef.current) {
     serverUploadQueueRef.current = createServerUploadQueue({
       maxConcurrent: MAX_CONCURRENT_SERVER_UPLOADS,
+      uploadSelectedPhotosUseCase: getUseCases().uploadSelectedPhotos,
       getPhoto: getPhotoById,
       updatePhoto,
       persistAlbum,
@@ -78,6 +95,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
   if (!analysisQueueRef.current) {
     analysisQueueRef.current = createAnalysisQueue({
       maxConcurrent: MAX_CONCURRENT_ANALYSIS,
+      analyzePhotoUseCase: getUseCases().analyzePhoto,
       getPhotos: getPhotosForAlbum,
       updatePhoto,
       persistAlbum,
@@ -100,28 +118,46 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     });
   }
 
-  const resumeLocalImport = useCallback((albumId: string) => {
+  const resumeInFlightWork = useCallback((albumId: string) => {
     const album = getAlbum(albumId);
     if (!album) {
       return;
     }
 
-    const hasPending = album.photos.some(
-      photo => photo.status === 'pending' || photo.status === 'uploading',
-    );
-    if (!hasPending) {
-      return;
+    const photos = getPhotosForAlbum(albumId);
+
+    if (hasInFlightUploads(album, photos)) {
+      if (album.localImportBatchPhotoIds.length > 0) {
+        reconcileLocalImportBatchCounts(albumId);
+        setQueueOperationStatus(albumId, 'localImport', 'active');
+      }
+      uploadQueueRef.current!.processPending(albumId);
     }
 
-    if (album.localImportBatchPhotoIds.length > 0) {
-      reconcileLocalImportBatchCounts(albumId);
-      setQueueOperationStatus(albumId, 'localImport', 'active');
+    if (hasInFlightAnalysis(album, photos)) {
+      setQueueOperationStatus(albumId, 'analysis', 'active');
+      analysisQueueRef.current!.processPending(albumId);
     }
-    uploadQueueRef.current!.processPending(albumId);
+
+    if (hasInFlightServerUploads(album, photos)) {
+      setQueueOperationStatus(albumId, 'serverUpload', 'active');
+      serverUploadQueueRef.current!.processPending(albumId);
+    }
   }, []);
 
+  const resumeLocalImport = useCallback(
+    (albumId: string) => {
+      resumeInFlightWork(albumId);
+    },
+    [resumeInFlightWork],
+  );
+
   const addPhotos = useCallback((albumId: string, files: FileAsset[]) => {
-    addPhotosToAlbum(albumId, files);
+    const added = addPhotosToAlbum(albumId, files);
+    getUseCases().importPhotos.syncManyFromStore(
+      albumId,
+      added.map(photo => photo.photoId),
+    );
 
     uiStoreRef.current!.setState({uploadError: null});
     setQueueOperationStatus(albumId, 'localImport', 'active');
@@ -224,6 +260,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
   const actions: CulledAlbumActions = {
     addPhotos,
     resumeLocalImport,
+    resumeInFlightWork,
     startAnalysis,
     startSelectedUpload,
     purgeAlbum,

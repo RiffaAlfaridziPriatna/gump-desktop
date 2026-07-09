@@ -1,5 +1,5 @@
 import {createContext} from 'react';
-import {StateStore} from '@lib/state';
+import {StateStore} from '@lib/react/state';
 import {FileAsset} from '@services/upload/types';
 
 export type CulledAlbumToastMode = 'upload' | 'analyze' | 'serverUpload';
@@ -12,6 +12,7 @@ export type CulledAlbumUiState = {
 export type CulledAlbumActions = {
   addPhotos: (albumId: string, files: FileAsset[]) => void;
   resumeLocalImport: (albumId: string) => void;
+  resumeInFlightWork: (albumId: string) => void;
   startAnalysis: (albumId: string) => void;
   startSelectedUpload: (albumId: string, photoIds: string[]) => void;
   purgeAlbum: (albumId: string) => Promise<void>;

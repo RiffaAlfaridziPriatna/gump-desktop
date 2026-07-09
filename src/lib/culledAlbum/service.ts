@@ -1,12 +1,12 @@
-import {deleteLocalAlbumFiles} from '@lib/localStorage';
+import {deleteLocalAlbumFiles} from '@lib/storage/localStorage';
 import {clearAlbumData, culledAlbumStore, loadAlbumIntoStore} from './store';
 import {CulledAlbum, hasInFlightAnalysis} from './types';
 
 export async function purgeLocalCulledAlbum(albumId: string): Promise<void> {
-  await Promise.all([
-    deleteLocalAlbumFiles(albumId),
-    clearAlbumData(albumId),
-  ]);
+  await clearAlbumData(albumId);
+  void deleteLocalAlbumFiles(albumId).catch(error => {
+    console.error('[purgeLocalCulledAlbum] Failed to delete album files', error);
+  });
 }
 
 export function shouldOpenCulledDetailScreen(
