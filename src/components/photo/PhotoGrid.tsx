@@ -255,7 +255,7 @@ export function PhotoGrid({
   }
 
   return (
-    <View style={[styles.container, {paddingHorizontal: horizontalPadding}]}>
+    <View style={styles.container}>
       <FlatList
         data={rows}
         renderItem={renderRow}
@@ -266,7 +266,7 @@ export function PhotoGrid({
         initialNumToRender={8}
         maxToRenderPerBatch={6}
         showsVerticalScrollIndicator
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, {paddingHorizontal: horizontalPadding}]}
         onViewableItemsChanged={handleViewableItemsChanged}
         viewabilityConfig={{
           itemVisiblePercentThreshold: 20,
