@@ -5,7 +5,8 @@ import {
   loadAllLocalAlbumsIntoStore,
 } from '@lib/culledAlbum/store';
 import {CulledAlbumListItem} from '@lib/culledAlbum/types';
-import {useCallback, useEffect, useMemo, useState, useSyncExternalStore} from 'react';
+import {useIsFocused} from '@react-navigation/native';
+import {useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore} from 'react';
 
 function sortAlbums(albums: CulledAlbumListItem[]): CulledAlbumListItem[] {
   return [...albums].sort(
@@ -79,27 +80,36 @@ function getAlbumListSnapshot(): CulledAlbumListItem[] {
   return albumListSnapshot;
 }
 
-function useAlbumListItems(): CulledAlbumListItem[] {
-  return useSyncExternalStore(
-    culledAlbumStore.subscribe,
+function useAlbumListItems(isActive: boolean): CulledAlbumListItem[] {
+  const snapshotRef = useRef<CulledAlbumListItem[]>([]);
+
+  const albums = useSyncExternalStore(
+    isActive ? culledAlbumStore.subscribe : () => () => undefined,
     getAlbumListSnapshot,
     getAlbumListSnapshot,
   );
+
+  if (isActive) {
+    snapshotRef.current = albums;
+  }
+
+  return isActive ? albums : snapshotRef.current;
 }
 
 export function useLocalCulledAlbumList() {
+  const isFocused = useIsFocused();
   const [loadingAlbums, setLoadingAlbums] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [enableSync, setEnableSync] = useState(false);
 
-  const albums = useAlbumListItems();
+  const albums = useAlbumListItems(isFocused);
 
   const albumIds = useMemo(
     () => albums.map(album => album.albumId),
     [albums],
   );
 
-  useServerAlbumSync(albumIds, enableSync);
+  useServerAlbumSync(albumIds, enableSync && isFocused);
 
   const refresh = useCallback(async () => {
     setLoadingAlbums(true);

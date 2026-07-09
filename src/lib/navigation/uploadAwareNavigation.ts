@@ -1,5 +1,5 @@
 import {hasAnyInFlightAlbumWork} from '@lib/culledAlbum/store';
-import {isDesktopPlatform} from '@lib/platform';
+import {isDesktopPlatform} from '@lib/system/platform';
 import {
   StackNavigationOptions,
   TransitionPresets,
@@ -14,10 +14,13 @@ export type WithInstantNav<T> = T & InstantNavParams;
 
 export {
   beginUploadNavigationCoop,
+  clearNavigationInteractionPriority,
   endUploadNavigationCoop,
   isUploadNavigationActive,
   prioritizeNavigationInteraction,
   runDeferredDuringUploadNavigation,
+  runOrDeferHeavyWorkForNavigation,
+  shouldDeferHeavyWorkForNavigation,
   shouldYieldUploadQueueForNavigation,
 } from './uploadNavigationCoop';
 
@@ -73,8 +76,10 @@ export function uploadAwareModalScreenOptions({
     return {
       animation: 'none',
       gestureEnabled: true,
+      presentation: 'transparentModal',
       cardStyle: {backgroundColor: 'transparent'},
       cardOverlayEnabled: false,
+      detachPreviousScreen: false,
     };
   }
 

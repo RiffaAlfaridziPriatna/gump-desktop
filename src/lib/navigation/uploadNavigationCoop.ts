@@ -3,9 +3,10 @@ let coopDepth = 0;
 let safetyTimer: ReturnType<typeof setTimeout> | null = null;
 let navigationPriorityUntil = 0;
 
-const COOP_SAFETY_MS = 1000;
-const FLUSH_STEP_MS = 32;
+const COOP_SAFETY_MS = 30_000;
+const FLUSH_STEP_MS = 16;
 const NAVIGATION_PRIORITY_MS = 600;
+const DEFERRED_FLUSH_DELAY_MS = 300;
 
 function flushDeferred(): void {
   const pending = deferred.splice(0);
@@ -36,6 +37,10 @@ export function isUploadNavigationActive(): boolean {
 }
 
 export function shouldYieldUploadQueueForNavigation(): boolean {
+  return isUploadNavigationActive();
+}
+
+export function shouldDeferHeavyWorkForNavigation(): boolean {
   return Date.now() < navigationPriorityUntil || isUploadNavigationActive();
 }
 
@@ -43,6 +48,10 @@ export function prioritizeNavigationInteraction(
   durationMs = NAVIGATION_PRIORITY_MS,
 ): void {
   navigationPriorityUntil = Date.now() + durationMs;
+}
+
+export function clearNavigationInteractionPriority(): void {
+  navigationPriorityUntil = 0;
 }
 
 export function beginUploadNavigationCoop(): void {
@@ -55,7 +64,6 @@ export function beginUploadNavigationCoop(): void {
   safetyTimer = setTimeout(() => {
     if (coopDepth > 0) {
       coopDepth = 0;
-      flushDeferred();
     }
     safetyTimer = null;
   }, COOP_SAFETY_MS);
@@ -76,11 +84,20 @@ export function endUploadNavigationCoop(): void {
     safetyTimer = null;
   }
 
-  flushDeferred();
+  clearNavigationInteractionPriority();
+  setTimeout(() => flushDeferred(), DEFERRED_FLUSH_DELAY_MS);
 }
 
 export function runDeferredDuringUploadNavigation(work: () => void): void {
   if (!isUploadNavigationActive()) {
+    work();
+    return;
+  }
+  deferred.push(work);
+}
+
+export function runOrDeferHeavyWorkForNavigation(work: () => void): void {
+  if (!shouldDeferHeavyWorkForNavigation()) {
     work();
     return;
   }
