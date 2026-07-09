@@ -20,9 +20,19 @@ export function setPhotoOrder(albumId: string, photoIds: string[]): void {
     const idSet = new Set(photoIds);
     const prevPhotoIds = state.photoOrder[albumId] ?? [];
     for (const prevPhotoId of prevPhotoIds) {
-      if (!idSet.has(prevPhotoId)) {
-        delete state.photoState[photoKey(albumId, prevPhotoId)];
+      if (idSet.has(prevPhotoId)) {
+        continue;
       }
+      const photo = state.photoState[photoKey(albumId, prevPhotoId)];
+      if (
+        photo &&
+        (photo.status === 'pending' ||
+          photo.status === 'uploading' ||
+          photo.status === 'uploaded')
+      ) {
+        continue;
+      }
+      delete state.photoState[photoKey(albumId, prevPhotoId)];
     }
     state.photoOrder[albumId] = photoIds;
   });
@@ -57,7 +67,6 @@ export function hydratePhotos(
           nextState.photoState[photoKey(albumId, photo.photoId)] = photo;
         }
       });
-
     }
   }
 

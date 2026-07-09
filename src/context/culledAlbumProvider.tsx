@@ -6,6 +6,8 @@ import {
   addPhotosToAlbum,
   clearAnalysisBatch,
   clearLocalImportBatch,
+  culledAlbumStore,
+  flushPendingPhotoUpdates,
   getAlbum,
   getPhotoById,
   getPhotosForAlbum,
@@ -16,6 +18,7 @@ import {
   startServerUploadBatch,
   updatePhoto,
 } from '@lib/culledAlbum/store';
+import {countLocalImportBatchForAlbum} from '@lib/culledAlbum/localImportProgress';
 import {
   hasInFlightAnalysis,
   hasInFlightServerUploads,
@@ -24,8 +27,11 @@ import {
 import {createServerUploadQueue} from '@lib/culledAlbum/serverUploadQueue';
 import {uploadServerPhoto} from '@lib/culledAlbum/serverUpload';
 import {createUploadQueue} from '@lib/culledAlbum/uploadQueue';
+import {onUploadNavigationCoopEnd} from '@lib/navigation/uploadAwareNavigation';
 import {
+  beginLocalImportQueue,
   clearAlbumQueues,
+  finishLocalImportQueue,
   markCompletionSeen,
   queueOperationForMode,
   resetQueueOperation,
@@ -33,7 +39,7 @@ import {
 } from '@lib/culledAlbum/uploadQueueStore';
 import {createStateStore, StateStore} from '@lib/react/state';
 import {FileAsset} from '@services/upload/types';
-import {PropsWithChildren, useCallback, useRef} from 'react';
+import {PropsWithChildren, useCallback, useEffect, useRef} from 'react';
 import {
   CulledAlbumActions,
   CulledAlbumActionsContext,
@@ -129,7 +135,17 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     if (hasInFlightUploads(album, photos)) {
       if (album.localImportBatchPhotoIds.length > 0) {
         reconcileLocalImportBatchCounts(albumId);
-        setQueueOperationStatus(albumId, 'localImport', 'active');
+        const batchTotal =
+          album.localImportBatchTotal || album.localImportBatchPhotoIds.length;
+        const counts = countLocalImportBatchForAlbum(
+          album.localImportBatchPhotoIds,
+          batchTotal,
+          photoId => getPhotoById(albumId, photoId),
+        );
+        beginLocalImportQueue(albumId, batchTotal, {
+          uploadedCount: counts.uploaded,
+          failedCount: counts.failed,
+        });
       }
       uploadQueueRef.current!.processPending(albumId);
     }
@@ -145,6 +161,14 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     }
   }, []);
 
+  useEffect(() => {
+    return onUploadNavigationCoopEnd(() => {
+      for (const albumId of Object.keys(culledAlbumStore.getState().albums)) {
+        resumeInFlightWork(albumId);
+      }
+    });
+  }, [resumeInFlightWork]);
+
   const resumeLocalImport = useCallback(
     (albumId: string) => {
       resumeInFlightWork(albumId);
@@ -154,13 +178,9 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
   const addPhotos = useCallback((albumId: string, files: FileAsset[]) => {
     const added = addPhotosToAlbum(albumId, files);
-    getUseCases().importPhotos.syncManyFromStore(
-      albumId,
-      added.map(photo => photo.photoId),
-    );
 
     uiStoreRef.current!.setState({uploadError: null});
-    setQueueOperationStatus(albumId, 'localImport', 'active');
+    beginLocalImportQueue(albumId, added.length);
     uploadQueueRef.current!.processPending(albumId);
   }, []);
 
@@ -230,8 +250,24 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       }, {recomputeTotals: false});
     }
 
+    flushPendingPhotoUpdates();
     reconcileLocalImportBatchCounts(albumId);
-    setQueueOperationStatus(albumId, 'localImport', 'failed');
+    const album = getAlbum(albumId);
+    const batchTotal =
+      album?.localImportBatchTotal || batchPhotoIds.length;
+    const counts =
+      album && batchPhotoIds.length > 0
+        ? countLocalImportBatchForAlbum(
+            batchPhotoIds,
+            batchTotal,
+            photoId => getPhotoById(albumId, photoId),
+          )
+        : null;
+    finishLocalImportQueue(albumId, {
+      status: 'failed',
+      uploadedCount: counts?.uploaded ?? 0,
+      failedCount: counts?.failed ?? batchTotal,
+    });
   }, []);
 
   const failNotAnalyzedItems = useCallback((albumId: string, error?: string) => {

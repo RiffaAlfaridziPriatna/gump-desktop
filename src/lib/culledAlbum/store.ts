@@ -2,7 +2,8 @@ import {current, isDraft} from 'immer';
 import {container} from '@di/container';
 import {TOKENS} from '@di/tokens';
 import {IPhotoRepository} from '@/domain/repositories/IPhotoRepository';
-import {photoIdFromStoredFile} from '@lib/culling/cullingPhotoId';
+import {syncPhotosFromStoreAwait} from '@/application/syncPhotoRepository';
+import {createCullingPhotoId} from '@lib/culling/cullingPhotoId';
 import {
   filterSupportedCullingImages,
   partitionUploadablePhotoIds,
@@ -13,9 +14,9 @@ import {FileAsset} from '@services/upload/types';
 import {mergeAlbumPhotos, mergeWithMemoryAlbum} from './merge';
 import {
   createLocalImportBatchCounts,
-  computeLocalImportBatchCounts,
-  isLocalImportBatchFinished,
-  getLocalImportBatchPhotos,
+  countLocalImportBatchForAlbum,
+  computeLocalImportBatchCountsForIds,
+  isLocalImportBatchFinishedForIds,
 } from './localImportProgress';
 import {readAlbumMeta, readAllAlbumMeta, removeAlbum, saveAlbum, type SaveAlbumOptions} from './storage';
 import {toPersistableAlbum} from './toPersistableAlbum';
@@ -26,7 +27,7 @@ import {
   hydratePhotos,
   setPhotoOrder,
 } from './photoLoader';
-import {setQueueOperationStatus} from './uploadQueueStore';
+import {finishLocalImportQueue, getAlbumQueueState, hasActiveQueueWork, setQueueOperationStatus} from './uploadQueueStore';
 import {
   isServerUploadBatchFinished,
   isServerUploadBatchSuccessful,
@@ -45,6 +46,12 @@ import {
 } from './types';
 import {scheduleThumbnailBackfill} from './thumbnailBackfill';
 import {photoKey, photoStateStore} from './photoStateStore';
+import {
+  flushPendingPhotoUpdates as flushBatchedPhotoUpdates,
+  registerPhotoUpdateBatchApplier,
+  schedulePhotoUpdate,
+  type PendingPhotoUpdate,
+} from './photoUpdateBatcher';
 import {clearFaceClusterIndex} from '@lib/culling/faceClusterIndex';
 import {
   runOrDeferHeavyWorkForNavigation,
@@ -63,6 +70,31 @@ export const culledAlbumStore = createStateStore<CulledAlbumStoreState>({
 
 function getAlbumFromState(albumId: string): CulledAlbum | null {
   return culledAlbumStore.getState().albums[albumId] ?? null;
+}
+
+function syncAddedPhotosToState(
+  albumId: string,
+  addedPhotos: CulledAlbumPhoto[],
+): void {
+  if (addedPhotos.length === 0) {
+    return;
+  }
+
+  photoStateStore.setState(state => {
+    const order = state.photoOrder[albumId] ?? [];
+    const knownIds = new Set(order);
+
+    for (const photo of addedPhotos) {
+      const plainPhoto = toPlainPhoto(photo);
+      state.photoState[photoKey(albumId, plainPhoto.photoId)] = plainPhoto;
+      if (!knownIds.has(plainPhoto.photoId)) {
+        order.push(plainPhoto.photoId);
+        knownIds.add(plainPhoto.photoId);
+      }
+    }
+
+    state.photoOrder[albumId] = order;
+  });
 }
 
 function toPlainPhoto(photo: CulledAlbumPhoto): CulledAlbumPhoto {
@@ -101,18 +133,27 @@ function applyAlbumMergeInState(albumId: string, incoming: CulledAlbum): void {
     const current = state.albums[albumId];
     if (!current) {
       state.albums[albumId] = incoming;
-      recomputeAlbumTotals(state.albums[albumId]!);
+      if (incoming.photos.length > 0) {
+        recomputeAlbumTotals(state.albums[albumId]!);
+      }
       return;
     }
 
     current.photos = mergeAlbumPhotos(current.photos, incoming.photos);
-    recomputeAlbumTotals(current);
+    if (current.photos.length > 0) {
+      recomputeAlbumTotals(current);
+    } else {
+      current.totalPhotos = Math.max(current.totalPhotos, incoming.totalPhotos);
+      current.totalStorage = Math.max(current.totalStorage, incoming.totalStorage);
+    }
   });
 
   const album = getAlbumFromState(albumId);
   if (album) {
     syncPhotoStateForAlbum(albumId, album.photos);
   }
+
+  syncAlbumTotalsFromRepository(albumId);
 }
 
 async function buildRefreshedAlbum(
@@ -176,7 +217,7 @@ async function persistAlbumNow(
   albumId: string,
   options: PersistAlbumOptions = {},
 ): Promise<void> {
-  if (!hasAnyInFlightAlbumWork()) {
+  if (!hasActiveQueueWork()) {
     syncAlbumTotalsFromRepository(albumId);
   }
 
@@ -205,16 +246,21 @@ export async function persistAlbum(
 
 export function syncAlbumTotalsFromRepository(albumId: string): void {
   const photoRepo = container.resolve<IPhotoRepository>(TOKENS.IPhotoRepository);
-  const totalPhotos = photoRepo.countByAlbum(albumId);
-  const totalStorage = photoRepo.sumFileSizeByAlbum(albumId);
+  const repoPhotoCount = photoRepo.countByAlbum(albumId);
+  const repoStorage = photoRepo.sumFileSizeByAlbum(albumId);
 
   culledAlbumStore.setState(state => {
     const album = state.albums[albumId];
     if (!album) {
       return;
     }
-    album.totalPhotos = totalPhotos;
-    album.totalStorage = totalStorage;
+
+    const memoryPhotoCount = Math.max(
+      album.photos.length,
+      album.localImportBatchTotal || 0,
+    );
+    album.totalPhotos = Math.max(repoPhotoCount, memoryPhotoCount);
+    album.totalStorage = Math.max(repoStorage, album.totalStorage);
   });
 }
 
@@ -225,6 +271,7 @@ export type UpdatePhotoOptions = {
     from: LocalImportCountKey;
     to: LocalImportCountKey;
   };
+  immediate?: boolean;
 };
 
 export function shiftLocalImportBatchCount(
@@ -250,16 +297,56 @@ export function reconcileLocalImportBatchCounts(albumId: string): void {
     return;
   }
 
+  const counts = computeLocalImportBatchCountsForIds(
+    album.localImportBatchPhotoIds,
+    photoId => lookupPhotoForImportCount(albumId, photoId),
+  );
+  counts.total = album.localImportBatchTotal || counts.total;
+
   culledAlbumStore.setState(state => {
     const entry = state.albums[albumId];
-    if (!entry) {
-      return;
+    if (entry) {
+      entry.localImportBatchCounts = counts;
     }
-    entry.localImportBatchCounts = computeLocalImportBatchCounts(
-      entry.photos,
-      entry.localImportBatchPhotoIds,
-    );
   });
+}
+
+const UPLOAD_STATUS_RANK: Record<CulledAlbumPhoto['status'], number> = {
+  pending: 0,
+  uploading: 1,
+  uploaded: 2,
+  failed: 2,
+};
+
+function pickMoreProgressedPhoto(
+  fromState?: CulledAlbumPhoto,
+  fromAlbum?: CulledAlbumPhoto,
+): CulledAlbumPhoto | undefined {
+  if (!fromState) {
+    return fromAlbum;
+  }
+  if (!fromAlbum) {
+    return fromState;
+  }
+
+  const stateRank = UPLOAD_STATUS_RANK[fromState.status] ?? 0;
+  const albumRank = UPLOAD_STATUS_RANK[fromAlbum.status] ?? 0;
+  return albumRank > stateRank ? fromAlbum : fromState;
+}
+
+function lookupPhotoForImportCount(
+  albumId: string,
+  photoId: string,
+): CulledAlbumPhoto | undefined {
+  const fromState = photoStateStore.getState().photoState[photoKey(albumId, photoId)];
+  if (fromState) {
+    return fromState;
+  }
+
+  const fromAlbum = getAlbumFromState(albumId)?.photos.find(
+    photo => photo.photoId === photoId,
+  );
+  return fromAlbum;
 }
 
 export async function clearAlbumData(albumId: string): Promise<void> {
@@ -285,28 +372,58 @@ export async function registerLocalAlbum(album: CulledAlbum): Promise<void> {
 }
 
 export function hasAnyInFlightAlbumWork(): boolean {
-  return Object.keys(culledAlbumStore.getState().albums).some(albumId => {
+  for (const albumId of Object.keys(culledAlbumStore.getState().albums)) {
     const album = getAlbumFromState(albumId);
     if (!album) {
-      return false;
+      continue;
     }
+
+    if (hasInFlightUploads(album)) {
+      return true;
+    }
+
+    if (
+      album.analysisBatchPhotoIds.length === 0 &&
+      album.uploadBatchPhotoIds.length === 0
+    ) {
+      continue;
+    }
+
     const photos = getPhotosForAlbum(albumId);
-    return (
-      hasInFlightUploads(album, photos) ||
+    if (
       hasInFlightAnalysis(album, photos) ||
       hasInFlightServerUploads(album, photos)
-    );
-  });
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export async function loadAllLocalAlbumsIntoStore(): Promise<void> {
   const persisted = await readAllAlbumMeta();
   const albumIds = Object.keys(persisted);
+  const photoRepo = container.resolve<IPhotoRepository>(TOKENS.IPhotoRepository);
+  const totalsByAlbum = new Map<string, {totalPhotos: number; totalStorage: number}>();
+
+  for (const albumId of albumIds) {
+    ensurePhotoOrder(albumId);
+    totalsByAlbum.set(albumId, {
+      totalPhotos: photoRepo.countByAlbum(albumId),
+      totalStorage: photoRepo.sumFileSizeByAlbum(albumId),
+    });
+  }
 
   culledAlbumStore.setState(state => {
     state.error = null;
     for (const [albumId, raw] of Object.entries(persisted)) {
       const incoming = normalizePersistedAlbum({...raw});
+      const totals = totalsByAlbum.get(albumId);
+      if (totals) {
+        incoming.totalPhotos = totals.totalPhotos;
+        incoming.totalStorage = totals.totalStorage;
+      }
       const current = state.albums[albumId];
       if (
         current &&
@@ -315,28 +432,35 @@ export async function loadAllLocalAlbumsIntoStore(): Promise<void> {
           hasInFlightServerUploads(current))
       ) {
         current.photos = mergeAlbumPhotos(incoming.photos, current.photos);
-        recomputeAlbumTotals(current);
+        if (current.photos.length > 0) {
+          recomputeAlbumTotals(current);
+        } else if (totals) {
+          current.totalPhotos = Math.max(current.totalPhotos, totals.totalPhotos);
+          current.totalStorage = Math.max(current.totalStorage, totals.totalStorage);
+        }
         continue;
       }
       if (!current) {
         state.albums[albumId] = incoming;
         if (hasInFlightUploads(incoming)) {
-          incoming.localImportBatchCounts = computeLocalImportBatchCounts(
-            incoming.photos,
+          incoming.localImportBatchCounts = computeLocalImportBatchCountsForIds(
             incoming.localImportBatchPhotoIds,
+            photoId => lookupPhotoForImportCount(albumId, photoId),
           );
         }
         continue;
       }
       current.photos = mergeAlbumPhotos(incoming.photos, current.photos);
-      recomputeAlbumTotals(current);
+      if (current.photos.length > 0) {
+        recomputeAlbumTotals(current);
+      } else if (totals) {
+        current.totalPhotos = Math.max(current.totalPhotos, totals.totalPhotos);
+        current.totalStorage = Math.max(current.totalStorage, totals.totalStorage);
+      }
     }
   });
 
   for (const albumId of albumIds) {
-    ensurePhotoOrder(albumId);
-    syncAlbumTotalsFromRepository(albumId);
-
     const album = getAlbumFromState(albumId);
     if (!album) {
       continue;
@@ -447,31 +571,83 @@ export async function checkServerUploadBatchComplete(
   await persistAlbum(albumId);
 }
 
+const BATCH_COMPLETE_DEBOUNCE_MS = 120;
+const pendingBatchCompleteChecks = new Set<string>();
+let batchCompleteCheckTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function scheduleLocalImportBatchCompleteCheck(albumId: string): void {
+  pendingBatchCompleteChecks.add(albumId);
+  if (batchCompleteCheckTimer) {
+    return;
+  }
+
+  batchCompleteCheckTimer = setTimeout(() => {
+    batchCompleteCheckTimer = null;
+    const albumIds = [...pendingBatchCompleteChecks];
+    pendingBatchCompleteChecks.clear();
+    for (const id of albumIds) {
+      void checkLocalImportBatchComplete(id);
+    }
+  }, BATCH_COMPLETE_DEBOUNCE_MS);
+}
+
 export async function checkLocalImportBatchComplete(
   albumId: string,
 ): Promise<void> {
+  const existingQueueStatus = getAlbumQueueState(albumId).localImport.status;
+  if (existingQueueStatus === 'completed' || existingQueueStatus === 'failed') {
+    return;
+  }
+
+  if (shouldDeferHeavyWorkForNavigation()) {
+    scheduleLocalImportBatchCompleteCheck(albumId);
+    return;
+  }
+
+  flushPendingPhotoUpdates();
+
   const album = getAlbumFromState(albumId);
-  if (
-    !album ||
-    album.localImportBatchPhotoIds.length === 0 ||
-    !isLocalImportBatchFinished(album.photos, album.localImportBatchPhotoIds)
+  if (!album || album.localImportBatchPhotoIds.length === 0) {
+    return;
+  }
+
+  const batchPhotoIds = album.localImportBatchPhotoIds;
+  const counts = album.localImportBatchCounts;
+  if (counts) {
+    if (counts.pending > 0 || counts.uploading > 0) {
+      return;
+    }
+  } else if (
+    !isLocalImportBatchFinishedForIds(batchPhotoIds, photoId =>
+      lookupPhotoForImportCount(albumId, photoId),
+    )
   ) {
     return;
   }
 
-  const batchPhotos = getLocalImportBatchPhotos(
-    album.photos,
-    album.localImportBatchPhotoIds,
+  reconcileLocalImportBatchCounts(albumId);
+  const batchTotal = album.localImportBatchTotal || batchPhotoIds.length;
+  const finalCounts = countLocalImportBatchForAlbum(
+    batchPhotoIds,
+    batchTotal,
+    photoId => lookupPhotoForImportCount(albumId, photoId),
   );
-  const hasUploaded = batchPhotos.some(photo => photo.status === 'uploaded');
-  setQueueOperationStatus(
-    albumId,
-    'localImport',
-    hasUploaded ? 'completed' : 'failed',
-  );
+
+  if (finalCounts.pending > 0 || finalCounts.uploading > 0) {
+    return;
+  }
+
+  const hasUploaded = finalCounts.uploaded > 0;
+  finishLocalImportQueue(albumId, {
+    status: hasUploaded ? 'completed' : 'failed',
+    uploadedCount: finalCounts.uploaded,
+    failedCount: finalCounts.failed,
+  });
   if (hasUploaded) {
     scheduleThumbnailBackfill(albumId);
   }
+
+  await syncPhotosFromStoreAwait(albumId, [...batchPhotoIds]);
   await persistAlbum(albumId);
 }
 
@@ -480,6 +656,7 @@ export function clearLocalImportBatch(albumId: string): void {
     const album = state.albums[albumId];
     if (album) {
       album.localImportBatchPhotoIds = [];
+      album.localImportBatchTotal = 0;
       album.localImportBatchCounts = undefined;
     }
   });
@@ -499,6 +676,7 @@ export function addPhotosToAlbum(
 
   const supportedFiles = filterSupportedCullingImages(files);
   const addedPhotoIds: string[] = [];
+  const addedPhotos: CulledAlbumPhoto[] = [];
   if (supportedFiles.length === 0) {
     return [];
   }
@@ -511,27 +689,146 @@ export function addPhotosToAlbum(
       const file = supportedFiles[index]!;
       const photo = createCulledAlbumPhoto(
         file,
-        photoIdFromStoredFile(file),
+        createCullingPhotoId(),
         baseUploadedAt + index,
       );
       album.photos.push(photo);
+      addedPhotos.push(photo);
       addedPhotoIds.push(photo.photoId);
     }
 
     album.localImportBatchPhotoIds = addedPhotoIds;
+    album.localImportBatchTotal = addedPhotoIds.length;
     album.localImportBatchCounts = createLocalImportBatchCounts(addedPhotoIds.length);
     album.photos = sortPhotosByFilename(album.photos);
     recomputeAlbumTotals(album);
   });
 
-  const album = getAlbumFromState(albumId);
-  if (album) {
-    syncPhotoStateForAlbum(albumId, album.photos);
+  syncAddedPhotosToState(albumId, addedPhotos);
+
+  return addedPhotos;
+}
+
+function applyPhotoUpdatesBatch(updates: PendingPhotoUpdate[]): boolean {
+  if (updates.length === 0) {
+    return false;
   }
 
-  return addedPhotoIds
-    .map(photoId => album?.photos.find(photo => photo.photoId === photoId))
-    .filter((photo): photo is CulledAlbumPhoto => Boolean(photo));
+  const foundKeys = new Set<string>();
+
+  photoStateStore.setState(state => {
+    for (const update of updates) {
+      const key = photoKey(update.albumId, update.photoId);
+      const photo = state.photoState[key];
+      if (!photo) {
+        continue;
+      }
+      update.updater(photo);
+      foundKeys.add(key);
+    }
+  });
+
+  culledAlbumStore.setState(state => {
+    const albumPhotoMaps = new Map<string, Map<string, CulledAlbumPhoto>>();
+
+    for (const update of updates) {
+      const album = state.albums[update.albumId];
+      if (!album) {
+        continue;
+      }
+
+      let photoMap = albumPhotoMaps.get(update.albumId);
+      if (!photoMap) {
+        photoMap = new Map<string, CulledAlbumPhoto>();
+        for (const entry of album.photos) {
+          photoMap.set(entry.photoId, entry);
+        }
+        albumPhotoMaps.set(update.albumId, photoMap);
+      }
+
+      const photo = photoMap.get(update.photoId);
+      if (!photo) {
+        continue;
+      }
+      update.updater(photo);
+      foundKeys.add(photoKey(update.albumId, update.photoId));
+    }
+
+    const albumMeta = new Map<
+      string,
+      {
+        storageDelta: number;
+        recomputeTotals: boolean;
+      }
+    >();
+
+    for (const update of updates) {
+      const key = photoKey(update.albumId, update.photoId);
+      if (!foundKeys.has(key)) {
+        continue;
+      }
+
+      let meta = albumMeta.get(update.albumId);
+      if (!meta) {
+        meta = {storageDelta: 0, recomputeTotals: false};
+        albumMeta.set(update.albumId, meta);
+      }
+
+      const opts = update.options;
+      if (opts?.recomputeTotals) {
+        meta.recomputeTotals = true;
+      }
+      meta.storageDelta += opts?.storageDelta ?? 0;
+    }
+
+    for (const update of updates) {
+      const shift = update.options?.batchCountShift;
+      if (!shift) {
+        continue;
+      }
+      const album = state.albums[update.albumId];
+      const counts = album?.localImportBatchCounts;
+      if (!counts) {
+        continue;
+      }
+      if (counts[shift.from] > 0) {
+        counts[shift.from]--;
+      }
+      counts[shift.to]++;
+    }
+
+    for (const [albumId, meta] of albumMeta) {
+      const album = state.albums[albumId];
+      if (!album) {
+        continue;
+      }
+
+      if (meta.recomputeTotals) {
+        recomputeAlbumTotals(album);
+      } else if (meta.storageDelta !== 0) {
+        album.totalStorage = Math.max(0, album.totalStorage + meta.storageDelta);
+      }
+    }
+  });
+
+  const albumsToReconcile = new Set<string>();
+  for (const update of updates) {
+    const album = getAlbumFromState(update.albumId);
+    if (album?.localImportBatchPhotoIds.length) {
+      albumsToReconcile.add(update.albumId);
+    }
+  }
+  for (const albumId of albumsToReconcile) {
+    scheduleLocalImportBatchCompleteCheck(albumId);
+  }
+
+  return foundKeys.size > 0;
+}
+
+registerPhotoUpdateBatchApplier(applyPhotoUpdatesBatch);
+
+export function flushPendingPhotoUpdates(): void {
+  flushBatchedPhotoUpdates(applyPhotoUpdatesBatch);
 }
 
 export function updatePhoto(
@@ -540,56 +837,24 @@ export function updatePhoto(
   updater: (photo: CulledAlbumPhoto) => void,
   options?: UpdatePhotoOptions,
 ): boolean {
-  const recomputeTotals = options?.recomputeTotals ?? true;
-  const storageDelta = options?.storageDelta ?? 0;
-  const batchCountShift = options?.batchCountShift;
   const key = photoKey(albumId, photoId);
-  let found = false;
+  const existsInPhotoState = Boolean(photoStateStore.getState().photoState[key]);
 
-  photoStateStore.setState(state => {
-    const photo = state.photoState[key];
-    if (!photo) {
-      return;
+  if (!existsInPhotoState) {
+    const existsInAlbum = Boolean(
+      getAlbumFromState(albumId)?.photos.some(photo => photo.photoId === photoId),
+    );
+    if (!existsInAlbum) {
+      return false;
     }
-    updater(photo);
-    found = true;
-  });
-
-  culledAlbumStore.setState(state => {
-    const album = state.albums[albumId];
-    if (!album) {
-      return;
-    }
-    const photo = album.photos.find(entry => entry.photoId === photoId);
-    if (photo) {
-      updater(photo);
-      found = true;
-    }
-  });
-
-  if (!found) {
-    return false;
   }
 
-  culledAlbumStore.setState(state => {
-    const album = state.albums[albumId];
-    if (!album) {
-      return;
-    }
-    if (batchCountShift) {
-      const counts = album.localImportBatchCounts;
-      if (counts && counts[batchCountShift.from] > 0) {
-        counts[batchCountShift.from]--;
-        counts[batchCountShift.to]++;
-      }
-    }
-    if (recomputeTotals) {
-      recomputeAlbumTotals(album);
-    } else if (storageDelta !== 0) {
-      album.totalStorage = Math.max(0, album.totalStorage + storageDelta);
-    }
-  });
+  if (options?.immediate) {
+    flushPendingPhotoUpdates();
+    return applyPhotoUpdatesBatch([{albumId, photoId, updater, options}]);
+  }
 
+  schedulePhotoUpdate({albumId, photoId, updater, options}, applyPhotoUpdatesBatch);
   return true;
 }
 
@@ -616,7 +881,8 @@ export function getPhotosForAlbum(albumId: string): CulledAlbumPhoto[] {
 export async function ensureAlbumLoaded(albumId: string): Promise<CulledAlbum> {
   const existing = getAlbumFromState(albumId);
   if (existing) {
-    return existing;
+    syncAlbumTotalsFromRepository(albumId);
+    return getAlbumFromState(albumId) ?? existing;
   }
   return loadAlbumIntoStore(albumId);
 }
@@ -656,7 +922,8 @@ export function getPhotoById(
   albumId: string,
   photoId: string,
 ): CulledAlbumPhoto | undefined {
-  const fromState = photoStateStore.getState().photoState[photoKey(albumId, photoId)];
+  const key = photoKey(albumId, photoId);
+  const fromState = photoStateStore.getState().photoState[key];
   if (fromState) {
     return fromState;
   }
@@ -669,7 +936,7 @@ export function getPhotoById(
   }
 
   hydratePhotos(albumId, [photoId]);
-  return photoStateStore.getState().photoState[photoKey(albumId, photoId)];
+  return photoStateStore.getState().photoState[key];
 }
 
 export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {

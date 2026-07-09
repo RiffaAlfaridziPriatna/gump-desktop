@@ -16,19 +16,68 @@ export function computeLocalImportBatchCounts(
   photos: CulledAlbumPhoto[],
   batchPhotoIds: string[],
 ): LocalImportBatchCounts {
-  const batchIds = new Set(batchPhotoIds);
-  const counts = createLocalImportBatchCounts(0);
+  const photosById = new Map(photos.map(photo => [photo.photoId, photo]));
+  return computeLocalImportBatchCountsForIds(batchPhotoIds, photoId =>
+    photosById.get(photoId),
+  );
+}
 
-  for (const photo of photos) {
-    if (!batchIds.has(photo.photoId)) {
+export function countLocalImportBatchForAlbum(
+  batchPhotoIds: string[],
+  batchTotal: number,
+  getPhoto: (photoId: string) => CulledAlbumPhoto | undefined,
+): LocalImportBatchCounts {
+  const counts: LocalImportBatchCounts = {
+    total: batchTotal > 0 ? batchTotal : batchPhotoIds.length,
+    pending: 0,
+    uploading: 0,
+    uploaded: 0,
+    failed: 0,
+  };
+
+  for (const photoId of batchPhotoIds) {
+    const photo = getPhoto(photoId);
+    if (!photo || photo.status === 'pending') {
+      counts.pending++;
       continue;
     }
 
-    counts.total++;
     switch (photo.status) {
-      case 'pending':
-        counts.pending++;
+      case 'uploading':
+        counts.uploading++;
         break;
+      case 'uploaded':
+        counts.uploaded++;
+        break;
+      case 'failed':
+        counts.failed++;
+        break;
+    }
+  }
+
+  return counts;
+}
+
+export function computeLocalImportBatchCountsForIds(
+  batchPhotoIds: string[],
+  getPhoto: (photoId: string) => CulledAlbumPhoto | undefined,
+): LocalImportBatchCounts {
+  const counts: LocalImportBatchCounts = {
+    total: batchPhotoIds.length,
+    pending: 0,
+    uploading: 0,
+    uploaded: 0,
+    failed: 0,
+  };
+
+  for (const photoId of batchPhotoIds) {
+    const photo = getPhoto(photoId);
+    if (!photo || photo.status === 'pending') {
+      counts.pending++;
+      continue;
+    }
+
+    switch (photo.status) {
       case 'uploading':
         counts.uploading++;
         break;
@@ -56,14 +105,31 @@ export function isLocalImportBatchFinished(
   photos: CulledAlbumPhoto[],
   batchPhotoIds: string[],
 ): boolean {
-  const batchPhotos = getLocalImportBatchPhotos(photos, batchPhotoIds);
-  if (batchPhotos.length === 0) {
+  const photosById = new Map(photos.map(photo => [photo.photoId, photo]));
+  return isLocalImportBatchFinishedForIds(batchPhotoIds, photoId =>
+    photosById.get(photoId),
+  );
+}
+
+export function isLocalImportBatchFinishedForIds(
+  batchPhotoIds: string[],
+  getPhoto: (photoId: string) => CulledAlbumPhoto | undefined,
+): boolean {
+  if (batchPhotoIds.length === 0) {
     return false;
   }
 
-  return batchPhotos.every(
-    photo => photo.status === 'uploaded' || photo.status === 'failed',
-  );
+  for (const photoId of batchPhotoIds) {
+    const photo = getPhoto(photoId);
+    if (
+      !photo ||
+      (photo.status !== 'uploaded' && photo.status !== 'failed')
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export function computeLocalImportBatchProgress(

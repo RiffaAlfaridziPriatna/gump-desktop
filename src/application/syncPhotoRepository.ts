@@ -8,11 +8,11 @@ import {
   shouldDeferHeavyWorkForNavigation,
 } from '@lib/navigation/uploadAwareNavigation';
 
-const SYNC_DEBOUNCE_MS = 750;
-const SYNC_BATCH_SIZE = 25;
+const SYNC_DEBOUNCE_MS = 250;
+const SYNC_BATCH_SIZE = 20;
 const syncTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-function savePhotoBatch(albumId: string, photoIds: string[]): void {
+async function savePhotoBatch(albumId: string, photoIds: string[]): Promise<void> {
   const photoRepo = container.resolve<IPhotoRepository>(TOKENS.IPhotoRepository);
   const photos = photoIds
     .map(photoId => getPhotoById(albumId, photoId))
@@ -20,7 +20,7 @@ function savePhotoBatch(albumId: string, photoIds: string[]): void {
     .map(photo => legacyPhotoToDomain(photo, albumId));
 
   if (photos.length > 0) {
-    photoRepo.saveMany(photos);
+    await photoRepo.saveMany(photos);
   }
 }
 
@@ -34,20 +34,23 @@ function scheduleNextChunk(work: () => void): void {
   setTimeout(work, 0);
 }
 
-function syncPhotosFromStoreChunked(
+async function syncPhotosFromStoreChunked(
   albumId: string,
   photoIds: string[],
   startIndex = 0,
-): void {
+): Promise<void> {
   if (photoIds.length === 0) {
     return;
   }
 
   if (shouldDeferHeavyWorkForNavigation()) {
-    runOrDeferHeavyWorkForNavigation(() =>
-      syncPhotosFromStoreChunked(albumId, photoIds, startIndex),
-    );
-    return;
+    return new Promise<void>((resolve, reject) => {
+      runOrDeferHeavyWorkForNavigation(() => {
+        syncPhotosFromStoreChunked(albumId, photoIds, startIndex)
+          .then(resolve)
+          .catch(reject);
+      });
+    });
   }
 
   const batchIds = photoIds.slice(startIndex, startIndex + SYNC_BATCH_SIZE);
@@ -55,21 +58,39 @@ function syncPhotosFromStoreChunked(
     return;
   }
 
-  savePhotoBatch(albumId, batchIds);
+  await savePhotoBatch(albumId, batchIds);
 
   const nextIndex = startIndex + SYNC_BATCH_SIZE;
   if (nextIndex < photoIds.length) {
-    scheduleNextChunk(() =>
-      syncPhotosFromStoreChunked(albumId, photoIds, nextIndex),
-    );
+    await new Promise<void>((resolve, reject) => {
+      scheduleNextChunk(() => {
+        syncPhotosFromStoreChunked(albumId, photoIds, nextIndex)
+          .then(resolve)
+          .catch(reject);
+      });
+    });
   }
 }
 
-export function syncPhotoFromStoreNow(albumId: string, photoId: string): void {
+export async function syncPhotosFromStoreAwait(
+  albumId: string,
+  photoIds: string[],
+): Promise<void> {
+  if (photoIds.length === 0) {
+    return;
+  }
+
+  await syncPhotosFromStoreChunked(albumId, photoIds);
+}
+
+export async function syncPhotoFromStoreNow(
+  albumId: string,
+  photoId: string,
+): Promise<void> {
   if (shouldDeferHeavyWorkForNavigation()) {
-    runOrDeferHeavyWorkForNavigation(() =>
-      syncPhotoFromStoreNow(albumId, photoId),
-    );
+    runOrDeferHeavyWorkForNavigation(() => {
+      void syncPhotoFromStoreNow(albumId, photoId);
+    });
     return;
   }
 
@@ -79,7 +100,7 @@ export function syncPhotoFromStoreNow(albumId: string, photoId: string): void {
   }
 
   const domain = legacyPhotoToDomain(legacy, albumId);
-  container.resolve<IPhotoRepository>(TOKENS.IPhotoRepository).save(domain);
+  await container.resolve<IPhotoRepository>(TOKENS.IPhotoRepository).save(domain);
 }
 
 export function syncPhotoFromStore(albumId: string, photoId: string): void {
@@ -91,7 +112,7 @@ export function syncPhotoFromStore(albumId: string, photoId: string): void {
 
   const timer = setTimeout(() => {
     syncTimers.delete(key);
-    syncPhotoFromStoreNow(albumId, photoId);
+    void syncPhotoFromStoreNow(albumId, photoId);
   }, SYNC_DEBOUNCE_MS);
 
   syncTimers.set(key, timer);
@@ -109,5 +130,5 @@ export function syncPhotosFromStore(albumId: string, photoIds: string[]): void {
     return;
   }
 
-  syncPhotosFromStoreChunked(albumId, photoIds);
+  void syncPhotosFromStoreChunked(albumId, photoIds);
 }

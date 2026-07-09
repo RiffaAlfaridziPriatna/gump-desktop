@@ -311,7 +311,7 @@ export const cullingEngine = {
       if (data.starRating !== undefined) {
         photo.starRating = data.starRating;
       }
-    });
+    }, {immediate: true});
     if (!updated) {
       throw new Error('Photo analysis not found');
     }

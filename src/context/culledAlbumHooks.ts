@@ -1,9 +1,12 @@
 import {useContextOrThrow} from '@lib/react/context';
-import {culledAlbumStore} from '@lib/culledAlbum/store';
+import {culledAlbumStore, getPhotoById} from '@lib/culledAlbum/store';
 import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
 import {getServerUploadBatchPhotos} from '@lib/culledAlbum/serverUploadProgress';
 import {getAnalysisBatchPhotos} from '@lib/culledAlbum/analysisProgress';
-import {getLocalImportBatchPhotos} from '@lib/culledAlbum/localImportProgress';
+import {
+  countLocalImportBatchForAlbum,
+  getLocalImportBatchPhotos,
+} from '@lib/culledAlbum/localImportProgress';
 import {
   CulledAlbumPhoto,
   LocalImportBatchCounts,
@@ -171,11 +174,24 @@ export function useCulledAlbumLocalImportProgress(
     if (!albumId) {
       return null;
     }
+
     const album = state.albums[albumId];
     if (!album?.localImportBatchPhotoIds.length) {
       return null;
     }
-    return album.localImportBatchCounts ?? null;
+
+    const counts = album.localImportBatchCounts;
+    if (counts) {
+      return counts;
+    }
+
+    const batchTotal =
+      album.localImportBatchTotal || album.localImportBatchPhotoIds.length;
+    return countLocalImportBatchForAlbum(
+      album.localImportBatchPhotoIds,
+      batchTotal,
+      photoId => getPhotoById(albumId, photoId),
+    );
   });
 }
 

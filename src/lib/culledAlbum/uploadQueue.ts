@@ -1,20 +1,22 @@
 import {ImportPhotosUseCase} from '@/application/useCases/ImportPhotosUseCase';
-import {syncPhotosFromStore} from '@/application/syncPhotoRepository';
+import {syncPhotosFromStoreAwait} from '@/application/syncPhotoRepository';
 import {copyPhotoToAlbum} from '@lib/storage/localStorage';
 import {enrichPhotoCaptureTime} from '@lib/media/imageCaptureTime';
 import {
-  isUploadNavigationActive,
-  runDeferredDuringUploadNavigation,
   runOrDeferHeavyWorkForNavigation,
   shouldYieldUploadQueueForNavigation,
 } from '@lib/navigation/uploadAwareNavigation';
-import {checkLocalImportBatchComplete, getAlbum, type UpdatePhotoOptions} from './store';
+import {
+  getAlbum,
+  scheduleLocalImportBatchCompleteCheck,
+  type UpdatePhotoOptions,
+} from './store';
 import {FileAsset} from '@services/upload/types';
-import {countByUploadStatus, CulledAlbumPhoto} from './types';
+import {CulledAlbumPhoto} from './types';
 
-const PERSIST_BATCH_SIZE = 50;
+const PERSIST_BATCH_SIZE = 40;
 const COPY_TIMEOUT_MS = 120_000;
-const QUEUE_YIELD_MS = 32;
+const QUEUE_YIELD_MS = 16;
 
 function withTimeout<T>(
   promise: Promise<T>,
@@ -54,18 +56,99 @@ export type UploadQueueDeps = {
   persistAlbum: (albumId: string) => Promise<void>;
 };
 
-function getUploadingCount(albumId: string, photos: CulledAlbumPhoto[]): number {
-  const counts = getAlbum(albumId)?.localImportBatchCounts;
-  if (counts) {
-    return counts.uploading;
-  }
-  return countByUploadStatus(photos, 'uploading');
-}
-
 export function createUploadQueue(deps: UploadQueueDeps) {
   const {maxConcurrent, importPhotosUseCase, getPhotos, getPhoto, updatePhoto, persistAlbum} = deps;
   const completedSincePersistByAlbum = new Map<string, number>();
   const pendingPhotoPersistByAlbum = new Map<string, string[]>();
+  const activeUploadsByAlbum = new Map<string, number>();
+  const inFlightPhotoIdsByAlbum = new Map<string, Set<string>>();
+  const settledPhotoIdsByAlbum = new Map<string, Set<string>>();
+  const pendingCursorByAlbum = new Map<string, number>();
+  const batchSignatureByAlbum = new Map<string, string>();
+
+  function getInFlightPhotoIds(albumId: string): Set<string> {
+    let ids = inFlightPhotoIdsByAlbum.get(albumId);
+    if (!ids) {
+      ids = new Set<string>();
+      inFlightPhotoIdsByAlbum.set(albumId, ids);
+    }
+    return ids;
+  }
+
+  function getSettledPhotoIds(albumId: string): Set<string> {
+    let ids = settledPhotoIdsByAlbum.get(albumId);
+    if (!ids) {
+      ids = new Set<string>();
+      settledPhotoIdsByAlbum.set(albumId, ids);
+    }
+    return ids;
+  }
+
+  function getBatchSignature(albumId: string): string {
+    const album = getAlbum(albumId);
+    const ids = album?.localImportBatchPhotoIds ?? [];
+    if (ids.length === 0) {
+      return '';
+    }
+    return `${ids.length}:${ids[0]}:${ids[ids.length - 1]}`;
+  }
+
+  function getPendingPhotoIds(albumId: string): string[] {
+    const batchPhotoIds = getAlbum(albumId)?.localImportBatchPhotoIds ?? [];
+    if (batchPhotoIds.length > 0) {
+      return batchPhotoIds;
+    }
+
+    return getPhotos(albumId)
+      .filter(photo => photo.status === 'pending')
+      .map(photo => photo.photoId);
+  }
+
+  function findNextPendingIndex(
+    albumId: string,
+    photoIds: string[],
+    startIndex: number,
+  ): number {
+    const inFlight = getInFlightPhotoIds(albumId);
+    const settled = getSettledPhotoIds(albumId);
+
+    for (let index = startIndex; index < photoIds.length; index++) {
+      const photoId = photoIds[index]!;
+      if (inFlight.has(photoId) || settled.has(photoId)) {
+        continue;
+      }
+      const photo = getPhoto(albumId, photoId);
+      if (!photo || photo.status === 'pending') {
+        return index;
+      }
+    }
+
+    for (let index = 0; index < startIndex; index++) {
+      const photoId = photoIds[index]!;
+      if (inFlight.has(photoId) || settled.has(photoId)) {
+        continue;
+      }
+      const photo = getPhoto(albumId, photoId);
+      if (!photo || photo.status === 'pending') {
+        return index;
+      }
+    }
+
+    return -1;
+  }
+
+  function getActiveUploadCount(albumId: string): number {
+    return activeUploadsByAlbum.get(albumId) ?? 0;
+  }
+
+  function trackActiveUpload(albumId: string, delta: number): void {
+    const next = Math.max(0, getActiveUploadCount(albumId) + delta);
+    if (next === 0) {
+      activeUploadsByAlbum.delete(albumId);
+      return;
+    }
+    activeUploadsByAlbum.set(albumId, next);
+  }
 
   function queuePhotoPersist(albumId: string, photoId: string): void {
     const pending = pendingPhotoPersistByAlbum.get(albumId) ?? [];
@@ -73,21 +156,23 @@ export function createUploadQueue(deps: UploadQueueDeps) {
     pendingPhotoPersistByAlbum.set(albumId, pending);
   }
 
-  function flushPendingPhotoPersist(albumId: string): void {
-    const pending = pendingPhotoPersistByAlbum.get(albumId);
-    if (!pending || pending.length === 0) {
-      return;
-    }
-    pendingPhotoPersistByAlbum.set(albumId, []);
-    syncPhotosFromStore(albumId, pending);
-  }
-
   function flushAlbumPersist(albumId: string): void {
     completedSincePersistByAlbum.set(albumId, 0);
-    flushPendingPhotoPersist(albumId);
-    void persistAlbum(albumId).catch(error => {
-      console.error('[uploadQueue] Failed to persist album', albumId, error);
-    });
+    const pending = pendingPhotoPersistByAlbum.get(albumId) ?? [];
+    pendingPhotoPersistByAlbum.set(albumId, []);
+
+    void (async () => {
+      try {
+        if (pending.length > 0) {
+          await syncPhotosFromStoreAwait(albumId, pending);
+        }
+        if (isUploadQueueIdle(albumId)) {
+          await persistAlbum(albumId);
+        }
+      } catch (error) {
+        console.error('[uploadQueue] Failed to persist album', albumId, error);
+      }
+    })();
   }
 
   function scheduleAlbumPersist(albumId: string): void {
@@ -105,6 +190,16 @@ export function createUploadQueue(deps: UploadQueueDeps) {
   }
 
   function isUploadQueueIdle(albumId: string): boolean {
+    if (getActiveUploadCount(albumId) > 0) {
+      return false;
+    }
+
+    const album = getAlbum(albumId);
+    const counts = album?.localImportBatchCounts;
+    if (counts) {
+      return counts.pending === 0 && counts.uploading === 0;
+    }
+
     return !getPhotos(albumId).some(
       photo => photo.status === 'pending' || photo.status === 'uploading',
     );
@@ -117,22 +212,22 @@ export function createUploadQueue(deps: UploadQueueDeps) {
     }
 
     const fromStatus = photo.status === 'uploading' ? 'uploading' : 'pending';
-    runDeferredDuringUploadNavigation(() => {
-      updatePhoto(
-        albumId,
-        photoId,
-        entry => {
-          if (entry.status !== 'uploaded') {
-            entry.status = 'failed';
-            entry.error = error;
-          }
-        },
-        {
-          recomputeTotals: false,
-          batchCountShift: {from: fromStatus, to: 'failed'},
-        },
-      );
-    });
+    getInFlightPhotoIds(albumId).delete(photoId);
+    getSettledPhotoIds(albumId).add(photoId);
+    updatePhoto(
+      albumId,
+      photoId,
+      entry => {
+        if (entry.status !== 'uploaded') {
+          entry.status = 'failed';
+          entry.error = error;
+        }
+      },
+      {
+        recomputeTotals: false,
+        batchCountShift: {from: fromStatus, to: 'failed'},
+      },
+    );
     importPhotosUseCase.markUploadFailed(albumId, photoId, error ?? 'Upload failed');
     queuePhotoPersist(albumId, photoId);
   }
@@ -145,77 +240,75 @@ export function createUploadQueue(deps: UploadQueueDeps) {
 
     const sourceFile = photo.file;
     const previousSize = sourceFile.size ?? 0;
+    const inFlight = getInFlightPhotoIds(albumId);
+    inFlight.add(photoId);
 
-    runDeferredDuringUploadNavigation(() => {
-      updatePhoto(
-        albumId,
-        photoId,
-        entry => {
-          entry.progress = 0;
-          entry.status = 'uploading';
-          entry.error = undefined;
-        },
-        {
-          recomputeTotals: false,
-          batchCountShift: {from: 'pending', to: 'uploading'},
-        },
-      );
-    });
-    importPhotosUseCase.markUploading(albumId, photoId, 0);
-
-    const captureTimePromise = enrichPhotoCaptureTime(
+    updatePhoto(
       albumId,
       photoId,
-      sourceFile.uri,
-      sourceFile.capturedAt ?? photo.capturedAt,
-    ).catch(error => {
-      console.error(
-        '[uploadQueue] Failed to enrich capture time',
-        albumId,
-        photoId,
-        error,
-      );
-      return null;
-    });
+      entry => {
+        entry.progress = 0;
+        entry.status = 'uploading';
+        entry.error = undefined;
+      },
+      {
+        recomputeTotals: false,
+        batchCountShift: {from: 'pending', to: 'uploading'},
+      },
+    );
+    importPhotosUseCase.markUploading(albumId, photoId, 0);
+    trackActiveUpload(albumId, 1);
 
     return withTimeout(
-      Promise.all([
-        copyPhotoToAlbum(albumId, sourceFile, photoId),
-        captureTimePromise,
-      ]),
+      copyPhotoToAlbum(albumId, sourceFile, photoId),
       COPY_TIMEOUT_MS,
       'Local photo copy',
     )
-      .then(async ([localFile]: [FileAsset, number | null]) => {
+      .then(async (localFile: FileAsset) => {
         const nextSize = localFile.size ?? 0;
-        runDeferredDuringUploadNavigation(() => {
-          updatePhoto(
+        getSettledPhotoIds(albumId).add(photoId);
+        updatePhoto(
+          albumId,
+          photoId,
+          entry => {
+            entry.file = localFile;
+            entry.progress = 100;
+            entry.status = 'uploaded';
+          },
+          {
+            recomputeTotals: false,
+            storageDelta: nextSize - previousSize,
+            batchCountShift: {from: 'uploading', to: 'uploaded'},
+          },
+        );
+        void enrichPhotoCaptureTime(
+          albumId,
+          photoId,
+          sourceFile.uri,
+          sourceFile.capturedAt ?? photo.capturedAt,
+        ).catch(captureError => {
+          console.error(
+            '[uploadQueue] Failed to enrich capture time',
             albumId,
             photoId,
-            entry => {
-              entry.file = localFile;
-              entry.progress = 100;
-              entry.status = 'uploaded';
-            },
-            {
-              recomputeTotals: false,
-              storageDelta: nextSize - previousSize,
-              batchCountShift: {from: 'uploading', to: 'uploaded'},
-            },
+            captureError,
           );
         });
-        runOrDeferHeavyWorkForNavigation(() => {
-          importPhotosUseCase.markUploaded(albumId, photoId);
-          queuePhotoPersist(albumId, photoId);
-          scheduleAlbumPersist(albumId);
-          void checkLocalImportBatchComplete(albumId);
-        });
+        importPhotosUseCase.markUploaded(albumId, photoId);
+        queuePhotoPersist(albumId, photoId);
+        scheduleAlbumPersist(albumId);
       })
       .catch(err => {
         if (isUploadQueueIdle(albumId)) {
           scheduleAlbumPersist(albumId);
         }
         throw err;
+      })
+      .finally(() => {
+        inFlight.delete(photoId);
+        trackActiveUpload(albumId, -1);
+        processPending(albumId);
+        scheduleLocalImportBatchCompleteCheck(albumId);
       });
   }
 
@@ -225,34 +318,58 @@ export function createUploadQueue(deps: UploadQueueDeps) {
       return;
     }
 
-    if (isUploadNavigationActive()) {
-      runDeferredDuringUploadNavigation(() => processPending(albumId));
+    const batchSignature = getBatchSignature(albumId);
+    if (batchSignatureByAlbum.get(albumId) !== batchSignature) {
+      batchSignatureByAlbum.set(albumId, batchSignature);
+      pendingCursorByAlbum.set(albumId, 0);
+      settledPhotoIdsByAlbum.delete(albumId);
+    }
+
+    const pendingPhotoIds = getPendingPhotoIds(albumId);
+    if (pendingPhotoIds.length === 0) {
       return;
     }
 
-    const photos = getPhotos(albumId);
-    let uploadingCount = getUploadingCount(albumId, photos);
+    let cursor = pendingCursorByAlbum.get(albumId) ?? 0;
+    if (cursor >= pendingPhotoIds.length) {
+      cursor = findNextPendingIndex(albumId, pendingPhotoIds, 0);
+      if (cursor < 0) {
+        return;
+      }
+    }
 
-    for (const photo of photos) {
-      if (uploadingCount >= maxConcurrent) {
+    let slotsUsed = getActiveUploadCount(albumId);
+    let started = 0;
+
+    while (slotsUsed < maxConcurrent) {
+      const nextIndex = findNextPendingIndex(albumId, pendingPhotoIds, cursor);
+      if (nextIndex < 0) {
+        cursor = pendingPhotoIds.length;
         break;
       }
-      if (photo.status !== 'pending') {
-        continue;
+
+      cursor = nextIndex + 1;
+      const photoId = pendingPhotoIds[nextIndex]!;
+
+      uploadPhoto(albumId, photoId).catch(err => {
+        const message =
+          err instanceof Error && err.message ? err.message : undefined;
+        failPhoto(albumId, photoId, message);
+      });
+      slotsUsed++;
+      started++;
+    }
+
+    pendingCursorByAlbum.set(albumId, cursor);
+
+    if (started === 0 && getActiveUploadCount(albumId) === 0) {
+      const retryIndex = findNextPendingIndex(albumId, pendingPhotoIds, 0);
+      if (retryIndex < 0) {
+        return;
       }
 
-      uploadPhoto(albumId, photo.photoId)
-        .then(() => {
-          processPending(albumId);
-        })
-        .catch(err => {
-          const message =
-            err instanceof Error && err.message ? err.message : undefined;
-          failPhoto(albumId, photo.photoId, message);
-          void checkLocalImportBatchComplete(albumId);
-          processPending(albumId);
-        });
-      uploadingCount++;
+      pendingCursorByAlbum.set(albumId, retryIndex);
+      setTimeout(() => processPending(albumId), QUEUE_YIELD_MS);
     }
   }
 

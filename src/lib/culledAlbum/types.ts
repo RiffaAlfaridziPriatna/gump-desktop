@@ -98,6 +98,7 @@ export type CulledAlbum = {
   link: string;
   uploadBatchPhotoIds: string[];
   localImportBatchPhotoIds: string[];
+  localImportBatchTotal: number;
   localImportBatchCounts?: LocalImportBatchCounts;
   analysisBatchPhotoIds: string[];
   nextFaceClusterId: number;
@@ -168,6 +169,7 @@ export function createCulledAlbumFromSelection(
     link: source.link,
     uploadBatchPhotoIds: [],
     localImportBatchPhotoIds: [],
+    localImportBatchTotal: 0,
     localImportBatchCounts: undefined,
     analysisBatchPhotoIds: [],
     nextFaceClusterId: 0,
@@ -251,9 +253,21 @@ export function hasInFlightUploads(
     return false;
   }
 
-  const counts = album.localImportBatchCounts;
-  if (counts && (counts.pending > 0 || counts.uploading > 0)) {
-    return true;
+  if (album.localImportBatchPhotoIds.length > 0) {
+    const counts = album.localImportBatchCounts;
+    if (counts) {
+      return counts.pending > 0 || counts.uploading > 0;
+    }
+
+    const source = photos ?? album.photos;
+    const photosById = new Map(source.map(photo => [photo.photoId, photo]));
+    for (const photoId of album.localImportBatchPhotoIds) {
+      const photo = photosById.get(photoId);
+      if (!photo || isUploadInFlight(photo)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   const source = photos ?? album.photos;
@@ -372,6 +386,7 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.link ??= '';
   album.uploadBatchPhotoIds ??= [];
   album.localImportBatchPhotoIds ??= [];
+  album.localImportBatchTotal ??= 0;
   album.localImportBatchCounts = undefined;
   album.analysisBatchPhotoIds ??= [];
   album.createdAt ??= new Date(0).toISOString();
