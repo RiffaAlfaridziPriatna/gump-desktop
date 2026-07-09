@@ -26,12 +26,23 @@ declare module 'react-native' {
         albumId: string,
         sourceUri: string,
         fileName: string,
+        photoId: string,
       ) => Promise<{
         uri: string;
         name: string;
         size: number;
         type: string;
+        thumbnailUri?: string;
       }>;
+      getThumbnailUri: (
+        albumId: string,
+        photoId: string,
+      ) => Promise<string | null>;
+      ensureThumbnail: (
+        albumId: string,
+        sourceUri: string,
+        photoId: string,
+      ) => Promise<{thumbnailUri: string | null}>;
       deleteAlbum: (albumId: string) => Promise<boolean>;
       deletePhoto: (uri: string) => Promise<boolean>;
       readFileSlice: (

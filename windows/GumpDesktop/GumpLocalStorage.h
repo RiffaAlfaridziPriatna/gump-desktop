@@ -56,6 +56,19 @@ struct GumpLocalStorage {
       std::string uri,
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
 
+  REACT_METHOD(GetThumbnailUri, L"getThumbnailUri");
+  void GetThumbnailUri(
+      std::string albumId,
+      std::string photoId,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(EnsureThumbnail, L"ensureThumbnail");
+  void EnsureThumbnail(
+      std::string albumId,
+      std::string sourceUri,
+      std::string photoId,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
   REACT_METHOD(ReadImageCaptureTime, L"readImageCaptureTime");
   void ReadImageCaptureTime(
       std::string uri,

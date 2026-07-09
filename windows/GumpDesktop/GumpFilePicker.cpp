@@ -5,14 +5,43 @@
 #include <winrt/Windows.Storage.h>
 #include <winrt/Windows.Storage.FileProperties.h>
 #include <commdlg.h>
-#include <algorithm>
-#include <cwctype>
 
 #pragma comment(lib, "Comdlg32.lib")
 
 namespace winrtRN = winrt::Microsoft::ReactNative;
 
 namespace GumpDesktop {
+
+std::string ToUtf8(std::wstring_view value) {
+  if (value.empty()) {
+    return {};
+  }
+
+  const int size = WideCharToMultiByte(
+      CP_UTF8,
+      0,
+      value.data(),
+      static_cast<int>(value.size()),
+      nullptr,
+      0,
+      nullptr,
+      nullptr);
+  if (size <= 0) {
+    return {};
+  }
+
+  std::string utf8(size, '\0');
+  WideCharToMultiByte(
+      CP_UTF8,
+      0,
+      value.data(),
+      static_cast<int>(value.size()),
+      utf8.data(),
+      size,
+      nullptr,
+      nullptr);
+  return utf8;
+}
 
 void GumpFilePicker::PickImages(
     winrtRN::ReactPromise<winrtRN::JSValue> &&promise) noexcept {
@@ -60,37 +89,32 @@ void GumpFilePicker::PickImages(
 
     std::vector<std::wstring> paths = parseSelectedPaths(fileBuffer);
 
-    auto mimeTypeForPath = [](const std::wstring &path) -> std::wstring {
-      std::wstring ext = std::filesystem::path(path).extension().wstring();
-      std::transform(ext.begin(), ext.end(), ext.begin(), ::towlower);
-
-      if (ext == L".jpg" || ext == L".jpeg") return L"image/jpeg";
-      if (ext == L".png") return L"image/png";
-      if (ext == L".gif") return L"image/gif";
-      if (ext == L".heic") return L"image/heic";
-      if (ext == L".tif" || ext == L".tiff") return L"image/tiff";
-      return L"image/*";
+    auto mimeTypeForPath = [](const std::filesystem::path &path) -> std::string {
+      const auto ext = path.extension().wstring();
+      if (ext.empty()) {
+        return "image/jpeg";
+      }
+      return "public." + ToUtf8(ext.substr(1));
     };
 
     winrtRN::JSValueArray result;
     for (const auto &path : paths) {
-      std::wstring uriPath = path;
-      std::replace(uriPath.begin(), uriPath.end(), L'\\', L'/');
+      const std::filesystem::path fsPath(path);
 
       double size = 0;
       try {
-        size = static_cast<double>(std::filesystem::file_size(path));
+        size = static_cast<double>(std::filesystem::file_size(fsPath));
       } catch (...) {
         size = 0;
       }
 
-      std::wstring name = std::filesystem::path(path).filename().wstring();
+      const std::wstring name = fsPath.filename().wstring();
 
       winrtRN::JSValueObject fileObj;
-      fileObj["uri"] = winrt::to_string(L"file:///" + uriPath);
-      fileObj["name"] = winrt::to_string(name);
+      fileObj["uri"] = ToUtf8(fsPath.wstring());
+      fileObj["name"] = ToUtf8(name);
       fileObj["size"] = size;
-      fileObj["type"] = winrt::to_string(mimeTypeForPath(path));
+      fileObj["type"] = mimeTypeForPath(fsPath);
 
       result.push_back(std::move(fileObj));
     }

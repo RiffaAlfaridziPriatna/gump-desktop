@@ -60,7 +60,7 @@ static void RegisterCustomFonts(void)
   }
 
   // Desktop: enforce a minimum size relative to the current screen's usable area.
-  static const CGFloat kMinSizeRatio = 0.60;
+  static const CGFloat kMinSizeRatio = 0.75;
   NSScreen *screen = window.screen ?: [NSScreen mainScreen];
   if (screen) {
     NSRect visible = [screen visibleFrame];

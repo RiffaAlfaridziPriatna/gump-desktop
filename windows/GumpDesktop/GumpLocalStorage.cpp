@@ -40,6 +40,9 @@ namespace {
 
 using ReactPromiseJS = winrtRN::ReactPromise<winrtRN::JSValue>;
 
+constexpr uint32_t kThumbnailMaxPixelSize = 1920;
+constexpr float kThumbnailJpegQuality = 0.82f;
+
 std::wstring ToWide(std::string_view value) {
   if (value.empty()) {
     return {};
@@ -64,11 +67,21 @@ std::filesystem::path PathFromUri(std::string_view uri) {
   if (uri.empty()) {
     return {};
   }
+
+  std::string_view pathPart = uri;
   if (uri.rfind("file://", 0) == 0) {
-    const auto wide = ToWide(uri.substr(7));
-    return std::filesystem::path(wide);
+    pathPart = uri.substr(7);
+    // file:///C:\path and file:///C:/path both need the leading slash removed
+    // before Windows can resolve the drive letter path.
+    if (pathPart.size() >= 3 && pathPart[0] == '/' && pathPart[2] == ':') {
+      const char drive = pathPart[1];
+      if ((drive >= 'A' && drive <= 'Z') || (drive >= 'a' && drive <= 'z')) {
+        pathPart.remove_prefix(1);
+      }
+    }
   }
-  return std::filesystem::path(ToWide(uri));
+
+  return std::filesystem::path(ToWide(pathPart));
 }
 
 std::filesystem::path CullingAlbumDirectory(std::string_view albumId) {
@@ -79,13 +92,109 @@ std::filesystem::path CullingAlbumDirectory(std::string_view albumId) {
   return base / "Gump" / "culling-albums" / std::filesystem::path(ToWide(albumId));
 }
 
-std::string FileUri(const std::filesystem::path &path) {
-  const auto wide = path.wstring();
-  return "file:///" + ToUtf8(wide);
+std::filesystem::path ThumbnailDirectory(std::string_view albumId) {
+  return CullingAlbumDirectory(albumId) / L"thumbs";
+}
+
+std::filesystem::path ThumbnailPathForAlbum(std::string_view albumId, std::string_view photoId) {
+  return ThumbnailDirectory(albumId) / (ToWide(photoId) + L".jpg");
 }
 
 StorageFile GetStorageFileFromPath(const std::filesystem::path &path) {
   return StorageFile::GetFileFromPathAsync(path.wstring()).get();
+}
+
+struct ThumbnailSize {
+  uint32_t width{0};
+  uint32_t height{0};
+};
+
+ThumbnailSize ComputeThumbnailSize(uint32_t sourceWidth, uint32_t sourceHeight, uint32_t maxPixelSize) {
+  if (sourceWidth == 0 || sourceHeight == 0) {
+    return {};
+  }
+
+  if (sourceWidth <= maxPixelSize && sourceHeight <= maxPixelSize) {
+    return {sourceWidth, sourceHeight};
+  }
+
+  if (sourceWidth >= sourceHeight) {
+    const auto scaledHeight = static_cast<uint32_t>(std::lround(
+        static_cast<double>(sourceHeight) * static_cast<double>(maxPixelSize) /
+        static_cast<double>(sourceWidth)));
+    return {maxPixelSize, std::max(1u, scaledHeight)};
+  }
+
+  const auto scaledWidth = static_cast<uint32_t>(std::lround(
+      static_cast<double>(sourceWidth) * static_cast<double>(maxPixelSize) /
+      static_cast<double>(sourceHeight)));
+  return {std::max(1u, scaledWidth), maxPixelSize};
+}
+
+std::optional<std::filesystem::path> GenerateThumbnailAtPath(
+    const std::filesystem::path &sourcePath,
+    std::string_view albumId,
+    std::string_view photoId) {
+  if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
+    return std::nullopt;
+  }
+
+  const auto thumbPath = ThumbnailPathForAlbum(albumId, photoId);
+  std::filesystem::create_directories(thumbPath.parent_path());
+  if (std::filesystem::exists(thumbPath)) {
+    std::filesystem::remove(thumbPath);
+  }
+
+  const auto sourceFile = GetStorageFileFromPath(sourcePath);
+  const auto sourceStream = sourceFile.OpenAsync(FileAccessMode::Read).get();
+  const auto decoder = BitmapDecoder::CreateAsync(sourceStream).get();
+
+  const auto targetSize =
+      ComputeThumbnailSize(decoder.OrientedPixelWidth(), decoder.OrientedPixelHeight(), kThumbnailMaxPixelSize);
+  if (targetSize.width == 0 || targetSize.height == 0) {
+    return std::nullopt;
+  }
+
+  BitmapTransform transform;
+  transform.ScaledWidth(targetSize.width);
+  transform.ScaledHeight(targetSize.height);
+  transform.InterpolationMode(BitmapInterpolationMode::Fant);
+
+  const auto bitmap = decoder
+                          .GetSoftwareBitmapAsync(
+                              BitmapPixelFormat::Bgra8,
+                              BitmapAlphaMode::Premultiplied,
+                              transform,
+                              ExifOrientationMode::RespectExifOrientation,
+                              ColorManagementMode::DoNotColorManage)
+                          .get();
+
+  {
+    std::ofstream placeholder(thumbPath, std::ios::binary);
+  }
+
+  const auto destFile = GetStorageFileFromPath(thumbPath);
+  const auto destStream = destFile.OpenAsync(FileAccessMode::ReadWrite).get();
+  destStream.Size(0);
+
+  BitmapPropertySet encodingOptions;
+  encodingOptions.Insert(
+      L"ImageQuality",
+      BitmapTypedValue(
+          winrt::box_value(kThumbnailJpegQuality),
+          winrt::Windows::Foundation::PropertyType::Single));
+
+  const auto encoder =
+      BitmapEncoder::CreateAsync(BitmapEncoder::JpegEncoderId(), destStream, encodingOptions).get();
+  encoder.SetSoftwareBitmap(bitmap);
+  encoder.FlushAsync().get();
+
+  return thumbPath;
+}
+
+std::string FileUri(const std::filesystem::path &path) {
+  const auto wide = path.wstring();
+  return "file:///" + ToUtf8(wide);
 }
 
 std::string MimeTypeForPath(const std::filesystem::path &path) {
@@ -649,12 +758,14 @@ void GumpLocalStorage::CopyPhoto(
         const auto destPath = albumDir / ToWide(destName);
         std::filesystem::copy_file(sourcePath, destPath, std::filesystem::copy_options::overwrite_existing);
 
-        return winrtRN::JSValue(winrtRN::JSValueObject{
+        winrtRN::JSValueObject result{
             {"uri", FileUri(destPath)},
             {"name", destName},
             {"size", static_cast<double>(std::filesystem::file_size(destPath))},
             {"type", MimeTypeForPath(destPath)},
-        });
+        };
+
+        return winrtRN::JSValue(std::move(result));
       },
       std::move(promise));
 }
@@ -674,6 +785,9 @@ void GumpLocalStorage::ListPhotos(std::string albumId, ReactPromiseJS &&promise)
           }
           const auto name = ToUtf8(entry.path().filename().wstring());
           if (!name.empty() && name[0] == '.') {
+            continue;
+          }
+          if (name == "thumbs") {
             continue;
           }
           files.push_back(winrtRN::JSValueObject{
@@ -812,6 +926,45 @@ void GumpLocalStorage::GetImageDimensions(std::string uri, ReactPromiseJS &&prom
         return winrtRN::JSValue(winrtRN::JSValueObject{
             {"width", static_cast<double>(bitmap.PixelWidth())},
             {"height", static_cast<double>(bitmap.PixelHeight())},
+        });
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::GetThumbnailUri(
+    std::string albumId,
+    std::string photoId,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [albumId = std::move(albumId), photoId = std::move(photoId)]() {
+        const auto thumbPath = ThumbnailPathForAlbum(albumId, photoId);
+        if (!thumbPath.empty() && std::filesystem::exists(thumbPath)) {
+          return winrtRN::JSValue(FileUri(thumbPath));
+        }
+        return winrtRN::JSValue(nullptr);
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::EnsureThumbnail(
+    std::string albumId,
+    std::string sourceUri,
+    std::string photoId,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [=]() {
+        const auto sourcePath = PathFromUri(sourceUri);
+        if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
+          return winrtRN::JSValue(winrtRN::JSValueObject{{"thumbnailUri", nullptr}});
+        }
+
+        const auto thumbPath = GenerateThumbnailAtPath(sourcePath, albumId, photoId);
+        if (!thumbPath.has_value()) {
+          return winrtRN::JSValue(winrtRN::JSValueObject{{"thumbnailUri", nullptr}});
+        }
+
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"thumbnailUri", FileUri(*thumbPath)},
         });
       },
       std::move(promise));

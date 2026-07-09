@@ -8,6 +8,8 @@
 
 RCT_EXPORT_MODULE();
 
+static const NSUInteger THUMBNAIL_MAX_PIXEL_SIZE = 1920;
+
 - (NSString *)cullingAlbumDirectory:(NSString *)albumId
 {
   NSURL *appSupport =
@@ -898,6 +900,73 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
   });
 }
 
+- (NSString *)thumbnailDirectory:(NSString *)albumId
+{
+  return [[self cullingAlbumDirectory:albumId] stringByAppendingPathComponent:@"thumbs"];
+}
+
+- (NSString *)thumbnailPathForAlbum:(NSString *)albumId photoId:(NSString *)photoId
+{
+  return [[self thumbnailDirectory:albumId]
+      stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.jpg", photoId]];
+}
+
+- (NSString *)generateThumbnailAtPath:(NSString *)sourcePath
+                              albumId:(NSString *)albumId
+                              photoId:(NSString *)photoId
+{
+  NSString *thumbDir = [self thumbnailDirectory:albumId];
+  NSError *dirError = nil;
+  [[NSFileManager defaultManager] createDirectoryAtPath:thumbDir
+                            withIntermediateDirectories:YES
+                                             attributes:nil
+                                                  error:&dirError];
+  if (dirError != nil) {
+    return nil;
+  }
+
+  NSString *thumbPath = [self thumbnailPathForAlbum:albumId photoId:photoId];
+  if ([[NSFileManager defaultManager] fileExistsAtPath:thumbPath]) {
+    [[NSFileManager defaultManager] removeItemAtPath:thumbPath error:nil];
+  }
+
+  NSURL *sourceURL = [NSURL fileURLWithPath:sourcePath isDirectory:NO];
+  CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)sourceURL, NULL);
+  if (source == NULL) {
+    return nil;
+  }
+
+  NSDictionary *options = @{
+    (NSString *)kCGImageSourceCreateThumbnailFromImageAlways : @YES,
+    (NSString *)kCGImageSourceThumbnailMaxPixelSize : @(THUMBNAIL_MAX_PIXEL_SIZE),
+    (NSString *)kCGImageSourceCreateThumbnailWithTransform : @YES,
+  };
+  CGImageRef thumbnail =
+      CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)options);
+  CFRelease(source);
+  if (thumbnail == NULL) {
+    return nil;
+  }
+
+  NSURL *destURL = [NSURL fileURLWithPath:thumbPath isDirectory:NO];
+  CGImageDestinationRef destination =
+      CGImageDestinationCreateWithURL((__bridge CFURLRef)destURL, CFSTR("public.jpeg"), 1, NULL);
+  if (destination == NULL) {
+    CGImageRelease(thumbnail);
+    return nil;
+  }
+
+  NSDictionary *properties = @{
+    (NSString *)kCGImageDestinationLossyCompressionQuality : @(0.82),
+  };
+  CGImageDestinationAddImage(destination, thumbnail, (__bridge CFDictionaryRef)properties);
+  BOOL saved = CGImageDestinationFinalize(destination);
+  CGImageRelease(thumbnail);
+  CFRelease(destination);
+
+  return saved ? thumbPath : nil;
+}
+
 RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
                   sourceUri:(NSString *)sourceUri
                   fileName:(NSString *)fileName
@@ -953,12 +1022,12 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
       NSString *type = ext.length > 0
                            ? [NSString stringWithFormat:@"public.%@", ext]
                            : @"image/jpeg";
-      NSDictionary *result = @{
+      NSMutableDictionary *result = [@{
         @"uri" : [NSString stringWithFormat:@"file://%@", destPath],
         @"name" : destName,
         @"size" : fileSize ?: @(0),
         @"type" : type,
-      };
+      } mutableCopy];
 
       dispatch_async(dispatch_get_main_queue(), ^{
         resolve(result);
@@ -968,6 +1037,59 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
         reject(@"EUNKNOWN", exception.reason, nil);
       });
     }
+  });
+}
+
+RCT_EXPORT_METHOD(ensureThumbnail:(NSString *)albumId
+                  sourceUri:(NSString *)sourceUri
+                  photoId:(NSString *)photoId
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    @try {
+      NSString *sourcePath = [self pathFromUri:sourceUri];
+      if (sourcePath.length == 0 ||
+          ![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          resolve(@{@"thumbnailUri" : [NSNull null]});
+        });
+        return;
+      }
+
+      NSString *generatedPath =
+          [self generateThumbnailAtPath:sourcePath albumId:albumId photoId:photoId];
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (generatedPath.length > 0) {
+          resolve(@{
+            @"thumbnailUri" :
+                [NSString stringWithFormat:@"file://%@", generatedPath],
+          });
+        } else {
+          resolve(@{@"thumbnailUri" : [NSNull null]});
+        }
+      });
+    } @catch (NSException *exception) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        reject(@"ETHUMB", exception.reason ?: @"Thumbnail generation failed", nil);
+      });
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(getThumbnailUri:(NSString *)albumId
+                  photoId:(NSString *)photoId
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    NSString *thumbPath = [self thumbnailPathForAlbum:albumId photoId:photoId];
+    if (thumbPath.length > 0 &&
+        [[NSFileManager defaultManager] fileExistsAtPath:thumbPath]) {
+      resolve([NSString stringWithFormat:@"file://%@", thumbPath]);
+      return;
+    }
+    resolve([NSNull null]);
   });
 }
 
@@ -991,7 +1113,7 @@ RCT_EXPORT_METHOD(listPhotos:(NSString *)albumId
 
     NSMutableArray *files = [NSMutableArray array];
     for (NSString *entry in entries) {
-      if ([entry hasPrefix:@"."]) {
+      if ([entry hasPrefix:@"."] || [entry isEqualToString:@"thumbs"]) {
         continue;
       }
       NSString *path = [albumDir stringByAppendingPathComponent:entry];
@@ -1187,6 +1309,17 @@ RCT_EXPORT_METHOD(deletePhoto:(NSString *)uri
         return;
       }
     }
+
+    NSString *fileName = [path lastPathComponent];
+    NSString *photoId = [fileName stringByDeletingPathExtension];
+    NSString *albumDir = [path stringByDeletingLastPathComponent];
+    NSString *thumbPath =
+        [albumDir stringByAppendingPathComponent:
+                       [NSString stringWithFormat:@"thumbs/%@.jpg", photoId]];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:thumbPath]) {
+      [[NSFileManager defaultManager] removeItemAtPath:thumbPath error:nil];
+    }
+
     resolve(@(YES));
   });
 }
