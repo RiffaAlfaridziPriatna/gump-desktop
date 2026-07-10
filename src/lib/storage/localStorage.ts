@@ -98,6 +98,10 @@ export function resolveGridDisplayUri(file: FileAsset): string | null {
   return file.thumbnailUri ?? null;
 }
 
+export function resolveOriginalUri(file: FileAsset): string {
+  return file.uri;
+}
+
 export async function getThumbnailUri(
   albumId: string,
   photoId: string,

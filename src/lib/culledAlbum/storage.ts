@@ -35,6 +35,8 @@ function legacyAlbumToDomainAlbum(album: LegacyCulledAlbum): CulledAlbum {
     totalStorage: album.totalStorage,
     syncedMediaCount: album.syncedMediaCount,
     syncedStorageGb: album.syncedStorageGb,
+    cullingStats: album.cullingStats ?? null,
+    cullingKeyFaces: album.cullingKeyFaces ?? null,
   });
 }
 
@@ -68,6 +70,9 @@ function domainAlbumToLegacy(
     totalStorage: album.totalStorage,
     syncedMediaCount: album.syncedMediaCount ?? undefined,
     syncedStorageGb: album.syncedStorageGb ?? undefined,
+    cullingStats: (album.cullingStats as LegacyCulledAlbum['cullingStats']) ?? undefined,
+    cullingKeyFaces:
+      (album.cullingKeyFaces as LegacyCulledAlbum['cullingKeyFaces']) ?? undefined,
     photos,
   };
 }
@@ -112,6 +117,8 @@ async function ensureMigrated(): Promise<void> {
           totalStorage: normalized.totalStorage,
           syncedMediaCount: normalized.syncedMediaCount,
           syncedStorageGb: normalized.syncedStorageGb,
+          cullingStats: normalized.cullingStats ?? null,
+          cullingKeyFaces: normalized.cullingKeyFaces ?? null,
         });
 
         await albumRepo.save(album);
@@ -204,6 +211,8 @@ export async function writeAllAlbums(
       totalStorage: legacyAlbum.totalStorage,
       syncedMediaCount: legacyAlbum.syncedMediaCount,
       syncedStorageGb: legacyAlbum.syncedStorageGb,
+      cullingStats: legacyAlbum.cullingStats ?? null,
+      cullingKeyFaces: legacyAlbum.cullingKeyFaces ?? null,
     });
 
     await albumRepo.save(album);

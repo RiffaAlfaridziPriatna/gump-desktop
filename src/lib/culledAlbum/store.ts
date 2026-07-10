@@ -49,7 +49,10 @@ import {
   normalizePersistedAlbum,
   recomputeAlbumTotals,
   sortPhotosByFilename,
+  toCullingPhoto,
 } from './types';
+import {computeKeyFaces, computeStats} from '@lib/culling/cullingUtil';
+import {APIResponse} from '@services/api';
 import {scheduleThumbnailBackfill} from './thumbnailBackfill';
 import {photoKey, photoStateStore} from './photoStateStore';
 import {
@@ -489,6 +492,34 @@ export async function markCullingCompleted(albumId: string): Promise<void> {
     }
   });
   await persistAlbum(albumId);
+}
+
+export function updateCullingSummary(albumId: string): void {
+  const analyzed = getPhotosForAlbum(albumId)
+    .filter(photo => photo.analysisStatus === 'analyzed')
+    .map(toCullingPhoto);
+  const stats = analyzed.length > 0 ? computeStats(analyzed) : undefined;
+  const keyFaces = analyzed.length > 0 ? computeKeyFaces(analyzed) : undefined;
+
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (!album) {
+      return;
+    }
+    album.cullingStats = stats;
+    album.cullingKeyFaces = keyFaces;
+  });
+}
+
+export function getCullingSummary(albumId: string): {
+  stats: APIResponse.CullingStats | null;
+  keyFaces: APIResponse.CullingKeyFace[];
+} {
+  const album = getAlbumFromState(albumId);
+  return {
+    stats: album?.cullingStats ?? null,
+    keyFaces: album?.cullingKeyFaces ?? [],
+  };
 }
 
 export async function markCullingHasUploads(albumId: string): Promise<void> {

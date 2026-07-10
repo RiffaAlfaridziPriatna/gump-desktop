@@ -24,7 +24,10 @@ import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {resolveKeyFaceSource} from '@lib/culling/cullingFaceCrop';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {preloadImage} from '@lib/media/imagePreload';
-import {resolveDisplayUri} from '@lib/storage/localStorage';
+import {
+  resolveGridDisplayUri,
+  resolveOriginalUri,
+} from '@lib/storage/localStorage';
 import {stabilizeGridPhotos} from '@lib/culledAlbum/stableGridPhotos';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
@@ -61,7 +64,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     resumeInFlightWork(albumId);
   }, [albumId, isFocused, resumeInFlightWork]);
 
-  const {photos, loadError} = useCulledAlbumPhotos(albumId);
+  const {photos, loadError, loadingPhotos} = useCulledAlbumPhotos(albumId);
   const albumPhotos = useCulledAlbumPhotosState(albumId);
   const cullingCompleted = useCulledAlbumStore(
     state => state.albums[albumId]?.cullingCompleted ?? false,
@@ -77,7 +80,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     state => state.albums[albumId]?.link ?? '',
   );
 
-
   const {
     stats,
     keyFaces,
@@ -87,7 +89,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     updateStarRating,
     deletePhoto,
     photoMap,
-  } = useCulledAlbumDetailData(albumId, albumPhotos);
+  } = useCulledAlbumDetailData(albumId, albumPhotos, !loadingPhotos);
 
   const {
     screenRootRef,
@@ -130,7 +132,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       albumPhotos
         .filter(photo => photo.status === 'uploaded')
         .slice(0, 9)
-        .map(photo => resolveDisplayUri(photo.file)),
+        .map(photo => resolveGridDisplayUri(photo.file))
+        .filter((uri): uri is string => Boolean(uri)),
     [albumPhotos],
   );
 
@@ -181,7 +184,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     (photoId: string) => {
       const entry = gridPhotos.find(photo => photo.photoId === photoId);
       if (entry?.file) {
-        preloadImage(resolveDisplayUri(entry.file)).catch(() => undefined);
+        preloadImage(resolveOriginalUri(entry.file)).catch(() => undefined);
       }
       navigation.navigate('CulledAlbumPhotoDetail', {albumId, photoId});
     },

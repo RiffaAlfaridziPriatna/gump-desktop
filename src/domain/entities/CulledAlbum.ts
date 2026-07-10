@@ -49,6 +49,8 @@ export class CulledAlbum {
   private _totalStorage: number;
   private _syncedMediaCount: number | null;
   private _syncedStorageGb: number | null;
+  private _cullingStats: Record<string, number> | null;
+  private _cullingKeyFaces: unknown[] | null;
 
   constructor(data: {
     albumId: string;
@@ -65,6 +67,8 @@ export class CulledAlbum {
     totalStorage?: number;
     syncedMediaCount?: number | null;
     syncedStorageGb?: number | null;
+    cullingStats?: Record<string, number> | null;
+    cullingKeyFaces?: unknown[] | null;
   }) {
     this.albumId = data.albumId;
     this.name = data.name;
@@ -81,6 +85,8 @@ export class CulledAlbum {
     this._totalStorage = data.totalStorage ?? 0;
     this._syncedMediaCount = data.syncedMediaCount ?? null;
     this._syncedStorageGb = data.syncedStorageGb ?? null;
+    this._cullingStats = data.cullingStats ?? null;
+    this._cullingKeyFaces = data.cullingKeyFaces ?? null;
   }
 
   get cullingCompleted(): boolean {
@@ -111,8 +117,24 @@ export class CulledAlbum {
     return this._syncedStorageGb;
   }
 
+  get cullingStats(): Record<string, number> | null {
+    return this._cullingStats;
+  }
+
+  get cullingKeyFaces(): unknown[] | null {
+    return this._cullingKeyFaces;
+  }
+
   markCullingCompleted(): void {
     this._cullingCompleted = true;
+  }
+
+  setCullingSummary(
+    stats: Record<string, number> | null,
+    keyFaces: unknown[] | null,
+  ): void {
+    this._cullingStats = stats;
+    this._cullingKeyFaces = keyFaces;
   }
 
   markHasUploads(): void {
@@ -151,6 +173,8 @@ export class CulledAlbum {
       totalStorage: this._totalStorage,
       syncedMediaCount: this._syncedMediaCount,
       syncedStorageGb: this._syncedStorageGb,
+      cullingStats: this._cullingStats,
+      cullingKeyFaces: this._cullingKeyFaces,
     };
   }
 
@@ -170,6 +194,8 @@ export class CulledAlbum {
       totalStorage: data.totalStorage,
       syncedMediaCount: data.syncedMediaCount,
       syncedStorageGb: data.syncedStorageGb,
+      cullingStats: data.cullingStats ?? null,
+      cullingKeyFaces: data.cullingKeyFaces ?? null,
     });
   }
 }

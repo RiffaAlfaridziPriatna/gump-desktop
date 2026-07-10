@@ -1,14 +1,23 @@
-import {useCulledAlbumPhotosState} from '@context/culledAlbum';
+import {useCulledAlbumPhotosState, useCulledAlbumStore} from '@context/culledAlbum';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {computeKeyFaces, computeStats} from '@lib/culling/cullingUtil';
+import {persistAlbum, updateCullingSummary} from '@lib/culledAlbum/store';
 import {toCullingPhoto} from '@lib/culledAlbum/types';
 import {APIResponse} from '@services/api';
-import {useCallback, useMemo} from 'react';
+import {useCallback, useEffect, useMemo} from 'react';
 
 export function useCulledAlbumDetailData(
   albumId: string,
   albumPhotos: ReturnType<typeof useCulledAlbumPhotosState>,
+  photosReady = true,
 ) {
+  const persistedStats = useCulledAlbumStore(
+    state => state.albums[albumId]?.cullingStats ?? null,
+  );
+  const persistedKeyFaces = useCulledAlbumStore(
+    state => state.albums[albumId]?.cullingKeyFaces ?? null,
+  );
+
   const analyzedPhotos = useMemo(
     () =>
       albumPhotos
@@ -17,15 +26,48 @@ export function useCulledAlbumDetailData(
     [albumPhotos],
   );
 
-  const stats = useMemo(
-    () => (analyzedPhotos.length > 0 ? computeStats(analyzedPhotos) : null),
+  const needsLiveSummary = !persistedStats;
+
+  const liveStats = useMemo(
+    () =>
+      needsLiveSummary && photosReady && analyzedPhotos.length > 0
+        ? computeStats(analyzedPhotos)
+        : null,
+    [analyzedPhotos, needsLiveSummary, photosReady],
+  );
+
+  const liveKeyFaces = useMemo(
+    () =>
+      needsLiveSummary && photosReady && analyzedPhotos.length > 0
+        ? computeKeyFaces(analyzedPhotos)
+        : null,
+    [analyzedPhotos, needsLiveSummary, photosReady],
+  );
+
+  const mySelectionsLive = useMemo(
+    () => analyzedPhotos.filter(photo => photo.selected).length,
     [analyzedPhotos],
   );
 
-  const keyFaces = useMemo(
-    () => (analyzedPhotos.length > 0 ? computeKeyFaces(analyzedPhotos) : []),
-    [analyzedPhotos],
-  );
+  const stats = useMemo<APIResponse.CullingStats | null>(() => {
+    if (persistedStats) {
+      return persistedStats;
+    }
+    if (!liveStats) {
+      return null;
+    }
+    return {...liveStats, mySelections: mySelectionsLive};
+  }, [liveStats, mySelectionsLive, persistedStats]);
+
+  const keyFaces = persistedKeyFaces ?? liveKeyFaces ?? [];
+
+  useEffect(() => {
+    if (!photosReady || persistedStats || analyzedPhotos.length === 0) {
+      return;
+    }
+    updateCullingSummary(albumId);
+    persistAlbum(albumId).catch(() => undefined);
+  }, [albumId, analyzedPhotos.length, persistedStats, photosReady]);
 
   const isAnalyzing = useMemo(
     () =>

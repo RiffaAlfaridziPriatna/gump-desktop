@@ -17,6 +17,7 @@ import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from
 import {useLayout} from '@hooks/useLayout';
 import {useImageDimensions} from '@hooks/useImageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
+import {resolveOriginalUri} from '@lib/storage/localStorage';
 import {Pressable, TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
@@ -91,7 +92,7 @@ export default function CulledAlbumPhotoDetailScreen({
 
   const faces = analysis?.faces ?? [];
   const fileName = photo?.file.name ?? 'Photo';
-  const uri = photo?.file.uri ?? '';
+  const uri = photo ? resolveOriginalUri(photo.file) : '';
   const imageSize = useImageDimensions(uri);
 
   useLayoutEffect(() => {

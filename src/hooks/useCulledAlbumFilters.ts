@@ -84,6 +84,16 @@ export function useCulledAlbumFilters(
   );
 
   const filterCounts = useMemo(() => {
+    if (stats) {
+      return {
+        aiSelected: stats.aiSelected,
+        maybe: stats.maybe,
+        blurred: stats.blurred,
+        closedEyes: stats.closedEyes,
+        duplicated: stats.duplicated,
+      } as Record<FilterKey, number>;
+    }
+
     const counts = Object.fromEntries(
       FILTER_KEYS.map(key => [key, 0]),
     ) as Record<FilterKey, number>;
@@ -96,12 +106,6 @@ export function useCulledAlbumFilters(
         if (matchesCullFilterKey(photo.analysis, key)) {
           counts[key] += 1;
         }
-      }
-    }
-
-    for (const key of FILTER_KEYS) {
-      if (stats?.[key] !== undefined) {
-        counts[key] = stats[key] as number;
       }
     }
 

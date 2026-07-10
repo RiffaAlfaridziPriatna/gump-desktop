@@ -10,6 +10,7 @@ import {
   getPhotosForAlbum,
   persistAlbum,
   removePhotoFromAlbum,
+  updateCullingSummary,
   updatePhoto,
 } from '@lib/culledAlbum/store';
 import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
@@ -313,6 +314,7 @@ export const cullingEngine = {
     if (isCulledPhotoDisabled(existing, album?.cullingHasUploads ?? false)) {
       throw new Error('Cannot modify uploaded photo');
     }
+    const previousSelected = existing.selected;
     const updated = updatePhoto(albumId, photoId, photo => {
       if (data.selected !== undefined) {
         photo.selected = data.selected;
@@ -323,6 +325,24 @@ export const cullingEngine = {
     }, {immediate: true});
     if (!updated) {
       throw new Error('Photo analysis not found');
+    }
+    if (
+      data.selected !== undefined &&
+      data.selected !== previousSelected
+    ) {
+      culledAlbumStore.setState(state => {
+        const entry = state.albums[albumId];
+        if (!entry?.cullingStats) {
+          return;
+        }
+        entry.cullingStats = {
+          ...entry.cullingStats,
+          mySelections: Math.max(
+            0,
+            entry.cullingStats.mySelections + (data.selected ? 1 : -1),
+          ),
+        };
+      });
     }
     await persistAlbum(albumId);
     const photo = getPhotoById(albumId, photoId);
@@ -362,6 +382,10 @@ export const cullingEngine = {
     const remaining = await getAnalyzedPhotos(albumId);
     if (remaining.length > 0) {
       await applyDuplicateFlags(albumId);
+      updateCullingSummary(albumId);
+      await persistAlbum(albumId);
+    } else {
+      updateCullingSummary(albumId);
       await persistAlbum(albumId);
     }
   },
@@ -372,6 +396,7 @@ export const cullingEngine = {
       throw new Error('No analyzed photos');
     }
     await applyDuplicateFlags(albumId);
+    updateCullingSummary(albumId);
     await persistAlbum(albumId);
   },
 
