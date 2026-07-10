@@ -1084,12 +1084,18 @@ RCT_EXPORT_METHOD(getThumbnailUri:(NSString *)albumId
 {
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     NSString *thumbPath = [self thumbnailPathForAlbum:albumId photoId:photoId];
+    NSString *thumbnailUri = nil;
     if (thumbPath.length > 0 &&
         [[NSFileManager defaultManager] fileExistsAtPath:thumbPath]) {
-      resolve([NSString stringWithFormat:@"file://%@", thumbPath]);
-      return;
+      thumbnailUri = [NSString stringWithFormat:@"file://%@", thumbPath];
     }
-    resolve([NSNull null]);
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (thumbnailUri.length > 0) {
+        resolve(thumbnailUri);
+      } else {
+        resolve([NSNull null]);
+      }
+    });
   });
 }
 

@@ -35,6 +35,7 @@ function gridPhotoEqual(
     cached.disabled === next.disabled &&
     cached.file.uri === next.file.uri &&
     cached.file.name === next.file.name &&
+    cached.file.thumbnailUri === next.file.thumbnailUri &&
     analysisEqual(cached.analysis, next.analysis)
   );
 }

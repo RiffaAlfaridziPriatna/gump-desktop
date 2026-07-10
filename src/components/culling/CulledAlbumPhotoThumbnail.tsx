@@ -1,12 +1,13 @@
 import {getContainedImageLayout} from '@lib/culling/cullingFaceCrop';
 import {
   getCachedImageDimensions,
+  loadImageDimensions,
   type ImageDimensions,
 } from '@lib/media/imageDimensions';
 import {resolveGridDisplayUri} from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
 import {FileAsset} from '@services/upload/types';
-import {memo, useCallback, useMemo, useState} from 'react';
+import {memo, useCallback, useEffect, useMemo, useState} from 'react';
 import {
   Image,
   type ImageLoadEventData,
@@ -33,6 +34,11 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
     () => (uri ? getCachedImageDimensions(uri) ?? null : null),
   );
 
+  useEffect(() => {
+    setIsLoaded(false);
+    setImageSize(uri ? getCachedImageDimensions(uri) ?? null : null);
+  }, [uri]);
+
   const imageLayout = useMemo(() => {
     if (!imageSize) {
       return null;
@@ -45,6 +51,30 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
       imageSize.height,
     );
   }, [height, imageSize, width]);
+
+  useEffect(() => {
+    if (!uri) {
+      return;
+    }
+
+    const cached = getCachedImageDimensions(uri);
+    if (cached) {
+      setImageSize(cached);
+      return;
+    }
+
+    let cancelled = false;
+
+    loadImageDimensions(uri).then(dimensions => {
+      if (!cancelled && dimensions) {
+        setImageSize(dimensions);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [uri]);
 
   const handleLoad = useCallback(
     (event: NativeSyntheticEvent<ImageLoadEventData>) => {

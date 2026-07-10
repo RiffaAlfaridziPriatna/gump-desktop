@@ -163,6 +163,10 @@ export function useCulledAlbumPhotosState(albumId: string): CulledAlbumPhoto[] {
     photoStateStore,
     state => state.photoOrder[albumId] ?? EMPTY_PHOTO_IDS,
   );
+  const gridRevision = useStateStore(
+    photoStateStore,
+    state => state.gridRevision[albumId] ?? 0,
+  );
   const photoStateEntries = useStateStore(photoStateStore, state => {
     const order = state.photoOrder[albumId] ?? EMPTY_PHOTO_IDS;
     return order.map(photoId => state.photoState[photoKey(albumId, photoId)]);
@@ -180,7 +184,7 @@ export function useCulledAlbumPhotosState(albumId: string): CulledAlbumPhoto[] {
     return photoOrder
       .map((photoId, index) => photoStateEntries[index] ?? albumById.get(photoId))
       .filter((photo): photo is CulledAlbumPhoto => Boolean(photo));
-  }, [albumPhotos, photoOrder, photoStateEntries]);
+  }, [albumPhotos, gridRevision, photoOrder, photoStateEntries]);
 }
 
 export function useCulledAlbumLocalImportProgress(
