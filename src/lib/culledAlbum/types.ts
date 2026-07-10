@@ -53,6 +53,16 @@ export type LocalImportCountKey = keyof Omit<
   'total'
 >;
 
+export type AnalysisBatchCounts = {
+  total: number;
+  pending: number;
+  analyzing: number;
+  analyzed: number;
+  failed: number;
+};
+
+export type AnalysisCountKey = keyof Omit<AnalysisBatchCounts, 'total'>;
+
 export type CulledAlbumPhoto = {
   photoId: string;
   file: FileAsset;
@@ -101,6 +111,7 @@ export type CulledAlbum = {
   localImportBatchTotal: number;
   localImportBatchCounts?: LocalImportBatchCounts;
   analysisBatchPhotoIds: string[];
+  analysisBatchCounts?: AnalysisBatchCounts;
   nextFaceClusterId: number;
   createdAt: string;
   totalPhotos: number;
@@ -172,6 +183,7 @@ export function createCulledAlbumFromSelection(
     localImportBatchTotal: 0,
     localImportBatchCounts: undefined,
     analysisBatchPhotoIds: [],
+    analysisBatchCounts: undefined,
     nextFaceClusterId: 0,
     createdAt: new Date().toISOString(),
     totalPhotos: 0,
@@ -282,6 +294,11 @@ export function hasInFlightAnalysis(
     return false;
   }
 
+  const counts = album.analysisBatchCounts;
+  if (counts) {
+    return counts.pending > 0 || counts.analyzing > 0;
+  }
+
   const source = photos ?? album.photos;
   const batchIds = new Set(album.analysisBatchPhotoIds);
   return source.some(
@@ -389,6 +406,7 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.localImportBatchTotal ??= 0;
   album.localImportBatchCounts = undefined;
   album.analysisBatchPhotoIds ??= [];
+  album.analysisBatchCounts = undefined;
   album.createdAt ??= new Date(0).toISOString();
   album.totalPhotos ??= album.photos.length;
   album.totalStorage ??= 0;

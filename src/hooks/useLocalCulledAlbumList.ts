@@ -119,8 +119,6 @@ export function useLocalCulledAlbumList() {
     setError(null);
     setEnableSync(false);
     try {
-      // Keep in-memory albums (including ones just registered) visible even
-      // while the upload queue is busy; only skip the heavier disk reload.
       if (!hasActiveQueueWork()) {
         await loadAllLocalAlbumsIntoStore();
       }

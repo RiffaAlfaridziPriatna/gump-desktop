@@ -74,6 +74,11 @@ function buildAnalysisStateSignature(
     return '';
   }
 
+  const counts = album.analysisBatchCounts;
+  if (counts) {
+    return `${counts.total}:${counts.pending}:${counts.analyzing}:${counts.analyzed}:${counts.failed}`;
+  }
+
   return album.analysisBatchPhotoIds
     .map(photoId => {
       const photo = findBatchPhoto(albumId, album, photoId);
@@ -98,8 +103,19 @@ function countAnalysisBatch(
     return null;
   }
 
+  const counts = album.analysisBatchCounts;
+  if (counts) {
+    return {
+      pending: counts.pending,
+      completed: counts.analyzed,
+      inProgress: counts.analyzing,
+      failed: counts.failed,
+      total: counts.total,
+    };
+  }
+
   const batchIds = new Set(album.analysisBatchPhotoIds);
-  const counts: CulledAlbumAnalysisCounts = {
+  const fallback: CulledAlbumAnalysisCounts = {
     pending: 0,
     completed: 0,
     inProgress: 0,
@@ -113,17 +129,17 @@ function countAnalysisBatch(
       continue;
     }
     if (photo.analysisStatus === 'pending') {
-      counts.pending++;
+      fallback.pending++;
     } else if (photo.analysisStatus === 'failed') {
-      counts.failed++;
+      fallback.failed++;
     } else if (photo.analysisStatus === 'analyzed') {
-      counts.completed++;
+      fallback.completed++;
     } else if (photo.analysisStatus === 'analyzing') {
-      counts.inProgress++;
+      fallback.inProgress++;
     }
   }
 
-  return counts;
+  return fallback;
 }
 
 export function useCulledAlbumUiState<R = CulledAlbumUiState>(

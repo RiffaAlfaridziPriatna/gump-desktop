@@ -139,7 +139,10 @@ export function AlbumCard(props: AlbumCardProps) {
     isHomepage &&
     (localImportQueue.status === 'active' ||
       serverUploadQueue.status === 'active');
-  const isAnalyzing = isHomepage && analysisQueue.status === 'active';
+  const isAnalyzing =
+    isHomepage &&
+    (analysisQueue.status === 'active' ||
+      analysisQueue.status === 'finalizing');
   const isBusy = isUploading || isAnalyzing;
   const busyLabel = isAnalyzing
     ? 'Analyzing...'

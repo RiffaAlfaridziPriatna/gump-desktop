@@ -1,7 +1,7 @@
 import {syncPhotosFromStore, syncPhotoFromStore} from '@/application/syncPhotoRepository';
 import {deleteLocalPhotoFile} from '@lib/storage/localStorage';
 import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
-import {hydrateAllPhotos} from '@lib/culledAlbum/photoLoader';
+import {hydratePhotos} from '@lib/culledAlbum/photoLoader';
 import {
   culledAlbumStore,
   ensureAlbumLoaded,
@@ -13,7 +13,7 @@ import {
   updatePhoto,
 } from '@lib/culledAlbum/store';
 import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
-import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
+import {toCullingPhoto, isCulledPhotoDisabled, CulledAlbumPhoto} from '@lib/culledAlbum/types';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 import {NativeModules, Platform} from 'react-native';
@@ -113,21 +113,30 @@ function createPlatformDetector(): PlatformDetector {
 
 const detector = createPlatformDetector();
 
+function hydrateAnalyzedBatch(albumId: string): CulledAlbumPhoto[] {
+  const album = getAlbum(albumId);
+  const batchIds = album?.analysisBatchPhotoIds ?? [];
+  if (batchIds.length > 0) {
+    return hydratePhotos(albumId, batchIds);
+  }
+  return getPhotosForAlbum(albumId);
+}
+
 async function getAnalyzedPhotos(albumId: string): Promise<CullingPhoto[]> {
   await ensureAlbumLoaded(albumId);
-  hydrateAllPhotos(albumId);
-  seedFaceClusterIndex(albumId, getPhotosForAlbum(albumId));
-  return getPhotosForAlbum(albumId)
+  const photos = hydrateAnalyzedBatch(albumId);
+  seedFaceClusterIndex(albumId, photos);
+  return photos
     .filter(photo => photo.analysisStatus === 'analyzed')
     .map(toCullingPhoto);
 }
 
 async function applyDuplicateFlags(albumId: string): Promise<void> {
-  hydrateAllPhotos(albumId);
-  const photoMap: Record<string, DuplicateDetectionPhoto> = {};
-  for (const photo of getPhotosForAlbum(albumId).filter(
+  const analyzedPhotos = hydrateAnalyzedBatch(albumId).filter(
     entry => entry.analysisStatus === 'analyzed',
-  )) {
+  );
+  const photoMap: Record<string, DuplicateDetectionPhoto> = {};
+  for (const photo of analyzedPhotos) {
     photoMap[photo.photoId] = {
       ...toCullingPhoto(photo),
       capturedAt: photo.capturedAt,

@@ -25,6 +25,7 @@ export function toPersistableAlbum(album: CulledAlbum): CulledAlbum {
       : [],
     localImportBatchTotal: inFlightImport ? album.localImportBatchTotal : 0,
     localImportBatchCounts: undefined,
+    analysisBatchCounts: undefined,
     photos: album.photos.map(toPersistablePhoto),
   };
 }

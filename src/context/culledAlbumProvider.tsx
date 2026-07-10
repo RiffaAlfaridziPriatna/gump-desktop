@@ -14,6 +14,7 @@ import {
   markCullingCompleted,
   persistAlbum,
   queuePhotosForAnalysis,
+  reconcileAnalysisBatchCounts,
   reconcileLocalImportBatchCounts,
   startServerUploadBatch,
   updatePhoto,
@@ -103,6 +104,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       maxConcurrent: MAX_CONCURRENT_ANALYSIS,
       analyzePhotoUseCase: getUseCases().analyzePhoto,
       getPhotos: getPhotosForAlbum,
+      getPhoto: getPhotoById,
       updatePhoto,
       persistAlbum,
       isSynced: albumId => syncedAlbumsRef.current.has(albumId),
@@ -113,6 +115,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
         syncedAlbumsRef.current.delete(albumId);
       },
       onComplete: async albumId => {
+        setQueueOperationStatus(albumId, 'analysis', 'finalizing');
         await cullingEngine.completeAnalysis(albumId);
         await markCullingCompleted(albumId);
         setQueueOperationStatus(albumId, 'analysis', 'completed');
@@ -151,6 +154,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     }
 
     if (hasInFlightAnalysis(album, photos)) {
+      reconcileAnalysisBatchCounts(albumId);
       setQueueOperationStatus(albumId, 'analysis', 'active');
       analysisQueueRef.current!.processPending(albumId);
     }
@@ -190,7 +194,8 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     setQueueOperationStatus(albumId, 'analysis', 'active');
 
     queuePhotosForAnalysis(albumId);
-    queueMicrotask(() => analysisQueueRef.current!.processPending(albumId));
+    flushPendingPhotoUpdates();
+    analysisQueueRef.current!.processPending(albumId);
   }, []);
 
   const startSelectedUpload = useCallback((albumId: string, photoIds: string[]) => {

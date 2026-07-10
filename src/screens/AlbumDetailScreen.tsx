@@ -7,6 +7,7 @@ import {
   useCulledAlbumLocalImportProgress,
   useCulledAlbumStore,
 } from '@context/culledAlbum';
+import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
 import {useAlbumDetailGridPhotos} from '@hooks/useAlbumDetailGridPhotos';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
@@ -17,7 +18,7 @@ import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useIsFocused} from '@react-navigation/native';
-import {useEffect, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
@@ -136,9 +137,20 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
 
   const displayTotalPhotos = Math.max(totalPhotos, batchTotal);
 
-  const cullingSnapshot = useCulledAlbumStore(state => {
-    const album = state.albums[albumId];
-    if (!album?.analysisBatchPhotoIds.length) {
+  const analysisBatchIdCount = useCulledAlbumStore(
+    state => state.albums[albumId]?.analysisBatchPhotoIds.length ?? 0,
+  );
+  const analysisBatchCounts = useCulledAlbumStore(
+    state => state.albums[albumId]?.analysisBatchCounts,
+  );
+
+  const analysisQueue = useAlbumQueueOperation(albumId, 'analyze');
+  const isAnalysisFinalizing = analysisQueue.status === 'finalizing';
+  const isAnalysisQueueDone =
+    analysisQueue.status === 'completed' || analysisQueue.status === 'failed';
+
+  const cullingSnapshot = useMemo(() => {
+    if (analysisBatchIdCount === 0) {
       return {
         inProgress: false,
         complete: false,
@@ -146,44 +158,36 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
       };
     }
 
-    let inProgress = false;
-    let complete = true;
-    let hasAnalyzed = false;
-
-    for (const photoId of album.analysisBatchPhotoIds) {
-      const photo = album.photos.find(entry => entry.photoId === photoId);
-      if (!photo) {
-        continue;
-      }
-      if (
-        photo.analysisStatus === 'pending' ||
-        photo.analysisStatus === 'analyzing'
-      ) {
-        inProgress = true;
-        complete = false;
-      }
-      if (
-        photo.analysisStatus !== 'analyzed' &&
-        photo.analysisStatus !== 'failed'
-      ) {
-        complete = false;
-      }
-      if (photo.analysisStatus === 'analyzed') {
-        hasAnalyzed = true;
-      }
+    if (!analysisBatchCounts) {
+      return {
+        inProgress: true,
+        complete: false,
+        hasAnalyzed: false,
+      };
     }
 
-    return {inProgress, complete, hasAnalyzed};
-  });
+    return {
+      inProgress:
+        analysisBatchCounts.pending > 0 || analysisBatchCounts.analyzing > 0,
+      complete:
+        analysisBatchCounts.pending === 0 &&
+        analysisBatchCounts.analyzing === 0,
+      hasAnalyzed: analysisBatchCounts.analyzed > 0,
+    };
+  }, [analysisBatchCounts, analysisBatchIdCount]);
 
   const isCullingInProgress =
-    (cullingActive || cullingSnapshot.inProgress) && !cullingSnapshot.complete;
+    analysisQueue.status === 'active' ||
+    isAnalysisFinalizing ||
+    ((cullingActive || cullingSnapshot.inProgress) &&
+      !cullingSnapshot.complete &&
+      !isAnalysisQueueDone);
 
   useEffect(() => {
-    if (cullingSnapshot.inProgress) {
+    if (cullingSnapshot.inProgress || isAnalysisFinalizing) {
       setCullingActive(true);
     }
-  }, [cullingSnapshot.inProgress]);
+  }, [cullingSnapshot.inProgress, isAnalysisFinalizing]);
 
   useEffect(() => {
     if (!isFocused || skipResumeImport) {
@@ -193,17 +197,27 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   }, [albumId, isFocused, resumeInFlightWork, skipResumeImport]);
 
   useEffect(() => {
-    if (!cullingActive || !cullingSnapshot.complete || cullingSnapshot.hasAnalyzed) {
+    if (
+      !cullingActive ||
+      !cullingSnapshot.complete ||
+      cullingSnapshot.hasAnalyzed ||
+      analysisQueue.status !== 'failed'
+    ) {
       return;
     }
     setCullingActive(false);
-  }, [cullingActive, cullingSnapshot.complete, cullingSnapshot.hasAnalyzed]);
+  }, [
+    analysisQueue.status,
+    cullingActive,
+    cullingSnapshot.complete,
+    cullingSnapshot.hasAnalyzed,
+  ]);
 
   useEffect(() => {
     if (
       !isFocused ||
       !cullingActive ||
-      !cullingSnapshot.complete ||
+      analysisQueue.status !== 'completed' ||
       !cullingSnapshot.hasAnalyzed
     ) {
       return;
@@ -211,8 +225,8 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     navigation.replace('CulledAlbumDetail', {albumId});
   }, [
     albumId,
+    analysisQueue.status,
     cullingActive,
-    cullingSnapshot.complete,
     cullingSnapshot.hasAnalyzed,
     isFocused,
     navigation,

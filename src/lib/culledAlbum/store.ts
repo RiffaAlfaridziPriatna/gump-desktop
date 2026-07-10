@@ -18,12 +18,17 @@ import {
   computeLocalImportBatchCountsForIds,
   isLocalImportBatchFinishedForIds,
 } from './localImportProgress';
+import {
+  createAnalysisBatchCounts,
+  computeAnalysisBatchCountsForIds,
+  isAnalysisBatchFinishedByCounts,
+} from './analysisProgress';
 import {readAlbumMeta, readAllAlbumMeta, removeAlbum, saveAlbum, type SaveAlbumOptions} from './storage';
 import {toPersistableAlbum} from './toPersistableAlbum';
 import {syncAlbumWithDisk} from './sync';
 import {
   ensurePhotoOrder,
-  hydrateAllPhotos,
+  getPhotoIdsForAlbum,
   hydratePhotos,
   setPhotoOrder,
 } from './photoLoader';
@@ -36,6 +41,7 @@ import {
   createCulledAlbumPhoto,
   CulledAlbum,
   CulledAlbumPhoto,
+  AnalysisCountKey,
   hasInFlightAnalysis,
   hasInFlightServerUploads,
   hasInFlightUploads,
@@ -270,6 +276,10 @@ export type UpdatePhotoOptions = {
   batchCountShift?: {
     from: LocalImportCountKey;
     to: LocalImportCountKey;
+  };
+  analysisCountShift?: {
+    from: AnalysisCountKey;
+    to: AnalysisCountKey;
   };
   immediate?: boolean;
 };
@@ -797,6 +807,22 @@ function applyPhotoUpdatesBatch(updates: PendingPhotoUpdate[]): boolean {
       counts[shift.to]++;
     }
 
+    for (const update of updates) {
+      const shift = update.options?.analysisCountShift;
+      if (!shift) {
+        continue;
+      }
+      const album = state.albums[update.albumId];
+      const counts = album?.analysisBatchCounts;
+      if (!counts) {
+        continue;
+      }
+      if (counts[shift.from] > 0) {
+        counts[shift.from]--;
+      }
+      counts[shift.to]++;
+    }
+
     for (const [albumId, meta] of albumMeta) {
       const album = state.albums[albumId];
       if (!album) {
@@ -940,16 +966,24 @@ export function getPhotoById(
 }
 
 export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {
-  hydrateAllPhotos(albumId);
-  const uploadedPhotos = getPhotosForAlbum(albumId).filter(
-    photo => photo.status === 'uploaded',
+  const photoIds = getPhotoIdsForAlbum(albumId);
+  const missingIds = photoIds.filter(
+    photoId =>
+      !photoStateStore.getState().photoState[photoKey(albumId, photoId)],
   );
-  const queuedPhotoIds: string[] = [];
+  if (missingIds.length > 0) {
+    hydratePhotos(albumId, missingIds);
+  }
 
-  for (const photo of uploadedPhotos) {
+  const uploadedPhotoIds = photoIds.filter(photoId => {
+    const photo = getPhotoById(albumId, photoId);
+    return photo?.status === 'uploaded';
+  });
+
+  for (const photoId of uploadedPhotoIds) {
     updatePhoto(
       albumId,
-      photo.photoId,
+      photoId,
       entry => {
         entry.analysisProgress = 0;
         entry.analysisStatus = 'pending';
@@ -957,7 +991,6 @@ export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {
       },
       {recomputeTotals: false},
     );
-    queuedPhotoIds.push(photo.photoId);
   }
 
   culledAlbumStore.setState(state => {
@@ -965,13 +998,14 @@ export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {
     if (!album) {
       return;
     }
-    album.analysisBatchPhotoIds = queuedPhotoIds;
+    album.analysisBatchPhotoIds = uploadedPhotoIds;
+    album.analysisBatchCounts = createAnalysisBatchCounts(uploadedPhotoIds.length);
     recomputeAlbumTotals(album);
   });
 
-  syncPhotoStateForAlbum(albumId, getPhotosForAlbum(albumId));
+  flushPendingPhotoUpdates();
 
-  return queuedPhotoIds
+  return uploadedPhotoIds
     .map(photoId => getPhotoById(albumId, photoId))
     .filter((photo): photo is CulledAlbumPhoto => Boolean(photo));
 }
@@ -981,6 +1015,46 @@ export function clearAnalysisBatch(albumId: string): void {
     const album = state.albums[albumId];
     if (album) {
       album.analysisBatchPhotoIds = [];
+      album.analysisBatchCounts = undefined;
     }
   });
+}
+
+export function reconcileAnalysisBatchCounts(albumId: string): void {
+  const album = getAlbumFromState(albumId);
+  if (!album || album.analysisBatchPhotoIds.length === 0) {
+    return;
+  }
+
+  const counts = computeAnalysisBatchCountsForIds(
+    album.analysisBatchPhotoIds,
+    photoId => getPhotoById(albumId, photoId),
+  );
+
+  culledAlbumStore.setState(state => {
+    const entry = state.albums[albumId];
+    if (entry) {
+      entry.analysisBatchCounts = counts;
+    }
+  });
+}
+
+export function isAnalysisBatchComplete(albumId: string): boolean {
+  const album = getAlbumFromState(albumId);
+  if (!album) {
+    return false;
+  }
+  if (album.analysisBatchCounts) {
+    return isAnalysisBatchFinishedByCounts(album.analysisBatchCounts);
+  }
+  return (
+    album.analysisBatchPhotoIds.length > 0 &&
+    album.analysisBatchPhotoIds.every(photoId => {
+      const photo = getPhotoById(albumId, photoId);
+      return (
+        photo?.analysisStatus === 'analyzed' ||
+        photo?.analysisStatus === 'failed'
+      );
+    })
+  );
 }

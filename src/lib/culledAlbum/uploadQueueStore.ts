@@ -1,6 +1,11 @@
 import {createStateStore, useStateStore} from '@lib/react/state';
 
-export type QueueOperationStatus = 'idle' | 'active' | 'completed' | 'failed';
+export type QueueOperationStatus =
+  | 'idle'
+  | 'active'
+  | 'finalizing'
+  | 'completed'
+  | 'failed';
 
 export type QueueOperation = {
   status: QueueOperationStatus;
@@ -79,7 +84,7 @@ export function isQueueToastVisible(
   const operation = queueOperationForMode(mode);
   const {status, completionSeen} = getAlbumQueueState(albumId)[operation];
 
-  if (status === 'active') {
+  if (status === 'active' || status === 'finalizing') {
     return true;
   }
 
@@ -142,7 +147,7 @@ export function setQueueOperationStatus(
       state.queues[albumId] = {...defaultAlbumQueueState};
     }
     state.queues[albumId][operation].status = status;
-    if (status === 'active') {
+    if (status === 'active' || status === 'finalizing') {
       state.queues[albumId][operation].completionSeen = false;
     }
     if (status === 'completed' || status === 'failed') {
@@ -184,6 +189,7 @@ export function hasActiveQueueWork(): boolean {
     if (
       queue.localImport.status === 'active' ||
       queue.analysis.status === 'active' ||
+      queue.analysis.status === 'finalizing' ||
       queue.serverUpload.status === 'active'
     ) {
       return true;
@@ -202,6 +208,7 @@ export function hasActiveQueueWorkForAlbum(albumId: string): boolean {
   return (
     queue.localImport.status === 'active' ||
     queue.analysis.status === 'active' ||
+    queue.analysis.status === 'finalizing' ||
     queue.serverUpload.status === 'active'
   );
 }

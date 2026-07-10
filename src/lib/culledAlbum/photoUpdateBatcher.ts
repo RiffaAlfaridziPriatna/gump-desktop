@@ -1,5 +1,9 @@
 import {shouldDeferHeavyWorkForNavigation} from '@lib/navigation/uploadAwareNavigation';
-import type {CulledAlbumPhoto, LocalImportCountKey} from './types';
+import type {
+  AnalysisCountKey,
+  CulledAlbumPhoto,
+  LocalImportCountKey,
+} from './types';
 
 export type PhotoUpdateOptions = {
   recomputeTotals?: boolean;
@@ -7,6 +11,10 @@ export type PhotoUpdateOptions = {
   batchCountShift?: {
     from: LocalImportCountKey;
     to: LocalImportCountKey;
+  };
+  analysisCountShift?: {
+    from: AnalysisCountKey;
+    to: AnalysisCountKey;
   };
   immediate?: boolean;
 };
@@ -40,10 +48,10 @@ export function flushScheduledPhotoUpdates(): void {
   flushPendingPhotoUpdates(batchApplier);
 }
 
-function composeBatchCountShift(
-  left?: PhotoUpdateOptions['batchCountShift'],
-  right?: PhotoUpdateOptions['batchCountShift'],
-): PhotoUpdateOptions['batchCountShift'] {
+function composeCountShift<T extends string>(
+  left?: {from: T; to: T},
+  right?: {from: T; to: T},
+): {from: T; to: T} | undefined {
   if (!left) {
     return right;
   }
@@ -51,10 +59,21 @@ function composeBatchCountShift(
     return left;
   }
 
-  // Chain transitions for the same photo (e.g. pending→uploading then
-  // uploading→uploaded) into a single net shift (pending→uploaded) so no
-  // intermediate transition is dropped when updates are batched together.
   return {from: left.from, to: right.to};
+}
+
+function composeBatchCountShift(
+  left?: PhotoUpdateOptions['batchCountShift'],
+  right?: PhotoUpdateOptions['batchCountShift'],
+): PhotoUpdateOptions['batchCountShift'] {
+  return composeCountShift(left, right);
+}
+
+function composeAnalysisCountShift(
+  left?: PhotoUpdateOptions['analysisCountShift'],
+  right?: PhotoUpdateOptions['analysisCountShift'],
+): PhotoUpdateOptions['analysisCountShift'] {
+  return composeCountShift(left, right);
 }
 
 function mergeOptions(
@@ -74,6 +93,10 @@ function mergeOptions(
     batchCountShift: composeBatchCountShift(
       left.batchCountShift,
       right.batchCountShift,
+    ),
+    analysisCountShift: composeAnalysisCountShift(
+      left.analysisCountShift,
+      right.analysisCountShift,
     ),
     immediate: right.immediate ?? left.immediate,
   };

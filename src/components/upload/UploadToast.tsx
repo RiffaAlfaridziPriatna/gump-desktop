@@ -101,6 +101,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
 
   const visible =
     queueOperation.status === 'active' ||
+    queueOperation.status === 'finalizing' ||
     ((queueOperation.status === 'completed' ||
       queueOperation.status === 'failed') &&
       !queueOperation.completionSeen);
@@ -160,10 +161,20 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   const importFinished =
     mode === 'upload' &&
     (queueOperation.status === 'completed' || queueOperation.status === 'failed');
+  const photosBatchDone =
+    batchTotal > 0 && counts.completed + counts.failed >= batchTotal;
+  const isFinalizingAnalysis =
+    mode === 'analyze' &&
+    photosBatchDone &&
+    (queueOperation.status === 'active' ||
+      queueOperation.status === 'finalizing');
   const completed =
     mode === 'upload'
       ? importFinished
-      : batchTotal > 0 && counts.completed + counts.failed >= batchTotal;
+      : mode === 'analyze'
+        ? queueOperation.status === 'completed' ||
+          (queueOperation.status === 'failed' && photosBatchDone)
+        : photosBatchDone;
   const uploadCompletedCount =
     mode === 'upload' && importFinished
       ? queueOperation.uploadedCount
@@ -196,6 +207,10 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
       return computeServerUploadBatchProgress(renderItems, serverBatchPhotoIds);
     }
 
+    if (isFinalizingAnalysis) {
+      return 1;
+    }
+
     if (batchTotal === 0) {
       return 0;
     }
@@ -206,6 +221,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     batchTotal,
     counts,
     importFinished,
+    isFinalizingAnalysis,
     localImportProgress,
     mode,
     queueOperation.batchTotal,
@@ -219,7 +235,9 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     mode === 'upload'
       ? `Uploading ${uploadInProgressRemaining} photos`
       : mode === 'analyze'
-        ? `Analyzing ${counts.pending + counts.inProgress} photos`
+        ? isFinalizingAnalysis
+          ? 'Finalizing analysis...'
+          : `Analyzing ${counts.pending + counts.inProgress} photos`
         : `Uploading ${counts.pending + counts.inProgress} photos to server`;
   const completedLabel =
     mode === 'upload'
