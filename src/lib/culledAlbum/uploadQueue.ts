@@ -271,7 +271,10 @@ export function createUploadQueue(deps: UploadQueueDeps) {
           albumId,
           photoId,
           entry => {
-            entry.file = localFile;
+            entry.file = {
+              ...localFile,
+              name: entry.file.name,
+            };
             entry.progress = 100;
             entry.status = 'uploaded';
           },

@@ -43,7 +43,10 @@ export async function syncAlbumWithDisk(
         existing.status === 'pending' || existing.status === 'uploading';
       merged.push({
         ...existing,
-        file,
+        file: {
+          ...file,
+          name: existing.file.name,
+        },
         status: wasInFlight ? 'uploaded' : existing.status,
         progress: wasInFlight ? 100 : existing.progress,
       });
@@ -92,13 +95,14 @@ export async function syncAlbumWithDisk(
     ...album,
     photos: sortPhotosByFilename(merged),
   };
-  nextAlbum.totalPhotos = orderIds.length;
+  nextAlbum.totalPhotos = nextAlbum.photos.length;
   recomputeAlbumTotals(nextAlbum);
 
   if (!hasInFlightUploads(nextAlbum)) {
     await saveAlbum(toPersistableAlbum(nextAlbum), {includePhotos: true});
   }
 
-  setPhotoOrder(album.albumId, orderIds);
-  return {album: nextAlbum, photoOrder: orderIds};
+  const sortedPhotoOrder = nextAlbum.photos.map(photo => photo.photoId);
+  setPhotoOrder(album.albumId, sortedPhotoOrder);
+  return {album: nextAlbum, photoOrder: sortedPhotoOrder};
 }
