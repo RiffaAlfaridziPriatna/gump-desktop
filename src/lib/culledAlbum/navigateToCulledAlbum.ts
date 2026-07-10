@@ -6,8 +6,13 @@ import {
 import type {MainStackParamList} from '../../app/MainNavigator';
 import type {StackNavigationProp} from '@react-navigation/stack';
 import {resolveCulledAlbumRouteFromMemory} from './service';
-import {culledAlbumStore} from './store';
-import {hasActiveQueueWork, hasActiveQueueWorkForAlbum} from './uploadQueueStore';
+import {culledAlbumStore, getPhotosForAlbum} from './store';
+import {hasInFlightServerUploads} from './types';
+import {
+  getAlbumQueueState,
+  hasActiveQueueWork,
+  hasActiveQueueWorkForAlbum,
+} from './uploadQueueStore';
 import {CulledAlbumListItem} from './types';
 
 function preloadUploadedThumbnails(albumId: string): void {
@@ -18,6 +23,36 @@ function preloadUploadedThumbnails(albumId: string): void {
     .slice(0, 8)
     .map(photo => photo.file.uri);
   preloadImages(uris).catch(() => undefined);
+}
+
+function navigateToServerUploadProgressIfActive(
+  navigation: StackNavigationProp<MainStackParamList, 'Home'>,
+  album: CulledAlbumListItem,
+): boolean {
+  const albumId = album.albumId;
+  const storedAlbum = culledAlbumStore.getState().albums[albumId];
+  const batchPhotoIds = storedAlbum?.uploadBatchPhotoIds ?? [];
+  if (batchPhotoIds.length === 0) {
+    return false;
+  }
+
+  const queue = getAlbumQueueState(albumId);
+  const photos = getPhotosForAlbum(albumId);
+  const isActive =
+    queue.serverUpload.status === 'active' ||
+    (storedAlbum ? hasInFlightServerUploads(storedAlbum, photos) : false);
+
+  if (!isActive) {
+    return false;
+  }
+
+  navigation.navigate('CulledAlbumUploadProgress', {
+    albumId,
+    photoCount: batchPhotoIds.length,
+    albumName: album.title ?? album.name,
+    albumLink: album.link ?? storedAlbum?.link ?? '',
+  });
+  return true;
 }
 
 function resolveRouteFromListItem(
@@ -43,6 +78,9 @@ export function navigateToCulledAlbum(
   const route = resolveRouteFromListItem(album);
 
   if (route === 'CulledAlbumDetail') {
+    if (navigateToServerUploadProgressIfActive(navigation, album)) {
+      return;
+    }
     preloadUploadedThumbnails(album.albumId);
     navigation.navigate(
       'CulledAlbumDetail',

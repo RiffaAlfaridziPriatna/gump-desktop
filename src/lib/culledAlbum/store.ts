@@ -589,21 +589,25 @@ export function startServerUploadBatch(
     );
   }
 
-  syncPhotoStateForAlbum(albumId, getPhotosForAlbum(albumId));
+  flushPendingPhotoUpdates();
 }
 
 export async function checkServerUploadBatchComplete(
   albumId: string,
 ): Promise<void> {
+  flushPendingPhotoUpdates();
+
   const album = getAlbumFromState(albumId);
-  if (
-    !album ||
-    !isServerUploadBatchFinished(album.photos, album.uploadBatchPhotoIds)
-  ) {
+  if (!album || album.uploadBatchPhotoIds.length === 0) {
     return;
   }
 
-  if (isServerUploadBatchSuccessful(album.photos, album.uploadBatchPhotoIds)) {
+  const photos = getPhotosForAlbum(albumId);
+  if (!isServerUploadBatchFinished(photos, album.uploadBatchPhotoIds)) {
+    return;
+  }
+
+  if (isServerUploadBatchSuccessful(photos, album.uploadBatchPhotoIds)) {
     await markCullingHasUploads(albumId);
     setQueueOperationStatus(albumId, 'serverUpload', 'completed');
   } else {

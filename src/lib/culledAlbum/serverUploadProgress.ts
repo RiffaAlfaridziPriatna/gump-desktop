@@ -1,5 +1,39 @@
 import {CulledAlbumPhoto} from './types';
 
+export type ServerUploadBatchCounts = {
+  pending: number;
+  inProgress: number;
+  completed: number;
+  failed: number;
+};
+
+export function countServerUploadBatchItems(
+  photos: CulledAlbumPhoto[],
+  batchPhotoIds: string[],
+): ServerUploadBatchCounts {
+  const counts: ServerUploadBatchCounts = {
+    pending: 0,
+    inProgress: 0,
+    completed: 0,
+    failed: 0,
+  };
+  const batchPhotos = getServerUploadBatchPhotos(photos, batchPhotoIds);
+
+  for (const photo of batchPhotos) {
+    if (photo.serverUploadStatus === 'pending') {
+      counts.pending++;
+    } else if (photo.serverUploadStatus === 'uploading') {
+      counts.inProgress++;
+    } else if (photo.serverUploadStatus === 'uploaded') {
+      counts.completed++;
+    } else if (photo.serverUploadStatus === 'failed') {
+      counts.failed++;
+    }
+  }
+
+  return counts;
+}
+
 export function getServerUploadBatchPhotos(
   photos: CulledAlbumPhoto[],
   batchPhotoIds: string[],

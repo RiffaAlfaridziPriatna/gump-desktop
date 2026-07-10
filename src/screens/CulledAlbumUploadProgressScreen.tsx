@@ -1,7 +1,11 @@
 import {ProgressBar} from '@components/ui';
-import {useCulledAlbumServerUploadBatch} from '@context/culledAlbum';
+import {
+  useCulledAlbumActions,
+  useCulledAlbumServerUploadBatch,
+} from '@context/culledAlbum';
 import {
   computeServerUploadBatchProgress,
+  countServerUploadBatchItems,
   isServerUploadBatchFinished,
   isServerUploadBatchSuccessful,
 } from '@lib/culledAlbum/serverUploadProgress';
@@ -25,16 +29,28 @@ export default function CulledAlbumUploadProgressScreen({
 }: Props) {
   const {albumId, photoCount, albumName, albumLink} = route.params;
   const {screenPaddingHorizontal, isMobileLayout} = useLayout();
+  const {resumeInFlightWork} = useCulledAlbumActions();
   const {batchPhotoIds, photos} = useCulledAlbumServerUploadBatch(albumId);
 
   const progress = computeServerUploadBatchProgress(photos, batchPhotoIds);
   const finished = isServerUploadBatchFinished(photos, batchPhotoIds);
   const successful = isServerUploadBatchSuccessful(photos, batchPhotoIds);
-  const failedCount = photos.filter(
-    photo => photo.serverUploadStatus === 'failed',
-  ).length;
+  const counts = countServerUploadBatchItems(photos, batchPhotoIds);
+  const remainingCount = counts.pending + counts.inProgress;
+  const totalCount = batchPhotoIds.length || photoCount;
+  const title = finished
+    ? counts.failed > 0
+      ? `Uploaded ${counts.completed} of ${totalCount} Photos`
+      : `Uploaded ${counts.completed} Photo${counts.completed === 1 ? '' : 's'}`
+    : `Uploading ${remainingCount || totalCount} Photo${
+        (remainingCount || totalCount) === 1 ? '' : 's'
+      }`;
 
   const [headerHeight, setHeaderHeight] = useState(0);
+
+  useEffect(() => {
+    resumeInFlightWork(albumId);
+  }, [albumId, resumeInFlightWork]);
 
   useEffect(() => {
     if (!finished) {
@@ -78,7 +94,7 @@ export default function CulledAlbumUploadProgressScreen({
         ]}>
         <View style={styles.content}>
           <View style={styles.infoContainer}>
-            <Text style={styles.title}>Uploading {photoCount} Photos</Text>
+            <Text style={styles.title}>{title}</Text>
             <Text style={styles.subtitle}>
               Your photos are being uploaded to your Gump album.{'\n'}
               Please keep this window open.
@@ -91,9 +107,9 @@ export default function CulledAlbumUploadProgressScreen({
             fillColor={colors.accent}
             style={styles.progressBar}
           />
-          {finished && failedCount > 0 && (
+          {finished && counts.failed > 0 && (
             <Text style={styles.errorText}>
-              {failedCount} photo{failedCount === 1 ? '' : 's'} failed to upload.
+              {counts.failed} photo{counts.failed === 1 ? '' : 's'} failed to upload.
               Close to return home.
             </Text>
           )}

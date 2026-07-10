@@ -23,8 +23,8 @@ export class UploadSelectedPhotosUseCase {
     syncPhotoFromStore(albumId, photoId);
   }
 
-  updateProgress(albumId: string, photoId: string, _progress: number): void {
-    syncPhotoFromStore(albumId, photoId);
+  updateProgress(_albumId: string, _photoId: string, _progress: number): void {
+    // Progress is memory-only; persist on start/complete/fail.
   }
 
   markUploaded(albumId: string, photoId: string): void {

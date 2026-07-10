@@ -50,7 +50,7 @@ import {
 } from './culledAlbumContext';
 
 const MAX_CONCURRENT_UPLOADS = 8;
-const MAX_CONCURRENT_SERVER_UPLOADS = 4;
+const MAX_CONCURRENT_SERVER_UPLOADS = 8;
 const MAX_CONCURRENT_ANALYSIS = 4;
 
 let cachedUseCases: ReturnType<typeof resolveUseCases> | null = null;
@@ -200,6 +200,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
   const startSelectedUpload = useCallback((albumId: string, photoIds: string[]) => {
     startServerUploadBatch(albumId, photoIds);
+    flushPendingPhotoUpdates();
     serverUploadQueueRef.current!.resetActiveUploadCount(albumId);
     setQueueOperationStatus(albumId, 'serverUpload', 'active');
     persistAlbum(albumId).catch(() => undefined);

@@ -42,8 +42,8 @@ export async function uploadServerPhoto(
       if (entry.serverUploadStatus === 'failed') {
         return;
       }
-      entry.serverUploadProgress = progress;
-      entry.serverUploadStatus = progress >= 100 ? 'uploaded' : 'uploading';
+      entry.serverUploadProgress = Math.min(progress, 99);
+      entry.serverUploadStatus = 'uploading';
     });
     getUploadSelectedPhotosUseCase().updateProgress(albumId, photoId, progress);
   };

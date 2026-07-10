@@ -56,14 +56,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const isFocused = useIsFocused();
   const {resumeInFlightWork, startSelectedUpload} = useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
-
-  useEffect(() => {
-    if (!isFocused) {
-      return;
-    }
-    resumeInFlightWork(albumId);
-  }, [albumId, isFocused, resumeInFlightWork]);
-
   const {photos, loadError, loadingPhotos} = useCulledAlbumPhotos(albumId);
   const albumPhotos = useCulledAlbumPhotosState(albumId);
   const cullingCompleted = useCulledAlbumStore(
@@ -80,6 +72,12 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     state => state.albums[albumId]?.link ?? '',
   );
 
+  useEffect(() => {
+    if (!isFocused) {
+      return;
+    }
+    resumeInFlightWork(albumId);
+  }, [albumId, isFocused, resumeInFlightWork]);
   const {
     stats,
     keyFaces,

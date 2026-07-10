@@ -41,7 +41,10 @@ export class MultipartUploadError extends Error {
     requestId?: string;
     hostId?: string;
   }) {
-    super('');
+    const message = params.lastStatus
+      ? `Upload failed (HTTP ${params.lastStatus})`
+      : `Upload failed (${params.category})`;
+    super(message);
     this.name = 'MultipartUploadError';
     this.attempts = params.attempts;
     this.category = params.category;
