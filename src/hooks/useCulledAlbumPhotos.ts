@@ -1,13 +1,20 @@
 import {yieldToMain} from '@lib/async/yieldToMain';
 import {culledAlbumStore, ensureAlbumLoaded} from '@lib/culledAlbum/store';
-import {hydratePhotos, ensurePhotoOrder} from '@lib/culledAlbum/photoLoader';
-import {cullingEngine} from '@lib/culling/cullingEngine';
-import {photoStateStore} from '@lib/culledAlbum/photoStateStore';
+import {
+  alignPhotoOrderByFilename,
+  hydratePhotos,
+} from '@lib/culledAlbum/photoLoader';
+import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
+import {
+  resolveExistingThumbnailsForPhotos,
+  scheduleResolveExistingThumbnails,
+} from '@lib/culledAlbum/thumbnailBackfill';
 import {useCulledAlbumPhotosState} from '@context/culledAlbum';
 import {FileAsset} from '@services/upload/types';
 import {useCallback, useEffect, useMemo, useState} from 'react';
 
 const HYDRATE_BATCH_SIZE = 48;
+const FIRST_PAINT_THUMBNAIL_COUNT = 12;
 
 type Options = {
   skipInitialLoad?: boolean;
@@ -16,10 +23,18 @@ type Options = {
 function hasCachedAlbumPhotos(albumId: string): boolean {
   const order = photoStateStore.getState().photoOrder[albumId];
   if (order && order.length > 0) {
-    return true;
+    const firstPhotoKey = photoKey(albumId, order[0]!);
+    if (photoStateStore.getState().photoState[firstPhotoKey]) {
+      return true;
+    }
   }
   const album = culledAlbumStore.getState().albums[albumId];
-  return Boolean(album && album.photos.length > 0);
+  return Boolean(
+    album &&
+      album.photos.some(
+        photo => photo.status === 'uploaded' && Boolean(photo.file.uri),
+      ),
+  );
 }
 
 export function useCulledAlbumPhotos(albumId: string, options?: Options) {
@@ -33,17 +48,25 @@ export function useCulledAlbumPhotos(albumId: string, options?: Options) {
     setLoadError(null);
     try {
       await ensureAlbumLoaded(albumId);
-      const photoIds = ensurePhotoOrder(albumId);
+      const photoIds = alignPhotoOrderByFilename(albumId);
+
+      const firstPaintIds = photoIds.slice(0, FIRST_PAINT_THUMBNAIL_COUNT);
+      if (firstPaintIds.length > 0) {
+        hydratePhotos(albumId, firstPaintIds);
+        await resolveExistingThumbnailsForPhotos(albumId, firstPaintIds);
+      }
+
       for (let index = 0; index < photoIds.length; index += HYDRATE_BATCH_SIZE) {
-        hydratePhotos(albumId, photoIds.slice(index, index + HYDRATE_BATCH_SIZE));
+        const batchIds = photoIds.slice(index, index + HYDRATE_BATCH_SIZE);
+        hydratePhotos(albumId, batchIds);
+        const remainingForThumbs =
+          index === 0 ? batchIds.slice(firstPaintIds.length) : batchIds;
+        if (remainingForThumbs.length > 0) {
+          scheduleResolveExistingThumbnails(albumId, remainingForThumbs);
+        }
         if (index + HYDRATE_BATCH_SIZE < photoIds.length) {
           await yieldToMain();
         }
-      }
-
-      const album = culledAlbumStore.getState().albums[albumId];
-      if (album?.cullingCompleted) {
-        void cullingEngine.refreshDuplicateFlags(albumId);
       }
     } catch (err) {
       setLoadError(

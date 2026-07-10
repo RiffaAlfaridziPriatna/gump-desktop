@@ -1,9 +1,13 @@
 import {container} from '@di/container';
 import {TOKENS} from '@di/tokens';
 import {IPhotoRepository} from '@domain/repositories/IPhotoRepository';
-import {CulledAlbumPhoto} from './types';
+import {CulledAlbumPhoto, comparePhotosByFilename} from './types';
 import {domainPhotoToLegacy} from './photoMapper';
-import {photoKey, photoStateStore} from './photoStateStore';
+import {
+  bumpPhotoGridRevision,
+  photoKey,
+  photoStateStore,
+} from './photoStateStore';
 
 export function getPhotoIdsForAlbum(albumId: string): string[] {
   const order = photoStateStore.getState().photoOrder[albumId];
@@ -67,6 +71,7 @@ export function hydratePhotos(
           nextState.photoState[photoKey(albumId, photo.photoId)] = photo;
         }
       });
+      bumpPhotoGridRevision(albumId);
     }
   }
 
@@ -90,4 +95,38 @@ export function ensurePhotoOrder(albumId: string): string[] {
     .findPhotoIds(albumId);
   setPhotoOrder(albumId, photoIds);
   return photoIds;
+}
+
+export function alignPhotoOrderByFilename(albumId: string): string[] {
+  const photoIds = ensurePhotoOrder(albumId);
+  if (photoIds.length <= 1) {
+    return photoIds;
+  }
+
+  const currentOrder = photoIds.join(':');
+  const state = photoStateStore.getState();
+  const hydratedPhotos = photoIds
+    .map(photoId => state.photoState[photoKey(albumId, photoId)])
+    .filter((photo): photo is CulledAlbumPhoto => Boolean(photo));
+
+  let sortedIds: string[];
+  if (hydratedPhotos.length === photoIds.length) {
+    sortedIds = [...hydratedPhotos]
+      .sort(comparePhotosByFilename)
+      .map(photo => photo.photoId);
+  } else {
+    const photoRepo = container.resolve<IPhotoRepository>(TOKENS.IPhotoRepository);
+    sortedIds = photoRepo
+      .findByAlbum(albumId)
+      .map(domainPhotoToLegacy)
+      .sort(comparePhotosByFilename)
+      .map(photo => photo.photoId);
+  }
+
+  if (sortedIds.join(':') === currentOrder) {
+    return photoIds;
+  }
+
+  setPhotoOrder(albumId, sortedIds);
+  return sortedIds;
 }

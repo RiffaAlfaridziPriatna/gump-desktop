@@ -38,6 +38,19 @@ export function useAlbumDetailGridPhotos(albumId: string): AlbumGridFileItem[] {
     photoStateStore,
     state => state.gridRevision[albumId] ?? 0,
   );
+  const hydratedCount = useStateStore(photoStateStore, state => {
+    const order = state.photoOrder[albumId];
+    if (!order || order.length === 0) {
+      return 0;
+    }
+    let count = 0;
+    for (const photoId of order) {
+      if (state.photoState[photoKey(albumId, photoId)]) {
+        count++;
+      }
+    }
+    return count;
+  });
   const stableCacheRef = useRef(new Map<string, AlbumGridFileItem>());
   const previousItemsRef = useRef<AlbumGridFileItem[]>([]);
 
@@ -50,5 +63,5 @@ export function useAlbumDetailGridPhotos(albumId: string): AlbumGridFileItem[] {
     );
     previousItemsRef.current = stableItems;
     return stableItems;
-  }, [albumId, gridRevision, photoOrder]);
+  }, [albumId, gridRevision, hydratedCount, photoOrder]);
 }
