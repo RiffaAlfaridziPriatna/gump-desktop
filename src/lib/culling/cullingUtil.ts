@@ -172,9 +172,17 @@ export function computeKeyFaces(
   const faceIdToAnalysis = new Map<string, CullingFace>();
 
   for (const photo of photos) {
-    for (const face of photo.faces) {
-      const faceId = face.rekognitionFaceId;
-      if (!faceId) continue;
+    const usedClusterIdsInPhoto = new Set<string>();
+
+    photo.faces.forEach((face, index) => {
+      let faceId = face.rekognitionFaceId;
+      if (!faceId) {
+        faceId = `${photo.photoId}#${index}`;
+      } else if (usedClusterIdsInPhoto.has(faceId)) {
+        faceId = `${photo.photoId}#${index}`;
+      } else {
+        usedClusterIdsInPhoto.add(faceId);
+      }
 
       const photoIds = faceIdToPhotoIds.get(faceId) ?? new Set<string>();
       photoIds.add(photo.photoId);
@@ -182,7 +190,7 @@ export function computeKeyFaces(
       if (!faceIdToAnalysis.has(faceId)) {
         faceIdToAnalysis.set(faceId, face);
       }
-    }
+    });
   }
 
   return [...faceIdToPhotoIds.entries()]
@@ -199,8 +207,11 @@ export function computeKeyFaces(
     .sort((a, b) => b.occurrenceCount - a.occurrenceCount);
 }
 
-/** Stricter threshold when matching a face to someone seen in another photo. */
-export const FACE_CLUSTER_CROSS_PHOTO_THRESHOLD = 0.1;
+/**
+ * Max fingerprint distance to reuse a person cluster across photos.
+ * Lower = harder to merge (more Key Faces). Higher = more aggressive merging.
+ */
+export const FACE_CLUSTER_CROSS_PHOTO_THRESHOLD = 0.05;
 
 type FaceClusterMatch = {
   faceIndex: number;
@@ -229,29 +240,31 @@ export function assignFaceClustersToSinglePhoto(
     null,
   );
 
-  const candidateMatches: FaceClusterMatch[] = [];
-  for (let faceIndex = 0; faceIndex < faces.length; faceIndex++) {
-    const fingerprint = fingerprints[faceIndex]!;
-    for (const [clusterId, representative] of clusterRepresentatives) {
-      const distance = fingerprintDistance(fingerprint, representative);
-      if (distance < FACE_CLUSTER_CROSS_PHOTO_THRESHOLD) {
-        candidateMatches.push({faceIndex, clusterId, distance});
+  if (FACE_CLUSTER_CROSS_PHOTO_THRESHOLD > 0) {
+    const candidateMatches: FaceClusterMatch[] = [];
+    for (let faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+      const fingerprint = fingerprints[faceIndex]!;
+      for (const [clusterId, representative] of clusterRepresentatives) {
+        const distance = fingerprintDistance(fingerprint, representative);
+        if (distance < FACE_CLUSTER_CROSS_PHOTO_THRESHOLD) {
+          candidateMatches.push({faceIndex, clusterId, distance});
+        }
       }
     }
-  }
 
-  candidateMatches.sort((a, b) => a.distance - b.distance);
+    candidateMatches.sort((a, b) => a.distance - b.distance);
 
-  const usedClusterIds = new Set<string>();
-  for (const match of candidateMatches) {
-    if (assignedClusterIds[match.faceIndex] !== null) {
-      continue;
+    const usedClusterIds = new Set<string>();
+    for (const match of candidateMatches) {
+      if (assignedClusterIds[match.faceIndex] !== null) {
+        continue;
+      }
+      if (usedClusterIds.has(match.clusterId)) {
+        continue;
+      }
+      assignedClusterIds[match.faceIndex] = match.clusterId;
+      usedClusterIds.add(match.clusterId);
     }
-    if (usedClusterIds.has(match.clusterId)) {
-      continue;
-    }
-    assignedClusterIds[match.faceIndex] = match.clusterId;
-    usedClusterIds.add(match.clusterId);
   }
 
   for (let faceIndex = 0; faceIndex < faces.length; faceIndex++) {

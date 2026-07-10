@@ -38,10 +38,10 @@ export function useCulledAlbumDetailData(
 
   const liveKeyFaces = useMemo(
     () =>
-      needsLiveSummary && photosReady && analyzedPhotos.length > 0
+      photosReady && analyzedPhotos.length > 0
         ? computeKeyFaces(analyzedPhotos)
         : null,
-    [analyzedPhotos, needsLiveSummary, photosReady],
+    [analyzedPhotos, photosReady],
   );
 
   const mySelectionsLive = useMemo(
@@ -59,15 +59,32 @@ export function useCulledAlbumDetailData(
     return {...liveStats, mySelections: mySelectionsLive};
   }, [liveStats, mySelectionsLive, persistedStats]);
 
-  const keyFaces = persistedKeyFaces ?? liveKeyFaces ?? [];
+  const keyFaces = liveKeyFaces ?? persistedKeyFaces ?? [];
 
   useEffect(() => {
-    if (!photosReady || persistedStats || analyzedPhotos.length === 0) {
+    if (!photosReady || analyzedPhotos.length === 0) {
+      return;
+    }
+    const liveCount = liveKeyFaces?.length ?? 0;
+    if (liveCount === 0) {
+      return;
+    }
+    if (
+      persistedKeyFaces &&
+      persistedKeyFaces.length > 0 &&
+      liveCount === persistedKeyFaces.length
+    ) {
       return;
     }
     updateCullingSummary(albumId);
     persistAlbum(albumId).catch(() => undefined);
-  }, [albumId, analyzedPhotos.length, persistedStats, photosReady]);
+  }, [
+    albumId,
+    analyzedPhotos.length,
+    liveKeyFaces?.length,
+    persistedKeyFaces,
+    photosReady,
+  ]);
 
   const isAnalyzing = useMemo(
     () =>

@@ -131,6 +131,18 @@ export function resolveKeyFaceSource(
   photos: APIResponse.CullingPhoto[],
   filesByPhotoId: Map<string, FileAsset>,
 ): {uri: string; boundingBox: CullingBoundingBox} | null {
+  const occurrenceMatch = /^(.+)#(\d+)$/.exec(keyFace.faceId);
+  if (occurrenceMatch) {
+    const photoId = occurrenceMatch[1]!;
+    const faceIndex = Number(occurrenceMatch[2]);
+    const photo = photos.find(entry => entry.photoId === photoId);
+    const file = filesByPhotoId.get(photoId);
+    const face = photo?.faces[faceIndex];
+    if (face && file) {
+      return {uri: file.uri, boundingBox: face.boundingBox};
+    }
+  }
+
   for (const photoId of keyFace.photoIds) {
     const photo = photos.find(entry => entry.photoId === photoId);
     const file = filesByPhotoId.get(photoId);

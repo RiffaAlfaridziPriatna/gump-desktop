@@ -64,7 +64,7 @@ function mapNativeFace(
     brightness: face.brightness ?? 0,
     landmarks: face.landmarks ?? [],
     pose: face.pose ?? {pitch: 0, roll: 0, yaw: 0},
-    rekognitionFaceId: `${photoId}-${face.faceId ?? index}`,
+    rekognitionFaceId: `${photoId}-${index}`,
   };
 }
 
