@@ -34,8 +34,8 @@ import {
 } from './photoLoader';
 import {finishLocalImportQueue, getAlbumQueueState, hasActiveQueueWork, setQueueOperationStatus} from './uploadQueueStore';
 import {
+  getServerUploadBatchPhotos,
   isServerUploadBatchFinished,
-  isServerUploadBatchSuccessful,
 } from './serverUploadProgress';
 import {
   createCulledAlbumPhoto,
@@ -607,12 +607,11 @@ export async function checkServerUploadBatchComplete(
     return;
   }
 
-  if (isServerUploadBatchSuccessful(photos, album.uploadBatchPhotoIds)) {
+  const batchPhotos = getServerUploadBatchPhotos(photos, album.uploadBatchPhotoIds);
+  if (batchPhotos.some(photo => photo.serverUploadStatus === 'uploaded')) {
     await markCullingHasUploads(albumId);
-    setQueueOperationStatus(albumId, 'serverUpload', 'completed');
-  } else {
-    setQueueOperationStatus(albumId, 'serverUpload', 'failed');
   }
+  setQueueOperationStatus(albumId, 'serverUpload', 'completed');
   await persistAlbum(albumId);
 }
 

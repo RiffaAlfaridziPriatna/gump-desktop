@@ -7,7 +7,6 @@ import {
   computeServerUploadBatchProgress,
   countServerUploadBatchItems,
   isServerUploadBatchFinished,
-  isServerUploadBatchSuccessful,
 } from '@lib/culledAlbum/serverUploadProgress';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
@@ -34,14 +33,11 @@ export default function CulledAlbumUploadProgressScreen({
 
   const progress = computeServerUploadBatchProgress(photos, batchPhotoIds);
   const finished = isServerUploadBatchFinished(photos, batchPhotoIds);
-  const successful = isServerUploadBatchSuccessful(photos, batchPhotoIds);
   const counts = countServerUploadBatchItems(photos, batchPhotoIds);
   const remainingCount = counts.pending + counts.inProgress;
   const totalCount = batchPhotoIds.length || photoCount;
   const title = finished
-    ? counts.failed > 0
-      ? `Uploaded ${counts.completed} of ${totalCount} Photos`
-      : `Uploaded ${counts.completed} Photo${counts.completed === 1 ? '' : 's'}`
+    ? `Uploaded ${counts.completed} Photo${counts.completed === 1 ? '' : 's'}`
     : `Uploading ${remainingCount || totalCount} Photo${
         (remainingCount || totalCount) === 1 ? '' : 's'
       }`;
@@ -57,14 +53,12 @@ export default function CulledAlbumUploadProgressScreen({
       return;
     }
 
-    if (successful) {
-      navigation.replace('CulledAlbumUploadSuccess', {
-        albumId,
-        albumLink,
-        albumName,
-      });
-    }
-  }, [albumId, albumLink, albumName, finished, navigation, successful]);
+    navigation.replace('CulledAlbumUploadSuccess', {
+      albumId,
+      albumLink,
+      albumName,
+    });
+  }, [albumId, albumLink, albumName, finished, navigation]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -107,12 +101,6 @@ export default function CulledAlbumUploadProgressScreen({
             fillColor={colors.accent}
             style={styles.progressBar}
           />
-          {finished && counts.failed > 0 && (
-            <Text style={styles.errorText}>
-              {counts.failed} photo{counts.failed === 1 ? '' : 's'} failed to upload.
-              Close to return home.
-            </Text>
-          )}
         </View>
       </View>
     </SafeAreaView>
@@ -167,11 +155,5 @@ const styles = StyleSheet.create({
     width: '100%',
     borderWidth: 1,
     borderColor: colors.textGray,
-  },
-  errorText: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.error,
-    textAlign: 'center',
   },
 });
