@@ -54,7 +54,7 @@ type SelectAlbumCardProps = AlbumCardBaseProps & {
 
 export type AlbumCardProps = HomepageAlbumCardProps | SelectAlbumCardProps;
 
-const COVER_HEIGHT = 200;
+const COVER_HEIGHT = 220;
 
 function AlbumCover({album, width}: {album: AlbumCardAlbum; width: number}) {
   const coverUrl = album.cover?.preview?.large?.url;
@@ -406,7 +406,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
   },
   ownerName: {
     fontFamily: fonts.serif,
