@@ -173,7 +173,7 @@ export function computeKeyFaces(
 
   const focusRank = (level: APIResponse.CullingFocusLevel): number => {
     switch (level) {
-      case 'blurred':
+      case 'good':
         return 2;
       case 'soft':
         return 1;
@@ -184,7 +184,7 @@ export function computeKeyFaces(
 
   const eyeRank = (status: APIResponse.CullingEyeStatus): number => {
     switch (status) {
-      case 'closed':
+      case 'open':
         return 2;
       case 'partial':
         return 1;
