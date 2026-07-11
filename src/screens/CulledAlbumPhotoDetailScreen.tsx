@@ -35,6 +35,13 @@ import IconStarOutlined from '../assets/images/icon_star_outlined.svg';
 
 type Props = StackScreenProps<MainStackParamList, 'CulledAlbumPhotoDetail'>;
 
+const KEY_FACE_ITEM_SIZE = 64;
+const KEY_FACE_COLUMN_COUNT = 4;
+const KEY_FACE_GAP = 24;
+const KEY_FACE_SIDEBAR_WIDTH =
+  KEY_FACE_COLUMN_COUNT * KEY_FACE_ITEM_SIZE +
+  (KEY_FACE_COLUMN_COUNT - 1) * KEY_FACE_GAP;
+
 export default function CulledAlbumPhotoDetailScreen({
   navigation,
   route,
@@ -142,7 +149,7 @@ export default function CulledAlbumPhotoDetailScreen({
         boundingBox={face.boundingBox}
         eyeStatus={face.eyeStatus}
         focusLevel={face.focusLevel}
-        width={64}
+        width={KEY_FACE_ITEM_SIZE}
         imageSize={imageSize}
         selected={zoomFaceIndex === index}
         onPress={() =>
@@ -281,7 +288,7 @@ export default function CulledAlbumPhotoDetailScreen({
                   keyExtractor={(_, index) => `face-${index}`}
                   renderItem={renderKeyFaceItem}
                   horizontal={isMobileLayout}
-                  numColumns={isMobileLayout ? undefined : 3}
+                  numColumns={isMobileLayout ? undefined : KEY_FACE_COLUMN_COUNT}
                   columnWrapperStyle={
                     isMobileLayout ? undefined : styles.keyFaceRow
                   }
@@ -292,8 +299,12 @@ export default function CulledAlbumPhotoDetailScreen({
                   ]}
                   showsVerticalScrollIndicator={!isMobileLayout}
                   showsHorizontalScrollIndicator={isMobileLayout}
-                  initialNumToRender={isMobileLayout ? 6 : 9}
-                  maxToRenderPerBatch={isMobileLayout ? 6 : 9}
+                  initialNumToRender={
+                    isMobileLayout ? 6 : KEY_FACE_COLUMN_COUNT * 3
+                  }
+                  maxToRenderPerBatch={
+                    isMobileLayout ? 6 : KEY_FACE_COLUMN_COUNT * 3
+                  }
                   windowSize={3}
                   removeClippedSubviews
                 />
@@ -419,7 +430,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   mainColumn: {
-    width: '70%',
+    flex: 1,
     minHeight: 0,
   },
   mainColumnMobile: {
@@ -427,9 +438,9 @@ const styles = StyleSheet.create({
     minHeight: 280,
   },
   sidebar: {
-    flex: 1,
+    width: KEY_FACE_SIDEBAR_WIDTH,
     minHeight: 0,
-    gap: 24,
+    gap: KEY_FACE_GAP,
   },
   sidebarMobile: {
     flex: undefined,
@@ -447,12 +458,11 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   keyFaceGrid: {
-    gap: 16,
-    paddingRight: 20,
+    gap: KEY_FACE_GAP,
     overflow: 'visible',
   },
   keyFaceRow: {
-    gap: 16,
+    gap: KEY_FACE_GAP,
   },
   keyFaceGridMobile: {
     flexWrap: 'nowrap',
