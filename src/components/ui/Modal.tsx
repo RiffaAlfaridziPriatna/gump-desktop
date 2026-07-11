@@ -1,4 +1,6 @@
+import {useModalViewport} from '@hooks/useModalViewport';
 import {colors} from '@lib/ui/colors';
+import {MODAL_OVERLAY_PADDING, ModalDesignSize} from '@lib/ui/modalDimensions';
 import {isDesktopPlatform} from '@lib/system/platform';
 import {ReactNode, useEffect, useMemo, useRef, useState} from 'react';
 import {
@@ -8,9 +10,9 @@ import {
   Platform,
   StyleSheet,
   TouchableWithoutFeedback,
-  useWindowDimensions,
   View,
   ViewStyle,
+  StyleProp,
 } from 'react-native';
 import {TouchableOpacity} from './TouchableOpacity';
 import IconClose from '../../assets/images/icon_close.svg';
@@ -40,6 +42,36 @@ type ModalProps = {
 };
 
 type ModalCardProps = Omit<ModalProps, 'visible'>;
+type ModalBodyCardProps = Omit<ModalCardProps, 'onClose'>;
+
+function toModalDesign(props: ModalBodyCardProps): ModalDesignSize {
+  return {
+    width: props.width,
+    height: props.height,
+    decorativeHeight: props.decorativeHeight,
+  };
+}
+
+function ModalOverlay({
+  onClose,
+  onLayout,
+  backdrop,
+  children,
+}: {
+  onClose: () => void;
+  onLayout: ReturnType<typeof useModalViewport>['onOverlayLayout'];
+  backdrop?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <TouchableWithoutFeedback onPress={onClose}>
+      <View style={styles.overlay} onLayout={onLayout}>
+        {backdrop}
+        <TouchableWithoutFeedback>{children}</TouchableWithoutFeedback>
+      </View>
+    </TouchableWithoutFeedback>
+  );
+}
 
 function ModalCard({
   onClose,
@@ -51,21 +83,13 @@ function ModalCard({
   showCloseButton = true,
   contentStyle,
   cardStyle,
-  onCardLayout,
   CardWrapper = View,
 }: ModalCardProps & {
-  cardStyle?: ViewStyle;
-  onCardLayout?: (height: number) => void;
+  cardStyle?: StyleProp<ViewStyle>;
   CardWrapper?: typeof View | typeof Animated.View;
 }) {
   return (
-    <CardWrapper
-      style={[styles.card, {width, height}, cardStyle]}
-      onLayout={
-        onCardLayout
-          ? event => onCardLayout(event.nativeEvent.layout.height)
-          : undefined
-      }>
+    <CardWrapper style={[styles.card, {width, height}, cardStyle]}>
       {showCloseButton && (
         <TouchableOpacity
           style={styles.closeButton}
@@ -95,34 +119,62 @@ function ModalCard({
   );
 }
 
-function ModalContent(props: ModalCardProps) {
-  const {onClose} = props;
+function ModalBody({
+  onClose,
+  cardProps,
+  viewport,
+  CardWrapper = View,
+  cardStyle,
+  backdrop,
+}: {
+  onClose: () => void;
+  cardProps: ModalBodyCardProps;
+  viewport: ReturnType<typeof useModalViewport>;
+  CardWrapper?: typeof View | typeof Animated.View;
+  cardStyle?: StyleProp<ViewStyle>;
+  backdrop?: ReactNode;
+}) {
+  const {onOverlayLayout, resolved, isLayoutReady} = viewport;
 
   return (
-    <TouchableWithoutFeedback onPress={onClose}>
-      <View style={styles.overlay}>
-        <TouchableWithoutFeedback>
-          <ModalCard {...props} />
-        </TouchableWithoutFeedback>
-      </View>
-    </TouchableWithoutFeedback>
+    <ModalOverlay
+      onClose={onClose}
+      onLayout={onOverlayLayout}
+      backdrop={backdrop}>
+      <ModalCard
+        {...cardProps}
+        onClose={onClose}
+        width={resolved.width}
+        height={resolved.height}
+        decorativeHeight={resolved.decorativeHeight ?? cardProps.decorativeHeight}
+        CardWrapper={CardWrapper}
+        cardStyle={[
+          cardStyle,
+          !isLayoutReady ? styles.cardHidden : undefined,
+        ]}
+      />
+    </ModalOverlay>
   );
 }
 
-function DesktopModal(props: ModalProps) {
-  const {visible, onClose} = props;
-  const {height: windowHeight} = useWindowDimensions();
-  const [mounted, setMounted] = useState(visible);
-  const [cardHeight, setCardHeight] = useState(0);
+function useDesktopModalTransition(
+  visible: boolean,
+  canAnimateIn: boolean,
+  slideOffset: number,
+  mounted: boolean,
+  setMounted: (value: boolean) => void,
+) {
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
-
-  const slideOffset = useMemo(() => {
-    const height = Math.max(cardHeight, FALLBACK_CARD_HEIGHT);
-    return windowHeight / 2 + height / 2 + 32;
-  }, [windowHeight, cardHeight]);
   const slideOffsetRef = useRef(slideOffset);
+  const hasEnteredRef = useRef(false);
   slideOffsetRef.current = slideOffset;
+
+  useEffect(() => {
+    if (!visible) {
+      hasEnteredRef.current = false;
+    }
+  }, [visible]);
 
   useEffect(() => {
     overlayOpacity.stopAnimation();
@@ -131,6 +183,16 @@ function DesktopModal(props: ModalProps) {
 
     if (visible) {
       setMounted(true);
+
+      if (!canAnimateIn || hasEnteredRef.current) {
+        if (!hasEnteredRef.current) {
+          overlayOpacity.setValue(0);
+          translateY.setValue(offset);
+        }
+        return;
+      }
+
+      hasEnteredRef.current = true;
       overlayOpacity.setValue(0);
       translateY.setValue(offset);
 
@@ -174,7 +236,39 @@ function DesktopModal(props: ModalProps) {
         setMounted(false);
       }
     });
-  }, [visible, mounted, overlayOpacity, translateY]);
+  }, [
+    visible,
+    mounted,
+    canAnimateIn,
+    overlayOpacity,
+    translateY,
+    setMounted,
+  ]);
+
+  return {overlayOpacity, translateY};
+}
+
+function DesktopModal(props: ModalProps) {
+  const {visible, onClose, ...cardProps} = props;
+  const design = toModalDesign(cardProps);
+  const [mounted, setMounted] = useState(visible);
+  const measureActive = visible || mounted;
+  const viewport = useModalViewport(measureActive, design);
+  const {resolved, viewportHeight, isLayoutReady} = viewport;
+  const canAnimateIn = isLayoutReady;
+
+  const slideOffset = useMemo(() => {
+    const height = resolved.height ?? FALLBACK_CARD_HEIGHT;
+    return viewportHeight / 2 + height / 2 + 32;
+  }, [viewportHeight, resolved.height]);
+
+  const {overlayOpacity, translateY} = useDesktopModalTransition(
+    visible,
+    canAnimateIn,
+    slideOffset,
+    mounted,
+    setMounted,
+  );
 
   if (!mounted) {
     return null;
@@ -182,23 +276,35 @@ function DesktopModal(props: ModalProps) {
 
   return (
     <View style={styles.host} pointerEvents="box-none">
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.overlay}>
+      <ModalBody
+        onClose={onClose}
+        cardProps={cardProps}
+        viewport={viewport}
+        CardWrapper={Animated.View}
+        cardStyle={{transform: [{translateY}]}}
+        backdrop={
           <Animated.View
             pointerEvents="none"
             style={[styles.backdrop, {opacity: overlayOpacity}]}
           />
-          <TouchableWithoutFeedback>
-            <ModalCard
-              {...props}
-              CardWrapper={Animated.View}
-              cardStyle={{transform: [{translateY}]}}
-              onCardLayout={setCardHeight}
-            />
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
+        }
+      />
     </View>
+  );
+}
+
+function MobileModal(props: ModalProps) {
+  const {visible, onClose, ...cardProps} = props;
+  const viewport = useModalViewport(visible, toModalDesign(cardProps));
+
+  return (
+    <RNModal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}>
+      <ModalBody onClose={onClose} cardProps={cardProps} viewport={viewport} />
+    </RNModal>
   );
 }
 
@@ -207,17 +313,7 @@ export function Modal(props: ModalProps) {
     return <DesktopModal {...props} />;
   }
 
-  const {visible, onClose, ...contentProps} = props;
-
-  return (
-    <RNModal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}>
-      <ModalContent onClose={onClose} {...contentProps} />
-    </RNModal>
-  );
+  return <MobileModal {...props} />;
 }
 
 const styles = StyleSheet.create({
@@ -229,6 +325,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: MODAL_OVERLAY_PADDING,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -237,6 +334,9 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.white,
     overflow: 'hidden',
+  },
+  cardHidden: {
+    opacity: 0,
   },
   closeButton: {
     position: 'absolute',
@@ -256,6 +356,7 @@ const styles = StyleSheet.create({
   },
   contentFlex: {
     flex: 1,
+    minHeight: 0,
   },
   decorative: {
     overflow: 'hidden',

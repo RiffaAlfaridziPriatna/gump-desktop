@@ -3,15 +3,10 @@ import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
 import {pickImages} from '@lib/media/filePicker';
 import {FileAsset} from '@services/upload/types';
-import {useMemo} from 'react';
 import {TouchableOpacity} from '@components/ui';
-import {StyleSheet, Text, useWindowDimensions} from 'react-native';
+import {StyleSheet, Text} from 'react-native';
 import DecorativeAddPhoto from '../../assets/images/modal_decorative_add_photos.svg';
 import IconPlus from '../../assets/images/icon_plus.svg';
-
-const MODAL_PADDING = 48 * 2;
-const DESIGN_WIDTH = 720;
-const DESIGN_HEIGHT = 800;
 
 type UploadModalProps = {
   visible: boolean;
@@ -19,28 +14,7 @@ type UploadModalProps = {
   onSelect: (files: FileAsset[]) => void;
 };
 
-function useModalDimensions(windowWidth: number, windowHeight: number) {
-  return useMemo(() => {
-    const maxWidth = windowWidth - MODAL_PADDING;
-    const maxHeight = windowHeight - MODAL_PADDING;
-    const scale = Math.min(1, maxWidth / DESIGN_WIDTH, maxHeight / DESIGN_HEIGHT);
-
-    return {
-      maxWidth,
-      maxHeight,
-      width: DESIGN_WIDTH * scale,
-      height: DESIGN_HEIGHT * scale,
-    };
-  }, [windowWidth, windowHeight]);
-}
-
 export function UploadModal({visible, onClose, onSelect}: UploadModalProps) {
-  const {height: windowHeight, width: windowWidth} = useWindowDimensions();
-  const {width: modalWidth, height: modalHeight} = useModalDimensions(
-    windowWidth,
-    windowHeight,
-  );
-
   async function handlePickPhotos() {
     try {
       const files = await pickImages();
@@ -56,8 +30,8 @@ export function UploadModal({visible, onClose, onSelect}: UploadModalProps) {
     <Modal
       visible={visible}
       onClose={onClose}
-      width={modalWidth}
-      height={modalHeight}
+      width={720}
+      height={800}
       decorative={DecorativeAddPhoto}
       decorativeHeight={200}
       showCloseButton={false}
@@ -78,7 +52,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 32,
+    gap: 36,
   },
   plusButton: {
     width: 64,
