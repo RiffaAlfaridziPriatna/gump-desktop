@@ -134,42 +134,20 @@ RCT_EXPORT_MODULE();
   return fminf(100.0f, fmaxf(0.0f, 8.0f + quality * 92.0f));
 }
 
-- (CGFloat)sharpnessFromCGImage:(CGImageRef)cgImage faceBox:(CGRect)box
+- (CGFloat)sharpnessFromPixelBytes:(const uint8_t *)bytes
+                       bytesPerRow:(size_t)bytesPerRow
+                         imageWidth:(size_t)imageWidth
+                        imageHeight:(size_t)imageHeight
+                               left:(NSInteger)left
+                                top:(NSInteger)top
+                              right:(NSInteger)right
+                         bottomPixel:(NSInteger)bottomPixel
 {
-  size_t imageWidth = CGImageGetWidth(cgImage);
-  size_t imageHeight = CGImageGetHeight(cgImage);
-  if (imageWidth < 3 || imageHeight < 3) {
-    return 50.0f;
-  }
-
-  NSInteger left = (NSInteger)lround(box.origin.x * (CGFloat)imageWidth);
-  NSInteger bottom = (NSInteger)lround(box.origin.y * (CGFloat)imageHeight);
-  NSInteger faceWidth = (NSInteger)lround(box.size.width * (CGFloat)imageWidth);
-  NSInteger faceHeight = (NSInteger)lround(box.size.height * (CGFloat)imageHeight);
-  NSInteger top = (NSInteger)imageHeight - bottom - faceHeight;
-  NSInteger right = left + faceWidth;
-  NSInteger bottomPixel = top + faceHeight;
-
   left = MAX(0, MIN((NSInteger)imageWidth - 1, left));
   top = MAX(0, MIN((NSInteger)imageHeight - 1, top));
   right = MAX(left + 2, MIN((NSInteger)imageWidth, right));
   bottomPixel = MAX(top + 2, MIN((NSInteger)imageHeight, bottomPixel));
 
-  CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-  size_t bytesPerRow = imageWidth * 4;
-  NSMutableData *pixelData = [NSMutableData dataWithLength:bytesPerRow * imageHeight];
-  CGContextRef context = CGBitmapContextCreate(
-      pixelData.mutableBytes, imageWidth, imageHeight, 8, bytesPerRow, colorSpace,
-      kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
-  CGColorSpaceRelease(colorSpace);
-  if (context == NULL) {
-    return 50.0f;
-  }
-
-  CGContextDrawImage(context, CGRectMake(0, 0, imageWidth, imageHeight), cgImage);
-  CGContextRelease(context);
-
-  const uint8_t *bytes = (const uint8_t *)pixelData.bytes;
   double sum = 0.0;
   double sumSquared = 0.0;
   NSInteger count = 0;
@@ -190,13 +168,234 @@ RCT_EXPORT_MODULE();
   }
 
   if (count == 0) {
-    return 50.0f;
+    return 30.0f;
   }
 
   double mean = sum / (double)count;
   double variance = (sumSquared / (double)count) - mean * mean;
   CGFloat normalized = (CGFloat)(log(variance + 1.0) / log(1000.0) * 100.0);
   return fminf(100.0f, fmaxf(0.0f, normalized));
+}
+
+- (BOOL)pixelRectForLandmarkRegion:(VNFaceLandmarkRegion2D *)region
+                            faceBox:(CGRect)box
+                         imageWidth:(size_t)imageWidth
+                        imageHeight:(size_t)imageHeight
+                               left:(NSInteger *)outLeft
+                                top:(NSInteger *)outTop
+                              right:(NSInteger *)outRight
+                         bottomPixel:(NSInteger *)outBottom
+{
+  if (region == nil || region.pointCount == 0) {
+    return NO;
+  }
+
+  const CGPoint *points = region.normalizedPoints;
+  CGFloat minX = points[0].x;
+  CGFloat maxX = points[0].x;
+  CGFloat minY = points[0].y;
+  CGFloat maxY = points[0].y;
+  for (NSUInteger i = 1; i < region.pointCount; i++) {
+    minX = MIN(minX, points[i].x);
+    maxX = MAX(maxX, points[i].x);
+    minY = MIN(minY, points[i].y);
+    maxY = MAX(maxY, points[i].y);
+  }
+
+  const CGFloat padX = MAX(0.02f, (maxX - minX) * 0.15f);
+  const CGFloat padY = MAX(0.02f, (maxY - minY) * 0.15f);
+  minX = MAX(0.0f, minX - padX);
+  maxX = MIN(1.0f, maxX + padX);
+  minY = MAX(0.0f, minY - padY);
+  maxY = MIN(1.0f, maxY + padY);
+
+  const CGFloat visionLeft = box.origin.x + minX * box.size.width;
+  const CGFloat visionRight = box.origin.x + maxX * box.size.width;
+  const CGFloat visionBottom = box.origin.y + minY * box.size.height;
+  const CGFloat visionTop = box.origin.y + maxY * box.size.height;
+
+  const NSInteger left = (NSInteger)lround(visionLeft * (CGFloat)imageWidth);
+  const NSInteger right = (NSInteger)lround(visionRight * (CGFloat)imageWidth);
+  const NSInteger bottom = (NSInteger)lround(visionBottom * (CGFloat)imageHeight);
+  const NSInteger topVision = (NSInteger)lround(visionTop * (CGFloat)imageHeight);
+  const NSInteger top = (NSInteger)imageHeight - topVision;
+  const NSInteger bottomPixel = (NSInteger)imageHeight - bottom;
+
+  if (right - left < 3 || bottomPixel - top < 3) {
+    return NO;
+  }
+
+  *outLeft = left;
+  *outTop = top;
+  *outRight = right;
+  *outBottom = bottomPixel;
+  return YES;
+}
+
+- (CGFloat)sharpnessFromCGImage:(CGImageRef)cgImage faceBox:(CGRect)box
+{
+  size_t imageWidth = CGImageGetWidth(cgImage);
+  size_t imageHeight = CGImageGetHeight(cgImage);
+  if (imageWidth < 3 || imageHeight < 3) {
+    return 30.0f;
+  }
+
+  NSInteger left = (NSInteger)lround(box.origin.x * (CGFloat)imageWidth);
+  NSInteger bottom = (NSInteger)lround(box.origin.y * (CGFloat)imageHeight);
+  NSInteger faceWidth = (NSInteger)lround(box.size.width * (CGFloat)imageWidth);
+  NSInteger faceHeight = (NSInteger)lround(box.size.height * (CGFloat)imageHeight);
+  NSInteger top = (NSInteger)imageHeight - bottom - faceHeight;
+  NSInteger right = left + faceWidth;
+  NSInteger bottomPixel = top + faceHeight;
+
+  CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+  size_t bytesPerRow = imageWidth * 4;
+  NSMutableData *pixelData = [NSMutableData dataWithLength:bytesPerRow * imageHeight];
+  CGContextRef context = CGBitmapContextCreate(
+      pixelData.mutableBytes, imageWidth, imageHeight, 8, bytesPerRow, colorSpace,
+      kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+  CGColorSpaceRelease(colorSpace);
+  if (context == NULL) {
+    return 30.0f;
+  }
+
+  CGContextDrawImage(context, CGRectMake(0, 0, imageWidth, imageHeight), cgImage);
+  CGContextRelease(context);
+
+  return [self sharpnessFromPixelBytes:(const uint8_t *)pixelData.bytes
+                           bytesPerRow:bytesPerRow
+                             imageWidth:imageWidth
+                            imageHeight:imageHeight
+                                   left:left
+                                    top:top
+                                  right:right
+                             bottomPixel:bottomPixel];
+}
+
+- (CGFloat)sharpnessFromLandmarkRegion:(VNFaceLandmarkRegion2D *)region
+                               faceBox:(CGRect)box
+                                 bytes:(const uint8_t *)bytes
+                           bytesPerRow:(size_t)bytesPerRow
+                            imageWidth:(size_t)imageWidth
+                           imageHeight:(size_t)imageHeight
+{
+  NSInteger left = 0;
+  NSInteger top = 0;
+  NSInteger right = 0;
+  NSInteger bottomPixel = 0;
+  if (![self pixelRectForLandmarkRegion:region
+                                faceBox:box
+                             imageWidth:imageWidth
+                            imageHeight:imageHeight
+                                   left:&left
+                                    top:&top
+                                  right:&right
+                             bottomPixel:&bottomPixel]) {
+    return -1.0f;
+  }
+
+  return [self sharpnessFromPixelBytes:bytes
+                           bytesPerRow:bytesPerRow
+                             imageWidth:imageWidth
+                            imageHeight:imageHeight
+                                   left:left
+                                    top:top
+                                  right:right
+                             bottomPixel:bottomPixel];
+}
+
+- (CGFloat)combineEyeSharpness:(CGFloat)leftEye
+                      rightEye:(CGFloat)rightEye
+                     reference:(CGFloat)reference
+{
+  CGFloat eyeSharp = -1.0f;
+  if (leftEye >= 0.0f && rightEye >= 0.0f) {
+    eyeSharp = MIN(leftEye, rightEye);
+  } else if (leftEye >= 0.0f) {
+    eyeSharp = leftEye;
+  } else if (rightEye >= 0.0f) {
+    eyeSharp = rightEye;
+  }
+
+  if (eyeSharp < 0.0f) {
+    return -1.0f;
+  }
+
+  if (reference >= 0.0f) {
+    const CGFloat ratio = eyeSharp / MAX(reference, 1.0f);
+    static const CGFloat kMinEyeToReferenceRatio = 1.15f;
+    if (ratio < kMinEyeToReferenceRatio) {
+      eyeSharp *= ratio / kMinEyeToReferenceRatio;
+    }
+  }
+
+  return eyeSharp;
+}
+
+- (CGFloat)sharpnessFromObservation:(VNFaceObservation *)face cgImage:(CGImageRef)cgImage
+{
+  if (cgImage == NULL) {
+    return 30.0f;
+  }
+
+  const size_t imageWidth = CGImageGetWidth(cgImage);
+  const size_t imageHeight = CGImageGetHeight(cgImage);
+  if (imageWidth < 3 || imageHeight < 3) {
+    return 30.0f;
+  }
+
+  CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+  const size_t bytesPerRow = imageWidth * 4;
+  NSMutableData *pixelData = [NSMutableData dataWithLength:bytesPerRow * imageHeight];
+  CGContextRef context = CGBitmapContextCreate(
+      pixelData.mutableBytes, imageWidth, imageHeight, 8, bytesPerRow, colorSpace,
+      kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+  CGColorSpaceRelease(colorSpace);
+  if (context == NULL) {
+    return 30.0f;
+  }
+
+  CGContextDrawImage(context, CGRectMake(0, 0, imageWidth, imageHeight), cgImage);
+  CGContextRelease(context);
+
+  const uint8_t *bytes = (const uint8_t *)pixelData.bytes;
+  const CGRect box = face.boundingBox;
+  VNFaceLandmarks2D *landmarks = face.landmarks;
+  if (landmarks != nil) {
+    const CGFloat leftEye =
+        [self sharpnessFromLandmarkRegion:landmarks.leftEye
+                                  faceBox:box
+                                    bytes:bytes
+                              bytesPerRow:bytesPerRow
+                               imageWidth:imageWidth
+                              imageHeight:imageHeight];
+    const CGFloat rightEye =
+        [self sharpnessFromLandmarkRegion:landmarks.rightEye
+                                  faceBox:box
+                                    bytes:bytes
+                              bytesPerRow:bytesPerRow
+                               imageWidth:imageWidth
+                              imageHeight:imageHeight];
+    const CGFloat nose =
+        [self sharpnessFromLandmarkRegion:landmarks.nose
+                                  faceBox:box
+                                    bytes:bytes
+                              bytesPerRow:bytesPerRow
+                               imageWidth:imageWidth
+                              imageHeight:imageHeight];
+    const CGFloat eyeSharp = [self combineEyeSharpness:leftEye rightEye:rightEye reference:nose];
+    if (eyeSharp >= 0.0f) {
+      return eyeSharp;
+    }
+  }
+
+  const CGFloat inset = 0.15f;
+  const CGRect insetBox = CGRectMake(
+      box.origin.x + box.size.width * inset,
+      box.origin.y + box.size.height * inset,
+      box.size.width * (1.0f - inset * 2.0f),
+      box.size.height * (1.0f - inset * 2.0f));
+  return [self sharpnessFromCGImage:cgImage faceBox:insetBox];
 }
 
 - (CGPoint)centroidOfLandmarkRegion:(VNFaceLandmarkRegion2D *)region
@@ -354,18 +553,11 @@ RCT_EXPORT_MODULE();
   CGFloat width = box.size.width;
   CGFloat height = box.size.height;
 
-  CGFloat sharpness = 50.0f;
+  CGFloat sharpness = 30.0f;
   if (cgImage != NULL) {
-    sharpness = [self sharpnessFromCGImage:cgImage faceBox:box];
+    sharpness = [self sharpnessFromObservation:face cgImage:cgImage];
   }
-  if (captureQuality != nil) {
-    CGFloat qualitySharpness = [self sharpnessFromCaptureQuality:captureQuality.floatValue];
-    sharpness = MAX(sharpness, qualitySharpness);
-  } else if (face.faceCaptureQuality != nil) {
-    CGFloat qualitySharpness =
-        [self sharpnessFromCaptureQuality:face.faceCaptureQuality.floatValue];
-    sharpness = MAX(sharpness, qualitySharpness);
-  }
+  (void)captureQuality;
 
   NSDictionary *eyesOpen = [self eyesOpenFromLandmarks:face.landmarks];
 

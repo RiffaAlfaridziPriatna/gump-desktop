@@ -5,8 +5,8 @@ export type CullingFace = APIResponse.CullingFace;
 export type CullingPhoto = APIResponse.CullingPhoto;
 
 const EYE_CONFIDENCE_THRESHOLD = 85;
-const FOCUS_GOOD_THRESHOLD = 40;
-const FOCUS_SOFT_THRESHOLD = 22;
+const FOCUS_GOOD_THRESHOLD = 62;
+const FOCUS_SOFT_THRESHOLD = 40;
 
 export function classifyEyeStatus(eyesOpen?: {
   value?: boolean;
@@ -171,6 +171,28 @@ export function computeKeyFaces(
   const faceIdToPhotoIds = new Map<string, Set<string>>();
   const faceIdToAnalysis = new Map<string, CullingFace>();
 
+  const focusRank = (level: APIResponse.CullingFocusLevel): number => {
+    switch (level) {
+      case 'blurred':
+        return 2;
+      case 'soft':
+        return 1;
+      default:
+        return 0;
+    }
+  };
+
+  const eyeRank = (status: APIResponse.CullingEyeStatus): number => {
+    switch (status) {
+      case 'closed':
+        return 2;
+      case 'partial':
+        return 1;
+      default:
+        return 0;
+    }
+  };
+
   for (const photo of photos) {
     const usedClusterIdsInPhoto = new Set<string>();
 
@@ -187,8 +209,27 @@ export function computeKeyFaces(
       const photoIds = faceIdToPhotoIds.get(faceId) ?? new Set<string>();
       photoIds.add(photo.photoId);
       faceIdToPhotoIds.set(faceId, photoIds);
-      if (!faceIdToAnalysis.has(faceId)) {
+
+      const existing = faceIdToAnalysis.get(faceId);
+      if (!existing) {
         faceIdToAnalysis.set(faceId, face);
+        return;
+      }
+
+      const nextFocus =
+        focusRank(face.focusLevel) > focusRank(existing.focusLevel)
+          ? face.focusLevel
+          : existing.focusLevel;
+      const nextEye =
+        eyeRank(face.eyeStatus) > eyeRank(existing.eyeStatus)
+          ? face.eyeStatus
+          : existing.eyeStatus;
+      if (nextFocus !== existing.focusLevel || nextEye !== existing.eyeStatus) {
+        faceIdToAnalysis.set(faceId, {
+          ...existing,
+          focusLevel: nextFocus,
+          eyeStatus: nextEye,
+        });
       }
     });
   }

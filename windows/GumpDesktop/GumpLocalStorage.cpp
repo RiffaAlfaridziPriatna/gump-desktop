@@ -287,7 +287,7 @@ float ComputeSharpness(const uint8_t *pixels, int width, int height, int stride,
   const int right = std::min(width, left + static_cast<int>(box.Width));
   const int bottom = std::min(height, top + static_cast<int>(box.Height));
   if (right - left < 3 || bottom - top < 3) {
-    return 50.0f;
+    return 30.0f;
   }
 
   double sum = 0.0;
@@ -310,7 +310,7 @@ float ComputeSharpness(const uint8_t *pixels, int width, int height, int stride,
   }
 
   if (count == 0) {
-    return 50.0f;
+    return 30.0f;
   }
 
   const double mean = sum / count;
@@ -617,7 +617,23 @@ winrtRN::JSValueObject BuildFaceObject(
   const float minOpen = std::min(leftOpen, rightOpen);
   const float maxOpen = std::max(leftOpen, rightOpen);
   const float avgOpen = (leftOpen + rightOpen) / 2.0f;
-  const float sharpness = ComputeSharpness(pixelData, imageWidth, imageHeight, stride, box);
+  const BitmapBounds leftEyeBox{
+      static_cast<float>(leftEyeLeft),
+      static_cast<float>(eyeTop),
+      static_cast<float>(leftEyeWidth),
+      static_cast<float>(eyeHeight),
+  };
+  const BitmapBounds rightEyeBox{
+      static_cast<float>(rightEyeLeft),
+      static_cast<float>(eyeTop),
+      static_cast<float>(rightEyeWidth),
+      static_cast<float>(eyeHeight),
+  };
+  const float leftSharp =
+      ComputeSharpness(pixelData, imageWidth, imageHeight, stride, leftEyeBox);
+  const float rightSharp =
+      ComputeSharpness(pixelData, imageWidth, imageHeight, stride, rightEyeBox);
+  const float sharpness = std::min(leftSharp, rightSharp);
 
   return winrtRN::JSValueObject{
       {"boundingBox",
