@@ -165,87 +165,142 @@ export function computeStats(photos: CullingPhoto[]): APIResponse.CullingStats {
   };
 }
 
+const KEY_FACE_VARIANT_SEP = '::';
+
+export function buildKeyFaceVariantId(
+  clusterId: string,
+  eyeStatus: APIResponse.CullingEyeStatus,
+  focusLevel: APIResponse.CullingFocusLevel,
+): string {
+  return `${clusterId}${KEY_FACE_VARIANT_SEP}${eyeStatus}${KEY_FACE_VARIANT_SEP}${focusLevel}`;
+}
+
+export function parseKeyFaceVariantId(faceId: string): {
+  clusterId: string;
+  eyeStatus: APIResponse.CullingEyeStatus;
+  focusLevel: APIResponse.CullingFocusLevel;
+} | null {
+  const parts = faceId.split(KEY_FACE_VARIANT_SEP);
+  if (parts.length !== 3) {
+    return null;
+  }
+
+  const [clusterId, eyeStatus, focusLevel] = parts;
+  if (
+    eyeStatus !== 'open' &&
+    eyeStatus !== 'partial' &&
+    eyeStatus !== 'closed'
+  ) {
+    return null;
+  }
+  if (
+    focusLevel !== 'good' &&
+    focusLevel !== 'soft' &&
+    focusLevel !== 'blurred'
+  ) {
+    return null;
+  }
+
+  return {
+    clusterId: clusterId!,
+    eyeStatus,
+    focusLevel,
+  };
+}
+
+export function resolveFaceClusterIdInPhoto(
+  face: CullingFace,
+  photoId: string,
+  faceIndex: number,
+  facesInPhoto: CullingFace[],
+): string {
+  let clusterId = face.rekognitionFaceId;
+  if (!clusterId) {
+    return `${photoId}#${faceIndex}`;
+  }
+
+  for (let index = 0; index < faceIndex; index++) {
+    if (facesInPhoto[index]?.rekognitionFaceId === clusterId) {
+      return `${photoId}#${faceIndex}`;
+    }
+  }
+
+  return clusterId;
+}
+
 export function computeKeyFaces(
   photos: CullingPhoto[],
 ): APIResponse.CullingKeyFace[] {
-  const faceIdToPhotoIds = new Map<string, Set<string>>();
-  const faceIdToAnalysis = new Map<string, CullingFace>();
-
-  const focusRank = (level: APIResponse.CullingFocusLevel): number => {
-    switch (level) {
-      case 'good':
-        return 2;
-      case 'soft':
-        return 1;
-      default:
-        return 0;
-    }
+  type VariantBucket = {
+    faceId: string;
+    photoIds: string[];
+    photoIdSet: Set<string>;
+    eyeStatus: APIResponse.CullingEyeStatus;
+    focusLevel: APIResponse.CullingFocusLevel;
+    occurrenceCount: number;
+    firstPhotoOrder: number;
   };
 
-  const eyeRank = (status: APIResponse.CullingEyeStatus): number => {
-    switch (status) {
-      case 'open':
-        return 2;
-      case 'partial':
-        return 1;
-      default:
-        return 0;
-    }
-  };
+  const variants = new Map<string, VariantBucket>();
 
-  for (const photo of photos) {
+  photos.forEach((photo, photoOrder) => {
     const usedClusterIdsInPhoto = new Set<string>();
 
     photo.faces.forEach((face, index) => {
-      let faceId = face.rekognitionFaceId;
-      if (!faceId) {
-        faceId = `${photo.photoId}#${index}`;
-      } else if (usedClusterIdsInPhoto.has(faceId)) {
-        faceId = `${photo.photoId}#${index}`;
+      let clusterId = face.rekognitionFaceId;
+      if (!clusterId) {
+        clusterId = `${photo.photoId}#${index}`;
+      } else if (usedClusterIdsInPhoto.has(clusterId)) {
+        clusterId = `${photo.photoId}#${index}`;
       } else {
-        usedClusterIdsInPhoto.add(faceId);
+        usedClusterIdsInPhoto.add(clusterId);
       }
 
-      const photoIds = faceIdToPhotoIds.get(faceId) ?? new Set<string>();
-      photoIds.add(photo.photoId);
-      faceIdToPhotoIds.set(faceId, photoIds);
+      const variantId = buildKeyFaceVariantId(
+        clusterId,
+        face.eyeStatus,
+        face.focusLevel,
+      );
 
-      const existing = faceIdToAnalysis.get(faceId);
-      if (!existing) {
-        faceIdToAnalysis.set(faceId, face);
-        return;
+      let bucket = variants.get(variantId);
+      if (!bucket) {
+        bucket = {
+          faceId: variantId,
+          photoIds: [],
+          photoIdSet: new Set<string>(),
+          eyeStatus: face.eyeStatus,
+          focusLevel: face.focusLevel,
+          occurrenceCount: 0,
+          firstPhotoOrder: photoOrder,
+        };
+        variants.set(variantId, bucket);
       }
 
-      const nextFocus =
-        focusRank(face.focusLevel) > focusRank(existing.focusLevel)
-          ? face.focusLevel
-          : existing.focusLevel;
-      const nextEye =
-        eyeRank(face.eyeStatus) > eyeRank(existing.eyeStatus)
-          ? face.eyeStatus
-          : existing.eyeStatus;
-      if (nextFocus !== existing.focusLevel || nextEye !== existing.eyeStatus) {
-        faceIdToAnalysis.set(faceId, {
-          ...existing,
-          focusLevel: nextFocus,
-          eyeStatus: nextEye,
-        });
+      bucket.occurrenceCount += 1;
+      if (!bucket.photoIdSet.has(photo.photoId)) {
+        bucket.photoIdSet.add(photo.photoId);
+        bucket.photoIds.push(photo.photoId);
       }
     });
-  }
+  });
 
-  return [...faceIdToPhotoIds.entries()]
-    .map(([faceId, photoIds]) => {
-      const representative = faceIdToAnalysis.get(faceId);
-      return {
+  return [...variants.values()]
+    .sort((left, right) => left.firstPhotoOrder - right.firstPhotoOrder)
+    .map(
+      ({
         faceId,
-        photoIds: [...photoIds],
-        eyeStatus: representative?.eyeStatus ?? 'partial',
-        focusLevel: representative?.focusLevel ?? 'soft',
-        occurrenceCount: photoIds.size,
-      };
-    })
-    .sort((a, b) => b.occurrenceCount - a.occurrenceCount);
+        photoIds,
+        eyeStatus,
+        focusLevel,
+        occurrenceCount,
+      }) => ({
+        faceId,
+        photoIds,
+        eyeStatus,
+        focusLevel,
+        occurrenceCount,
+      }),
+    );
 }
 
 /**
