@@ -5,6 +5,7 @@ import {hydratePhotos} from '@lib/culledAlbum/photoLoader';
 import {
   culledAlbumStore,
   ensureAlbumLoaded,
+  flushPendingPhotoUpdates,
   getAlbum,
   getPhotoById,
   getPhotosForAlbum,
@@ -30,6 +31,10 @@ import {
   DuplicateDetectionPhoto,
   assignFaceClustersToSinglePhoto,
 } from './cullingUtil';
+import {
+  backfillMissingAnalyzedPhotoAssets,
+  ensureAnalyzedPhotoAssetsForPhoto,
+} from './analyzedPhotoAssets';
 import {detectDuplicates, detectDuplicatesAsync} from './duplicateDetection';
 import {
   clearFaceClusterIndex,
@@ -185,6 +190,48 @@ async function applyDuplicateFlags(albumId: string): Promise<void> {
   }
 }
 
+/**
+ * Re-assigns cluster ids for every analyzed photo in album order.
+ * Runs once at analysis completion — pure in-memory fingerprint math, no I/O.
+ */
+function reconcileFaceClusterIdsForAlbum(albumId: string): void {
+  clearFaceClusterIndex(albumId);
+  const clusterRepresentatives = getFaceClusterIndex(albumId);
+  let nextFaceClusterId = 0;
+  const syncedPhotoIds: string[] = [];
+
+  for (const photo of getPhotosForAlbum(albumId)) {
+    if (photo.analysisStatus !== 'analyzed' || photo.faces.length === 0) {
+      continue;
+    }
+
+    updatePhoto(
+      albumId,
+      photo.photoId,
+      entry => {
+        nextFaceClusterId = assignFaceClustersToSinglePhoto(
+          entry.faces,
+          clusterRepresentatives,
+          nextFaceClusterId,
+        );
+      },
+      {recomputeTotals: false},
+    );
+    syncedPhotoIds.push(photo.photoId);
+  }
+
+  culledAlbumStore.setState(state => {
+    const albumState = state.albums[albumId];
+    if (albumState) {
+      albumState.nextFaceClusterId = nextFaceClusterId;
+    }
+  });
+
+  if (syncedPhotoIds.length > 0) {
+    syncPhotosFromStore(albumId, syncedPhotoIds);
+  }
+}
+
 function assignFaceClusterIdsIncremental(
   albumId: string,
   photoId: string,
@@ -279,6 +326,11 @@ export const cullingEngine = {
     syncPhotoFromStore(albumId, photoId);
 
     assignFaceClusterIdsIncremental(albumId, photoId);
+
+    const analyzedPhoto = getPhotoById(albumId, photoId);
+    if (analyzedPhoto) {
+      await ensureAnalyzedPhotoAssetsForPhoto(albumId, photoId, file);
+    }
 
     const updated = getPhotoById(albumId, photoId);
     if (!updated) {
@@ -381,6 +433,11 @@ export const cullingEngine = {
 
     const remaining = await getAnalyzedPhotos(albumId);
     if (remaining.length > 0) {
+      reconcileFaceClusterIdsForAlbum(albumId);
+      await backfillMissingAnalyzedPhotoAssets(
+        albumId,
+        getPhotosForAlbum(albumId),
+      );
       await applyDuplicateFlags(albumId);
       updateCullingSummary(albumId);
       await persistAlbum(albumId);
@@ -391,10 +448,19 @@ export const cullingEngine = {
   },
 
   async completeAnalysis(albumId: string): Promise<void> {
-    const photos = await getAnalyzedPhotos(albumId);
-    if (photos.length === 0) {
+    const albumPhotos = getPhotosForAlbum(albumId);
+    const analyzedPhotos = albumPhotos
+      .filter(photo => photo.analysisStatus === 'analyzed')
+      .map(toCullingPhoto);
+    if (analyzedPhotos.length === 0) {
       throw new Error('No analyzed photos');
     }
+
+    reconcileFaceClusterIdsForAlbum(albumId);
+    await backfillMissingAnalyzedPhotoAssets(albumId, albumPhotos, {
+      regenerateFaceCrops: true,
+    });
+    flushPendingPhotoUpdates();
     await applyDuplicateFlags(albumId);
     updateCullingSummary(albumId);
     await persistAlbum(albumId);
@@ -402,6 +468,16 @@ export const cullingEngine = {
 
   async refreshDuplicateFlags(albumId: string): Promise<void> {
     await applyDuplicateFlags(albumId);
+  },
+
+  async refreshAssets(albumId: string): Promise<void> {
+    const albumPhotos = getPhotosForAlbum(albumId);
+    await backfillMissingAnalyzedPhotoAssets(albumId, albumPhotos, {
+      regenerateFaceCrops: false,
+    });
+    flushPendingPhotoUpdates();
+    updateCullingSummary(albumId);
+    await persistAlbum(albumId);
   },
 
   async finalize(

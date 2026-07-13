@@ -51,7 +51,7 @@ import {
   sortPhotosByFilename,
   toCullingPhoto,
 } from './types';
-import {computeKeyFaces, computeStats} from '@lib/culling/cullingUtil';
+import {computeKeyFaces, computeStats, orderCulledAlbumPhotosForCulling} from '@lib/culling/cullingUtil';
 import {APIResponse} from '@services/api';
 import {scheduleThumbnailBackfill} from './thumbnailBackfill';
 import {photoKey, photoStateStore} from './photoStateStore';
@@ -495,9 +495,12 @@ export async function markCullingCompleted(albumId: string): Promise<void> {
 }
 
 export function updateCullingSummary(albumId: string): void {
-  const analyzed = getPhotosForAlbum(albumId)
-    .filter(photo => photo.analysisStatus === 'analyzed')
-    .map(toCullingPhoto);
+  const analyzed = orderCulledAlbumPhotosForCulling(
+    albumId,
+    getPhotosForAlbum(albumId).filter(
+      photo => photo.analysisStatus === 'analyzed',
+    ),
+  ).map(toCullingPhoto);
   const stats = analyzed.length > 0 ? computeStats(analyzed) : undefined;
   const keyFaces = analyzed.length > 0 ? computeKeyFaces(analyzed) : undefined;
 
