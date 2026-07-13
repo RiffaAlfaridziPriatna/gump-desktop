@@ -5,25 +5,61 @@ import {
 import {
   getCachedImageDimensions,
   ImageDimensions,
+  loadImageDimensions,
 } from '@lib/media/imageDimensions';
-import {preloadImage} from '@lib/media/imagePreload';
 import {colors} from '@lib/ui/colors';
 import React, {useEffect, useMemo, useState} from 'react';
 import {Image, StyleSheet, View} from 'react-native';
 
 type FaceCropAvatarProps = {
-  uri: string;
-  boundingBox: CullingBoundingBox;
+  uri?: string;
+  cropUri?: string;
+  boundingBox?: CullingBoundingBox;
   size: number;
   imageSize?: ImageDimensions | null;
 };
 
-export const FaceCropAvatar = React.memo(function FaceCropAvatar({
+const PreCroppedFaceAvatar = React.memo(function PreCroppedFaceAvatar({
+  cropUri,
+  size,
+}: {
+  cropUri: string;
+  size: number;
+}) {
+  return (
+    <View
+      style={[
+        styles.container,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+        },
+      ]}>
+      <Image
+        source={{uri: cropUri}}
+        fadeDuration={0}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+        }}
+      />
+    </View>
+  );
+});
+
+const TransformFaceCropAvatar = React.memo(function TransformFaceCropAvatar({
   uri,
   boundingBox,
   size,
   imageSize: imageSizeProp,
-}: FaceCropAvatarProps) {
+}: {
+  uri: string;
+  boundingBox: CullingBoundingBox;
+  size: number;
+  imageSize?: ImageDimensions | null;
+}) {
   const [loadedImageSize, setLoadedImageSize] = useState<ImageDimensions | null>(
     () => getCachedImageDimensions(uri) ?? null,
   );
@@ -41,9 +77,9 @@ export const FaceCropAvatar = React.memo(function FaceCropAvatar({
 
     let cancelled = false;
 
-    preloadImage(uri).then(() => {
-      if (!cancelled) {
-        setLoadedImageSize(getCachedImageDimensions(uri) ?? null);
+    loadImageDimensions(uri).then(dimensions => {
+      if (!cancelled && dimensions) {
+        setLoadedImageSize(dimensions);
       }
     });
 
@@ -76,16 +112,37 @@ export const FaceCropAvatar = React.memo(function FaceCropAvatar({
           height: size,
           borderRadius: size / 2,
         },
-      ]}
-    >
+      ]}>
       {cropStyle ? (
-        <Image
-          source={{ uri }}
-          style={[styles.cropImage, cropStyle]}
-        />
+        <Image source={{uri}} style={[styles.cropImage, cropStyle]} />
       ) : null}
     </View>
   );
+});
+
+export const FaceCropAvatar = React.memo(function FaceCropAvatar({
+  uri,
+  cropUri,
+  boundingBox,
+  size,
+  imageSize,
+}: FaceCropAvatarProps) {
+  if (cropUri) {
+    return <PreCroppedFaceAvatar cropUri={cropUri} size={size} />;
+  }
+
+  if (uri && boundingBox) {
+    return (
+      <TransformFaceCropAvatar
+        uri={uri}
+        boundingBox={boundingBox}
+        size={size}
+        imageSize={imageSize}
+      />
+    );
+  }
+
+  return null;
 });
 
 const styles = StyleSheet.create({

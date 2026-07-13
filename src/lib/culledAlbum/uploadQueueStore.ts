@@ -108,7 +108,6 @@ export function beginLocalImportQueue(
       failedCount: progress?.failedCount ?? 0,
     };
   });
-  console.info('[localImport] started', new Date().toISOString());
 }
 
 export type FinishLocalImportQueueInput = {
@@ -134,7 +133,6 @@ export function finishLocalImportQueue(
       failedCount: result.failedCount,
     };
   });
-  console.info('[localImport] finished', new Date().toISOString());
 }
 
 export function setQueueOperationStatus(

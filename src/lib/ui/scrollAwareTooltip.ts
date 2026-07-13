@@ -8,6 +8,7 @@ import {
 type Listener = () => void;
 
 const DEFAULT_SCROLL_END_DELAY_MS = 150;
+const WHEEL_SCROLL_EVENT_THROTTLE_MS = 100;
 
 export class ScrollAwareTooltipStore {
   private isScrolling = false;
@@ -51,6 +52,8 @@ export function useScrollAwareTooltipStore(): ScrollAwareTooltipStore | null {
 
 type ScrollAwareTooltipHandlerOptions = {
   endDelayMs?: number;
+  /** Track trackpad / wheel scroll without firing JS every frame. */
+  trackWheelScroll?: boolean;
 };
 
 export function useScrollAwareTooltipHandlers(
@@ -65,8 +68,13 @@ export function useScrollAwareTooltipHandlers(
   | 'onScrollEndDrag'
   | 'onMomentumScrollEnd'
 > {
-  const {endDelayMs = DEFAULT_SCROLL_END_DELAY_MS} = options;
+  const {
+    endDelayMs = DEFAULT_SCROLL_END_DELAY_MS,
+    trackWheelScroll = true,
+  } = options;
   const scrollEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastScrollAtRef = useRef(0);
+  const isScrollingRef = useRef(false);
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
 
@@ -77,42 +85,86 @@ export function useScrollAwareTooltipHandlers(
     }
   }, []);
 
-  const dismissOnScrollStart = useCallback(() => {
+  const finishScrolling = useCallback(() => {
+    isScrollingRef.current = false;
+    store.setScrolling(false);
+    scrollEndTimerRef.current = null;
+  }, [store]);
+
+  const markScrollActive = useCallback(() => {
+    lastScrollAtRef.current = Date.now();
+    if (isScrollingRef.current) {
+      return;
+    }
+
+    isScrollingRef.current = true;
     store.setScrolling(true, () => onDismissRef.current());
   }, [store]);
 
   const scheduleScrollEnd = useCallback(() => {
     clearScrollEndTimer();
     scrollEndTimerRef.current = setTimeout(() => {
-      store.setScrolling(false);
-      scrollEndTimerRef.current = null;
+      if (Date.now() - lastScrollAtRef.current >= endDelayMs) {
+        finishScrolling();
+        return;
+      }
+
+      scheduleScrollEnd();
     }, endDelayMs);
-  }, [clearScrollEndTimer, endDelayMs, store]);
+  }, [clearScrollEndTimer, endDelayMs, finishScrolling]);
+
+  const ensureScrollEndWatcher = useCallback(() => {
+    if (scrollEndTimerRef.current) {
+      return;
+    }
+
+    scrollEndTimerRef.current = setTimeout(function watchScrollEnd() {
+      if (Date.now() - lastScrollAtRef.current >= endDelayMs) {
+        finishScrolling();
+        return;
+      }
+
+      scrollEndTimerRef.current = setTimeout(watchScrollEnd, endDelayMs);
+    }, endDelayMs);
+  }, [endDelayMs, finishScrolling]);
 
   const handleScrollBegin = useCallback(() => {
-    dismissOnScrollStart();
+    markScrollActive();
     clearScrollEndTimer();
-  }, [clearScrollEndTimer, dismissOnScrollStart]);
-
-  const handleScroll = useCallback(
-    (_event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      dismissOnScrollStart();
-      scheduleScrollEnd();
-    },
-    [dismissOnScrollStart, scheduleScrollEnd],
-  );
+  }, [clearScrollEndTimer, markScrollActive]);
 
   const handleScrollEnd = useCallback(() => {
     scheduleScrollEnd();
   }, [scheduleScrollEnd]);
 
-  return {
-    scrollEventThrottle: 16,
-    onScroll: handleScroll,
+  const handleWheelScroll = useCallback(
+    (_event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      markScrollActive();
+      lastScrollAtRef.current = Date.now();
+      ensureScrollEndWatcher();
+    },
+    [ensureScrollEndWatcher, markScrollActive],
+  );
+
+  const handlers: Pick<
+    ScrollViewProps,
+    | 'scrollEventThrottle'
+    | 'onScroll'
+    | 'onScrollBeginDrag'
+    | 'onScrollEndDrag'
+    | 'onMomentumScrollEnd'
+  > = {
     onScrollBeginDrag: handleScrollBegin,
     onScrollEndDrag: handleScrollEnd,
     onMomentumScrollEnd: handleScrollEnd,
   };
+
+  if (trackWheelScroll) {
+    handlers.onScroll = handleWheelScroll;
+    handlers.scrollEventThrottle = WHEEL_SCROLL_EVENT_THROTTLE_MS;
+  }
+
+  return handlers;
 }
 
 export function isScrollAwareTooltipLocked(
@@ -120,4 +172,3 @@ export function isScrollAwareTooltipLocked(
 ): boolean {
   return store?.isLocked() ?? false;
 }
-

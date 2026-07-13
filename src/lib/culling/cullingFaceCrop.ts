@@ -1,9 +1,4 @@
 import {APIResponse} from '@services/api';
-import {FileAsset} from '@services/upload/types';
-import {
-  parseKeyFaceVariantId,
-  resolveFaceClusterIdInPhoto,
-} from '@lib/culling/cullingUtil';
 
 export type CullingBoundingBox = APIResponse.CullingFace['boundingBox'];
 
@@ -130,81 +125,4 @@ export function getFaceCropImageStyle(
   };
 }
 
-export function resolveKeyFaceSource(
-  keyFace: APIResponse.CullingKeyFace,
-  photos: APIResponse.CullingPhoto[],
-  filesByPhotoId: Map<string, FileAsset>,
-): {uri: string; boundingBox: CullingBoundingBox} | null {
-  const parsed = parseKeyFaceVariantId(keyFace.faceId);
-  if (parsed) {
-    const photoIdSet = new Set(keyFace.photoIds);
-
-    for (const photo of photos) {
-      if (!photoIdSet.has(photo.photoId)) {
-        continue;
-      }
-
-      const file = filesByPhotoId.get(photo.photoId);
-      if (!file) {
-        continue;
-      }
-
-      for (let index = 0; index < photo.faces.length; index++) {
-        const face = photo.faces[index]!;
-        if (
-          face.eyeStatus !== keyFace.eyeStatus ||
-          face.focusLevel !== keyFace.focusLevel
-        ) {
-          continue;
-        }
-
-        const clusterId = resolveFaceClusterIdInPhoto(
-          face,
-          photo.photoId,
-          index,
-          photo.faces,
-        );
-        if (clusterId !== parsed.clusterId) {
-          continue;
-        }
-
-        return {uri: file.uri, boundingBox: face.boundingBox};
-      }
-    }
-
-    return null;
-  }
-
-  const occurrenceMatch = /^(.+)#(\d+)$/.exec(keyFace.faceId);
-  if (occurrenceMatch) {
-    const photoId = occurrenceMatch[1]!;
-    const faceIndex = Number(occurrenceMatch[2]);
-    const photo = photos.find(entry => entry.photoId === photoId);
-    const file = filesByPhotoId.get(photoId);
-    const face = photo?.faces[faceIndex];
-    if (face && file) {
-      return {uri: file.uri, boundingBox: face.boundingBox};
-    }
-  }
-
-  for (const photo of photos) {
-    if (!keyFace.photoIds.includes(photo.photoId)) {
-      continue;
-    }
-
-    const file = filesByPhotoId.get(photo.photoId);
-    if (!file) {
-      continue;
-    }
-
-    const face = photo.faces.find(
-      entry => entry.rekognitionFaceId === keyFace.faceId,
-    );
-    if (face) {
-      return {uri: file.uri, boundingBox: face.boundingBox};
-    }
-  }
-
-  return null;
-}
-
+export type KeyFaceWithSource = APIResponse.CullingKeyFace;

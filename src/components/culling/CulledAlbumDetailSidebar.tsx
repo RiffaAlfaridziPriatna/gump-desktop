@@ -2,7 +2,7 @@ import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
 import {KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
 import {Accordion} from '@components/ui/Accordion';
 import {Checkbox, Pressable} from '@components/ui';
-import {CullingBoundingBox} from '@lib/culling/cullingFaceCrop';
+import {KeyFaceWithSource} from '@lib/culling/cullingFaceCrop';
 import {SelectionFilter} from '@lib/culling/culledAlbumPhotoFilters';
 import {CullFilterKey} from '@lib/culling/cullingUtil';
 import {colors} from '@lib/ui/colors';
@@ -12,9 +12,14 @@ import {
   createScrollAwareTooltipStore,
   useScrollAwareTooltipHandlers,
 } from '@lib/ui/scrollAwareTooltip';
-import {APIResponse} from '@services/api';
-import {memo, useCallback, useRef} from 'react';
-import {ScrollView, StyleSheet, Text, View} from 'react-native';
+import {memo, useCallback, useMemo, useRef} from 'react';
+import {
+  FlatList,
+  ListRenderItemInfo,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 
 const FILTER_LABELS: Record<CullFilterKey, string> = {
@@ -25,10 +30,12 @@ const FILTER_LABELS: Record<CullFilterKey, string> = {
   duplicated: 'Duplicated',
 };
 
-export type KeyFaceWithSource = APIResponse.CullingKeyFace & {
-  uri?: string;
-  boundingBox?: CullingBoundingBox;
-};
+const KEY_FACE_SIZE = 64;
+const KEY_FACE_GAP = 16;
+const KEY_FACE_COLUMNS = 3;
+const KEY_FACE_ROW_HEIGHT = KEY_FACE_SIZE + KEY_FACE_GAP;
+
+export type {KeyFaceWithSource};
 
 export type CulledAlbumDetailSidebarProps = {
   isMobileLayout: boolean;
@@ -47,6 +54,61 @@ export type CulledAlbumDetailSidebarProps = {
   onKeyFaceTooltipChange: (anchor: KeyFaceTooltipAnchor | null) => void;
 };
 
+type KeyFaceRow = {
+  key: string;
+  rowIndex: number;
+  faces: KeyFaceWithSource[];
+};
+
+function buildKeyFaceRows(faces: KeyFaceWithSource[]): KeyFaceRow[] {
+  const rows: KeyFaceRow[] = [];
+
+  for (let index = 0; index < faces.length; index += KEY_FACE_COLUMNS) {
+    const rowIndex = index / KEY_FACE_COLUMNS;
+    rows.push({
+      key: `row-${rowIndex}`,
+      rowIndex,
+      faces: faces.slice(index, index + KEY_FACE_COLUMNS),
+    });
+  }
+
+  return rows;
+}
+
+type KeyFaceGridRowProps = {
+  row: KeyFaceRow;
+  onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
+};
+
+const KeyFaceGridRow = memo(
+  function KeyFaceGridRow({row, onTooltipAnchorChange}: KeyFaceGridRowProps) {
+    return (
+      <View style={styles.keyFaceRow}>
+        {row.faces.map(face => (
+          <KeyFaceSidebarItem
+            key={face.faceId}
+            cropUri={face.cropUri}
+            eyeStatus={face.eyeStatus}
+            focusLevel={face.focusLevel}
+            width={KEY_FACE_SIZE}
+            onTooltipAnchorChange={onTooltipAnchorChange}
+          />
+        ))}
+        {row.faces.length < KEY_FACE_COLUMNS &&
+          Array.from({length: KEY_FACE_COLUMNS - row.faces.length}).map(
+            (_, fillerIndex) => (
+              <View
+                key={`filler-${row.rowIndex}-${fillerIndex}`}
+                style={styles.keyFaceFiller}
+              />
+            ),
+          )}
+      </View>
+    );
+  },
+  (prev, next) => prev.row === next.row,
+);
+
 function CulledAlbumDetailSidebarComponent({
   isMobileLayout,
   totalPhotos,
@@ -64,14 +126,59 @@ function CulledAlbumDetailSidebarComponent({
   onKeyFaceTooltipChange,
 }: CulledAlbumDetailSidebarProps) {
   const scrollStoreRef = useRef(createScrollAwareTooltipStore());
+  const onKeyFaceTooltipChangeRef = useRef(onKeyFaceTooltipChange);
+  onKeyFaceTooltipChangeRef.current = onKeyFaceTooltipChange;
+
   const keyFaceScrollHandlers = useScrollAwareTooltipHandlers(
     scrollStoreRef.current,
-    () => onKeyFaceTooltipChange(null),
+    () => onKeyFaceTooltipChangeRef.current(null),
+    {trackWheelScroll: false},
+  );
+
+  const keyFaceRows = useMemo(
+    () => (isMobileLayout ? [] : buildKeyFaceRows(keyFaces)),
+    [isMobileLayout, keyFaces],
   );
 
   const handleSelectionFilterPress = useCallback(() => {
     onSelectionFilterChange(selectionFilter === 'selected' ? null : 'selected');
   }, [onSelectionFilterChange, selectionFilter]);
+
+  const renderKeyFaceRow = useCallback(
+    ({item}: ListRenderItemInfo<KeyFaceRow>) => (
+      <KeyFaceGridRow
+        row={item}
+        onTooltipAnchorChange={onKeyFaceTooltipChangeRef.current}
+      />
+    ),
+    [],
+  );
+
+  const renderKeyFaceItem = useCallback(
+    ({item}: ListRenderItemInfo<KeyFaceWithSource>) => (
+      <KeyFaceSidebarItem
+        cropUri={item.cropUri}
+        eyeStatus={item.eyeStatus}
+        focusLevel={item.focusLevel}
+        width={KEY_FACE_SIZE}
+        onTooltipAnchorChange={onKeyFaceTooltipChangeRef.current}
+      />
+    ),
+    [],
+  );
+
+  const keyExtractor = useCallback((face: KeyFaceWithSource) => face.faceId, []);
+
+  const rowKeyExtractor = useCallback((row: KeyFaceRow) => row.key, []);
+
+  const getKeyFaceRowLayout = useCallback(
+    (_data: ArrayLike<KeyFaceRow> | null | undefined, index: number) => ({
+      length: KEY_FACE_ROW_HEIGHT,
+      offset: KEY_FACE_ROW_HEIGHT * index,
+      index,
+    }),
+    [],
+  );
 
   return (
     <View style={[styles.sidebar, isMobileLayout && styles.sidebarMobile]}>
@@ -121,32 +228,47 @@ function CulledAlbumDetailSidebarComponent({
         minContentHeight={isMobileLayout ? 120 : 200}
         style={styles.keyFacesAccordion}>
         <ScrollAwareTooltipContext.Provider value={scrollStoreRef.current}>
-          <ScrollView
-            {...keyFaceScrollHandlers}
-            horizontal={isMobileLayout}
-            style={styles.keyFaceScroll}
-            contentContainerStyle={[
-              styles.keyFaceGrid,
-              isMobileLayout && styles.keyFaceGridMobile,
-            ]}
-            showsVerticalScrollIndicator={!isMobileLayout}
-            showsHorizontalScrollIndicator={isMobileLayout}>
-            {keyFaces.map(face => (
-              <KeyFaceSidebarItem
-                key={face.faceId}
-                uri={face.uri}
-                boundingBox={face.boundingBox}
-                eyeStatus={face.eyeStatus}
-                focusLevel={face.focusLevel}
-                width={64}
-                onTooltipAnchorChange={onKeyFaceTooltipChange}
-              />
-            ))}
-          </ScrollView>
+          {isMobileLayout ? (
+            <FlatList
+              {...keyFaceScrollHandlers}
+              data={keyFaces}
+              keyExtractor={keyExtractor}
+              renderItem={renderKeyFaceItem}
+              horizontal
+              style={styles.keyFaceScroll}
+              contentContainerStyle={styles.keyFaceGridMobile}
+              showsHorizontalScrollIndicator
+              initialNumToRender={8}
+              maxToRenderPerBatch={8}
+              windowSize={3}
+              updateCellsBatchingPeriod={150}
+              ItemSeparatorComponent={KeyFaceItemSeparator}
+            />
+          ) : (
+            <FlatList
+              {...keyFaceScrollHandlers}
+              data={keyFaceRows}
+              keyExtractor={rowKeyExtractor}
+              renderItem={renderKeyFaceRow}
+              style={styles.keyFaceScroll}
+              contentContainerStyle={styles.keyFaceGrid}
+              showsVerticalScrollIndicator
+              initialNumToRender={5}
+              maxToRenderPerBatch={3}
+              windowSize={5}
+              updateCellsBatchingPeriod={100}
+              removeClippedSubviews
+              getItemLayout={getKeyFaceRowLayout}
+            />
+          )}
         </ScrollAwareTooltipContext.Provider>
       </Accordion>
     </View>
   );
+}
+
+function KeyFaceItemSeparator() {
+  return <View style={styles.keyFaceItemSeparator} />;
 }
 
 export const CulledAlbumDetailSidebar = memo(CulledAlbumDetailSidebarComponent);
@@ -233,17 +355,24 @@ const styles = StyleSheet.create({
   },
   keyFaceScroll: {
     flex: 1,
-    overflow: 'visible',
   },
   keyFaceGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     paddingRight: 20,
-    gap: 16,
   },
   keyFaceGridMobile: {
-    flexWrap: 'nowrap',
     paddingRight: 0,
+  },
+  keyFaceRow: {
+    flexDirection: 'row',
+    gap: KEY_FACE_GAP,
+    marginBottom: KEY_FACE_GAP,
+  },
+  keyFaceFiller: {
+    width: KEY_FACE_SIZE,
+    height: KEY_FACE_SIZE,
+  },
+  keyFaceItemSeparator: {
+    width: KEY_FACE_GAP,
   },
   cullFiltersAccordion: {
     zIndex: 2,

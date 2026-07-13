@@ -2,7 +2,6 @@ import {CulledAlbumFilterBar} from '@components/culling/CulledAlbumFilterBar';
 import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {
   CulledAlbumDetailSidebar,
-  KeyFaceWithSource,
 } from '@components/culling/CulledAlbumDetailSidebar';
 import {CulledAlbumPhotoGrid} from '@components/culling/CulledAlbumPhotoGrid';
 import {CulledAlbumDetailHeader} from '@components/culling/CulledAlbumDetailHeader';
@@ -21,9 +20,8 @@ import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
 import {usePreloadGridImages} from '@hooks/usePreloadGridImages';
 import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
-import {resolveKeyFaceSource} from '@lib/culling/cullingFaceCrop';
 import {cullingEngine} from '@lib/culling/cullingEngine';
-import {preloadImage} from '@lib/media/imagePreload';
+import {preloadImage, preloadImages} from '@lib/media/imagePreload';
 import {
   resolveGridDisplayUri,
   resolveOriginalUri,
@@ -82,7 +80,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     stats,
     keyFaces,
     isAnalyzing,
-    analyzedPhotoList,
     toggleSelection,
     updateStarRating,
     deletePhoto,
@@ -170,14 +167,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     setStarRatingFilter,
   } = useCulledAlbumFilters(gridPhotos, stats);
 
-  const filesByPhotoId = useMemo(() => {
-    const map = new Map<string, (typeof gridPhotos)[number]['file']>();
-    for (const {photoId, file} of gridPhotos) {
-      map.set(photoId, file);
-    }
-    return map;
-  }, [gridPhotos]);
-
   const handleOpenPhotoDetail = useCallback(
     (photoId: string) => {
       const entry = gridPhotos.find(photo => photo.photoId === photoId);
@@ -240,16 +229,25 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   }, [cullFiltersExpanded, keyFacesExpanded, syncScreenOrigin]);
 
 
-  const keyFacesWithSources = useMemo<KeyFaceWithSource[]>(() => {
-    return keyFaces.map(face => {
-      const source = resolveKeyFaceSource(face, analyzedPhotoList, filesByPhotoId);
-      return {
-        ...face,
-        uri: source?.uri,
-        boundingBox: source?.boundingBox,
-      };
-    });
-  }, [analyzedPhotoList, filesByPhotoId, keyFaces]);
+  const keyFaceDisplayUrisKey = useMemo(
+    () =>
+      [...new Set(
+        keyFaces
+          .map(face => face.cropUri)
+          .filter((uri): uri is string => Boolean(uri)),
+      )].join('\0'),
+    [keyFaces],
+  );
+
+  useEffect(() => {
+    if (!keyFaceDisplayUrisKey) {
+      return;
+    }
+
+    preloadImages(keyFaceDisplayUrisKey.split('\0'), {concurrency: 8}).catch(
+      () => undefined,
+    );
+  }, [keyFaceDisplayUrisKey]);
 
   return (
     <UploadAwareModalShell {...shellProps}>
@@ -327,7 +325,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               filterCounts={filterCounts}
               cullFiltersExpanded={cullFiltersExpanded}
               onCullFiltersToggle={handleCullFiltersToggle}
-              keyFaces={keyFacesWithSources}
+              keyFaces={keyFaces}
               keyFacesExpanded={keyFacesExpanded}
               onKeyFacesToggle={handleKeyFacesToggle}
               onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
@@ -374,7 +372,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               filterCounts={filterCounts}
               cullFiltersExpanded={cullFiltersExpanded}
               onCullFiltersToggle={handleCullFiltersToggle}
-              keyFaces={keyFacesWithSources}
+              keyFaces={keyFaces}
               keyFacesExpanded={keyFacesExpanded}
               onKeyFacesToggle={handleKeyFacesToggle}
               onKeyFaceTooltipChange={handleKeyFaceTooltipChange}

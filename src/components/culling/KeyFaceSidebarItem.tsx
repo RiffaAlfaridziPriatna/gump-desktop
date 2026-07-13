@@ -18,6 +18,7 @@ import {Pressable} from '@components/ui';
 import {StyleSheet, View} from 'react-native';
 
 type KeyFaceSidebarItemProps = {
+  cropUri?: string;
   uri?: string;
   boundingBox?: CullingBoundingBox;
   eyeStatus: APIResponse.CullingEyeStatus;
@@ -29,21 +30,25 @@ type KeyFaceSidebarItemProps = {
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
 };
 
-export const KeyFaceSidebarItem = memo(function KeyFaceSidebarItem({
-  uri,
-  boundingBox,
-  eyeStatus,
-  focusLevel,
-  width,
-  imageSize,
-  selected = false,
-  onPress,
-  onTooltipAnchorChange,
-}: KeyFaceSidebarItemProps) {
+export const KeyFaceSidebarItem = memo(
+  function KeyFaceSidebarItem({
+    cropUri,
+    uri,
+    boundingBox,
+    eyeStatus,
+    focusLevel,
+    width,
+    imageSize,
+    selected = false,
+    onPress,
+    onTooltipAnchorChange,
+  }: KeyFaceSidebarItemProps) {
   const avatarRef = useRef<View>(null);
   const scrollAwareTooltipStore = useScrollAwareTooltipStore();
   const eyeMeta = getEyeStatusMeta(eyeStatus);
   const focusMeta = getFocusStatusMeta(focusLevel);
+  const hasCrop = Boolean(cropUri);
+  const hasTransformCrop = Boolean(uri && boundingBox);
 
   const handleHoverIn = useCallback(() => {
     if (isScrollAwareTooltipLocked(scrollAwareTooltipStore)) {
@@ -80,7 +85,9 @@ export const KeyFaceSidebarItem = memo(function KeyFaceSidebarItem({
         <View
           ref={avatarRef}
           style={[styles.avatarWrap, {width, height: width}]}>
-          {uri && boundingBox ? (
+          {hasCrop ? (
+            <FaceCropAvatar cropUri={cropUri} size={width} />
+          ) : hasTransformCrop ? (
             <FaceCropAvatar
               uri={uri}
               boundingBox={boundingBox}
@@ -114,19 +121,29 @@ export const KeyFaceSidebarItem = memo(function KeyFaceSidebarItem({
       </View>
     </Pressable>
   );
-});
+  },
+  (prev, next) =>
+    prev.cropUri === next.cropUri &&
+    prev.uri === next.uri &&
+    prev.boundingBox === next.boundingBox &&
+    prev.eyeStatus === next.eyeStatus &&
+    prev.focusLevel === next.focusLevel &&
+    prev.width === next.width &&
+    prev.selected === next.selected &&
+    prev.imageSize === next.imageSize,
+);
 
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
-    overflow: 'visible',
+    overflow: 'hidden',
   },
   root: {
     position: 'relative',
-    overflow: 'visible',
+    overflow: 'hidden',
   },
   avatarWrap: {
-    overflow: 'visible',
+    overflow: 'hidden',
   },
   selectedRing: {
     position: 'absolute',

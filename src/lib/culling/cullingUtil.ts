@@ -1,8 +1,63 @@
 import { APIResponse } from '@services/api';
 import { hammingDistance } from '@lib/media/perceptualHash';
+import { photoStateStore } from '@lib/culledAlbum/photoStateStore';
+import { CulledAlbumPhoto } from '@lib/culledAlbum/types';
 
 export type CullingFace = APIResponse.CullingFace;
 export type CullingPhoto = APIResponse.CullingPhoto;
+
+/**
+ * Orders photos to match the culling grid (filename order / photoOrder store).
+ */
+export function orderPhotosForCulling<T extends {photoId: string}>(
+  albumId: string,
+  photos: T[],
+  resolveFileName?: (photo: T) => string | undefined,
+): T[] {
+  const photoOrder = photoStateStore.getState().photoOrder[albumId];
+  const byId = new Map(photos.map(photo => [photo.photoId, photo]));
+
+  if (photoOrder && photoOrder.length > 0) {
+    const ordered: T[] = [];
+    const seen = new Set<string>();
+
+    for (const photoId of photoOrder) {
+      const photo = byId.get(photoId);
+      if (photo) {
+        ordered.push(photo);
+        seen.add(photoId);
+      }
+    }
+
+    for (const photo of photos) {
+      if (!seen.has(photo.photoId)) {
+        ordered.push(photo);
+      }
+    }
+
+    return ordered;
+  }
+
+  return [...photos].sort((left, right) => {
+    const leftName = resolveFileName?.(left) ?? left.photoId;
+    const rightName = resolveFileName?.(right) ?? right.photoId;
+    return leftName.localeCompare(rightName, undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
+  });
+}
+
+export function orderCulledAlbumPhotosForCulling(
+  albumId: string,
+  photos: CulledAlbumPhoto[],
+): CulledAlbumPhoto[] {
+  return orderPhotosForCulling(
+    albumId,
+    photos,
+    photo => photo.file.name,
+  );
+}
 
 const EYE_CONFIDENCE_THRESHOLD = 85;
 const FOCUS_GOOD_THRESHOLD = 62;
@@ -228,30 +283,172 @@ export function resolveFaceClusterIdInPhoto(
   return clusterId;
 }
 
+function scoreKeyFaceRepresentative(
+  face: CullingFace,
+  photoOrder: number,
+): number {
+  let score = 0;
+
+  if (face.eyeStatus === 'open') {
+    score += 400;
+  } else if (face.eyeStatus === 'partial') {
+    score += 200;
+  }
+
+  if (face.focusLevel === 'good') {
+    score += 300;
+  } else if (face.focusLevel === 'soft') {
+    score += 150;
+  }
+
+  score += Math.min(face.sharpness ?? 0, 100);
+  score += Math.max(
+    0,
+    100 - Math.abs(face.pose.yaw) - Math.abs(face.pose.pitch),
+  );
+  score += face.boundingBox.width * face.boundingBox.height * 500;
+  score -= photoOrder * 10;
+
+  return score;
+}
+
+const VISUAL_SIMILARITY_THRESHOLD = 0.08;
+
+type KeyFaceCandidate = {
+  faceId: string;
+  photoIds: string[];
+  eyeStatus: APIResponse.CullingEyeStatus;
+  focusLevel: APIResponse.CullingFocusLevel;
+  occurrenceCount: number;
+  sourcePhotoId: string;
+  sourceFaceIndex: number;
+  boundingBox: CullingFace['boundingBox'];
+  cropUri?: string;
+  fingerprint: number[];
+};
+
+function deduplicateKeyFacesByVisualSimilarity(
+  keyFaces: KeyFaceCandidate[],
+): APIResponse.CullingKeyFace[] {
+  const kept: KeyFaceCandidate[] = [];
+
+  for (const candidate of keyFaces) {
+    const duplicate = kept.find(
+      existing =>
+        existing.eyeStatus === candidate.eyeStatus &&
+        existing.focusLevel === candidate.focusLevel &&
+        fingerprintDistance(candidate.fingerprint, existing.fingerprint) <
+          VISUAL_SIMILARITY_THRESHOLD,
+    );
+
+    if (duplicate) {
+      duplicate.occurrenceCount += candidate.occurrenceCount;
+      const existingIds = new Set(duplicate.photoIds);
+      for (const photoId of candidate.photoIds) {
+        if (!existingIds.has(photoId)) {
+          duplicate.photoIds.push(photoId);
+        }
+      }
+      if (!duplicate.cropUri && candidate.cropUri) {
+        duplicate.cropUri = candidate.cropUri;
+        duplicate.sourcePhotoId = candidate.sourcePhotoId;
+        duplicate.sourceFaceIndex = candidate.sourceFaceIndex;
+        duplicate.boundingBox = candidate.boundingBox;
+      }
+    } else {
+      kept.push(candidate);
+    }
+  }
+
+  return kept.map(
+    ({
+      faceId,
+      photoIds,
+      eyeStatus,
+      focusLevel,
+      occurrenceCount,
+      sourcePhotoId,
+      sourceFaceIndex,
+      boundingBox,
+      cropUri,
+    }) => ({
+      faceId,
+      photoIds,
+      eyeStatus,
+      focusLevel,
+      occurrenceCount,
+      sourcePhotoId,
+      sourceFaceIndex,
+      boundingBox,
+      cropUri,
+    }),
+  );
+}
+
+type VariantBucket = {
+  faceId: string;
+  photoIds: string[];
+  photoIdSet: Set<string>;
+  eyeStatus: APIResponse.CullingEyeStatus;
+  focusLevel: APIResponse.CullingFocusLevel;
+  occurrenceCount: number;
+  firstPhotoOrder: number;
+  firstSourceFaceIndex: number;
+  sourcePhotoId: string;
+  sourceFaceIndex: number;
+  boundingBox: CullingFace['boundingBox'];
+  sourceCropUri?: string;
+  representativeScore: number;
+  fingerprint: number[];
+};
+
+function createVariantBucket(
+  variantId: string,
+  face: CullingFace,
+  photoId: string,
+  faceIndex: number,
+  photoOrder: number,
+  representativeScore: number,
+  fingerprint: number[],
+): VariantBucket {
+  return {
+    faceId: variantId,
+    photoIds: [],
+    photoIdSet: new Set(),
+    eyeStatus: face.eyeStatus,
+    focusLevel: face.focusLevel,
+    occurrenceCount: 0,
+    firstPhotoOrder: photoOrder,
+    firstSourceFaceIndex: faceIndex,
+    sourcePhotoId: photoId,
+    sourceFaceIndex: faceIndex,
+    boundingBox: face.boundingBox,
+    sourceCropUri: face.cropUri,
+    representativeScore,
+    fingerprint,
+  };
+}
+
+function addFaceToBucket(bucket: VariantBucket, photoId: string): void {
+  bucket.occurrenceCount++;
+  if (!bucket.photoIdSet.has(photoId)) {
+    bucket.photoIdSet.add(photoId);
+    bucket.photoIds.push(photoId);
+  }
+}
+
 export function computeKeyFaces(
   photos: CullingPhoto[],
 ): APIResponse.CullingKeyFace[] {
-  type VariantBucket = {
-    faceId: string;
-    photoIds: string[];
-    photoIdSet: Set<string>;
-    eyeStatus: APIResponse.CullingEyeStatus;
-    focusLevel: APIResponse.CullingFocusLevel;
-    occurrenceCount: number;
-    firstPhotoOrder: number;
-  };
-
   const variants = new Map<string, VariantBucket>();
 
   photos.forEach((photo, photoOrder) => {
     const usedClusterIdsInPhoto = new Set<string>();
 
-    photo.faces.forEach((face, index) => {
+    photo.faces.forEach((face, faceIndex) => {
       let clusterId = face.rekognitionFaceId;
-      if (!clusterId) {
-        clusterId = `${photo.photoId}#${index}`;
-      } else if (usedClusterIdsInPhoto.has(clusterId)) {
-        clusterId = `${photo.photoId}#${index}`;
+      if (!clusterId || usedClusterIdsInPhoto.has(clusterId)) {
+        clusterId = `${photo.photoId}#${faceIndex}`;
       } else {
         usedClusterIdsInPhoto.add(clusterId);
       }
@@ -261,46 +458,52 @@ export function computeKeyFaces(
         face.eyeStatus,
         face.focusLevel,
       );
+      const representativeScore = scoreKeyFaceRepresentative(face, photoOrder);
+      const fingerprint = faceFingerprint(face);
 
-      let bucket = variants.get(variantId);
+      const bucket = variants.get(variantId);
       if (!bucket) {
-        bucket = {
-          faceId: variantId,
-          photoIds: [],
-          photoIdSet: new Set<string>(),
-          eyeStatus: face.eyeStatus,
-          focusLevel: face.focusLevel,
-          occurrenceCount: 0,
-          firstPhotoOrder: photoOrder,
-        };
-        variants.set(variantId, bucket);
-      }
-
-      bucket.occurrenceCount += 1;
-      if (!bucket.photoIdSet.has(photo.photoId)) {
-        bucket.photoIdSet.add(photo.photoId);
-        bucket.photoIds.push(photo.photoId);
+        const newBucket = createVariantBucket(
+          variantId,
+          face,
+          photo.photoId,
+          faceIndex,
+          photoOrder,
+          representativeScore,
+          fingerprint,
+        );
+        variants.set(variantId, newBucket);
+        addFaceToBucket(newBucket, photo.photoId);
+      } else {
+        addFaceToBucket(bucket, photo.photoId);
       }
     });
   });
 
-  return [...variants.values()]
-    .sort((left, right) => left.firstPhotoOrder - right.firstPhotoOrder)
-    .map(
-      ({
-        faceId,
-        photoIds,
-        eyeStatus,
-        focusLevel,
-        occurrenceCount,
-      }) => ({
-        faceId,
-        photoIds,
-        eyeStatus,
-        focusLevel,
-        occurrenceCount,
-      }),
-    );
+  const sorted = [...variants.values()].sort((a, b) => {
+    if (a.firstPhotoOrder !== b.firstPhotoOrder) {
+      return a.firstPhotoOrder - b.firstPhotoOrder;
+    }
+    if (a.firstSourceFaceIndex !== b.firstSourceFaceIndex) {
+      return a.firstSourceFaceIndex - b.firstSourceFaceIndex;
+    }
+    return a.faceId.localeCompare(b.faceId);
+  });
+
+  const candidates: KeyFaceCandidate[] = sorted.map(v => ({
+    faceId: v.faceId,
+    photoIds: v.photoIds,
+    eyeStatus: v.eyeStatus,
+    focusLevel: v.focusLevel,
+    occurrenceCount: v.occurrenceCount,
+    sourcePhotoId: v.sourcePhotoId,
+    sourceFaceIndex: v.sourceFaceIndex,
+    boundingBox: v.boundingBox,
+    cropUri: v.sourceCropUri,
+    fingerprint: v.fingerprint,
+  }));
+
+  return deduplicateKeyFacesByVisualSimilarity(candidates);
 }
 
 /**
@@ -308,6 +511,13 @@ export function computeKeyFaces(
  * Lower = harder to merge (more Key Faces). Higher = more aggressive merging.
  */
 export const FACE_CLUSTER_CROSS_PHOTO_THRESHOLD = 0.05;
+
+function blendClusterRepresentatives(
+  existing: number[],
+  incoming: number[],
+): number[] {
+  return existing.map((value, index) => value * 0.65 + incoming[index]! * 0.35);
+}
 
 type FaceClusterMatch = {
   faceIndex: number;
@@ -360,6 +570,16 @@ export function assignFaceClustersToSinglePhoto(
       }
       assignedClusterIds[match.faceIndex] = match.clusterId;
       usedClusterIds.add(match.clusterId);
+      const representative = clusterRepresentatives.get(match.clusterId);
+      if (representative) {
+        clusterRepresentatives.set(
+          match.clusterId,
+          blendClusterRepresentatives(
+            representative,
+            fingerprints[match.faceIndex]!,
+          ),
+        );
+      }
     }
   }
 
