@@ -21,6 +21,7 @@ import {
   View,
 } from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
+import IconCheckCircleOutline from '../../assets/images/icon_check_circle_outlined.svg';
 
 const FILTER_LABELS: Record<CullFilterKey, string> = {
   aiSelected: 'AI Selected',
@@ -193,12 +194,13 @@ function CulledAlbumDetailSidebarComponent({
             <Text style={styles.totalPhotosValue}>{totalPhotos}</Text>
           </View>
           <Pressable
-            style={[
-              styles.mySelectionsRow,
-              selectionFilter === 'selected' && styles.mySelectionsRowSelected,
-            ]}
+            style={styles.mySelectionsRow}
             onPress={handleSelectionFilterPress}>
-            <IconCheckCircle width={20} height={20} color={colors.text} />
+            {selectionFilter === 'selected' ? (
+              <IconCheckCircle width={20} height={20} color={colors.text} />
+            ) : (
+              <IconCheckCircleOutline width={20} height={20} color={colors.text} />
+            )}
             <Text style={styles.mySelectionsLabel}>My Selections</Text>
             <Text style={styles.mySelectionsCount}>{selectedCount}</Text>
           </Pressable>
@@ -312,11 +314,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    opacity: 0.2,
     paddingLeft: 12,
-  },
-  mySelectionsRowSelected: {
-    opacity: 1,
   },
   mySelectionsLabel: {
     fontFamily: fonts.sans,
