@@ -48,7 +48,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
   const {loadingAlbums, albums, loadMore, hasMore, refresh} = useSiteAlbumList();
   const {localAlbumIds, refresh: refreshLocalAlbums} = useLocalCulledAlbumList();
   const {addPhotos} = useCulledAlbumActions();
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedAlbum, setSelectedAlbum] = useState<APIResponse.Album | null>(
     null,
@@ -72,20 +72,15 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
     [albums.results, localAlbumIds],
   );
 
-  const hasSelection = selectedIds.length > 0;
+  const hasSelection = selectedId !== null;
 
   function toggleSelection(albumId: string) {
-    setSelectedIds(current =>
-      current.includes(albumId)
-        ? current.filter(id => id !== albumId)
-        : [...current, albumId],
-    );
+    setSelectedId(current => (current === albumId ? null : albumId));
   }
 
   function handleNext() {
-    if (!hasSelection) return;
-    const album =
-      emptyAlbums.find(item => item.id === selectedIds[0]) ?? null;
+    if (!selectedId) return;
+    const album = emptyAlbums.find(item => item.id === selectedId) ?? null;
     if (!album) return;
     setSelectedAlbum(album);
     setShowUploadModal(true);
@@ -209,7 +204,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
                 variant="select"
                 album={album}
                 ownerName={user && user.role !== 'guest' ? user.name : undefined}
-                isSelected={selectedIds.includes(album.id)}
+                isSelected={selectedId === album.id}
                 onToggleSelect={() => toggleSelection(album.id)}
               />
             ))}
