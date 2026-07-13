@@ -42,6 +42,11 @@ using ReactPromiseJS = winrtRN::ReactPromise<winrtRN::JSValue>;
 
 constexpr uint32_t kThumbnailMaxPixelSize = 1920;
 constexpr float kThumbnailJpegQuality = 0.82f;
+constexpr float kFaceCropSidePadding = 0.3f;
+constexpr float kFaceCropTopPadding = 0.3f;
+constexpr float kFaceCropBottomPadding = 0.5f;
+constexpr uint32_t kFaceCropOutputPixelSize = 128;
+constexpr float kFaceCropJpegQuality = 0.85f;
 
 std::wstring ToWide(std::string_view value) {
   if (value.empty()) {
@@ -98,6 +103,54 @@ std::filesystem::path ThumbnailDirectory(std::string_view albumId) {
 
 std::filesystem::path ThumbnailPathForAlbum(std::string_view albumId, std::string_view photoId) {
   return ThumbnailDirectory(albumId) / (ToWide(photoId) + L".jpg");
+}
+
+std::filesystem::path FaceCropDirectory(std::string_view albumId) {
+  return CullingAlbumDirectory(albumId) / L"face-thumbs";
+}
+
+std::filesystem::path FaceCropPathForAlbum(
+    std::string_view albumId,
+    std::string_view photoId,
+    int faceIndex) {
+  return FaceCropDirectory(albumId) / (ToWide(photoId) + L"-" + std::to_wstring(faceIndex) + L".jpg");
+}
+
+struct FaceCropRect {
+  int left{0};
+  int top{0};
+  int width{0};
+  int height{0};
+};
+
+FaceCropRect ComputePaddedFaceCropRect(
+    int imageWidth,
+    int imageHeight,
+    float boxLeft,
+    float boxTop,
+    float boxWidth,
+    float boxHeight) {
+  const float cropX = boxLeft * static_cast<float>(imageWidth);
+  const float cropY = boxTop * static_cast<float>(imageHeight);
+  const float cropW = std::max(boxWidth * static_cast<float>(imageWidth), 1.0f);
+  const float cropH = std::max(boxHeight * static_cast<float>(imageHeight), 1.0f);
+
+  float viewLeft = cropX - kFaceCropSidePadding * cropW;
+  float viewTop = cropY - kFaceCropTopPadding * cropH;
+  float viewW = cropW * (1.0f + 2.0f * kFaceCropSidePadding);
+  float viewH = cropH * (1.0f + kFaceCropTopPadding + kFaceCropBottomPadding);
+
+  viewLeft = std::max(0.0f, std::min(viewLeft, static_cast<float>(imageWidth - 1)));
+  viewTop = std::max(0.0f, std::min(viewTop, static_cast<float>(imageHeight - 1)));
+  viewW = std::max(1.0f, std::min(viewW, static_cast<float>(imageWidth) - viewLeft));
+  viewH = std::max(1.0f, std::min(viewH, static_cast<float>(imageHeight) - viewTop));
+
+  return FaceCropRect{
+      static_cast<int>(std::lround(viewLeft)),
+      static_cast<int>(std::lround(viewTop)),
+      static_cast<int>(std::lround(viewW)),
+      static_cast<int>(std::lround(viewH)),
+  };
 }
 
 StorageFile GetStorageFileFromPath(const std::filesystem::path &path) {
@@ -487,6 +540,110 @@ SoftwareBitmap CropSoftwareBitmap(
   }
 
   return cropped;
+}
+
+bool SaveFaceCropJpeg(const SoftwareBitmap &cropped, const std::filesystem::path &path) {
+  std::filesystem::create_directories(path.parent_path());
+  if (std::filesystem::exists(path)) {
+    std::filesystem::remove(path);
+  }
+
+  {
+    std::ofstream placeholder(path, std::ios::binary);
+  }
+
+  const auto destFile = GetStorageFileFromPath(path);
+  const auto destStream = destFile.OpenAsync(FileAccessMode::ReadWrite).get();
+  destStream.Size(0);
+
+  BitmapPropertySet encodingOptions;
+  encodingOptions.Insert(
+      L"ImageQuality",
+      BitmapTypedValue(
+          winrt::box_value(kFaceCropJpegQuality),
+          winrt::Windows::Foundation::PropertyType::Single));
+
+  BitmapEncoder encoder =
+      BitmapEncoder::CreateAsync(BitmapEncoder::JpegEncoderId(), destStream, encodingOptions).get();
+  BitmapTransform transform;
+  transform.ScaledWidth(kFaceCropOutputPixelSize);
+  transform.ScaledHeight(kFaceCropOutputPixelSize);
+  transform.InterpolationMode(BitmapInterpolationMode::Fant);
+  encoder.BitmapTransform(transform);
+  encoder.SetSoftwareBitmap(cropped);
+  encoder.FlushAsync().get();
+  return true;
+}
+
+void DeleteFaceCropsForPhoto(const std::filesystem::path &albumDir, std::string_view photoId) {
+  const auto faceCropDir = albumDir / L"face-thumbs";
+  if (!std::filesystem::exists(faceCropDir)) {
+    return;
+  }
+
+  const auto prefix = ToWide(photoId) + L"-";
+  for (const auto &entry : std::filesystem::directory_iterator(faceCropDir)) {
+    if (entry.path().filename().wstring().rfind(prefix, 0) == 0) {
+      std::filesystem::remove(entry.path());
+    }
+  }
+}
+
+winrtRN::JSValue GenerateFaceCropsAtPath(
+    const std::filesystem::path &sourcePath,
+    std::string_view albumId,
+    std::string_view photoId,
+    const winrtRN::JSValueArray &faces) {
+  winrtRN::JSValueArray cropUris;
+  if (sourcePath.empty() || !std::filesystem::exists(sourcePath) || faces.size() == 0) {
+    return winrtRN::JSValueObject{{"cropUris", cropUris}};
+  }
+
+  const auto bitmap = LoadSoftwareBitmap(sourcePath);
+  const int imageWidth = bitmap.PixelWidth();
+  const int imageHeight = bitmap.PixelHeight();
+  if (imageWidth <= 0 || imageHeight <= 0) {
+    return winrtRN::JSValueObject{{"cropUris", cropUris}};
+  }
+
+  const auto sourcePixels = ReadBitmapPixels(bitmap);
+  cropUris.reserve(faces.size());
+
+  for (const auto &faceValue : faces) {
+    const auto faceObject = faceValue.AsObject();
+    const auto faceIndexValue = faceObject.at("faceIndex");
+    const auto boundingBox = faceObject.at("boundingBox").AsObject();
+    if (faceIndexValue == winrtRN::JSValue::Undefined() || boundingBox.empty()) {
+      cropUris.push_back(nullptr);
+      continue;
+    }
+
+    const int faceIndex = static_cast<int>(faceIndexValue.AsInt32());
+    const auto cropRect = ComputePaddedFaceCropRect(
+        imageWidth,
+        imageHeight,
+        static_cast<float>(boundingBox.at("left").AsDouble()),
+        static_cast<float>(boundingBox.at("top").AsDouble()),
+        static_cast<float>(boundingBox.at("width").AsDouble()),
+        static_cast<float>(boundingBox.at("height").AsDouble()));
+
+    const auto cropped = CropSoftwareBitmap(
+        bitmap,
+        sourcePixels,
+        cropRect.left,
+        cropRect.top,
+        cropRect.width,
+        cropRect.height);
+    const auto cropPath = FaceCropPathForAlbum(albumId, photoId, faceIndex);
+    if (!SaveFaceCropJpeg(cropped, cropPath)) {
+      cropUris.push_back(nullptr);
+      continue;
+    }
+
+    cropUris.push_back(FileUri(cropPath));
+  }
+
+  return winrtRN::JSValueObject{{"cropUris", cropUris}};
 }
 
 std::vector<BitmapBounds> DetectFaceBoxesInBitmap(const FaceDetector &detector, const SoftwareBitmap &bitmap) {
@@ -913,6 +1070,16 @@ void GumpLocalStorage::DeletePhoto(std::string uri, winrtRN::ReactPromise<bool> 
         if (std::filesystem::exists(path)) {
           std::filesystem::remove(path);
         }
+
+        const auto albumDir = path.parent_path();
+        const auto photoId = path.stem().string();
+        DeleteFaceCropsForPhoto(albumDir, photoId);
+
+        const auto thumbPath = albumDir / L"thumbs" / (path.stem().wstring() + L".jpg");
+        if (std::filesystem::exists(thumbPath)) {
+          std::filesystem::remove(thumbPath);
+        }
+
         return true;
       },
       std::move(promise));
@@ -982,6 +1149,20 @@ void GumpLocalStorage::EnsureThumbnail(
         return winrtRN::JSValue(winrtRN::JSValueObject{
             {"thumbnailUri", FileUri(*thumbPath)},
         });
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::EnsureFaceCrops(
+    std::string albumId,
+    std::string sourceUri,
+    std::string photoId,
+    winrtRN::JSValueArray faces,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [=]() {
+        const auto sourcePath = PathFromUri(sourceUri);
+        return GenerateFaceCropsAtPath(sourcePath, albumId, photoId, faces);
       },
       std::move(promise));
 }

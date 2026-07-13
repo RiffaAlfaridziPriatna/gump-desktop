@@ -51,6 +51,7 @@ export namespace APIResponse {
     landmarks: Array<{type: string; x: number; y: number}>;
     pose: {pitch: number; roll: number; yaw: number};
     rekognitionFaceId?: string;
+    cropUri?: string;
   };
 
   export type CullingPhoto = {
@@ -86,6 +87,10 @@ export namespace APIResponse {
     eyeStatus: CullingEyeStatus;
     focusLevel: CullingFocusLevel;
     occurrenceCount: number;
+    sourcePhotoId?: string;
+    sourceFaceIndex?: number;
+    boundingBox?: CullingFace['boundingBox'];
+    cropUri?: string;
   };
 
   export type CullingKeyFaceList = {

@@ -9,6 +9,10 @@
 RCT_EXPORT_MODULE();
 
 static const NSUInteger THUMBNAIL_MAX_PIXEL_SIZE = 1920;
+static const CGFloat kFaceCropSidePadding = 0.3;
+static const CGFloat kFaceCropTopPadding = 0.3;
+static const CGFloat kFaceCropBottomPadding = 0.5;
+static const NSUInteger kFaceCropOutputPixelSize = 128;
 
 - (NSString *)cullingAlbumDirectory:(NSString *)albumId
 {
@@ -1159,6 +1163,199 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
   return saved ? thumbPath : nil;
 }
 
+- (NSString *)faceCropDirectory:(NSString *)albumId
+{
+  return [[self cullingAlbumDirectory:albumId] stringByAppendingPathComponent:@"face-thumbs"];
+}
+
+- (NSString *)faceCropPathForAlbum:(NSString *)albumId
+                           photoId:(NSString *)photoId
+                         faceIndex:(NSInteger)faceIndex
+{
+  return [[self faceCropDirectory:albumId]
+      stringByAppendingPathComponent:[NSString stringWithFormat:@"%@-%ld.jpg", photoId, (long)faceIndex]];
+}
+
+- (CGRect)paddedFaceCropRectForImageWidth:(CGFloat)imageWidth
+                              imageHeight:(CGFloat)imageHeight
+                             boundingBox:(NSDictionary *)box
+{
+  CGFloat left = [box[@"left"] doubleValue];
+  CGFloat top = [box[@"top"] doubleValue];
+  CGFloat width = [box[@"width"] doubleValue];
+  CGFloat height = [box[@"height"] doubleValue];
+
+  CGFloat cropX = left * imageWidth;
+  CGFloat cropY = top * imageHeight;
+  CGFloat cropW = MAX(width * imageWidth, 1.0);
+  CGFloat cropH = MAX(height * imageHeight, 1.0);
+
+  CGFloat viewLeft = cropX - kFaceCropSidePadding * cropW;
+  CGFloat viewTop = cropY - kFaceCropTopPadding * cropH;
+  CGFloat viewW = cropW * (1.0 + 2.0 * kFaceCropSidePadding);
+  CGFloat viewH = cropH * (1.0 + kFaceCropTopPadding + kFaceCropBottomPadding);
+
+  viewLeft = MAX(0.0, MIN(viewLeft, imageWidth - 1.0));
+  viewTop = MAX(0.0, MIN(viewTop, imageHeight - 1.0));
+  viewW = MAX(1.0, MIN(viewW, imageWidth - viewLeft));
+  viewH = MAX(1.0, MIN(viewH, imageHeight - viewTop));
+
+  return CGRectMake(viewLeft, viewTop, viewW, viewH);
+}
+
+- (BOOL)writeFaceCropImage:(CGImageRef)sourceImage
+               boundingBox:(NSDictionary *)box
+                   albumId:(NSString *)albumId
+                   photoId:(NSString *)photoId
+                 faceIndex:(NSInteger)faceIndex
+{
+  if (sourceImage == NULL || box == nil) {
+    return NO;
+  }
+
+  NSString *faceCropDir = [self faceCropDirectory:albumId];
+  NSError *dirError = nil;
+  [[NSFileManager defaultManager] createDirectoryAtPath:faceCropDir
+                            withIntermediateDirectories:YES
+                                             attributes:nil
+                                                  error:&dirError];
+  if (dirError != nil) {
+    return NO;
+  }
+
+  NSString *cropPath = [self faceCropPathForAlbum:albumId photoId:photoId faceIndex:faceIndex];
+  if ([[NSFileManager defaultManager] fileExistsAtPath:cropPath]) {
+    [[NSFileManager defaultManager] removeItemAtPath:cropPath error:nil];
+  }
+
+  size_t imageWidth = CGImageGetWidth(sourceImage);
+  size_t imageHeight = CGImageGetHeight(sourceImage);
+  if (imageWidth == 0 || imageHeight == 0) {
+    return NO;
+  }
+
+  CGRect viewRect = [self paddedFaceCropRectForImageWidth:imageWidth
+                                              imageHeight:imageHeight
+                                             boundingBox:box];
+
+  CGImageRef cropped = CGImageCreateWithImageInRect(sourceImage, viewRect);
+  if (cropped == NULL) {
+    return NO;
+  }
+
+  const size_t outputSize = kFaceCropOutputPixelSize;
+  CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+  CGContextRef context = CGBitmapContextCreate(NULL,
+                                                 outputSize,
+                                                 outputSize,
+                                                 8,
+                                                 outputSize * 4,
+                                                 colorSpace,
+                                                 kCGImageAlphaPremultipliedLast);
+  CGColorSpaceRelease(colorSpace);
+  if (context == NULL) {
+    CGImageRelease(cropped);
+    return NO;
+  }
+
+  CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+  CGContextDrawImage(context, CGRectMake(0, 0, outputSize, outputSize), cropped);
+  CGImageRelease(cropped);
+
+  CGImageRef outputImage = CGBitmapContextCreateImage(context);
+  CGContextRelease(context);
+  if (outputImage == NULL) {
+    return NO;
+  }
+
+  NSURL *destURL = [NSURL fileURLWithPath:cropPath isDirectory:NO];
+  CGImageDestinationRef destination =
+      CGImageDestinationCreateWithURL((__bridge CFURLRef)destURL, CFSTR("public.jpeg"), 1, NULL);
+  if (destination == NULL) {
+    CGImageRelease(outputImage);
+    return NO;
+  }
+
+  NSDictionary *properties = @{
+    (NSString *)kCGImageDestinationLossyCompressionQuality : @(0.85),
+  };
+  CGImageDestinationAddImage(destination, outputImage, (__bridge CFDictionaryRef)properties);
+  BOOL saved = CGImageDestinationFinalize(destination);
+  CGImageRelease(outputImage);
+  CFRelease(destination);
+
+  return saved;
+}
+
+- (NSArray *)generateFaceCropsAtPath:(NSString *)sourcePath
+                             albumId:(NSString *)albumId
+                             photoId:(NSString *)photoId
+                               faces:(NSArray *)faces
+{
+  if (sourcePath.length == 0 || faces.count == 0) {
+    return @[];
+  }
+
+  NSMutableArray *cropUris = [NSMutableArray arrayWithCapacity:faces.count];
+  for (NSDictionary *face in faces) {
+    NSNumber *faceIndexValue = face[@"faceIndex"];
+    NSDictionary *boundingBox = face[@"boundingBox"];
+    if (faceIndexValue == nil || boundingBox == nil) {
+      [cropUris addObject:[NSNull null]];
+      continue;
+    }
+
+    NSInteger faceIndex = faceIndexValue.integerValue;
+    NSString *cropPath = [self faceCropPathForAlbum:albumId photoId:photoId faceIndex:faceIndex];
+
+    if ([[NSFileManager defaultManager] fileExistsAtPath:cropPath]) {
+      [cropUris addObject:[NSString stringWithFormat:@"file://%@", cropPath]];
+      continue;
+    }
+
+    CGImageRef sourceImage = [self orientedCGImageFromPath:sourcePath];
+    if (sourceImage == NULL) {
+      [cropUris addObject:[NSNull null]];
+      continue;
+    }
+
+    BOOL saved = [self writeFaceCropImage:sourceImage
+                              boundingBox:boundingBox
+                                  albumId:albumId
+                                  photoId:photoId
+                                faceIndex:faceIndex];
+    CGImageRelease(sourceImage);
+
+    if (!saved) {
+      [cropUris addObject:[NSNull null]];
+      continue;
+    }
+
+    [cropUris addObject:[NSString stringWithFormat:@"file://%@", cropPath]];
+  }
+
+  return cropUris;
+}
+
+- (void)deleteFaceCropsForPhotoId:(NSString *)photoId inAlbumDir:(NSString *)albumDir
+{
+  NSString *faceCropDir = [albumDir stringByAppendingPathComponent:@"face-thumbs"];
+  NSArray<NSString *> *entries =
+      [[NSFileManager defaultManager] contentsOfDirectoryAtPath:faceCropDir error:nil];
+  if (entries.count == 0) {
+    return;
+  }
+
+  NSString *prefix = [NSString stringWithFormat:@"%@-", photoId];
+  for (NSString *entry in entries) {
+    if ([entry hasPrefix:prefix]) {
+      [[NSFileManager defaultManager]
+          removeItemAtPath:[faceCropDir stringByAppendingPathComponent:entry]
+                     error:nil];
+    }
+  }
+}
+
 RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
                   sourceUri:(NSString *)sourceUri
                   fileName:(NSString *)fileName
@@ -1269,6 +1466,39 @@ RCT_EXPORT_METHOD(ensureThumbnail:(NSString *)albumId
   });
 }
 
+RCT_EXPORT_METHOD(ensureFaceCrops:(NSString *)albumId
+                  sourceUri:(NSString *)sourceUri
+                  photoId:(NSString *)photoId
+                  faces:(NSArray *)faces
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    @try {
+      NSString *sourcePath = [self pathFromUri:sourceUri];
+      if (sourcePath.length == 0 ||
+          ![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          resolve(@{@"cropUris" : @[]});
+        });
+        return;
+      }
+
+      NSArray *cropUris = [self generateFaceCropsAtPath:sourcePath
+                                                albumId:albumId
+                                                photoId:photoId
+                                                  faces:faces];
+      dispatch_async(dispatch_get_main_queue(), ^{
+        resolve(@{@"cropUris" : cropUris});
+      });
+    } @catch (NSException *exception) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        reject(@"EFACECROP", exception.reason ?: @"Face crop generation failed", nil);
+      });
+    }
+  });
+}
+
 RCT_EXPORT_METHOD(getThumbnailUri:(NSString *)albumId
                   photoId:(NSString *)photoId
                   resolver:(RCTPromiseResolveBlock)resolve
@@ -1311,7 +1541,8 @@ RCT_EXPORT_METHOD(listPhotos:(NSString *)albumId
 
     NSMutableArray *files = [NSMutableArray array];
     for (NSString *entry in entries) {
-      if ([entry hasPrefix:@"."] || [entry isEqualToString:@"thumbs"]) {
+      if ([entry hasPrefix:@"."] || [entry isEqualToString:@"thumbs"] ||
+          [entry isEqualToString:@"face-thumbs"]) {
         continue;
       }
       NSString *path = [albumDir stringByAppendingPathComponent:entry];
@@ -1517,6 +1748,8 @@ RCT_EXPORT_METHOD(deletePhoto:(NSString *)uri
     if ([[NSFileManager defaultManager] fileExistsAtPath:thumbPath]) {
       [[NSFileManager defaultManager] removeItemAtPath:thumbPath error:nil];
     }
+
+    [self deleteFaceCropsForPhotoId:photoId inAlbumDir:albumDir];
 
     resolve(@(YES));
   });

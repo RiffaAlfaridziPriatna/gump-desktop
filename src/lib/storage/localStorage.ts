@@ -22,6 +22,20 @@ type NativeLocalStorageModule = {
   ) => Promise<{width: number; height: number}>;
   readImageCaptureTime: (uri: string) => Promise<number | null>;
   computePerceptualHash: (uri: string) => Promise<string | null>;
+  ensureFaceCrops: (
+    albumId: string,
+    sourceUri: string,
+    photoId: string,
+    faces: Array<{
+      faceIndex: number;
+      boundingBox: {
+        left: number;
+        top: number;
+        width: number;
+        height: number;
+      };
+    }>,
+  ) => Promise<{cropUris: Array<string | null>}>;
 };
 
 const NativeLocalStorage = NativeModules.GumpLocalStorage as
@@ -94,6 +108,10 @@ export function resolveDisplayUri(file: FileAsset): string {
   return file.thumbnailUri ?? file.uri;
 }
 
+export function resolveKeyFaceDisplayUri(file: FileAsset): string {
+  return file.thumbnailUri ?? file.uri;
+}
+
 export function resolveGridDisplayUri(file: FileAsset): string | null {
   return file.thumbnailUri ?? null;
 }
@@ -148,5 +166,39 @@ export async function ensureThumbnail(
   }
 
   return file;
+}
+
+export type FaceCropInput = {
+  faceIndex: number;
+  boundingBox: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
+};
+
+export async function ensureFaceCrops(
+  albumId: string,
+  sourceUri: string,
+  photoId: string,
+  faces: FaceCropInput[],
+): Promise<Array<string | null>> {
+  if (
+    !hasNativeLocalStorage() ||
+    !NativeLocalStorage?.ensureFaceCrops ||
+    faces.length === 0
+  ) {
+    return faces.map(() => null);
+  }
+
+  const result = await NativeLocalStorage.ensureFaceCrops(
+    albumId,
+    sourceUri,
+    photoId,
+    faces,
+  );
+
+  return result.cropUris.map(uri => uri ?? null);
 }
 
