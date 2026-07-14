@@ -1165,7 +1165,10 @@ void GumpLocalStorage::EnsureFaceCrops(
     winrtRN::JSValueArray faces,
     ReactPromiseJS &&promise) noexcept {
   RunAsync(
-      [=]() {
+      [albumId = std::move(albumId),
+       sourceUri = std::move(sourceUri),
+       photoId = std::move(photoId),
+       faces = std::move(faces)]() {
         const auto sourcePath = PathFromUri(sourceUri);
         return GenerateFaceCropsAtPath(sourcePath, albumId, photoId, faces);
       },
