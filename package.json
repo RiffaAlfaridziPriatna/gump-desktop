@@ -19,6 +19,7 @@
     "build:ios:archive": "bash scripts/build.sh ios archive",
     "build:macos": "bash scripts/build.sh macos app",
     "build:macos:zip": "bash scripts/build.sh macos zip",
+    "build:macos:distribute": "bash scripts/build.sh macos distribute",
     "build:windows": "node scripts/build-windows.mjs exe",
     "build:windows:msix": "node scripts/build-windows.mjs msix",
     "build:all": "bash scripts/build.sh all",

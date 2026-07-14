@@ -27,7 +27,7 @@
 		04F0338A7820D930F7C164F5 /* Pods-GumpDesktop-macOS.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-GumpDesktop-macOS.release.xcconfig"; path = "Target Support Files/Pods-GumpDesktop-macOS/Pods-GumpDesktop-macOS.release.xcconfig"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* GumpDesktop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GumpDesktop.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		165E0E7780DE1635621E9844 /* libPods-GumpDesktop-macOS.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-GumpDesktop-macOS.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		514201492437B4B30078DB4F /* GumpDesktop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GumpDesktop.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		514201492437B4B30078DB4F /* GUMP - Cull Your Photos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "GUMP - Cull Your Photos.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5142014B2437B4B30078DB4F /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		5142014C2437B4B30078DB4F /* AppDelegate.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AppDelegate.mm; sourceTree = "<group>"; };
 		514201512437B4B40078DB4F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -36,7 +36,7 @@
 		514201572437B4B40078DB4F /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		514201592437B4B40078DB4F /* GumpDesktop.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GumpDesktop.entitlements; sourceTree = "<group>"; };
 		967780F249148AD209251539 /* Pods-GumpDesktop-macOS.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-GumpDesktop-macOS.debug.xcconfig"; path = "Target Support Files/Pods-GumpDesktop-macOS/Pods-GumpDesktop-macOS.debug.xcconfig"; sourceTree = "<group>"; };
-		A61DA60148DFA166B3C23C68 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A61DA60148DFA166B3C23C68 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B1A2C3D41123456700000001 /* DMSerifDisplay-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "DMSerifDisplay-Regular.ttf"; sourceTree = "<group>"; };
 		B1A2C3D41123456700000002 /* RedHatDisplay-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "RedHatDisplay-Regular.ttf"; sourceTree = "<group>"; };
 		B1A2C3D41123456700000003 /* RedHatDisplay-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "RedHatDisplay-Medium.ttf"; sourceTree = "<group>"; };
@@ -75,7 +75,6 @@
 				967780F249148AD209251539 /* Pods-GumpDesktop-macOS.debug.xcconfig */,
 				04F0338A7820D930F7C164F5 /* Pods-GumpDesktop-macOS.release.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -135,7 +134,7 @@
 			isa = PBXGroup;
 			children = (
 				13B07F961A680F5B00A75B9A /* GumpDesktop.app */,
-				514201492437B4B30078DB4F /* GumpDesktop.app */,
+				514201492437B4B30078DB4F /* GUMP - Cull Your Photos.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -148,7 +147,6 @@
 				B1A2C3D41123456700000003 /* RedHatDisplay-Medium.ttf */,
 				B1A2C3D41123456700000004 /* RedHatDisplay-Bold.ttf */,
 			);
-			name = Fonts;
 			path = Fonts;
 			sourceTree = "<group>";
 		};
@@ -191,7 +189,7 @@
 			);
 			name = "GumpDesktop-macOS";
 			productName = GumpDesktop;
-			productReference = 514201492437B4B30078DB4F /* GumpDesktop.app */;
+			productReference = 514201492437B4B30078DB4F /* GUMP - Cull Your Photos.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -442,8 +440,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = NO;
+				DEVELOPMENT_TEAM = FWQ2YTUNN4;
 				EXECUTABLE_NAME = GumpDesktop;
 				INFOPLIST_FILE = "GumpDesktop-macos/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -455,8 +457,9 @@
 					"-framework",
 					Vision,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.GumpDesktop;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gump.cullyourphotos;
 				PRODUCT_NAME = "GUMP - Cull Your Photos";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -469,7 +472,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FWQ2YTUNN4;
 				EXECUTABLE_NAME = GumpDesktop;
 				INFOPLIST_FILE = "GumpDesktop-macos/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -481,8 +488,9 @@
 					"-framework",
 					Vision,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.GumpDesktop;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gump.cullyourphotos;
 				PRODUCT_NAME = "GUMP - Cull Your Photos";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
 			};

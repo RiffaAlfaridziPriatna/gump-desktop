@@ -7,7 +7,7 @@
   IgnorableNamespaces="uap rescap">
 
   <Identity
-    Name="GumpDesktop"
+    Name="com.gump.cullyourphotos"
     Publisher="CN=riffaap"
     Version="1.0.0.0" />
 

@@ -15,7 +15,7 @@ Usage:
 Platforms:
   android   apk (default) | aab
   ios       ipa (default) | archive
-  macos     app (default) | zip
+  macos     app (default) | zip | distribute
   windows   exe (default) | msix
   all       build android apk + macos app (host-dependent)
 
@@ -25,10 +25,18 @@ Examples:
   npm run build:ios
   npm run build:macos
   npm run build:macos:zip
+  npm run build:macos:distribute
   npm run build:windows
 
 Environment:
-  IOS_EXPORT_METHOD   iOS export method (development | ad-hoc | app-store | enterprise)
+  IOS_EXPORT_METHOD              iOS export method (development | ad-hoc | app-store | enterprise)
+  MACOS_CODESIGN_IDENTITY        Developer ID identity (distribute)
+  APPLE_TEAM_ID                  Team ID (default: FWQ2YTUNN4)
+  APPLE_ID                       Apple ID for notarytool (distribute)
+  APPLE_APP_SPECIFIC_PASSWORD    App-specific password (distribute)
+  APPLE_API_KEY_PATH             Alternative: AuthKey_XXX.p8 path
+  APPLE_API_KEY_ID               Alternative: API key id
+  APPLE_API_ISSUER_ID            Alternative: API issuer id
 EOF
 }
 
