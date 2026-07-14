@@ -595,14 +595,14 @@ winrtRN::JSValue GenerateFaceCropsAtPath(
     const winrtRN::JSValueArray &faces) {
   winrtRN::JSValueArray cropUris;
   if (sourcePath.empty() || !std::filesystem::exists(sourcePath) || faces.size() == 0) {
-    return winrtRN::JSValueObject{{"cropUris", cropUris}};
+    return winrtRN::JSValueObject{{"cropUris", std::move(cropUris)}};
   }
 
   const auto bitmap = LoadSoftwareBitmap(sourcePath);
   const int imageWidth = bitmap.PixelWidth();
   const int imageHeight = bitmap.PixelHeight();
   if (imageWidth <= 0 || imageHeight <= 0) {
-    return winrtRN::JSValueObject{{"cropUris", cropUris}};
+    return winrtRN::JSValueObject{{"cropUris", std::move(cropUris)}};
   }
 
   const auto sourcePixels = ReadBitmapPixels(bitmap);
@@ -648,7 +648,7 @@ winrtRN::JSValue GenerateFaceCropsAtPath(
     cropUris.push_back(FileUri(cropPath));
   }
 
-  return winrtRN::JSValueObject{{"cropUris", cropUris}};
+  return winrtRN::JSValueObject{{"cropUris", std::move(cropUris)}};
 }
 
 std::vector<BitmapBounds> DetectFaceBoxesInBitmap(const FaceDetector &detector, const SoftwareBitmap &bitmap) {
@@ -800,35 +800,35 @@ winrtRN::JSValueObject BuildFaceObject(
   return winrtRN::JSValueObject{
       {"boundingBox",
        winrtRN::JSValueObject{
-           {"left", left},
-           {"top", top},
-           {"width", width},
-           {"height", height},
+           {"left", static_cast<double>(left)},
+           {"top", static_cast<double>(top)},
+           {"width", static_cast<double>(width)},
+           {"height", static_cast<double>(height)},
        }},
       {"eyesOpen", EyesOpenFromScore(minOpen, maxOpen, avgOpen)},
-      {"sharpness", sharpness},
+      {"sharpness", static_cast<double>(sharpness)},
       {"brightness", 60.0},
       {"landmarks",
        winrtRN::JSValueArray{
            winrtRN::JSValueObject{
                {"type", "eyeLeft"},
-               {"x", left + width * 0.25},
-               {"y", 1.0 - (top + height * 0.32)},
+               {"x", static_cast<double>(left + width * 0.25f)},
+               {"y", static_cast<double>(1.0f - (top + height * 0.32f))},
            },
            winrtRN::JSValueObject{
                {"type", "eyeRight"},
-               {"x", left + width * 0.75},
-               {"y", 1.0 - (top + height * 0.32)},
+               {"x", static_cast<double>(left + width * 0.75f)},
+               {"y", static_cast<double>(1.0f - (top + height * 0.32f))},
            },
            winrtRN::JSValueObject{
                {"type", "nose"},
-               {"x", left + width * 0.5},
-               {"y", 1.0 - (top + height * 0.55)},
+               {"x", static_cast<double>(left + width * 0.5f)},
+               {"y", static_cast<double>(1.0f - (top + height * 0.55f))},
            },
            winrtRN::JSValueObject{
                {"type", "mouth"},
-               {"x", left + width * 0.5},
-               {"y", 1.0 - (top + height * 0.78)},
+               {"x", static_cast<double>(left + width * 0.5f)},
+               {"y", static_cast<double>(1.0f - (top + height * 0.78f))},
            },
        }},
       {"pose", winrtRN::JSValueObject{{"pitch", 0.0}, {"roll", 0.0}, {"yaw", 0.0}}},
