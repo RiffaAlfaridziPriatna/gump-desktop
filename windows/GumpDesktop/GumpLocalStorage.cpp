@@ -609,22 +609,28 @@ winrtRN::JSValue GenerateFaceCropsAtPath(
   cropUris.reserve(faces.size());
 
   for (const auto &faceValue : faces) {
-    const auto faceObject = faceValue.AsObject();
-    const auto faceIndexValue = faceObject.at("faceIndex");
-    const auto boundingBox = faceObject.at("boundingBox").AsObject();
-    if (faceIndexValue == winrtRN::JSValue::Undefined() || boundingBox.empty()) {
+    if (faceValue.Type() != winrtRN::JSValueType::Object) {
       cropUris.push_back(nullptr);
       continue;
     }
 
+    const auto &faceObject = faceValue.AsObject();
+    const auto &faceIndexValue = faceObject["faceIndex"];
+    const auto &boundingBoxValue = faceObject["boundingBox"];
+    if (faceIndexValue.IsNull() || boundingBoxValue.Type() != winrtRN::JSValueType::Object) {
+      cropUris.push_back(nullptr);
+      continue;
+    }
+
+    const auto &boundingBox = boundingBoxValue.AsObject();
     const int faceIndex = static_cast<int>(faceIndexValue.AsInt32());
     const auto cropRect = ComputePaddedFaceCropRect(
         imageWidth,
         imageHeight,
-        static_cast<float>(boundingBox.at("left").AsDouble()),
-        static_cast<float>(boundingBox.at("top").AsDouble()),
-        static_cast<float>(boundingBox.at("width").AsDouble()),
-        static_cast<float>(boundingBox.at("height").AsDouble()));
+        static_cast<float>(boundingBox["left"].AsDouble()),
+        static_cast<float>(boundingBox["top"].AsDouble()),
+        static_cast<float>(boundingBox["width"].AsDouble()),
+        static_cast<float>(boundingBox["height"].AsDouble()));
 
     const auto cropped = CropSoftwareBitmap(
         bitmap,
