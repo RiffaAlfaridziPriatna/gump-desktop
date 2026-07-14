@@ -565,12 +565,11 @@ bool SaveFaceCropJpeg(const SoftwareBitmap &cropped, const std::filesystem::path
 
   BitmapEncoder encoder =
       BitmapEncoder::CreateAsync(BitmapEncoder::JpegEncoderId(), destStream, encodingOptions).get();
-  BitmapTransform transform;
+  encoder.SetSoftwareBitmap(cropped);
+  auto transform = encoder.BitmapTransform();
   transform.ScaledWidth(kFaceCropOutputPixelSize);
   transform.ScaledHeight(kFaceCropOutputPixelSize);
   transform.InterpolationMode(BitmapInterpolationMode::Fant);
-  encoder.BitmapTransform(transform);
-  encoder.SetSoftwareBitmap(cropped);
   encoder.FlushAsync().get();
   return true;
 }
