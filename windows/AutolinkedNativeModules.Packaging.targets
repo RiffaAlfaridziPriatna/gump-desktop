@@ -17,6 +17,7 @@
   <ItemGroup>
     <_AutolinkedNativeModuleProject Include="$(_AutolinkRepoRoot)node_modules\react-native-svg\windows\RNSVG\RNSVG.vcxproj" />
     <_AutolinkedNativeModuleProject Include="$(_AutolinkRepoRoot)node_modules\@react-native-async-storage\async-storage\windows\ReactNativeAsyncStorage\ReactNativeAsyncStorage.vcxproj" />
+    <_AutolinkedNativeModuleProject Include="$(_AutolinkRepoRoot)node_modules\react-native-turbo-sqlite\windows\ReactNativeTurboSqlite\ReactNativeTurboSqlite.vcxproj" />
   </ItemGroup>
 
   <Target Name="BuildAutolinkedNativeModuleProjects">
@@ -37,8 +38,11 @@
       <_AutolinkedModuleDllCandidate Include="$(_AutolinkSolutionOutputDir)RNSVG\RNSVG.dll" />
       <_AutolinkedModuleDllCandidate Include="$(_AutolinkSolutionOutputDir)ReactNativeAsyncStorage.dll" />
       <_AutolinkedModuleDllCandidate Include="$(_AutolinkSolutionOutputDir)ReactNativeAsyncStorage\ReactNativeAsyncStorage.dll" />
+      <_AutolinkedModuleDllCandidate Include="$(_AutolinkSolutionOutputDir)ReactNativeTurboSqlite.dll" />
+      <_AutolinkedModuleDllCandidate Include="$(_AutolinkSolutionOutputDir)ReactNativeTurboSqlite\ReactNativeTurboSqlite.dll" />
       <_AutolinkedModuleDllCandidate Include="$(_AutolinkRepoRoot)node_modules\react-native-svg\windows\RNSVG\$(_AutolinkNativePlatform)\$(Configuration)\RNSVG.dll" />
       <_AutolinkedModuleDllCandidate Include="$(_AutolinkRepoRoot)node_modules\@react-native-async-storage\async-storage\windows\ReactNativeAsyncStorage\$(_AutolinkNativePlatform)\$(Configuration)\ReactNativeAsyncStorage.dll" />
+      <_AutolinkedModuleDllCandidate Include="$(_AutolinkRepoRoot)node_modules\react-native-turbo-sqlite\windows\ReactNativeTurboSqlite\$(_AutolinkNativePlatform)\$(Configuration)\ReactNativeTurboSqlite.dll" />
     </ItemGroup>
     <ItemGroup>
       <_ResolvedAutolinkedModuleDll Include="@(_AutolinkedModuleDllCandidate)" Condition="Exists('%(Identity)')" />

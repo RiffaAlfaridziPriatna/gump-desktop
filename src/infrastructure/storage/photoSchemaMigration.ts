@@ -1,5 +1,8 @@
-import type {DB, QueryResult} from '@op-engineering/op-sqlite';
 import {scheduleIdleWork} from '@lib/async/scheduleIdleWork';
+
+type QueryResult = {
+  rows: Array<Record<string, unknown>>;
+};
 
 type SyncExecute = (query: string, params?: unknown[]) => QueryResult;
 type AsyncExecute = (query: string, params?: unknown[]) => Promise<QueryResult>;

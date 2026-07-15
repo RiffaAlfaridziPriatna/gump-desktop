@@ -35,5 +35,10 @@ module.exports = {
         windows: null,
       },
     },
+    '@op-engineering/op-sqlite': {
+      platforms: {
+        windows: null,
+      },
+    },
   },
 };

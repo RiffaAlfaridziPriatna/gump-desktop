@@ -10,5 +10,9 @@
     <ProjectReference Include="$(ProjectDir)..\..\node_modules\react-native-svg\windows\RNSVG\RNSVG.vcxproj">
       <Project>{7acf84ec-efba-4043-8e14-40b159508902}</Project>
     </ProjectReference>
+    <!-- Projects from react-native-turbo-sqlite -->
+    <ProjectReference Include="$(ProjectDir)..\..\node_modules\react-native-turbo-sqlite\windows\ReactNativeTurboSqlite\ReactNativeTurboSqlite.vcxproj">
+      <Project>{B3949FDF-FC46-47DC-AF0F-8ED9D3A24B3B}</Project>
+    </ProjectReference>
   </ItemGroup>
 </Project>

@@ -204,7 +204,11 @@ static void TryLoadDllFromWindowsBuildOutputs(PCWSTR dllName) noexcept {
 }
 
 static void PreloadAutolinkedModuleDlls(PCWSTR appDirectory) noexcept {
-  static constexpr PCWSTR kModuleDlls[] = {L"RNSVG.dll", L"ReactNativeAsyncStorage.dll"};
+  static constexpr PCWSTR kModuleDlls[] = {
+      L"RNSVG.dll",
+      L"ReactNativeAsyncStorage.dll",
+      L"ReactNativeTurboSqlite.dll",
+  };
   for (PCWSTR dllName : kModuleDlls) {
     if (TryLoadDllFromDirectory(appDirectory, dllName)) {
       continue;

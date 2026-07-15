@@ -33,6 +33,10 @@ const windowsShims = {
     __dirname,
     'src/shims/react-native-community-blur.windows.tsx',
   ),
+  '@op-engineering/op-sqlite': path.resolve(
+    __dirname,
+    'src/shims/op-sqlite.windows.ts',
+  ),
 };
 
 const config = {
