@@ -334,12 +334,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
   },
   loginButton: {
-    minHeight: 42,
+    height: 42,
     borderRadius: 24,
     backgroundColor: colors.accent,
     paddingHorizontal: 24,
     paddingRight: 16,
-    paddingVertical: 8,
+    paddingVertical: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -352,13 +352,15 @@ const styles = StyleSheet.create({
   loginButtonContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   loginButtonText: {
     color: colors.text,
     fontSize: 16,
-    lineHeight: 16 * 1.6,
+    lineHeight: 20,
     fontFamily: fonts.sansBold,
     textTransform: 'capitalize',
+    includeFontPadding: false,
   },
   loginButtonIcon: {
     width: 24,
