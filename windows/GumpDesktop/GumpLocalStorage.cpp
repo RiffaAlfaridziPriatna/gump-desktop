@@ -376,8 +376,15 @@ SoftwareBitmap LoadSoftwareBitmap(const std::filesystem::path &path) {
   const auto file = GetStorageFileFromPath(path);
   const auto stream = file.OpenAsync(FileAccessMode::Read).get();
   const auto decoder = BitmapDecoder::CreateAsync(stream).get();
-  auto bitmap = decoder.GetSoftwareBitmapAsync().get();
-  return SoftwareBitmap::Convert(bitmap, BitmapPixelFormat::Bgra8, BitmapAlphaMode::Premultiplied);
+  auto bitmap = decoder
+                    .GetSoftwareBitmapAsync(
+                        BitmapPixelFormat::Bgra8,
+                        BitmapAlphaMode::Premultiplied,
+                        BitmapTransform{},
+                        ExifOrientationMode::RespectExifOrientation,
+                        ColorManagementMode::DoNotColorManage)
+                    .get();
+  return bitmap;
 }
 
 struct BitmapPixels {
@@ -1110,10 +1117,15 @@ void GumpLocalStorage::GetImageDimensions(std::string uri, ReactPromiseJS &&prom
           throw std::runtime_error("Photo file not found");
         }
 
-        const auto bitmap = LoadSoftwareBitmap(path);
+        // Use OrientedPixelWidth/Height so EXIF rotation is respected.
+        // PixelWidth/Height on a SoftwareBitmap can reflect raw sensor
+        // orientation and cause JS layout math to stretch portrait photos.
+        const auto file = GetStorageFileFromPath(path);
+        const auto stream = file.OpenAsync(FileAccessMode::Read).get();
+        const auto decoder = BitmapDecoder::CreateAsync(stream).get();
         return winrtRN::JSValue(winrtRN::JSValueObject{
-            {"width", static_cast<double>(bitmap.PixelWidth())},
-            {"height", static_cast<double>(bitmap.PixelHeight())},
+            {"width", static_cast<double>(decoder.OrientedPixelWidth())},
+            {"height", static_cast<double>(decoder.OrientedPixelHeight())},
         });
       },
       std::move(promise));
