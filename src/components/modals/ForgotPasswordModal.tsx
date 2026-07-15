@@ -20,23 +20,21 @@ import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
 type ForgotPasswordModalProps = {
   visible: boolean;
   onClose: () => void;
-  initialEmail?: string;
 };
 
 export function ForgotPasswordModal({
   visible,
   onClose,
-  initialEmail = '',
 }: ForgotPasswordModalProps) {
   const inputRef = useRef<TextInput>(null);
-  const [email, setEmail] = useState(initialEmail);
+  const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEmailFocused, setIsEmailFocused] = useState(false);
 
   useEffect(() => {
     if (visible) {
-      setEmail(initialEmail);
+      setEmail('');
       setError(null);
       setSubmitting(false);
       setIsEmailFocused(false);
@@ -44,7 +42,7 @@ export function ForgotPasswordModal({
       const focusTimer = setTimeout(() => inputRef.current?.focus(), 120);
       return () => clearTimeout(focusTimer);
     }
-  }, [visible, initialEmail]);
+  }, [visible]);
 
   async function handleReset() {
     const trimmedEmail = email.trim();

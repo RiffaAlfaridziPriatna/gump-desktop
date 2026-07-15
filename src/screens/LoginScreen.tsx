@@ -155,7 +155,6 @@ export default function LoginScreen() {
     <ForgotPasswordModal
       visible={showForgotPasswordModal}
       onClose={() => setShowForgotPasswordModal(false)}
-      initialEmail={email}
     />
   );
 
