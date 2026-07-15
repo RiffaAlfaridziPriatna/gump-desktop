@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
           padding: 0,
           margin: 0,
           lineHeight: 22,
-          transform: [{translateY: -10}],
+          transform: [{translateY: -4}],
         }
       : {
           height: 42,
