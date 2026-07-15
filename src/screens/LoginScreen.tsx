@@ -77,28 +77,53 @@ export default function LoginScreen() {
           >
             Email
           </Text>
-          <TextInput
-            style={[
-              styles.input,
-              !isWindows &&
-                focusedField !== 'email' &&
-                email &&
-                styles.inputFilled,
-              !isDesktopLayout && styles.inputStacked,
-            ]}
-            value={email}
-            onChangeText={setEmail}
-            editable={!isLoading}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholderTextColor={colors.textPlaceholder}
-            enableFocusRing={false}
-            onFocus={() => setFocusedField('email')}
-            onBlur={() =>
-              setFocusedField(current => (current === 'email' ? null : current))
-            }
-          />
+          {isWindows ? (
+            <View
+              style={[
+                styles.inputShell,
+                !isDesktopLayout && styles.inputStacked,
+              ]}>
+              <TextInput
+                style={styles.inputWindows}
+                value={email}
+                onChangeText={setEmail}
+                editable={!isLoading}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholderTextColor={colors.textPlaceholder}
+                enableFocusRing={false}
+                onFocus={() => setFocusedField('email')}
+                onBlur={() =>
+                  setFocusedField(current =>
+                    current === 'email' ? null : current,
+                  )
+                }
+              />
+            </View>
+          ) : (
+            <TextInput
+              style={[
+                styles.input,
+                focusedField !== 'email' && email && styles.inputFilled,
+                !isDesktopLayout && styles.inputStacked,
+              ]}
+              value={email}
+              onChangeText={setEmail}
+              editable={!isLoading}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholderTextColor={colors.textPlaceholder}
+              enableFocusRing={false}
+              onFocus={() => setFocusedField('email')}
+              onBlur={() =>
+                setFocusedField(current =>
+                  current === 'email' ? null : current,
+                )
+              }
+            />
+          )}
         </View>
 
         <View
@@ -112,19 +137,38 @@ export default function LoginScreen() {
           >
             Password
           </Text>
-          <TextInput
-            style={[
-              styles.input,
-              !isDesktopLayout && styles.inputStacked,
-            ]}
-            value={password}
-            onChangeText={setPassword}
-            editable={!isLoading}
-            secureTextEntry
-            onSubmitEditing={handleLogin}
-            placeholderTextColor={colors.textPlaceholder}
-            enableFocusRing={false}
-          />
+          {isWindows ? (
+            <View
+              style={[
+                styles.inputShell,
+                !isDesktopLayout && styles.inputStacked,
+              ]}>
+              <TextInput
+                style={styles.inputWindows}
+                value={password}
+                onChangeText={setPassword}
+                editable={!isLoading}
+                secureTextEntry
+                onSubmitEditing={handleLogin}
+                placeholderTextColor={colors.textPlaceholder}
+                enableFocusRing={false}
+              />
+            </View>
+          ) : (
+            <TextInput
+              style={[
+                styles.input,
+                !isDesktopLayout && styles.inputStacked,
+              ]}
+              value={password}
+              onChangeText={setPassword}
+              editable={!isLoading}
+              secureTextEntry
+              onSubmitEditing={handleLogin}
+              placeholderTextColor={colors.textPlaceholder}
+              enableFocusRing={false}
+            />
+          )}
         </View>
       </View>
 
@@ -279,6 +323,25 @@ const styles = StyleSheet.create({
   fieldLabelStacked: {
     width: 'auto',
   },
+  inputShell: {
+    flex: 1,
+    height: 42,
+    borderWidth: 1,
+    borderColor: colors.text,
+    borderRadius: 20,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  inputWindows: {
+    height: 20,
+    padding: 0,
+    margin: 0,
+    color: colors.text,
+    fontFamily: fonts.sans,
+    fontSize: 16,
+    backgroundColor: 'transparent',
+  },
   input: {
     flex: 1,
     height: 42,
@@ -289,16 +352,9 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.sans,
     fontSize: 16,
+    lineHeight: 20,
     paddingHorizontal: 20,
-    ...(isWindows
-      ? {
-          paddingVertical: 0,
-          textAlignVertical: 'center' as const,
-        }
-      : {
-          lineHeight: 20,
-          paddingVertical: 10,
-        }),
+    paddingVertical: 10,
   },
   inputFilled: {
     paddingTop: 12,

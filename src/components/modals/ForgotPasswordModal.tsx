@@ -222,21 +222,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.textGray,
     borderRadius: 24,
+    paddingLeft: isWindows ? 20 : 0,
     paddingRight: 72,
     justifyContent: 'center',
   },
   emailInput: {
-    height: 42,
+    height: isWindows ? 20 : 42,
     fontFamily: fonts.sans,
     fontSize: 16,
     color: colors.textDark,
-    paddingLeft: 20,
-    paddingRight: 8,
+    paddingLeft: isWindows ? 0 : 20,
+    paddingRight: isWindows ? 0 : 8,
     backgroundColor: 'transparent',
     ...(isWindows
       ? {
           paddingVertical: 0,
-          textAlignVertical: 'center' as const,
+          margin: 0,
         }
       : {
           lineHeight: 20,
