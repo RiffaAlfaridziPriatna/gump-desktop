@@ -19,19 +19,21 @@ export function DeletePhotoModal({
 }: DeletePhotoModalProps) {
   const [deleting, setDeleting] = useState(false);
 
-  async function handleDelete() {
+  function handleDelete() {
     if (deleting) {
       return;
     }
+
     setDeleting(true);
-    try {
-      await onDelete();
-      onClose();
-    } catch (error) {
-      console.error('[DeletePhotoModal] Failed to delete photo', error);
-    } finally {
-      setDeleting(false);
-    }
+    onClose();
+
+    onDelete()
+      .catch(error => {
+        console.error('[DeletePhotoModal] Failed to delete photo', error);
+      })
+      .finally(() => {
+        setDeleting(false);
+      });
   }
 
   return (

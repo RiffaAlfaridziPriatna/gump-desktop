@@ -189,8 +189,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     if (!photoToDelete) {
       return;
     }
-    await deletePhoto(photoToDelete.photoId);
     setPhotoToDelete(null);
+    await deletePhoto(photoToDelete.photoId);
   }, [deletePhoto, photoToDelete]);
 
   const handleStartUpload = useCallback(async () => {
