@@ -146,6 +146,7 @@ export function ForgotPasswordModal({
               autoCorrect={false}
               placeholderTextColor={colors.textPlaceholder}
               enableFocusRing={false}
+              caretHidden={false}
               cursorColor={colors.textDark}
               selectionColor={colors.link}
               onFocus={handleEmailFocus}
@@ -224,6 +225,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     paddingLeft: isWindows ? 20 : 0,
     paddingRight: 72,
+    overflow: isWindows ? ('visible' as const) : undefined,
     ...(isWindows ? {} : {justifyContent: 'center' as const}),
   },
   emailInput: {
@@ -232,11 +234,12 @@ const styles = StyleSheet.create({
           position: 'absolute' as const,
           left: 20,
           right: 72,
-          top: 2,
-          height: 36,
+          top: 0,
+          height: 40,
           padding: 0,
           margin: 0,
           lineHeight: 22,
+          transform: [{translateY: -10}],
         }
       : {
           height: 42,

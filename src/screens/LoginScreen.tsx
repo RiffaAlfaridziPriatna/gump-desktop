@@ -93,6 +93,8 @@ export default function LoginScreen() {
                 autoCorrect={false}
                 placeholderTextColor={colors.textPlaceholder}
                 enableFocusRing={false}
+                caretHidden={false}
+                cursorColor={colors.text}
                 onFocus={() => setFocusedField('email')}
                 onBlur={() =>
                   setFocusedField(current =>
@@ -152,6 +154,8 @@ export default function LoginScreen() {
                 onSubmitEditing={handleLogin}
                 placeholderTextColor={colors.textPlaceholder}
                 enableFocusRing={false}
+                caretHidden={false}
+                cursorColor={colors.text}
               />
             </View>
           ) : (
@@ -331,16 +335,17 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: 'transparent',
     paddingHorizontal: 20,
+    overflow: 'visible',
   },
-  // RNW baselines glyphs at the bottom of the TextInput box. Use a taller
-  // box so ascenders/descenders aren't clipped, then pin it near the top of
-  // the pill so the baseline lands mid-field.
+  // RNW baselines glyphs/caret at the bottom of the TextInput box. Keep a
+  // tall enough box for full glyphs + caret, then translate the whole control
+  // up so baseline lands mid-pill (and the caret moves with the text).
   inputWindows: {
     position: 'absolute',
     left: 20,
     right: 20,
     top: 0,
-    height: 34,
+    height: 38,
     padding: 0,
     margin: 0,
     color: colors.text,
@@ -348,6 +353,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
     backgroundColor: 'transparent',
+    transform: [{translateY: -10}],
   },
   input: {
     flex: 1,
