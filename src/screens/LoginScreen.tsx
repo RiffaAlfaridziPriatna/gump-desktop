@@ -7,6 +7,7 @@ import { useState } from 'react';
 import {Pressable} from '@components/ui';
 import {
   ActivityIndicator,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +18,8 @@ import {useLayout} from '@hooks/useLayout';
 import IconChevronRight from '../assets/images/icon_chevron_right.svg';
 import LoginSignupArt from '../assets/images/login_signup.svg';
 import GumpLogo from '../assets/images/logo.svg';
+
+const isWindows = Platform.OS === 'windows';
 
 export default function LoginScreen() {
   const { login } = useAuthActions();
@@ -77,7 +80,10 @@ export default function LoginScreen() {
           <TextInput
             style={[
               styles.input,
-              focusedField !== 'email' && email && styles.inputFilled,
+              !isWindows &&
+                focusedField !== 'email' &&
+                email &&
+                styles.inputFilled,
               !isDesktopLayout && styles.inputStacked,
             ]}
             value={email}
@@ -283,9 +289,16 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.sans,
     fontSize: 16,
-    lineHeight: 20,
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    ...(isWindows
+      ? {
+          paddingVertical: 0,
+          textAlignVertical: 'center' as const,
+        }
+      : {
+          lineHeight: 20,
+          paddingVertical: 10,
+        }),
   },
   inputFilled: {
     paddingTop: 12,

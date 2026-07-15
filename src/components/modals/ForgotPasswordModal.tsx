@@ -6,6 +6,7 @@ import {APIException, APIService, flattenValidationErrors} from '@services/api';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -16,6 +17,8 @@ import QuarterCircleOrange from '../../assets/images/upload/orange_quarter_circl
 import QuarterCircleRed from '../../assets/images/upload/red_quarter_circle.svg';
 import CircleBlue from '../../assets/images/upload/blue_circle.svg';
 import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
+
+const isWindows = Platform.OS === 'windows';
 
 type ForgotPasswordModalProps = {
   visible: boolean;
@@ -130,7 +133,10 @@ export function ForgotPasswordModal({
               ref={inputRef}
               style={[
                 styles.emailInput,
-                !isEmailFocused && email && styles.emailInputFilled,
+                !isWindows &&
+                  !isEmailFocused &&
+                  email &&
+                  styles.emailInputFilled,
               ]}
               value={email}
               onChangeText={setEmail}
@@ -223,12 +229,19 @@ const styles = StyleSheet.create({
     height: 42,
     fontFamily: fonts.sans,
     fontSize: 16,
-    lineHeight: 20,
     color: colors.textDark,
     paddingLeft: 20,
     paddingRight: 8,
-    paddingVertical: 10,
     backgroundColor: 'transparent',
+    ...(isWindows
+      ? {
+          paddingVertical: 0,
+          textAlignVertical: 'center' as const,
+        }
+      : {
+          lineHeight: 20,
+          paddingVertical: 10,
+        }),
   },
   emailInputFilled: {
     paddingTop: 12,
