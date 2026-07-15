@@ -66,8 +66,8 @@ export default function HomeScreen({navigation}: Props) {
   );
 
   async function handlePressAlbum(album: CulledAlbumListItem) {
-    if (expandedCardId === album.albumId) {
-      return;
+    if (expandedCardId !== null) {
+      setExpandedCardId(null);
     }
 
     navigateToCulledAlbum(
