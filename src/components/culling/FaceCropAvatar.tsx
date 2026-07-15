@@ -39,6 +39,7 @@ const PreCroppedFaceAvatar = React.memo(function PreCroppedFaceAvatar({
       <Image
         source={{uri: cropUri}}
         fadeDuration={0}
+        resizeMode="cover"
         style={{
           width: size,
           height: size,
