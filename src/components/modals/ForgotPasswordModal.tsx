@@ -224,25 +224,31 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     paddingLeft: isWindows ? 20 : 0,
     paddingRight: 72,
-    justifyContent: 'center',
+    ...(isWindows ? {overflow: 'hidden' as const} : {justifyContent: 'center' as const}),
   },
   emailInput: {
-    height: isWindows ? 20 : 42,
+    ...(isWindows
+      ? {
+          position: 'absolute' as const,
+          left: 20,
+          right: 72,
+          top: 6,
+          height: 24,
+          padding: 0,
+          margin: 0,
+          lineHeight: 20,
+        }
+      : {
+          height: 42,
+          lineHeight: 20,
+          paddingVertical: 10,
+          paddingLeft: 20,
+          paddingRight: 8,
+        }),
     fontFamily: fonts.sans,
     fontSize: 16,
     color: colors.textDark,
-    paddingLeft: isWindows ? 0 : 20,
-    paddingRight: isWindows ? 0 : 8,
     backgroundColor: 'transparent',
-    ...(isWindows
-      ? {
-          paddingVertical: 0,
-          margin: 0,
-        }
-      : {
-          lineHeight: 20,
-          paddingVertical: 10,
-        }),
   },
   emailInputFilled: {
     paddingTop: 12,

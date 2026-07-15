@@ -330,16 +330,23 @@ const styles = StyleSheet.create({
     borderColor: colors.text,
     borderRadius: 20,
     backgroundColor: 'transparent',
-    justifyContent: 'center',
     paddingHorizontal: 20,
+    overflow: 'hidden',
   },
+  // RNW draws caret/glyphs at the bottom of the TextInput's own box, so
+  // pin a short input near the top of the pill to land text mid-field.
   inputWindows: {
-    height: 20,
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    top: 4,
+    height: 24,
     padding: 0,
     margin: 0,
     color: colors.text,
     fontFamily: fonts.sans,
     fontSize: 16,
+    lineHeight: 20,
     backgroundColor: 'transparent',
   },
   input: {
