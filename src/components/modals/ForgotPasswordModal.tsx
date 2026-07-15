@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     paddingLeft: isWindows ? 20 : 0,
     paddingRight: 72,
-    ...(isWindows ? {overflow: 'hidden' as const} : {justifyContent: 'center' as const}),
+    ...(isWindows ? {} : {justifyContent: 'center' as const}),
   },
   emailInput: {
     ...(isWindows
@@ -232,11 +232,11 @@ const styles = StyleSheet.create({
           position: 'absolute' as const,
           left: 20,
           right: 72,
-          top: 6,
-          height: 24,
+          top: 2,
+          height: 36,
           padding: 0,
           margin: 0,
-          lineHeight: 20,
+          lineHeight: 22,
         }
       : {
           height: 42,

@@ -331,22 +331,22 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: 'transparent',
     paddingHorizontal: 20,
-    overflow: 'hidden',
   },
-  // RNW draws caret/glyphs at the bottom of the TextInput's own box, so
-  // pin a short input near the top of the pill to land text mid-field.
+  // RNW baselines glyphs at the bottom of the TextInput box. Use a taller
+  // box so ascenders/descenders aren't clipped, then pin it near the top of
+  // the pill so the baseline lands mid-field.
   inputWindows: {
     position: 'absolute',
     left: 20,
     right: 20,
-    top: 4,
-    height: 24,
+    top: 0,
+    height: 34,
     padding: 0,
     margin: 0,
     color: colors.text,
     fontFamily: fonts.sans,
     fontSize: 16,
-    lineHeight: 20,
+    lineHeight: 22,
     backgroundColor: 'transparent',
   },
   input: {
