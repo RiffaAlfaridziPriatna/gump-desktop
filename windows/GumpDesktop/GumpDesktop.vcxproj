@@ -81,7 +81,7 @@
       </AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>shell32.lib;user32.lib;windowsapp.lib;%(AdditionalDependenices)</AdditionalDependencies>
+      <AdditionalDependencies>shell32.lib;user32.lib;gdi32.lib;windowsapp.lib;%(AdditionalDependenices)</AdditionalDependencies>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
@@ -133,6 +133,22 @@
   </ImportGroup>
   <Import Project="AutolinkedNativeModules.Copy.targets" />
   <ItemGroup>
+    <None Include="..\..\src\assets\fonts\DMSerifDisplay-Regular.ttf">
+      <Link>Assets\Fonts\DMSerifDisplay-Regular.ttf</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\src\assets\fonts\RedHatDisplay-Regular.ttf">
+      <Link>Assets\Fonts\RedHatDisplay-Regular.ttf</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\src\assets\fonts\RedHatDisplay-Medium.ttf">
+      <Link>Assets\Fonts\RedHatDisplay-Medium.ttf</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\src\assets\fonts\RedHatDisplay-Bold.ttf">
+      <Link>Assets\Fonts\RedHatDisplay-Bold.ttf</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <Target Name="EnsureReactNativeWindowsTargets" BeforeTargets="PrepareForBuild">
     <PropertyGroup>

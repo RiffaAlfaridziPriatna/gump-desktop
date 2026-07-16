@@ -216,6 +216,26 @@ static void PreloadAutolinkedModuleDlls(PCWSTR appDirectory) noexcept {
     TryLoadDllFromWindowsBuildOutputs(dllName);
   }
 }
+
+static void RegisterCustomFonts(PCWSTR appDirectory) noexcept {
+  static constexpr PCWSTR kFontFiles[] = {
+      L"DMSerifDisplay-Regular.ttf",
+      L"RedHatDisplay-Regular.ttf",
+      L"RedHatDisplay-Medium.ttf",
+      L"RedHatDisplay-Bold.ttf",
+  };
+
+  const std::filesystem::path fontsDir =
+      std::filesystem::path(appDirectory) / L"Assets" / L"Fonts";
+
+  for (PCWSTR fileName : kFontFiles) {
+    const std::filesystem::path fontPath = fontsDir / fileName;
+    if (!std::filesystem::exists(fontPath)) {
+      continue;
+    }
+    AddFontResourceExW(fontPath.c_str(), 0, nullptr);
+  }
+}
 } // namespace
 
 // A PackageProvider containing any turbo modules you define within this app project
@@ -239,6 +259,7 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
   WCHAR appDirectory[MAX_PATH];
   GetModuleFileNameW(NULL, appDirectory, MAX_PATH);
   PathCchRemoveFileSpec(appDirectory, MAX_PATH);
+  RegisterCustomFonts(appDirectory);
 
   // Create a ReactNativeWin32App with the ReactNativeAppBuilder
   auto reactNativeWin32App{winrt::Microsoft::ReactNative::ReactNativeAppBuilder().Build()};
