@@ -5,6 +5,7 @@ import {getContainedImageLayout} from '@lib/culling/cullingFaceCrop';
 import {
   getCachedImageDimensions,
   loadImageDimensions,
+  putCachedImageDimensions,
   type ImageDimensions,
 } from '@lib/media/imageDimensions';
 import {
@@ -94,16 +95,13 @@ const PhotoGridCellImage = memo(
 
     const handleLoad = useCallback(
       (event: NativeSyntheticEvent<ImageLoadEventData>) => {
-        const cached = getCachedImageDimensions(uri);
-        if (cached) {
-          setImageSize(cached);
-        } else {
-          const {width: loadedWidth, height: loadedHeight} =
-            event.nativeEvent.source;
+        const {width: loadedWidth, height: loadedHeight} =
+          event.nativeEvent.source;
 
-          if (loadedWidth > 0 && loadedHeight > 0) {
-            setImageSize({width: loadedWidth, height: loadedHeight});
-          }
+        if (loadedWidth > 0 && loadedHeight > 0) {
+          const dimensions = {width: loadedWidth, height: loadedHeight};
+          putCachedImageDimensions(uri, dimensions);
+          setImageSize(dimensions);
         }
 
         setIsLoaded(true);

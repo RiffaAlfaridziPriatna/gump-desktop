@@ -23,6 +23,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <optional>
 #include <thread>
 #include <vector>
@@ -157,12 +158,119 @@ StorageFile GetStorageFileFromPath(const std::filesystem::path &path) {
   return StorageFile::GetFileFromPathAsync(path.wstring()).get();
 }
 
-StorageFile CreateOrReplaceStorageFile(const std::filesystem::path &path) {
+bool WriteBytesToPath(const std::filesystem::path &path, const std::vector<uint8_t> &bytes) {
   std::filesystem::create_directories(path.parent_path());
-  const auto folder = StorageFolder::GetFolderFromPathAsync(path.parent_path().wstring()).get();
-  return folder
-      .CreateFileAsync(path.filename().wstring(), CreationCollisionOption::ReplaceExisting)
-      .get();
+
+  const std::wstring tempPath = path.wstring() + L"." + std::to_wstring(GetCurrentProcessId()) +
+                                L"-" + std::to_wstring(GetTickCount64()) + L".tmp";
+
+  HANDLE file = CreateFileW(
+      tempPath.c_str(),
+      GENERIC_WRITE,
+      FILE_SHARE_READ,
+      nullptr,
+      CREATE_ALWAYS,
+      FILE_ATTRIBUTE_NORMAL,
+      nullptr);
+  if (file == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+
+  DWORD written = 0;
+  const BOOL writeOk = WriteFile(
+      file,
+      bytes.data(),
+      static_cast<DWORD>(bytes.size()),
+      &written,
+      nullptr);
+  FlushFileBuffers(file);
+  CloseHandle(file);
+
+  if (!writeOk || written != bytes.size()) {
+    DeleteFileW(tempPath.c_str());
+    return false;
+  }
+
+  if (MoveFileExW(tempPath.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    return true;
+  }
+
+  if (CopyFileW(tempPath.c_str(), path.c_str(), FALSE)) {
+    DeleteFileW(tempPath.c_str());
+    return true;
+  }
+
+  DeleteFileW(tempPath.c_str());
+  return false;
+}
+
+std::vector<uint8_t> EncodeSoftwareBitmapJpeg(
+    const SoftwareBitmap &bitmap,
+    float quality,
+    std::optional<uint32_t> scaledWidth = std::nullopt,
+    std::optional<uint32_t> scaledHeight = std::nullopt) {
+  InMemoryRandomAccessStream memoryStream;
+  BitmapPropertySet encodingOptions;
+  encodingOptions.Insert(
+      L"ImageQuality",
+      BitmapTypedValue(
+          winrt::box_value(quality),
+          winrt::Windows::Foundation::PropertyType::Single));
+
+  const auto encoder =
+      BitmapEncoder::CreateAsync(BitmapEncoder::JpegEncoderId(), memoryStream, encodingOptions).get();
+  encoder.SetSoftwareBitmap(bitmap);
+  if (scaledWidth.has_value() && scaledHeight.has_value()) {
+    auto transform = encoder.BitmapTransform();
+    transform.ScaledWidth(*scaledWidth);
+    transform.ScaledHeight(*scaledHeight);
+    transform.InterpolationMode(BitmapInterpolationMode::Fant);
+  }
+  encoder.FlushAsync().get();
+
+  const auto size = static_cast<uint32_t>(memoryStream.Size());
+  DataReader reader(memoryStream.GetInputStreamAt(0));
+  reader.LoadAsync(size).get();
+  std::vector<uint8_t> bytes(size);
+  reader.ReadBytes(bytes);
+  return bytes;
+}
+
+bool WriteSoftwareBitmapJpeg(
+    const SoftwareBitmap &bitmap,
+    const std::filesystem::path &path,
+    float quality,
+    std::optional<uint32_t> scaledWidth = std::nullopt,
+    std::optional<uint32_t> scaledHeight = std::nullopt) {
+  try {
+    const auto bytes = EncodeSoftwareBitmapJpeg(bitmap, quality, scaledWidth, scaledHeight);
+    return WriteBytesToPath(path, bytes);
+  } catch (...) {
+    return false;
+  }
+}
+
+std::filesystem::path ChooseWritablePath(const std::filesystem::path &desiredPath) {
+  if (!std::filesystem::exists(desiredPath)) {
+    return desiredPath;
+  }
+
+  HANDLE probe = CreateFileW(
+      desiredPath.c_str(),
+      GENERIC_WRITE,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+      nullptr,
+      OPEN_EXISTING,
+      FILE_ATTRIBUTE_NORMAL,
+      nullptr);
+  if (probe != INVALID_HANDLE_VALUE) {
+    CloseHandle(probe);
+    return desiredPath;
+  }
+
+  return desiredPath.parent_path() /
+         (desiredPath.stem().wstring() + L"-" + std::to_wstring(GetTickCount64()) +
+          desiredPath.extension().wstring());
 }
 
 struct ThumbnailSize {
@@ -196,55 +304,69 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
     const std::filesystem::path &sourcePath,
     std::string_view albumId,
     std::string_view photoId) {
+  static std::mutex thumbnailMutex;
+  std::lock_guard<std::mutex> lock(thumbnailMutex);
+
   if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
     return std::nullopt;
   }
 
-  const auto thumbPath = ThumbnailPathForAlbum(albumId, photoId);
-  std::filesystem::create_directories(thumbPath.parent_path());
-  if (std::filesystem::exists(thumbPath)) {
-    std::filesystem::remove(thumbPath);
+  const auto desiredThumbPath = ThumbnailPathForAlbum(albumId, photoId);
+  std::filesystem::create_directories(desiredThumbPath.parent_path());
+
+  auto decodeOrientedThumbnail = [&](const std::filesystem::path &decodePath) -> SoftwareBitmap {
+    const auto sourceFile = GetStorageFileFromPath(decodePath);
+    const auto sourceStream = sourceFile.OpenAsync(FileAccessMode::Read).get();
+    const auto decoder = BitmapDecoder::CreateAsync(sourceStream).get();
+
+    const auto targetSize =
+        ComputeThumbnailSize(decoder.OrientedPixelWidth(), decoder.OrientedPixelHeight(), kThumbnailMaxPixelSize);
+    if (targetSize.width == 0 || targetSize.height == 0) {
+      return nullptr;
+    }
+
+    BitmapTransform transform;
+    transform.ScaledWidth(targetSize.width);
+    transform.ScaledHeight(targetSize.height);
+    transform.InterpolationMode(BitmapInterpolationMode::Fant);
+
+    return decoder
+        .GetSoftwareBitmapAsync(
+            BitmapPixelFormat::Bgra8,
+            BitmapAlphaMode::Premultiplied,
+            transform,
+            ExifOrientationMode::RespectExifOrientation,
+            ColorManagementMode::DoNotColorManage)
+        .get();
+  };
+
+  SoftwareBitmap bitmap{nullptr};
+  try {
+    bitmap = decodeOrientedThumbnail(sourcePath);
+  } catch (...) {
+    const auto tempSource =
+        std::filesystem::temp_directory_path() /
+        (L"gump-thumb-src-" + std::to_wstring(GetTickCount64()) + sourcePath.extension().wstring());
+    if (!CopyFileW(sourcePath.c_str(), tempSource.c_str(), FALSE)) {
+      return std::nullopt;
+    }
+    try {
+      bitmap = decodeOrientedThumbnail(tempSource);
+    } catch (...) {
+      DeleteFileW(tempSource.c_str());
+      return std::nullopt;
+    }
+    DeleteFileW(tempSource.c_str());
   }
 
-  const auto sourceFile = GetStorageFileFromPath(sourcePath);
-  const auto sourceStream = sourceFile.OpenAsync(FileAccessMode::Read).get();
-  const auto decoder = BitmapDecoder::CreateAsync(sourceStream).get();
-
-  const auto targetSize =
-      ComputeThumbnailSize(decoder.OrientedPixelWidth(), decoder.OrientedPixelHeight(), kThumbnailMaxPixelSize);
-  if (targetSize.width == 0 || targetSize.height == 0) {
+  if (!bitmap) {
     return std::nullopt;
   }
 
-  BitmapTransform transform;
-  transform.ScaledWidth(targetSize.width);
-  transform.ScaledHeight(targetSize.height);
-  transform.InterpolationMode(BitmapInterpolationMode::Fant);
-
-  const auto bitmap = decoder
-                          .GetSoftwareBitmapAsync(
-                              BitmapPixelFormat::Bgra8,
-                              BitmapAlphaMode::Premultiplied,
-                              transform,
-                              ExifOrientationMode::RespectExifOrientation,
-                              ColorManagementMode::DoNotColorManage)
-                          .get();
-
-  const auto destFile = CreateOrReplaceStorageFile(thumbPath);
-  const auto destStream = destFile.OpenAsync(FileAccessMode::ReadWrite).get();
-  destStream.Size(0);
-
-  BitmapPropertySet encodingOptions;
-  encodingOptions.Insert(
-      L"ImageQuality",
-      BitmapTypedValue(
-          winrt::box_value(kThumbnailJpegQuality),
-          winrt::Windows::Foundation::PropertyType::Single));
-
-  const auto encoder =
-      BitmapEncoder::CreateAsync(BitmapEncoder::JpegEncoderId(), destStream, encodingOptions).get();
-  encoder.SetSoftwareBitmap(bitmap);
-  encoder.FlushAsync().get();
+  const auto thumbPath = ChooseWritablePath(desiredThumbPath);
+  if (!WriteSoftwareBitmapJpeg(bitmap, thumbPath, kThumbnailJpegQuality)) {
+    return std::nullopt;
+  }
 
   return thumbPath;
 }
@@ -553,31 +675,19 @@ SoftwareBitmap CropSoftwareBitmap(
   return cropped;
 }
 
-bool SaveFaceCropJpeg(const SoftwareBitmap &cropped, const std::filesystem::path &path) {
-  if (std::filesystem::exists(path)) {
-    std::filesystem::remove(path);
+std::optional<std::filesystem::path> SaveFaceCropJpeg(
+    const SoftwareBitmap &cropped,
+    const std::filesystem::path &path) {
+  const auto outPath = ChooseWritablePath(path);
+  if (!WriteSoftwareBitmapJpeg(
+          cropped,
+          outPath,
+          kFaceCropJpegQuality,
+          kFaceCropOutputPixelSize,
+          kFaceCropOutputPixelSize)) {
+    return std::nullopt;
   }
-
-  const auto destFile = CreateOrReplaceStorageFile(path);
-  const auto destStream = destFile.OpenAsync(FileAccessMode::ReadWrite).get();
-  destStream.Size(0);
-
-  BitmapPropertySet encodingOptions;
-  encodingOptions.Insert(
-      L"ImageQuality",
-      BitmapTypedValue(
-          winrt::box_value(kFaceCropJpegQuality),
-          winrt::Windows::Foundation::PropertyType::Single));
-
-  BitmapEncoder encoder =
-      BitmapEncoder::CreateAsync(BitmapEncoder::JpegEncoderId(), destStream, encodingOptions).get();
-  encoder.SetSoftwareBitmap(cropped);
-  auto transform = encoder.BitmapTransform();
-  transform.ScaledWidth(kFaceCropOutputPixelSize);
-  transform.ScaledHeight(kFaceCropOutputPixelSize);
-  transform.InterpolationMode(BitmapInterpolationMode::Fant);
-  encoder.FlushAsync().get();
-  return true;
+  return outPath;
 }
 
 void DeleteFaceCropsForPhoto(const std::filesystem::path &albumDir, std::string_view photoId) {
@@ -646,12 +756,13 @@ winrtRN::JSValue GenerateFaceCropsAtPath(
         cropRect.width,
         cropRect.height);
     const auto cropPath = FaceCropPathForAlbum(albumId, photoId, faceIndex);
-    if (!SaveFaceCropJpeg(cropped, cropPath)) {
+    const auto savedPath = SaveFaceCropJpeg(cropped, cropPath);
+    if (!savedPath.has_value()) {
       cropUris.push_back(nullptr);
       continue;
     }
 
-    cropUris.push_back(FileUri(cropPath));
+    cropUris.push_back(FileUri(*savedPath));
   }
 
   return winrtRN::JSValueObject{{"cropUris", std::move(cropUris)}};
@@ -1116,15 +1227,20 @@ void GumpLocalStorage::GetImageDimensions(std::string uri, ReactPromiseJS &&prom
           throw std::runtime_error("Photo file not found");
         }
 
-        // Use OrientedPixelWidth/Height so EXIF rotation is respected.
-        // PixelWidth/Height on a SoftwareBitmap can reflect raw sensor
-        // orientation and cause JS layout math to stretch portrait photos.
         const auto file = GetStorageFileFromPath(path);
         const auto stream = file.OpenAsync(FileAccessMode::Read).get();
         const auto decoder = BitmapDecoder::CreateAsync(stream).get();
+        const auto bitmap = decoder
+                                .GetSoftwareBitmapAsync(
+                                    BitmapPixelFormat::Bgra8,
+                                    BitmapAlphaMode::Premultiplied,
+                                    BitmapTransform{},
+                                    ExifOrientationMode::RespectExifOrientation,
+                                    ColorManagementMode::DoNotColorManage)
+                                .get();
         return winrtRN::JSValue(winrtRN::JSValueObject{
-            {"width", static_cast<double>(decoder.OrientedPixelWidth())},
-            {"height", static_cast<double>(decoder.OrientedPixelHeight())},
+            {"width", static_cast<double>(bitmap.PixelWidth())},
+            {"height", static_cast<double>(bitmap.PixelHeight())},
         });
       },
       std::move(promise));

@@ -23,6 +23,15 @@ export function getCachedImageDimensions(
   return dimensionCache.get(uri);
 }
 
+export function putCachedImageDimensions(
+  uri: string,
+  dimensions: ImageDimensions,
+): void {
+  if (dimensions.width > 0 && dimensions.height > 0) {
+    dimensionCache.set(uri, dimensions);
+  }
+}
+
 const NATIVE_DIMENSION_PLATFORMS = new Set(['macos', 'ios', 'android', 'windows']);
 
 export async function loadImageDimensions(
