@@ -11,7 +11,7 @@ import {
 } from '@lib/culledAlbum/photoStateStore';
 import {getPhotoById} from '@lib/culledAlbum/store';
 import {shouldDeferHeavyWorkForNavigation} from '@lib/navigation/uploadAwareNavigation';
-import {ensureThumbnail} from '@lib/storage/localStorage';
+import {ensureThumbnail, isUsableThumbnailUri} from '@lib/storage/localStorage';
 
 const BATCH_SIZE = 8;
 const EXISTING_THUMB_CONCURRENCY = 12;
@@ -108,7 +108,7 @@ export async function resolveExistingThumbnailsForPhotos(
       return false;
     }
     const photo = getPhotoById(albumId, photoId);
-    if (!photo || photo.file.thumbnailUri) {
+    if (!photo || isUsableThumbnailUri(photo.file.thumbnailUri)) {
       return false;
     }
     existingThumbInFlight.add(key);
@@ -129,7 +129,7 @@ export async function resolveExistingThumbnailsForPhotos(
       batchIds.map(async photoId => {
         try {
           const photo = getPhotoById(albumId, photoId);
-          if (!photo || photo.file.thumbnailUri) {
+          if (!photo || isUsableThumbnailUri(photo.file.thumbnailUri)) {
             return;
           }
           const nextFile = await ensureThumbnail(albumId, photo.file, photoId);
@@ -181,7 +181,7 @@ export async function backfillAlbumThumbnails(albumId: string): Promise<void> {
 
     for (const photoId of batchIds) {
       const photo = getPhotoById(albumId, photoId);
-      if (!photo || photo.file.thumbnailUri) {
+      if (!photo || isUsableThumbnailUri(photo.file.thumbnailUri)) {
         continue;
       }
 
@@ -287,7 +287,7 @@ async function backfillPhotoThumbnails(
 
     for (const photoId of batchIds) {
       const photo = getPhotoById(albumId, photoId);
-      if (!photo || photo.file.thumbnailUri) {
+      if (!photo || isUsableThumbnailUri(photo.file.thumbnailUri)) {
         inFlightAlbumPhotoIds.delete(photoScheduleKey(albumId, photoId));
         continue;
       }

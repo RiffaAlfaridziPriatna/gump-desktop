@@ -134,22 +134,17 @@ const PhotoGridCellImage = memo(
         ]}>
         {uri && imageLayout ? (
           isWindows ? (
-            <View
-              style={[
-                styles.imageFrame,
-                {
-                  width: imageLayout.width,
-                  height: imageLayout.height,
-                  left: imageLayout.left,
-                  top: imageLayout.top,
-                },
-              ]}>
+            <View style={styles.windowsImageSlot}>
               <Image
                 source={{uri}}
                 resizeMode="contain"
                 onLoad={handleLoad}
                 onError={() => setIsLoaded(true)}
-                style={[styles.framedImage, {opacity: isLoaded ? 1 : 0}]}
+                style={{
+                  width: imageLayout.width,
+                  height: imageLayout.height,
+                  opacity: isLoaded ? 1 : 0,
+                }}
               />
             </View>
           ) : (
@@ -487,13 +482,10 @@ const styles = StyleSheet.create({
   containedImage: {
     position: 'absolute',
   },
-  imageFrame: {
-    position: 'absolute',
-    overflow: 'hidden',
-  },
-  framedImage: {
-    width: '100%',
-    height: '100%',
+  windowsImageSlot: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   imageHidden: {
     position: 'absolute',

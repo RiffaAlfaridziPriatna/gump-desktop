@@ -44,12 +44,23 @@ const NativeLocalStorage = NativeModules.GumpLocalStorage as
 
 const NATIVE_STORAGE_PLATFORMS = new Set(['macos', 'ios', 'android', 'windows']);
 const THUMBNAIL_CACHE_VERSION = '1920';
+const WINDOWS_ORIENTED_THUMB_SUFFIX = '.o1.jpg';
 
 function hasNativeLocalStorage(): boolean {
   return (
     NATIVE_STORAGE_PLATFORMS.has(Platform.OS) &&
     NativeLocalStorage?.copyPhoto != null
   );
+}
+
+export function isUsableThumbnailUri(thumbnailUri: string | null | undefined): boolean {
+  if (!thumbnailUri) {
+    return false;
+  }
+  if (Platform.OS !== 'windows') {
+    return true;
+  }
+  return thumbnailUri.includes(WINDOWS_ORIENTED_THUMB_SUFFIX);
 }
 
 export async function copyPhotoToAlbum(
@@ -105,14 +116,24 @@ export async function computePerceptualHash(uri: string): Promise<string | null>
 }
 
 export function resolveDisplayUri(file: FileAsset): string {
-  return file.thumbnailUri ?? file.uri;
+  return isUsableThumbnailUri(file.thumbnailUri)
+    ? file.thumbnailUri!
+    : file.uri;
 }
 
 export function resolveKeyFaceDisplayUri(file: FileAsset): string {
-  return file.thumbnailUri ?? file.uri;
+  return isUsableThumbnailUri(file.thumbnailUri)
+    ? file.thumbnailUri!
+    : file.uri;
 }
 
 export function resolveGridDisplayUri(file: FileAsset): string | null {
+  if (isUsableThumbnailUri(file.thumbnailUri)) {
+    return file.thumbnailUri!;
+  }
+  if (Platform.OS === 'windows') {
+    return file.uri || null;
+  }
   return file.thumbnailUri ?? null;
 }
 
@@ -137,15 +158,15 @@ export async function ensureThumbnail(
   options?: {regenerate?: boolean},
 ): Promise<FileAsset> {
   // If thumbnail is already set, keep it unless caller explicitly requests regeneration.
-  if (file.thumbnailUri && !options?.regenerate) {
+  if (isUsableThumbnailUri(file.thumbnailUri) && !options?.regenerate) {
     return file;
   }
 
   // If we are not regenerating, try to reuse any existing thumbnail URI from native storage.
   if (!options?.regenerate) {
     const existing = await getThumbnailUri(albumId, photoId);
-    if (existing) {
-      return {...file, thumbnailUri: existing};
+    if (isUsableThumbnailUri(existing)) {
+      return {...file, thumbnailUri: existing!};
     }
   }
 

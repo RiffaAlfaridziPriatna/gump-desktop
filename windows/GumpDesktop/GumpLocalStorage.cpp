@@ -103,7 +103,7 @@ std::filesystem::path ThumbnailDirectory(std::string_view albumId) {
 }
 
 std::filesystem::path ThumbnailPathForAlbum(std::string_view albumId, std::string_view photoId) {
-  return ThumbnailDirectory(albumId) / (ToWide(photoId) + L".jpg");
+  return ThumbnailDirectory(albumId) / (ToWide(photoId) + L".o1.jpg");
 }
 
 std::filesystem::path FaceCropDirectory(std::string_view albumId) {
@@ -319,22 +319,11 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
     const auto sourceStream = sourceFile.OpenAsync(FileAccessMode::Read).get();
     const auto decoder = BitmapDecoder::CreateAsync(sourceStream).get();
 
-    const auto targetSize =
-        ComputeThumbnailSize(decoder.OrientedPixelWidth(), decoder.OrientedPixelHeight(), kThumbnailMaxPixelSize);
-    if (targetSize.width == 0 || targetSize.height == 0) {
-      return nullptr;
-    }
-
-    BitmapTransform transform;
-    transform.ScaledWidth(targetSize.width);
-    transform.ScaledHeight(targetSize.height);
-    transform.InterpolationMode(BitmapInterpolationMode::Fant);
-
     return decoder
         .GetSoftwareBitmapAsync(
             BitmapPixelFormat::Bgra8,
             BitmapAlphaMode::Premultiplied,
-            transform,
+            BitmapTransform{},
             ExifOrientationMode::RespectExifOrientation,
             ColorManagementMode::DoNotColorManage)
         .get();
@@ -363,8 +352,22 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
     return std::nullopt;
   }
 
+  const auto targetSize =
+      ComputeThumbnailSize(bitmap.PixelWidth(), bitmap.PixelHeight(), kThumbnailMaxPixelSize);
+  if (targetSize.width == 0 || targetSize.height == 0) {
+    return std::nullopt;
+  }
+
   const auto thumbPath = ChooseWritablePath(desiredThumbPath);
-  if (!WriteSoftwareBitmapJpeg(bitmap, thumbPath, kThumbnailJpegQuality)) {
+  const bool scaled =
+      targetSize.width != static_cast<uint32_t>(bitmap.PixelWidth()) ||
+      targetSize.height != static_cast<uint32_t>(bitmap.PixelHeight());
+  if (!WriteSoftwareBitmapJpeg(
+          bitmap,
+          thumbPath,
+          kThumbnailJpegQuality,
+          scaled ? std::optional<uint32_t>(targetSize.width) : std::nullopt,
+          scaled ? std::optional<uint32_t>(targetSize.height) : std::nullopt)) {
     return std::nullopt;
   }
 
