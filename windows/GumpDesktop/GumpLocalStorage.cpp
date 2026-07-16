@@ -304,9 +304,6 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
     const std::filesystem::path &sourcePath,
     std::string_view albumId,
     std::string_view photoId) {
-  static std::mutex thumbnailMutex;
-  std::lock_guard<std::mutex> lock(thumbnailMutex);
-
   if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
     return std::nullopt;
   }
@@ -319,11 +316,25 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
     const auto sourceStream = sourceFile.OpenAsync(FileAccessMode::Read).get();
     const auto decoder = BitmapDecoder::CreateAsync(sourceStream).get();
 
+    const auto targetSize = ComputeThumbnailSize(
+        decoder.PixelWidth(), decoder.PixelHeight(), kThumbnailMaxPixelSize);
+    if (targetSize.width == 0 || targetSize.height == 0) {
+      return nullptr;
+    }
+
+    BitmapTransform transform;
+    if (targetSize.width != decoder.PixelWidth() ||
+        targetSize.height != decoder.PixelHeight()) {
+      transform.ScaledWidth(targetSize.width);
+      transform.ScaledHeight(targetSize.height);
+      transform.InterpolationMode(BitmapInterpolationMode::Fant);
+    }
+
     return decoder
         .GetSoftwareBitmapAsync(
             BitmapPixelFormat::Bgra8,
             BitmapAlphaMode::Premultiplied,
-            BitmapTransform{},
+            transform,
             ExifOrientationMode::RespectExifOrientation,
             ColorManagementMode::DoNotColorManage)
         .get();
@@ -352,22 +363,8 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
     return std::nullopt;
   }
 
-  const auto targetSize =
-      ComputeThumbnailSize(bitmap.PixelWidth(), bitmap.PixelHeight(), kThumbnailMaxPixelSize);
-  if (targetSize.width == 0 || targetSize.height == 0) {
-    return std::nullopt;
-  }
-
   const auto thumbPath = ChooseWritablePath(desiredThumbPath);
-  const bool scaled =
-      targetSize.width != static_cast<uint32_t>(bitmap.PixelWidth()) ||
-      targetSize.height != static_cast<uint32_t>(bitmap.PixelHeight());
-  if (!WriteSoftwareBitmapJpeg(
-          bitmap,
-          thumbPath,
-          kThumbnailJpegQuality,
-          scaled ? std::optional<uint32_t>(targetSize.width) : std::nullopt,
-          scaled ? std::optional<uint32_t>(targetSize.height) : std::nullopt)) {
+  if (!WriteSoftwareBitmapJpeg(bitmap, thumbPath, kThumbnailJpegQuality)) {
     return std::nullopt;
   }
 
@@ -1233,17 +1230,9 @@ void GumpLocalStorage::GetImageDimensions(std::string uri, ReactPromiseJS &&prom
         const auto file = GetStorageFileFromPath(path);
         const auto stream = file.OpenAsync(FileAccessMode::Read).get();
         const auto decoder = BitmapDecoder::CreateAsync(stream).get();
-        const auto bitmap = decoder
-                                .GetSoftwareBitmapAsync(
-                                    BitmapPixelFormat::Bgra8,
-                                    BitmapAlphaMode::Premultiplied,
-                                    BitmapTransform{},
-                                    ExifOrientationMode::RespectExifOrientation,
-                                    ColorManagementMode::DoNotColorManage)
-                                .get();
         return winrtRN::JSValue(winrtRN::JSValueObject{
-            {"width", static_cast<double>(bitmap.PixelWidth())},
-            {"height", static_cast<double>(bitmap.PixelHeight())},
+            {"width", static_cast<double>(decoder.OrientedPixelWidth())},
+            {"height", static_cast<double>(decoder.OrientedPixelHeight())},
         });
       },
       std::move(promise));

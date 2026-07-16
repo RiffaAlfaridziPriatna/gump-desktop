@@ -12,10 +12,9 @@ import {
 import {getPhotoById} from '@lib/culledAlbum/store';
 import {shouldDeferHeavyWorkForNavigation} from '@lib/navigation/uploadAwareNavigation';
 import {ensureThumbnail, isUsableThumbnailUri} from '@lib/storage/localStorage';
-import {Platform} from 'react-native';
 
-const BATCH_SIZE = Platform.OS === 'windows' ? 2 : 8;
-const EXISTING_THUMB_CONCURRENCY = Platform.OS === 'windows' ? 1 : 12;
+const BATCH_SIZE = 8;
+const EXISTING_THUMB_CONCURRENCY = 12;
 const REVISION_BUMP_DELAY_MS = 50;
 const inFlightAlbumPhotoIds = new Set<string>();
 const runningAlbums = new Set<string>();
