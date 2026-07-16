@@ -439,9 +439,15 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
 }
 
 std::string FileUri(const std::filesystem::path &path) {
-  const auto wide = path.wstring();
-  return "file:///" + ToUtf8(wide);
+  auto utf8 = ToUtf8(path.wstring());
+  for (char &ch : utf8) {
+    if (ch == '\\') {
+      ch = '/';
+    }
+  }
+  return "file:///" + utf8;
 }
+
 
 std::string MimeTypeForPath(const std::filesystem::path &path) {
   const auto ext = path.extension().wstring();

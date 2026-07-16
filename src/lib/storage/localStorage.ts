@@ -59,10 +59,11 @@ export function isUsableThumbnailUri(thumbnailUri: string | null | undefined): b
   if (Platform.OS !== 'windows') {
     return true;
   }
+  const normalized = thumbnailUri.replace(/\\/g, '/');
   return (
-    thumbnailUri.includes('/thumbs/') &&
-    thumbnailUri.includes('.jpg') &&
-    !thumbnailUri.includes('.o1.jpg')
+    normalized.includes('/thumbs/') &&
+    normalized.includes('.jpg') &&
+    !normalized.includes('.o1.jpg')
   );
 }
 
