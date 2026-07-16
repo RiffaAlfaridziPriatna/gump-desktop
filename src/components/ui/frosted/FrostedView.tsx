@@ -31,7 +31,7 @@ export function FrostedView({
 
   return (
     <View style={[styles.root, style, {backgroundColor: fallbackColor}]} {...rest}>
-      {children}
+      <View style={styles.content}>{children}</View>
     </View>
   );
 }
@@ -42,5 +42,10 @@ const styles = StyleSheet.create({
   },
   tint: {
     ...StyleSheet.absoluteFillObject,
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
 });

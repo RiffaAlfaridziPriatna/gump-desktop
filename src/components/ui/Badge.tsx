@@ -32,6 +32,9 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     paddingVertical: 8,
     paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   text: {
     fontFamily: fonts.sans,
