@@ -96,7 +96,10 @@ export function matchesCullFilterKey(
   photo: CullingPhoto,
   key: CullFilterKey,
 ): boolean {
-  return photo[key];
+  if (key === 'duplicated') {
+    return photo.duplicated;
+  }
+  return photo[key] && !photo.duplicated;
 }
 
 export function derivePhotoFlags(faces: CullingFace[]) {
@@ -212,11 +215,11 @@ export function computeStats(photos: CullingPhoto[]): APIResponse.CullingStats {
   return {
     totalPhotos: photos.length,
     mySelections: selected.length,
-    aiSelected: photos.filter(photo => photo.aiSelected && !photo.duplicated).length,
-    maybe: photos.filter(photo => photo.maybe && !photo.duplicated).length,
-    blurred: photos.filter(photo => photo.blurred && !photo.duplicated).length,
-    closedEyes: photos.filter(photo => photo.closedEyes && !photo.duplicated).length,
-    duplicated: photos.filter(photo => photo.duplicated).length,
+    aiSelected: photos.filter(photo => matchesCullFilterKey(photo, 'aiSelected')).length,
+    maybe: photos.filter(photo => matchesCullFilterKey(photo, 'maybe')).length,
+    blurred: photos.filter(photo => matchesCullFilterKey(photo, 'blurred')).length,
+    closedEyes: photos.filter(photo => matchesCullFilterKey(photo, 'closedEyes')).length,
+    duplicated: photos.filter(photo => matchesCullFilterKey(photo, 'duplicated')).length,
   };
 }
 
