@@ -157,6 +157,14 @@ StorageFile GetStorageFileFromPath(const std::filesystem::path &path) {
   return StorageFile::GetFileFromPathAsync(path.wstring()).get();
 }
 
+StorageFile CreateOrReplaceStorageFile(const std::filesystem::path &path) {
+  std::filesystem::create_directories(path.parent_path());
+  const auto folder = StorageFolder::GetFolderFromPathAsync(path.parent_path().wstring()).get();
+  return folder
+      .CreateFileAsync(path.filename().wstring(), CreationCollisionOption::ReplaceExisting)
+      .get();
+}
+
 struct ThumbnailSize {
   uint32_t width{0};
   uint32_t height{0};
@@ -222,8 +230,7 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
                               ColorManagementMode::DoNotColorManage)
                           .get();
 
-  std::filesystem::create_directories(thumbPath.parent_path());
-  const auto destFile = GetStorageFileFromPath(thumbPath);
+  const auto destFile = CreateOrReplaceStorageFile(thumbPath);
   const auto destStream = destFile.OpenAsync(FileAccessMode::ReadWrite).get();
   destStream.Size(0);
 
@@ -547,12 +554,11 @@ SoftwareBitmap CropSoftwareBitmap(
 }
 
 bool SaveFaceCropJpeg(const SoftwareBitmap &cropped, const std::filesystem::path &path) {
-  std::filesystem::create_directories(path.parent_path());
   if (std::filesystem::exists(path)) {
     std::filesystem::remove(path);
   }
 
-  const auto destFile = GetStorageFileFromPath(path);
+  const auto destFile = CreateOrReplaceStorageFile(path);
   const auto destStream = destFile.OpenAsync(FileAccessMode::ReadWrite).get();
   destStream.Size(0);
 
