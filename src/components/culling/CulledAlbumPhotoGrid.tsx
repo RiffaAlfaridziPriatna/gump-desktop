@@ -10,6 +10,7 @@ import {
   scheduleScrollImagePreload,
   SCROLL_GRID_VISIBLE_PADDING,
 } from '@lib/media/scrollImagePreload';
+import {isUsableThumbnailUri} from '@lib/storage/localStorage';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 import {
@@ -228,7 +229,7 @@ export function CulledAlbumPhotoGrid({
     const initialCount = Math.min(listItems.length, COLUMNS * 4);
     const photoIdsNeedingThumbnail = listItems
       .slice(0, initialCount)
-      .filter(item => !item.file.thumbnailUri)
+      .filter(item => !isUsableThumbnailUri(item.file.thumbnailUri))
       .map(item => item.photoId);
     if (photoIdsNeedingThumbnail.length > 0) {
       scheduleResolveExistingThumbnails(albumId, photoIdsNeedingThumbnail);
@@ -282,7 +283,7 @@ export function CulledAlbumPhotoGrid({
         lastThumbnailRangeRef.current = rangeKey;
         const photoIdsNeedingThumbnail = currentListItems
           .slice(start, end)
-          .filter(item => !item.file.thumbnailUri)
+          .filter(item => !isUsableThumbnailUri(item.file.thumbnailUri))
           .map(item => item.photoId);
         if (photoIdsNeedingThumbnail.length > 0) {
           scheduleThumbnailBackfillForPhotos(albumId, photoIdsNeedingThumbnail);

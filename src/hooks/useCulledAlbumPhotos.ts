@@ -6,7 +6,6 @@ import {
 } from '@lib/culledAlbum/photoLoader';
 import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
 import {
-  resolveExistingThumbnailsForPhotos,
   scheduleResolveExistingThumbnails,
 } from '@lib/culledAlbum/thumbnailBackfill';
 import {useCulledAlbumPhotosState} from '@context/culledAlbum';
@@ -53,7 +52,7 @@ export function useCulledAlbumPhotos(albumId: string, options?: Options) {
       const firstPaintIds = photoIds.slice(0, FIRST_PAINT_THUMBNAIL_COUNT);
       if (firstPaintIds.length > 0) {
         hydratePhotos(albumId, firstPaintIds);
-        await resolveExistingThumbnailsForPhotos(albumId, firstPaintIds);
+        scheduleResolveExistingThumbnails(albumId, firstPaintIds);
       }
 
       for (let index = 0; index < photoIds.length; index += HYDRATE_BATCH_SIZE) {

@@ -128,13 +128,7 @@ export function resolveKeyFaceDisplayUri(file: FileAsset): string {
 }
 
 export function resolveGridDisplayUri(file: FileAsset): string | null {
-  if (isUsableThumbnailUri(file.thumbnailUri)) {
-    return file.thumbnailUri!;
-  }
-  if (Platform.OS === 'windows') {
-    return file.uri || null;
-  }
-  return file.thumbnailUri ?? null;
+  return isUsableThumbnailUri(file.thumbnailUri) ? file.thumbnailUri! : null;
 }
 
 export function resolveOriginalUri(file: FileAsset): string {

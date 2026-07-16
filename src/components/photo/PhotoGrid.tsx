@@ -14,7 +14,10 @@ import {
   scheduleScrollImagePreload,
   SCROLL_GRID_VISIBLE_PADDING,
 } from '@lib/media/scrollImagePreload';
-import {resolveGridDisplayUri} from '@lib/storage/localStorage';
+import {
+  isUsableThumbnailUri,
+  resolveGridDisplayUri,
+} from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
 import {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
@@ -364,7 +367,7 @@ export function PhotoGrid({
           lastThumbnailRangeRef.current = thumbnailKey;
           const photoIdsNeedingThumbnail = currentItems
             .slice(start, end)
-            .filter(item => !item.file.thumbnailUri)
+            .filter(item => !isUsableThumbnailUri(item.file.thumbnailUri))
             .map(item => item.photoId);
           if (photoIdsNeedingThumbnail.length > 0) {
             scheduleThumbnailBackfillForPhotos(

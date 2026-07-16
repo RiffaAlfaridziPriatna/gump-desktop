@@ -12,9 +12,10 @@ import {
 import {getPhotoById} from '@lib/culledAlbum/store';
 import {shouldDeferHeavyWorkForNavigation} from '@lib/navigation/uploadAwareNavigation';
 import {ensureThumbnail, isUsableThumbnailUri} from '@lib/storage/localStorage';
+import {Platform} from 'react-native';
 
-const BATCH_SIZE = 8;
-const EXISTING_THUMB_CONCURRENCY = 12;
+const BATCH_SIZE = Platform.OS === 'windows' ? 2 : 8;
+const EXISTING_THUMB_CONCURRENCY = Platform.OS === 'windows' ? 1 : 12;
 const REVISION_BUMP_DELAY_MS = 50;
 const inFlightAlbumPhotoIds = new Set<string>();
 const runningAlbums = new Set<string>();
@@ -22,6 +23,7 @@ const pendingPhotoIdsByAlbum = new Map<string, Set<string>>();
 const existingThumbInFlight = new Set<string>();
 const pendingRevisionAlbums = new Set<string>();
 let revisionBumpTimer: ReturnType<typeof setTimeout> | null = null;
+let resolveExistingQueue: Promise<void> = Promise.resolve();
 
 function scheduleBumpPhotoGridRevision(albumId: string): void {
   pendingRevisionAlbums.add(albumId);
@@ -154,12 +156,14 @@ export function scheduleResolveExistingThumbnails(
   albumId: string,
   photoIds: string[],
 ): void {
-  resolveExistingThumbnailsForPhotos(albumId, photoIds).catch(error => {
-    console.error(
-      '[thumbnailBackfill] Failed to resolve existing thumbnails',
-      error,
-    );
-  });
+  resolveExistingQueue = resolveExistingQueue
+    .then(() => resolveExistingThumbnailsForPhotos(albumId, photoIds))
+    .catch(error => {
+      console.error(
+        '[thumbnailBackfill] Failed to resolve existing thumbnails',
+        error,
+      );
+    });
 }
 
 export async function backfillAlbumThumbnails(albumId: string): Promise<void> {
