@@ -36,10 +36,13 @@ const NATIVE_DIMENSION_PLATFORMS = new Set(['macos', 'ios', 'android', 'windows'
 
 export async function loadImageDimensions(
   uri: string,
+  options?: {bypassCache?: boolean},
 ): Promise<ImageDimensions | null> {
-  const cached = dimensionCache.get(uri);
-  if (cached) {
-    return cached;
+  if (!options?.bypassCache) {
+    const cached = dimensionCache.get(uri);
+    if (cached) {
+      return cached;
+    }
   }
 
   if (

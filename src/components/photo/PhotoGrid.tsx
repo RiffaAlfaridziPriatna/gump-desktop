@@ -23,6 +23,7 @@ import {
   type ImageLoadEventData,
   type LayoutChangeEvent,
   ListRenderItemInfo,
+  Platform,
   StyleSheet,
   useWindowDimensions,
   View,
@@ -35,6 +36,8 @@ const ASPECT_RATIO = 3 / 2;
 const HORIZONTAL_PADDING = 48;
 const GAP = 8;
 const RESIZE_SETTLE_MS = 150;
+
+const isWindows = Platform.OS === 'windows';
 
 const PhotoGridCellImage = memo(
   function PhotoGridCellImage({
@@ -75,14 +78,18 @@ const PhotoGridCellImage = memo(
       }
 
       const cached = getCachedImageDimensions(uri);
-      if (cached) {
+      if (cached && !isWindows) {
         setImageSize(cached);
         return;
       }
 
+      if (cached) {
+        setImageSize(cached);
+      }
+
       let cancelled = false;
 
-      loadImageDimensions(uri).then(dimensions => {
+      loadImageDimensions(uri, {bypassCache: isWindows}).then(dimensions => {
         if (!cancelled && dimensions) {
           setImageSize(dimensions);
         }
@@ -95,16 +102,26 @@ const PhotoGridCellImage = memo(
 
     const handleLoad = useCallback(
       (event: NativeSyntheticEvent<ImageLoadEventData>) => {
-        const {width: loadedWidth, height: loadedHeight} =
-          event.nativeEvent.source;
+        setIsLoaded(true);
 
-        if (loadedWidth > 0 && loadedHeight > 0) {
-          const dimensions = {width: loadedWidth, height: loadedHeight};
-          putCachedImageDimensions(uri, dimensions);
-          setImageSize(dimensions);
+        if (isWindows) {
+          return;
         }
 
-        setIsLoaded(true);
+        const {width: loadedWidth, height: loadedHeight} =
+          event.nativeEvent.source;
+        if (loadedWidth <= 0 || loadedHeight <= 0) {
+          return;
+        }
+
+        setImageSize(current => {
+          if (current) {
+            return current;
+          }
+          const dimensions = {width: loadedWidth, height: loadedHeight};
+          putCachedImageDimensions(uri, dimensions);
+          return dimensions;
+        });
       },
       [uri],
     );
@@ -115,25 +132,49 @@ const PhotoGridCellImage = memo(
           styles.itemContainer,
           {width, height, backgroundColor: colors.cardBackgroundSecondary},
         ]}>
-        {uri ? (
+        {uri && imageLayout ? (
+          isWindows ? (
+            <View
+              style={[
+                styles.imageFrame,
+                {
+                  width: imageLayout.width,
+                  height: imageLayout.height,
+                  left: imageLayout.left,
+                  top: imageLayout.top,
+                },
+              ]}>
+              <Image
+                source={{uri}}
+                resizeMode="contain"
+                onLoad={handleLoad}
+                onError={() => setIsLoaded(true)}
+                style={[styles.framedImage, {opacity: isLoaded ? 1 : 0}]}
+              />
+            </View>
+          ) : (
+            <Image
+              source={{uri}}
+              onLoad={handleLoad}
+              onError={() => setIsLoaded(true)}
+              style={[
+                styles.containedImage,
+                {
+                  width: imageLayout.width,
+                  height: imageLayout.height,
+                  left: imageLayout.left,
+                  top: imageLayout.top,
+                  opacity: isLoaded ? 1 : 0,
+                },
+              ]}
+            />
+          )
+        ) : uri ? (
           <Image
             source={{uri}}
             onLoad={handleLoad}
             onError={() => setIsLoaded(true)}
-            style={
-              imageLayout
-                ? [
-                    styles.containedImage,
-                    {
-                      width: imageLayout.width,
-                      height: imageLayout.height,
-                      left: imageLayout.left,
-                      top: imageLayout.top,
-                      opacity: isLoaded ? 1 : 0,
-                    },
-                  ]
-                : styles.imageHidden
-            }
+            style={styles.imageHidden}
           />
         ) : null}
       </View>
@@ -445,6 +486,14 @@ const styles = StyleSheet.create({
   },
   containedImage: {
     position: 'absolute',
+  },
+  imageFrame: {
+    position: 'absolute',
+    overflow: 'hidden',
+  },
+  framedImage: {
+    width: '100%',
+    height: '100%',
   },
   imageHidden: {
     position: 'absolute',
