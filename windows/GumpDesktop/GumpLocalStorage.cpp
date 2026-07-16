@@ -222,10 +222,7 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
                               ColorManagementMode::DoNotColorManage)
                           .get();
 
-  {
-    std::ofstream placeholder(thumbPath, std::ios::binary);
-  }
-
+  std::filesystem::create_directories(thumbPath.parent_path());
   const auto destFile = GetStorageFileFromPath(thumbPath);
   const auto destStream = destFile.OpenAsync(FileAccessMode::ReadWrite).get();
   destStream.Size(0);
@@ -553,10 +550,6 @@ bool SaveFaceCropJpeg(const SoftwareBitmap &cropped, const std::filesystem::path
   std::filesystem::create_directories(path.parent_path());
   if (std::filesystem::exists(path)) {
     std::filesystem::remove(path);
-  }
-
-  {
-    std::ofstream placeholder(path, std::ios::binary);
   }
 
   const auto destFile = GetStorageFileFromPath(path);

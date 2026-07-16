@@ -47,6 +47,8 @@ export class TurboSQLiteAdapter implements SQLiteAdapter {
       return;
     }
 
+    this.db.executeSql('PRAGMA journal_mode=WAL', [] as Params);
+
     this.db.executeSql(`
       CREATE TABLE IF NOT EXISTS albums (
         album_id TEXT PRIMARY KEY,
