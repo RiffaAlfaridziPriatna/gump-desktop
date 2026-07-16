@@ -56,23 +56,19 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
   }, [height, imageSize, width]);
 
   useEffect(() => {
-    if (!uri) {
+    if (!uri || isWindows) {
       return;
     }
 
     const cached = getCachedImageDimensions(uri);
-    if (cached && !isWindows) {
+    if (cached) {
       setImageSize(cached);
       return;
     }
 
-    if (cached) {
-      setImageSize(cached);
-    }
-
     let cancelled = false;
 
-    loadImageDimensions(uri, {bypassCache: isWindows}).then(dimensions => {
+    loadImageDimensions(uri).then(dimensions => {
       if (!cancelled && dimensions) {
         setImageSize(dimensions);
       }
@@ -86,10 +82,6 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
   const handleLoad = useCallback(
     (event: NativeSyntheticEvent<ImageLoadEventData>) => {
       setIsLoaded(true);
-
-      if (isWindows) {
-        return;
-      }
 
       const {width: loadedWidth, height: loadedHeight} = event.nativeEvent.source;
       if (loadedWidth <= 0 || loadedHeight <= 0) {
@@ -118,22 +110,16 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
 
   return (
     <View style={[styles.container, {width, height}]}>
-      {uri && imageLayout ? (
+      {uri ? (
         isWindows ? (
-          <View style={styles.windowsImageSlot}>
-            <Image
-              source={{uri}}
-              resizeMode="contain"
-              onLoad={handleLoad}
-              onError={handleError}
-              style={{
-                width: imageLayout.width,
-                height: imageLayout.height,
-                opacity: isLoaded ? 1 : 0,
-              }}
-            />
-          </View>
-        ) : (
+          <Image
+            source={{uri}}
+            resizeMode="contain"
+            onLoad={handleLoad}
+            onError={handleError}
+            style={[styles.windowsImage, {opacity: isLoaded ? 1 : 0}]}
+          />
+        ) : imageLayout ? (
           <Image
             source={{uri}}
             onLoad={handleLoad}
@@ -149,14 +135,14 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
               },
             ]}
           />
+        ) : (
+          <Image
+            source={{uri}}
+            onLoad={handleLoad}
+            onError={handleError}
+            style={styles.imageHidden}
+          />
         )
-      ) : uri ? (
-        <Image
-          source={{uri}}
-          onLoad={handleLoad}
-          onError={handleError}
-          style={styles.imageHidden}
-        />
       ) : null}
     </View>
   );
@@ -170,10 +156,8 @@ const styles = StyleSheet.create({
   containedImage: {
     position: 'absolute',
   },
-  windowsImageSlot: {
+  windowsImage: {
     ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   imageHidden: {
     position: 'absolute',
