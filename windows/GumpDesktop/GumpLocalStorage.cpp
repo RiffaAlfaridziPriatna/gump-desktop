@@ -302,7 +302,6 @@ ThumbnailSize ComputeThumbnailSize(uint32_t sourceWidth, uint32_t sourceHeight, 
   return {std::max(1u, scaledWidth), maxPixelSize};
 }
 
-
 class ThumbnailConcurrencyGuard {
  public:
   ThumbnailConcurrencyGuard() {
@@ -448,7 +447,6 @@ std::string FileUri(const std::filesystem::path &path) {
   return "file:///" + utf8;
 }
 
-
 std::string MimeTypeForPath(const std::filesystem::path &path) {
   const auto ext = path.extension().wstring();
   if (ext.empty()) {
@@ -472,10 +470,10 @@ std::optional<double> ReadCaptureTimestampMillis(const std::filesystem::path &pa
 }
 
 winrtRN::JSValueObject EyesOpenFromScore(float minOpen, float maxOpen, float avgOpen) {
-  const float openThreshold = 0.65f;
-  const float openMinThreshold = 0.55f;
-  const float closedMaxThreshold = 0.40f;
-  const float closedAvgThreshold = 0.35f;
+  const float openThreshold = 0.58f;
+  const float openMinThreshold = 0.48f;
+  const float closedMaxThreshold = 0.36f;
+  const float closedAvgThreshold = 0.32f;
 
   winrtRN::JSValueObject eyesOpen;
   if (avgOpen >= openThreshold && minOpen >= openMinThreshold) {
@@ -484,6 +482,9 @@ winrtRN::JSValueObject EyesOpenFromScore(float minOpen, float maxOpen, float avg
   } else if (maxOpen <= closedMaxThreshold || avgOpen <= closedAvgThreshold) {
     eyesOpen["value"] = false;
     eyesOpen["confidence"] = std::min(98.0, 86.0 + (closedMaxThreshold - maxOpen) * 400.0);
+  } else if (avgOpen < 0.45f && maxOpen < 0.52f) {
+    eyesOpen["value"] = false;
+    eyesOpen["confidence"] = 88.0;
   } else {
     eyesOpen["value"] = false;
     eyesOpen["confidence"] = 72.0;
@@ -504,33 +505,71 @@ float EstimateEyeOpenness(
   const int safeTop = std::max(0, top);
   const int safeRight = std::min(width, safeLeft + std::max(1, regionWidth));
   const int safeBottom = std::min(height, safeTop + std::max(1, regionHeight));
+  const int rows = safeBottom - safeTop;
+  const int cols = safeRight - safeLeft;
+  if (rows < 4 || cols < 4) {
+    return 0.5f;
+  }
+
+  auto grayAt = [&](int px, int py) {
+    const int pixelIndex = py * stride + px * 4;
+    return pixels[pixelIndex] * 0.299 + pixels[pixelIndex + 1] * 0.587 + pixels[pixelIndex + 2] * 0.114;
+  };
+
+  std::vector<double> rowMean(static_cast<size_t>(rows), 0.0);
+  for (int y = 0; y < rows; ++y) {
+    double sum = 0.0;
+    for (int x = safeLeft; x < safeRight; ++x) {
+      sum += grayAt(x, safeTop + y);
+    }
+    rowMean[static_cast<size_t>(y)] = sum / static_cast<double>(cols);
+  }
+
+  const int topEnd = std::max(1, rows / 4);
+  const int bottomStart = rows - topEnd;
+  const int midStart = topEnd;
+  const int midEnd = std::max(midStart + 1, bottomStart);
+
+  double topSum = 0.0;
+  double midSum = 0.0;
+  double bottomSum = 0.0;
+  for (int y = 0; y < topEnd; ++y) {
+    topSum += rowMean[static_cast<size_t>(y)];
+  }
+  for (int y = midStart; y < midEnd; ++y) {
+    midSum += rowMean[static_cast<size_t>(y)];
+  }
+  for (int y = bottomStart; y < rows; ++y) {
+    bottomSum += rowMean[static_cast<size_t>(y)];
+  }
+
+  const double topMean = topSum / static_cast<double>(topEnd);
+  const double midMean = midSum / static_cast<double>(midEnd - midStart);
+  const double bottomMean = bottomSum / static_cast<double>(rows - bottomStart);
+  const double lidMean = (topMean + bottomMean) * 0.5;
+  const double darkness = std::max(0.0, (lidMean - midMean) / 255.0);
+  const double darknessScore = std::max(0.0, std::min(1.0, darkness / 0.22));
 
   double verticalEdges = 0.0;
   double horizontalEdges = 0.0;
   int count = 0;
-
   for (int y = safeTop + 1; y < safeBottom - 1; ++y) {
     for (int x = safeLeft + 1; x < safeRight - 1; ++x) {
-      const int index = y * stride + x * 4;
-      const auto gray = [&](int px, int py) {
-        const int pixelIndex = py * stride + px * 4;
-        return pixels[pixelIndex] * 0.299 + pixels[pixelIndex + 1] * 0.587 + pixels[pixelIndex + 2] * 0.114;
-      };
-
-      const double gx = gray(x + 1, y) - gray(x - 1, y);
-      const double gy = gray(x, y + 1) - gray(x, y - 1);
+      const double gx = grayAt(x + 1, y) - grayAt(x - 1, y);
+      const double gy = grayAt(x, y + 1) - grayAt(x, y - 1);
       verticalEdges += std::abs(gy);
       horizontalEdges += std::abs(gx);
       ++count;
     }
   }
 
-  if (count == 0 || horizontalEdges < 1e-6) {
-    return 0.5f;
+  double edgeScore = 0.5;
+  if (count > 0 && horizontalEdges >= 1e-6) {
+    const double ratio = verticalEdges / horizontalEdges;
+    edgeScore = std::max(0.0, std::min(1.0, (ratio - 0.35) / 0.9));
   }
 
-  const double ratio = verticalEdges / horizontalEdges;
-  return static_cast<float>(std::max(0.0, std::min(1.0, (ratio - 0.35) / 0.9)));
+  return static_cast<float>(std::max(0.0, std::min(1.0, 0.62 * darknessScore + 0.38 * edgeScore)));
 }
 
 float ComputeSharpness(const uint8_t *pixels, int width, int height, int stride, const BitmapBounds &box) {
@@ -655,8 +694,8 @@ std::string FormatHashHex(uint64_t hash) {
 
 constexpr float kFaceBoxIoUThreshold = 0.50f;
 constexpr float kTileOverlapFraction = 0.25f;
-constexpr int kMinFacesToSkipTiling = 8;
-constexpr int kMinPixelsForTiling = 2000000;
+constexpr int kMinFacesToSkipTiling = 2;
+constexpr int kMinPixelsForTiling = 4000000;
 
 struct NormalizedFaceBox {
   float left{0.0f};
@@ -842,6 +881,8 @@ winrtRN::JSValue GenerateFaceCropsAtPath(
 }
 
 std::vector<BitmapBounds> DetectFaceBoxesInBitmap(const FaceDetector &detector, const SoftwareBitmap &bitmap) {
+  static std::mutex detectMutex;
+  std::lock_guard<std::mutex> lock(detectMutex);
   const auto faces = detector.DetectFacesAsync(bitmap).get();
   std::vector<BitmapBounds> boxes;
   for (const auto &face : faces) {
@@ -912,13 +953,6 @@ std::vector<BitmapBounds> CollectFaceBoxes(
 
   const auto tiledTwoByTwo = DetectTiledFaceBoxes(detector, bitmap, sourcePixels, 2);
   combined.insert(combined.end(), tiledTwoByTwo.begin(), tiledTwoByTwo.end());
-  deduped = DeduplicateFaceBoxes(combined, imageWidth, imageHeight);
-  if (deduped.size() >= static_cast<size_t>(kMinFacesToSkipTiling)) {
-    return deduped;
-  }
-
-  const auto tiledThreeByThree = DetectTiledFaceBoxes(detector, bitmap, sourcePixels, 3);
-  combined.insert(combined.end(), tiledThreeByThree.begin(), tiledThreeByThree.end());
   return DeduplicateFaceBoxes(combined, imageWidth, imageHeight);
 }
 
@@ -955,12 +989,12 @@ winrtRN::JSValueObject BuildFaceObject(
   const float width = static_cast<float>(box.Width) / static_cast<float>(imageWidth);
   const float height = static_cast<float>(box.Height) / static_cast<float>(imageHeight);
 
-  const int eyeTop = static_cast<int>(box.Y + box.Height * 0.18f);
-  const int eyeHeight = static_cast<int>(box.Height * 0.22f);
-  const int leftEyeLeft = static_cast<int>(box.X + box.Width * 0.12f);
-  const int leftEyeWidth = static_cast<int>(box.Width * 0.28f);
+  const int eyeTop = static_cast<int>(box.Y + box.Height * 0.22f);
+  const int eyeHeight = static_cast<int>(box.Height * 0.16f);
+  const int leftEyeLeft = static_cast<int>(box.X + box.Width * 0.16f);
+  const int leftEyeWidth = static_cast<int>(box.Width * 0.24f);
   const int rightEyeLeft = static_cast<int>(box.X + box.Width * 0.60f);
-  const int rightEyeWidth = static_cast<int>(box.Width * 0.28f);
+  const int rightEyeWidth = static_cast<int>(box.Width * 0.24f);
 
   const float leftOpen = EstimateEyeOpenness(
       pixelData, imageWidth, imageHeight, stride, leftEyeLeft, eyeTop, leftEyeWidth, eyeHeight);
@@ -1026,8 +1060,15 @@ winrtRN::JSValueObject BuildFaceObject(
   };
 }
 
+FaceDetector GetCachedFaceDetector() {
+  static std::once_flag once;
+  static FaceDetector detector{nullptr};
+  std::call_once(once, []() { detector = FaceDetector::CreateAsync().get(); });
+  return detector;
+}
+
 winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
-  const auto detector = FaceDetector::CreateAsync().get();
+  const auto detector = GetCachedFaceDetector();
   const auto bitmap = LoadSoftwareBitmap(path);
   const auto pixels = ReadBitmapPixels(bitmap);
   const auto faceBoxes = CollectFaceBoxes(detector, bitmap, pixels);
