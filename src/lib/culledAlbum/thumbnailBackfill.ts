@@ -15,12 +15,15 @@ import {ensureThumbnail, isUsableThumbnailUri} from '@lib/storage/localStorage';
 
 const BATCH_SIZE = 8;
 const EXISTING_THUMB_CONCURRENCY = 12;
+const GENERATE_CONCURRENCY = 8;
 const REVISION_BUMP_DELAY_MS = 50;
+const FULL_ALBUM_BACKFILL_DELAY_MS = 400;
 const inFlightAlbumPhotoIds = new Set<string>();
 const runningAlbums = new Set<string>();
 const pendingPhotoIdsByAlbum = new Map<string, Set<string>>();
 const existingThumbInFlight = new Set<string>();
 const pendingRevisionAlbums = new Set<string>();
+const deferredFullAlbumTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let revisionBumpTimer: ReturnType<typeof setTimeout> | null = null;
 let resolveExistingQueue: Promise<void> = Promise.resolve();
 
@@ -97,6 +100,45 @@ function applyThumbnailUri(
   }
 
   return applied;
+}
+
+async function ensureThumbnailsForPhotoIds(
+  albumId: string,
+  photoIds: string[],
+  options?: {clearInFlight?: boolean},
+): Promise<void> {
+  for (let index = 0; index < photoIds.length; index += GENERATE_CONCURRENCY) {
+    if (shouldDeferHeavyWorkForNavigation()) {
+      deferRemaining(albumId, photoIds.slice(index));
+      return;
+    }
+
+    const batchIds = photoIds.slice(index, index + GENERATE_CONCURRENCY);
+    hydratePhotos(albumId, batchIds);
+
+    await Promise.all(
+      batchIds.map(async photoId => {
+        try {
+          const photo = getPhotoById(albumId, photoId);
+          if (!photo || isUsableThumbnailUri(photo.file.thumbnailUri)) {
+            return;
+          }
+          const nextFile = await ensureThumbnail(albumId, photo.file, photoId);
+          if (nextFile.thumbnailUri) {
+            applyThumbnailUri(albumId, photoId, nextFile.thumbnailUri);
+          }
+        } finally {
+          if (options?.clearInFlight) {
+            inFlightAlbumPhotoIds.delete(photoScheduleKey(albumId, photoId));
+          }
+        }
+      }),
+    );
+
+    if (index + GENERATE_CONCURRENCY < photoIds.length) {
+      await yieldToMain();
+    }
+  }
 }
 
 export async function resolveExistingThumbnailsForPhotos(
@@ -180,19 +222,7 @@ export async function backfillAlbumThumbnails(albumId: string): Promise<void> {
     }
 
     const batchIds = photoIds.slice(index, index + BATCH_SIZE);
-    hydratePhotos(albumId, batchIds);
-
-    for (const photoId of batchIds) {
-      const photo = getPhotoById(albumId, photoId);
-      if (!photo || isUsableThumbnailUri(photo.file.thumbnailUri)) {
-        continue;
-      }
-
-      const nextFile = await ensureThumbnail(albumId, photo.file, photoId);
-      if (nextFile.thumbnailUri) {
-        applyThumbnailUri(albumId, photoId, nextFile.thumbnailUri);
-      }
-    }
+    await ensureThumbnailsForPhotoIds(albumId, batchIds);
 
     if (index + BATCH_SIZE < photoIds.length) {
       await yieldToMain();
@@ -203,9 +233,18 @@ export async function backfillAlbumThumbnails(albumId: string): Promise<void> {
 }
 
 export function scheduleThumbnailBackfill(albumId: string): void {
-  backfillAlbumThumbnails(albumId).catch(error => {
-    console.error('[thumbnailBackfill] Failed to backfill thumbnails', error);
-  });
+  const existingTimer = deferredFullAlbumTimers.get(albumId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  const timer = setTimeout(() => {
+    deferredFullAlbumTimers.delete(albumId);
+    backfillAlbumThumbnails(albumId).catch(error => {
+      console.error('[thumbnailBackfill] Failed to backfill thumbnails', error);
+    });
+  }, FULL_ALBUM_BACKFILL_DELAY_MS);
+  deferredFullAlbumTimers.set(albumId, timer);
 }
 
 export function scheduleThumbnailBackfillForPhotos(
@@ -279,33 +318,6 @@ async function backfillPhotoThumbnails(
   albumId: string,
   photoIds: string[],
 ): Promise<void> {
-  for (let index = 0; index < photoIds.length; index += BATCH_SIZE) {
-    if (shouldDeferHeavyWorkForNavigation()) {
-      deferRemaining(albumId, photoIds.slice(index));
-      return;
-    }
-
-    const batchIds = photoIds.slice(index, index + BATCH_SIZE);
-    hydratePhotos(albumId, batchIds);
-
-    for (const photoId of batchIds) {
-      const photo = getPhotoById(albumId, photoId);
-      if (!photo || isUsableThumbnailUri(photo.file.thumbnailUri)) {
-        inFlightAlbumPhotoIds.delete(photoScheduleKey(albumId, photoId));
-        continue;
-      }
-
-      const nextFile = await ensureThumbnail(albumId, photo.file, photoId);
-      if (nextFile.thumbnailUri) {
-        applyThumbnailUri(albumId, photoId, nextFile.thumbnailUri);
-      }
-      inFlightAlbumPhotoIds.delete(photoScheduleKey(albumId, photoId));
-    }
-
-    if (index + BATCH_SIZE < photoIds.length) {
-      await yieldToMain();
-    }
-  }
-
+  await ensureThumbnailsForPhotoIds(albumId, photoIds, {clearInFlight: true});
   flushPendingPhotoGridRevisions();
 }

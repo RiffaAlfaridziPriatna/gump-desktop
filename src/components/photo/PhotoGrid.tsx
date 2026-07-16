@@ -1,6 +1,9 @@
 import {scheduleHydrateVisiblePhotos} from '@hooks/useVisiblePhotos';
 import type {AlbumGridFileItem} from '@lib/culledAlbum/stableAlbumGridFiles';
-import {scheduleThumbnailBackfillForPhotos} from '@lib/culledAlbum/thumbnailBackfill';
+import {
+  scheduleResolveExistingThumbnails,
+  scheduleThumbnailBackfillForPhotos,
+} from '@lib/culledAlbum/thumbnailBackfill';
 import {getContainedImageLayout} from '@lib/culling/cullingFaceCrop';
 import {
   getCachedImageDimensions,
@@ -370,6 +373,10 @@ export function PhotoGrid({
             .filter(item => !isUsableThumbnailUri(item.file.thumbnailUri))
             .map(item => item.photoId);
           if (photoIdsNeedingThumbnail.length > 0) {
+            scheduleResolveExistingThumbnails(
+              currentAlbumId,
+              photoIdsNeedingThumbnail,
+            );
             scheduleThumbnailBackfillForPhotos(
               currentAlbumId,
               photoIdsNeedingThumbnail,

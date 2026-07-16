@@ -8,11 +8,11 @@ import {
   useCulledAlbumStore,
 } from '@context/culledAlbum';
 import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
+import {scheduleResolveExistingThumbnails, scheduleThumbnailBackfill} from '@lib/culledAlbum/thumbnailBackfill';
 import {useAlbumDetailGridPhotos} from '@hooks/useAlbumDetailGridPhotos';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {useLayout} from '@hooks/useLayout';
-import {scheduleThumbnailBackfill} from '@lib/culledAlbum/thumbnailBackfill';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
@@ -60,9 +60,13 @@ function AlbumDetailGridBody({
   });
 
   useEffect(() => {
-    if (gridPhotos.length > 0) {
-      scheduleThumbnailBackfill(albumId);
+    if (gridPhotos.length === 0) {
+      return;
     }
+
+    const firstPaintIds = gridPhotos.slice(0, 24).map(item => item.photoId);
+    scheduleResolveExistingThumbnails(albumId, firstPaintIds);
+    scheduleThumbnailBackfill(albumId);
   }, [albumId, gridPhotos.length]);
 
   if (loadingPhotos && gridPhotos.length === 0) {

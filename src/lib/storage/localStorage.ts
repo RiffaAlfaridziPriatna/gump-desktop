@@ -43,8 +43,7 @@ const NativeLocalStorage = NativeModules.GumpLocalStorage as
   | undefined;
 
 const NATIVE_STORAGE_PLATFORMS = new Set(['macos', 'ios', 'android', 'windows']);
-const THUMBNAIL_CACHE_VERSION = '1920';
-const WINDOWS_ORIENTED_THUMB_SUFFIX = '.o1.jpg';
+const THUMBNAIL_CACHE_VERSION = '768';
 
 function hasNativeLocalStorage(): boolean {
   return (
@@ -60,7 +59,11 @@ export function isUsableThumbnailUri(thumbnailUri: string | null | undefined): b
   if (Platform.OS !== 'windows') {
     return true;
   }
-  return thumbnailUri.includes(WINDOWS_ORIENTED_THUMB_SUFFIX);
+  return (
+    thumbnailUri.includes('/thumbs/') &&
+    thumbnailUri.includes('.jpg') &&
+    !thumbnailUri.includes('.o1.jpg')
+  );
 }
 
 export async function copyPhotoToAlbum(
@@ -151,12 +154,10 @@ export async function ensureThumbnail(
   photoId: string,
   options?: {regenerate?: boolean},
 ): Promise<FileAsset> {
-  // If thumbnail is already set, keep it unless caller explicitly requests regeneration.
   if (isUsableThumbnailUri(file.thumbnailUri) && !options?.regenerate) {
     return file;
   }
 
-  // If we are not regenerating, try to reuse any existing thumbnail URI from native storage.
   if (!options?.regenerate) {
     const existing = await getThumbnailUri(albumId, photoId);
     if (isUsableThumbnailUri(existing)) {
@@ -172,7 +173,6 @@ export async function ensureThumbnail(
     );
 
     if (result.thumbnailUri) {
-      // Cache-buster to avoid React Native Image caching older thumbnails.
       const thumbnailUri = options?.regenerate
         ? `${result.thumbnailUri}?v=${THUMBNAIL_CACHE_VERSION}`
         : result.thumbnailUri;

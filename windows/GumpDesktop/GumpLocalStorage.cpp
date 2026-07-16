@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <condition_variable>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -41,8 +42,9 @@ namespace {
 
 using ReactPromiseJS = winrtRN::ReactPromise<winrtRN::JSValue>;
 
-constexpr uint32_t kThumbnailMaxPixelSize = 1920;
-constexpr float kThumbnailJpegQuality = 0.82f;
+constexpr uint32_t kThumbnailMaxPixelSize = 768;
+constexpr float kThumbnailJpegQuality = 0.80f;
+constexpr int kThumbnailMaxConcurrent = 4;
 constexpr float kFaceCropSidePadding = 0.3f;
 constexpr float kFaceCropTopPadding = 0.3f;
 constexpr float kFaceCropBottomPadding = 0.5f;
@@ -103,7 +105,7 @@ std::filesystem::path ThumbnailDirectory(std::string_view albumId) {
 }
 
 std::filesystem::path ThumbnailPathForAlbum(std::string_view albumId, std::string_view photoId) {
-  return ThumbnailDirectory(albumId) / (ToWide(photoId) + L".o1.jpg");
+  return ThumbnailDirectory(albumId) / (ToWide(photoId) + L".jpg");
 }
 
 std::filesystem::path FaceCropDirectory(std::string_view albumId) {
@@ -300,16 +302,81 @@ ThumbnailSize ComputeThumbnailSize(uint32_t sourceWidth, uint32_t sourceHeight, 
   return {std::max(1u, scaledWidth), maxPixelSize};
 }
 
+
+class ThumbnailConcurrencyGuard {
+ public:
+  ThumbnailConcurrencyGuard() {
+    std::unique_lock<std::mutex> lock(Mutex());
+    Cv().wait(lock, [] { return Active() < kThumbnailMaxConcurrent; });
+    ++Active();
+  }
+
+  ~ThumbnailConcurrencyGuard() {
+    {
+      std::lock_guard<std::mutex> lock(Mutex());
+      --Active();
+    }
+    Cv().notify_one();
+  }
+
+ private:
+  static std::mutex &Mutex() {
+    static std::mutex mutex;
+    return mutex;
+  }
+
+  static std::condition_variable &Cv() {
+    static std::condition_variable cv;
+    return cv;
+  }
+
+  static int &Active() {
+    static int active = 0;
+    return active;
+  }
+};
+
+bool IsReusableThumbnailFile(const std::filesystem::path &thumbPath) {
+  if (thumbPath.empty() || !std::filesystem::exists(thumbPath)) {
+    return false;
+  }
+
+  try {
+    const auto file = GetStorageFileFromPath(thumbPath);
+    const auto stream = file.OpenAsync(FileAccessMode::Read).get();
+    const auto decoder = BitmapDecoder::CreateAsync(stream).get();
+    return decoder.OrientedPixelWidth() > 0 &&
+           decoder.OrientedPixelHeight() > 0 &&
+           decoder.OrientedPixelWidth() <= kThumbnailMaxPixelSize &&
+           decoder.OrientedPixelHeight() <= kThumbnailMaxPixelSize;
+  } catch (...) {
+    return false;
+  }
+}
+
 std::optional<std::filesystem::path> GenerateThumbnailAtPath(
     const std::filesystem::path &sourcePath,
     std::string_view albumId,
     std::string_view photoId) {
+  ThumbnailConcurrencyGuard concurrencyGuard;
+
   if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
     return std::nullopt;
   }
 
   const auto desiredThumbPath = ThumbnailPathForAlbum(albumId, photoId);
   std::filesystem::create_directories(desiredThumbPath.parent_path());
+
+  const auto legacyOrientedPath =
+      ThumbnailDirectory(albumId) / (ToWide(photoId) + L".o1.jpg");
+  if (std::filesystem::exists(legacyOrientedPath)) {
+    std::error_code ec;
+    std::filesystem::remove(legacyOrientedPath, ec);
+  }
+
+  if (IsReusableThumbnailFile(desiredThumbPath)) {
+    return desiredThumbPath;
+  }
 
   auto decodeOrientedThumbnail = [&](const std::filesystem::path &decodePath) -> SoftwareBitmap {
     const auto sourceFile = GetStorageFileFromPath(decodePath);
@@ -327,7 +394,7 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
         targetSize.height != decoder.PixelHeight()) {
       transform.ScaledWidth(targetSize.width);
       transform.ScaledHeight(targetSize.height);
-      transform.InterpolationMode(BitmapInterpolationMode::Fant);
+      transform.InterpolationMode(BitmapInterpolationMode::Linear);
     }
 
     return decoder
@@ -1197,9 +1264,15 @@ void GumpLocalStorage::DeletePhoto(std::string uri, winrtRN::ReactPromise<bool> 
         const auto photoId = path.stem().string();
         DeleteFaceCropsForPhoto(albumDir, photoId);
 
-        const auto thumbPath = albumDir / L"thumbs" / (path.stem().wstring() + L".jpg");
+        const auto thumbsDir = albumDir / L"thumbs";
+        const auto thumbPath = thumbsDir / (path.stem().wstring() + L".jpg");
         if (std::filesystem::exists(thumbPath)) {
           std::filesystem::remove(thumbPath);
+        }
+        const auto legacyOrientedThumb =
+            thumbsDir / (path.stem().wstring() + L".o1.jpg");
+        if (std::filesystem::exists(legacyOrientedThumb)) {
+          std::filesystem::remove(legacyOrientedThumb);
         }
 
         return true;
@@ -1245,7 +1318,7 @@ void GumpLocalStorage::GetThumbnailUri(
   RunAsync(
       [albumId = std::move(albumId), photoId = std::move(photoId)]() {
         const auto thumbPath = ThumbnailPathForAlbum(albumId, photoId);
-        if (!thumbPath.empty() && std::filesystem::exists(thumbPath)) {
+        if (IsReusableThumbnailFile(thumbPath)) {
           return winrtRN::JSValue(FileUri(thumbPath));
         }
         return winrtRN::JSValue(nullptr);
