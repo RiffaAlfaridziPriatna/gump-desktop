@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
     backgroundColor: 'transparent',
-    transform: [{translateY: -10}],
+    transform: [{translateY: -4}],
   },
   input: {
     flex: 1,
