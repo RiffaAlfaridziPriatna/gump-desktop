@@ -1,5 +1,5 @@
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {sansBoldStyle} from '@lib/ui/typography';
 import {ReactNode, useEffect, useRef, useState} from 'react';
 import {
   Animated,
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 16,
     color: colors.text,
   },

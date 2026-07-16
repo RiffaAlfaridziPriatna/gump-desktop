@@ -4,7 +4,7 @@ import {
   StarRatingFilter,
 } from '@lib/culling/culledAlbumPhotoFilters';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {sansBoldStyle} from '@lib/ui/typography';
 import {Pressable} from '@components/ui';
 import {
   ActivityIndicator,
@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   starLabel: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 8,
     lineHeight: 8,
     includeFontPadding: false,
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent + '14',
   },
   uploadButtonText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 16,
     color: colors.white,
   },

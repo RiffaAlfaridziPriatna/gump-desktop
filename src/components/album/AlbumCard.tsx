@@ -6,7 +6,7 @@ import {
   loadImageDimensions,
 } from '@lib/media/imageDimensions';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {APIResponse} from '@services/api';
 import {TouchableOpacity} from '@components/ui';
 import {
@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   analyzingText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 12,
     color: colors.white,
   },
@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
     minWidth: 80,
   },
   deleteText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 12,
     lineHeight: 12 * 1.2,
     letterSpacing: 0,

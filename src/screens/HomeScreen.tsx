@@ -12,7 +12,7 @@ import {
   shouldDeferHeavyWorkForNavigation,
 } from '@lib/navigation/uploadAwareNavigation';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useFocusEffect} from '@react-navigation/native';
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   breadcrumbText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 20,
     lineHeight: 20 * 1.2,
     letterSpacing: 1.5,
@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cullingButtonText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 14,
     color: colors.white,
   },
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   emptyCardLabel: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 16,
     lineHeight: 16 * 1.4,
     color: colors.text,

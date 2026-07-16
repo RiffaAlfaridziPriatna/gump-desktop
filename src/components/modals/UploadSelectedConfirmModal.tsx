@@ -1,6 +1,6 @@
 import {Modal} from '@components/ui';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {StyleSheet, Text, View} from 'react-native';
@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   albumName: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
   },
   startButton: {
     borderRadius: 24,
@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   startButtonText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 16,
     color: colors.white,
   },

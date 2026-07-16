@@ -5,7 +5,7 @@ import {useCulledAlbumPhotosState, useCulledAlbumStore} from '@context/culledAlb
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {
   ScrollAwareTooltipContext,
   createScrollAwareTooltipStore,
@@ -490,7 +490,7 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   backLink: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 14,
     color: colors.accent,
   },

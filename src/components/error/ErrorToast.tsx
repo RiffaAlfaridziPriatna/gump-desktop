@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import {useErrorState, useErrorActions} from '@context/error';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansBoldStyle} from '@lib/ui/typography';
 
 const useNativeDriver = Platform.OS !== 'windows';
 
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   code: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 12,
     color: colors.white,
     opacity: 0.8,
@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   dismissText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 12,
     color: colors.white,
   },

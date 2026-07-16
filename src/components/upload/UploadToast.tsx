@@ -7,7 +7,7 @@ import {
   useCulledAlbumUiState,
 } from '@context/culledAlbum';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {computeLocalImportBatchProgress} from '@lib/culledAlbum/localImportProgress';
 import {computeServerUploadBatchProgress} from '@lib/culledAlbum/serverUploadProgress';
 import {CulledAlbumPhoto, LocalImportBatchCounts} from '@lib/culledAlbum/types';
@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   title: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 16,
     letterSpacing: 0,
     color: colors.textDark,

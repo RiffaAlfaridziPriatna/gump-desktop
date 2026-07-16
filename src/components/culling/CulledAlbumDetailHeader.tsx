@@ -1,6 +1,6 @@
 import {TouchableOpacity} from '@components/ui';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {sansBoldStyle} from '@lib/ui/typography';
 import {StyleSheet, Text, View} from 'react-native';
 import IconChevronLeft from '../../assets/images/icon_chevron_left.svg';
 import GumpLogo from '../../assets/images/logo.svg';
@@ -56,7 +56,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   backText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 20,
     color: colors.accent,
   },

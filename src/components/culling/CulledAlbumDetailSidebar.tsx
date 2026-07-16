@@ -6,7 +6,7 @@ import {KeyFaceWithSource} from '@lib/culling/cullingFaceCrop';
 import {SelectionFilter} from '@lib/culling/culledAlbumPhotoFilters';
 import {CullFilterKey} from '@lib/culling/cullingUtil';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {
   ScrollAwareTooltipContext,
   createScrollAwareTooltipStore,
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   totalPhotosValue: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 14,
     color: colors.text,
   },

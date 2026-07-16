@@ -12,7 +12,7 @@ import {registerLocalAlbum} from '@lib/culledAlbum/store';
 import {uploadAwareParams} from '@lib/navigation/uploadAwareNavigation';
 import {createCulledAlbumFromSelection} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {APIResponse, FileAsset} from '@services/api';
 import {StackScreenProps} from '@react-navigation/stack';
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent + '14',
   },
   nextText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 16,
     color: colors.white,
   },

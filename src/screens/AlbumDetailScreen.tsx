@@ -14,7 +14,7 @@ import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {useLayout} from '@hooks/useLayout';
 import {scheduleThumbnailBackfill} from '@lib/culledAlbum/thumbnailBackfill';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useIsFocused} from '@react-navigation/native';
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   backText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 20,
     color: colors.accent,
     lineHeight: 20 * 1.2,
@@ -418,7 +418,7 @@ const styles = StyleSheet.create({
     opacity: 0.2,
   },
   cullingText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 16,
     color: colors.white,
   },
@@ -431,7 +431,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   totalPhotosValue: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 16,
     color: colors.text,
   },

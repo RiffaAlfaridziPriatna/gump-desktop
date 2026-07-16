@@ -1,7 +1,7 @@
 import {ForgotPasswordModal} from '@components/modals/ForgotPasswordModal';
 import { useAuthActions } from '@context/auth';
 import { colors } from '@lib/ui/colors';
-import { fonts } from '@lib/ui/typography';
+import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import { APIException, flattenValidationErrors } from '@services/api';
 import { useState } from 'react';
 import {Pressable} from '@components/ui';
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
     lineHeight: 20,
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     textTransform: 'capitalize',
     includeFontPadding: false,
   },

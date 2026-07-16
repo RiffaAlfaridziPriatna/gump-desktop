@@ -1,7 +1,7 @@
 import {Modal, TouchableOpacity} from '@components/ui';
 import {colors} from '@lib/ui/colors';
 import {make} from '@di/tsyringe';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {APIException, APIService, flattenValidationErrors} from '@services/api';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFCC99',
   },
   resetButtonText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 16,
     color: colors.white,
   },

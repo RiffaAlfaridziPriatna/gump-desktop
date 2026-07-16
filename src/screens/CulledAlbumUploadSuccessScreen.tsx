@@ -1,5 +1,5 @@
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {TouchableOpacity} from '@components/ui';
@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   openButtonText: {
-    fontFamily: fonts.sansBold,
+    ...sansBoldStyle,
     fontSize: 16,
     color: colors.white,
   },
