@@ -109,40 +109,42 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
   }
 
   return (
-    <View style={[styles.container, {width, height}]}>
+    <View style={[styles.container, {width, height}]} pointerEvents="box-none">
       {uri ? (
-        isWindows ? (
-          <Image
-            source={{uri}}
-            resizeMode="contain"
-            onLoad={handleLoad}
-            onError={handleError}
-            style={[styles.windowsImage, {opacity: isLoaded ? 1 : 0}]}
-          />
-        ) : imageLayout ? (
-          <Image
-            source={{uri}}
-            onLoad={handleLoad}
-            onError={handleError}
-            style={[
-              styles.containedImage,
-              {
-                width: imageLayout.width,
-                height: imageLayout.height,
-                left: imageLayout.left,
-                top: imageLayout.top,
-                opacity: isLoaded ? 1 : 0,
-              },
-            ]}
-          />
-        ) : (
-          <Image
-            source={{uri}}
-            onLoad={handleLoad}
-            onError={handleError}
-            style={styles.imageHidden}
-          />
-        )
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          {isWindows ? (
+            <Image
+              source={{uri}}
+              resizeMode="contain"
+              onLoad={handleLoad}
+              onError={handleError}
+              style={[styles.windowsImage, {opacity: isLoaded ? 1 : 0}]}
+            />
+          ) : imageLayout ? (
+            <Image
+              source={{uri}}
+              onLoad={handleLoad}
+              onError={handleError}
+              style={[
+                styles.containedImage,
+                {
+                  width: imageLayout.width,
+                  height: imageLayout.height,
+                  left: imageLayout.left,
+                  top: imageLayout.top,
+                  opacity: isLoaded ? 1 : 0,
+                },
+              ]}
+            />
+          ) : (
+            <Image
+              source={{uri}}
+              onLoad={handleLoad}
+              onError={handleError}
+              style={styles.imageHidden}
+            />
+          )}
+        </View>
       ) : null}
     </View>
   );

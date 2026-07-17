@@ -4,12 +4,13 @@ import {ReactNode, useEffect, useRef, useState} from 'react';
 import {
   Animated,
   Easing,
+  Platform,
   StyleSheet,
   Text,
   View,
   ViewStyle,
 } from 'react-native';
-import {Pressable} from './Pressable';
+import {TouchableOpacity} from './TouchableOpacity';
 import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
 import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
 
@@ -112,8 +113,10 @@ export function Accordion({
   });
 
   const handleContentLayout = (height: number) => {
-    if (hasMeasurement) return;
-    setMeasuredHeight(height);
+    if (height <= 0) {
+      return;
+    }
+    setMeasuredHeight(current => (current === height ? current : height));
   };
 
   const ChevronIcon =
@@ -126,11 +129,12 @@ export function Accordion({
         fill && expanded && styles.fillContainer,
         style,
       ]}>
-      <Pressable
+      <TouchableOpacity
         onPress={onToggle}
         style={styles.header}
         accessibilityRole="button"
-        accessibilityState={{expanded}}>
+        accessibilityState={{expanded}}
+        activeOpacity={0.7}>
         <Animated.View
           style={[
             styles.chevron,
@@ -139,7 +143,7 @@ export function Accordion({
           <ChevronIcon width={24} height={24} color={colors.textGray} />
         </Animated.View>
         <Text style={styles.title}>{title}</Text>
-      </Pressable>
+      </TouchableOpacity>
 
       {fill ? (
         expanded && (
@@ -150,21 +154,19 @@ export function Accordion({
         )
       ) : (
         <>
-          {!hasMeasurement && !expanded && (
+          <View
+            style={styles.measureLayer}
+            pointerEvents="none"
+            accessible={false}
+            importantForAccessibility="no-hide-descendants">
             <View
-              style={styles.measureLayer}
-              pointerEvents="none"
-              accessible={false}
-              importantForAccessibility="no-hide-descendants">
-              <View
-                style={styles.contentMeasure}
-                onLayout={event =>
-                  handleContentLayout(event.nativeEvent.layout.height)
-                }>
-                {children}
-              </View>
+              style={styles.contentMeasure}
+              onLayout={event =>
+                handleContentLayout(event.nativeEvent.layout.height)
+              }>
+              {children}
             </View>
-          )}
+          </View>
           <Animated.View
             style={[
               styles.animatedContent,
@@ -176,13 +178,7 @@ export function Accordion({
             ]}
             pointerEvents={expanded ? 'auto' : 'none'}>
             {(hasMeasurement || expanded) && (
-              <View
-                style={styles.contentMeasure}
-                onLayout={event =>
-                  handleContentLayout(event.nativeEvent.layout.height)
-                }>
-                {children}
-              </View>
+              <View style={styles.contentMeasure}>{children}</View>
             )}
           </Animated.View>
         </>
@@ -205,6 +201,7 @@ const styles = StyleSheet.create({
     gap: 8,
     position: 'relative',
     zIndex: 2,
+    ...(Platform.OS === 'windows' ? {minHeight: 32} : null),
   },
   chevron: {
     width: 24,

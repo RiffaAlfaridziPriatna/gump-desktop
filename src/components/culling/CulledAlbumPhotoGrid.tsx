@@ -21,6 +21,7 @@ import {useCallback, useEffect, useMemo, useRef, memo} from 'react';
 import {
   FlatList,
   ListRenderItemInfo,
+  Platform,
   StyleProp,
   StyleSheet,
   View,
@@ -355,7 +356,7 @@ export function CulledAlbumPhotoGrid({
         maxToRenderPerBatch={2}
         windowSize={3}
         updateCellsBatchingPeriod={150}
-        removeClippedSubviews
+        removeClippedSubviews={Platform.OS !== 'windows'}
         showsVerticalScrollIndicator
         onScrollBeginDrag={handleScrollBegin}
         onScrollEndDrag={handleScrollEnd}

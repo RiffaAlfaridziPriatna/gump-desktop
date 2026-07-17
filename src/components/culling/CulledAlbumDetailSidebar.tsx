@@ -16,6 +16,7 @@ import {memo, useCallback, useMemo, useRef} from 'react';
 import {
   FlatList,
   ListRenderItemInfo,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -259,7 +260,7 @@ function CulledAlbumDetailSidebarComponent({
               maxToRenderPerBatch={3}
               windowSize={5}
               updateCellsBatchingPeriod={100}
-              removeClippedSubviews
+              removeClippedSubviews={Platform.OS !== 'windows'}
               getItemLayout={getKeyFaceRowLayout}
             />
           )}
