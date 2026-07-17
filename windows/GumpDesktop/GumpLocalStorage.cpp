@@ -45,7 +45,7 @@ using ReactPromiseJS = winrtRN::ReactPromise<winrtRN::JSValue>;
 constexpr uint32_t kThumbnailMaxPixelSize = 768;
 constexpr float kThumbnailJpegQuality = 0.80f;
 constexpr int kThumbnailMaxConcurrent = 4;
-constexpr uint32_t kFaceDetectMaxPixelSize = 1280;
+constexpr uint32_t kFaceDetectMaxPixelSize = 1920;
 constexpr uint32_t kPerceptualHashMaxPixelSize = 256;
 constexpr uint32_t kFaceCropSourceMaxPixelSize = 1600;
 constexpr float kFaceCropSidePadding = 0.3f;
@@ -675,6 +675,31 @@ SoftwareBitmap LoadSoftwareBitmapScaled(
       .get();
 }
 
+FaceCropRect MakeSquareCoverCrop(const FaceCropRect &rect) {
+  if (rect.width <= 0 || rect.height <= 0) {
+    return rect;
+  }
+  if (rect.width == rect.height) {
+    return rect;
+  }
+  if (rect.width > rect.height) {
+    const int side = rect.height;
+    return FaceCropRect{
+        rect.left + (rect.width - side) / 2,
+        rect.top,
+        side,
+        side,
+    };
+  }
+  const int side = rect.width;
+  return FaceCropRect{
+      rect.left,
+      rect.top + (rect.height - side) / 2,
+      side,
+      side,
+  };
+}
+
 struct BitmapPixels {
   std::vector<uint8_t> bytes;
   int width{0};
@@ -749,8 +774,8 @@ constexpr float kFaceBoxProximityIoUThreshold = 0.18f;
 constexpr float kFaceBoxProximityCenterFactor = 0.48f;
 constexpr float kFaceBoxProximityMinAreaRatio = 1.8f;
 constexpr float kTileOverlapFraction = 0.25f;
-constexpr int kMinFacesToSkipTiling = 1;
-constexpr int kMinPixelsForTiling = 2500000;
+constexpr int kMinFacesToSkipTiling = 2;
+constexpr int kMinPixelsForTiling = 900000;
 
 struct NormalizedFaceBox {
   float left{0.0f};
@@ -943,13 +968,13 @@ winrtRN::JSValue GenerateFaceCropsAtPath(
 
     const auto &boundingBox = boundingBoxValue.AsObject();
     const int faceIndex = static_cast<int>(faceIndexValue.AsInt32());
-    const auto cropRect = ComputePaddedFaceCropRect(
+    const auto cropRect = MakeSquareCoverCrop(ComputePaddedFaceCropRect(
         imageWidth,
         imageHeight,
         static_cast<float>(boundingBox["left"].AsDouble()),
         static_cast<float>(boundingBox["top"].AsDouble()),
         static_cast<float>(boundingBox["width"].AsDouble()),
-        static_cast<float>(boundingBox["height"].AsDouble()));
+        static_cast<float>(boundingBox["height"].AsDouble())));
 
     const auto cropped = CropSoftwareBitmap(
         bitmap,
@@ -1032,19 +1057,12 @@ std::vector<BitmapBounds> CollectFaceBoxes(
     const BitmapPixels &sourcePixels) {
   const int imageWidth = bitmap.PixelWidth();
   const int imageHeight = bitmap.PixelHeight();
-  const int longestEdge = std::max(imageWidth, imageHeight);
-
-  // Detection already runs on a downscaled bitmap; tiling adds serial detector
-  // passes with little recall benefit at this size.
-  if (longestEdge <= static_cast<int>(kFaceDetectMaxPixelSize)) {
-    return DeduplicateFaceBoxes(
-        DetectFaceBoxesInBitmap(detector, bitmap), imageWidth, imageHeight);
-  }
-
   const int pixelCount = imageWidth * imageHeight;
+
   std::vector<BitmapBounds> combined = DetectFaceBoxesInBitmap(detector, bitmap);
   std::vector<BitmapBounds> deduped = DeduplicateFaceBoxes(combined, imageWidth, imageHeight);
-  if (deduped.size() >= static_cast<size_t>(kMinFacesToSkipTiling) || pixelCount < kMinPixelsForTiling) {
+  if (deduped.size() >= static_cast<size_t>(kMinFacesToSkipTiling) ||
+      pixelCount < kMinPixelsForTiling) {
     return deduped;
   }
 
@@ -1347,8 +1365,7 @@ FaceDetector GetThreadFaceDetector() {
 
 winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
   const auto detector = GetThreadFaceDetector();
-  const auto detectPath = SiblingThumbnailPath(path).value_or(path);
-  const auto bitmap = LoadSoftwareBitmapScaled(detectPath, kFaceDetectMaxPixelSize);
+  const auto bitmap = LoadSoftwareBitmapScaled(path, kFaceDetectMaxPixelSize);
   const auto pixels = ReadBitmapPixels(bitmap);
   const auto faceBoxes = CollectFaceBoxes(detector, bitmap, pixels);
 
