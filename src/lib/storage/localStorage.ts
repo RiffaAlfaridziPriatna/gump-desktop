@@ -19,7 +19,7 @@ type NativeLocalStorageModule = {
   ) => Promise<{thumbnailUri: string | null}>;
   getImageDimensions: (
     uri: string,
-  ) => Promise<{width: number; height: number}>;
+  ) => Promise<{width: number; height: number; orientation?: number}>;
   readImageCaptureTime: (uri: string) => Promise<number | null>;
   computePerceptualHash: (uri: string) => Promise<string | null>;
   ensureFaceCrops: (

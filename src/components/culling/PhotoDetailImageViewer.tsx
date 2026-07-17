@@ -14,12 +14,16 @@ import {
   isScrollAwareTooltipLocked,
   useScrollAwareTooltipStore,
 } from '@lib/ui/scrollAwareTooltip';
+import {
+  getExifRotationDegrees,
+  exifOrientationSwapsDimensions,
+} from '@lib/media/exifOrientation';
 import {getCachedImageDimensions, ImageDimensions} from '@lib/media/imageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
 import {colors} from '@lib/ui/colors';
 import {APIResponse} from '@services/api';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {ActivityIndicator, Image, StyleSheet, View} from 'react-native';
+import {ActivityIndicator, Image, Platform, StyleSheet, View} from 'react-native';
 
 type PhotoDetailImageViewerProps = {
   uri: string;
@@ -217,6 +221,30 @@ export function PhotoDetailImageViewer({
     );
   }, [containerSize, faces, imageSize, zoomFaceIndex]);
 
+  const windowsExifImageStyle = useMemo(() => {
+    if (Platform.OS !== 'windows' || !imageLayout || !imageSize) {
+      return null;
+    }
+
+    const rotation = getExifRotationDegrees(imageSize.orientation);
+    if (rotation === 0) {
+      return null;
+    }
+
+    const swap = exifOrientationSwapsDimensions(imageSize.orientation);
+    const drawWidth = swap ? imageLayout.height : imageLayout.width;
+    const drawHeight = swap ? imageLayout.width : imageLayout.height;
+
+    return {
+      position: 'absolute' as const,
+      width: drawWidth,
+      height: drawHeight,
+      left: imageLayout.left + (imageLayout.width - drawWidth) / 2,
+      top: imageLayout.top + (imageLayout.height - drawHeight) / 2,
+      transform: [{rotate: `${rotation}deg` as const}],
+    };
+  }, [imageLayout, imageSize]);
+
   const visibleFaces = useMemo(() => {
     if (zoomFaceIndex === null) {
       return faces.map((face, index) => ({face, index}));
@@ -252,13 +280,15 @@ export function PhotoDetailImageViewer({
         {imageLayout ? (
           <Image
             source={{uri}}
-            style={{
-              position: 'absolute',
-              width: imageLayout.width,
-              height: imageLayout.height,
-              left: imageLayout.left,
-              top: imageLayout.top,
-            }}
+            style={
+              windowsExifImageStyle ?? {
+                position: 'absolute',
+                width: imageLayout.width,
+                height: imageLayout.height,
+                left: imageLayout.left,
+                top: imageLayout.top,
+              }
+            }
             onLoad={handleImageLoad}
           />
         ) : null}
