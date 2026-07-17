@@ -32,7 +32,8 @@ declare module 'react-native' {
         name: string;
         size: number;
         type: string;
-        thumbnailUri?: string;
+        /** Required on macOS/Windows after local copy succeeds. */
+        thumbnailUri: string;
       }>;
       getThumbnailUri: (
         albumId: string,

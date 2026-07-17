@@ -6,6 +6,7 @@ import {
   runOrDeferHeavyWorkForNavigation,
   shouldYieldUploadQueueForNavigation,
 } from '@lib/navigation/uploadAwareNavigation';
+import {bumpPhotoGridRevision} from './photoStateStore';
 import {
   getAlbum,
   scheduleLocalImportBatchCompleteCheck,
@@ -279,11 +280,13 @@ export function createUploadQueue(deps: UploadQueueDeps) {
             entry.status = 'uploaded';
           },
           {
+            immediate: true,
             recomputeTotals: false,
             storageDelta: nextSize - previousSize,
             batchCountShift: {from: 'uploading', to: 'uploaded'},
           },
         );
+        bumpPhotoGridRevision(albumId);
         void enrichPhotoCaptureTime(
           albumId,
           photoId,

@@ -67,18 +67,31 @@ export function isUsableThumbnailUri(thumbnailUri: string | null | undefined): b
   );
 }
 
+const COPY_REQUIRES_THUMBNAIL = new Set(['macos', 'windows']);
+
 export async function copyPhotoToAlbum(
   albumId: string,
   file: FileAsset,
   photoId: string,
 ): Promise<FileAsset> {
   if (hasNativeLocalStorage()) {
-    return NativeLocalStorage!.copyPhoto(
+    const copied = await NativeLocalStorage!.copyPhoto(
       albumId,
       file.uri,
       file.name,
       photoId,
     );
+
+    if (
+      COPY_REQUIRES_THUMBNAIL.has(Platform.OS) &&
+      !isUsableThumbnailUri(copied.thumbnailUri)
+    ) {
+      throw new Error(
+        'Local photo copy did not produce a usable thumbnail',
+      );
+    }
+
+    return copied;
   }
 
   throw new Error(

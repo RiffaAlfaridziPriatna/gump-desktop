@@ -1481,11 +1481,19 @@ void GumpLocalStorage::CopyPhoto(
         const auto destPath = albumDir / ToWide(destName);
         std::filesystem::copy_file(sourcePath, destPath, std::filesystem::copy_options::overwrite_existing);
 
+        const auto thumbPath = GenerateThumbnailAtPath(destPath, albumId, destId);
+        if (!thumbPath) {
+          std::error_code ec;
+          std::filesystem::remove(destPath, ec);
+          throw std::runtime_error("Failed to generate thumbnail for local photo copy");
+        }
+
         winrtRN::JSValueObject result{
             {"uri", FileUri(destPath)},
             {"name", destName},
             {"size", static_cast<double>(std::filesystem::file_size(destPath))},
             {"type", MimeTypeForPath(destPath)},
+            {"thumbnailUri", FileUri(*thumbPath)},
         };
 
         return winrtRN::JSValue(std::move(result));

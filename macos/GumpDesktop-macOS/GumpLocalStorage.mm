@@ -1532,6 +1532,16 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
         return;
       }
 
+      NSString *thumbPath =
+          [self generateThumbnailAtPath:destPath albumId:albumId photoId:destId];
+      if (thumbPath.length == 0) {
+        [[NSFileManager defaultManager] removeItemAtPath:destPath error:nil];
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"ETHUMB", @"Failed to generate thumbnail for local photo copy", nil);
+        });
+        return;
+      }
+
       NSDictionary *attributes =
           [[NSFileManager defaultManager] attributesOfItemAtPath:destPath error:nil];
       NSNumber *fileSize = attributes[NSFileSize];
@@ -1539,12 +1549,13 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
       NSString *type = ext.length > 0
                            ? [NSString stringWithFormat:@"public.%@", ext]
                            : @"image/jpeg";
-      NSMutableDictionary *result = [@{
+      NSDictionary *result = @{
         @"uri" : [NSString stringWithFormat:@"file://%@", destPath],
         @"name" : destName,
         @"size" : fileSize ?: @(0),
         @"type" : type,
-      } mutableCopy];
+        @"thumbnailUri" : [NSString stringWithFormat:@"file://%@", thumbPath],
+      };
 
       dispatch_async(dispatch_get_main_queue(), ^{
         resolve(result);
