@@ -75,10 +75,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 24,
+    gap: 28,
   },
   titleContainer: {
-    gap: 8,
+    gap: 12,
   },
   title: {
     fontFamily: fonts.serif,
