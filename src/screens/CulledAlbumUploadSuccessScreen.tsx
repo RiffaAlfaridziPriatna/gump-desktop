@@ -1,3 +1,4 @@
+import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
@@ -8,8 +9,10 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import IconClose from '../assets/images/icon_close.svg';
 import GumpLogo from '../assets/images/logo.svg';
 import GumpLogoOnly from '../assets/images/logo_icon_only.svg';
-import { useState } from 'react';
-import { useLayout } from '@hooks/useLayout';
+import {useCallback, useState} from 'react';
+import {useLayout} from '@hooks/useLayout';
+import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
+import {endUploadNavigationCoop} from '@lib/navigation/uploadAwareNavigation';
 
 type Props = StackScreenProps<MainStackParamList, 'CulledAlbumUploadSuccess'>;
 
@@ -17,68 +20,94 @@ export default function CulledAlbumUploadSuccessScreen({
   navigation,
   route,
 }: Props) {
-  const {albumLink} = route.params;
+  const {albumId, albumLink} = route.params;
+  const {shellProps, handleBack} = useUploadAwareModalScreen(
+    navigation,
+    route.params.instant,
+    {albumId},
+  );
   const {screenPaddingHorizontal, isMobileLayout} = useLayout();
   const [headerHeight, setHeaderHeight] = useState(0);
 
-  function handleClose() {
-    navigation.popToTop();
-  }
+  const handleCloseToHome = useCallback(() => {
+    const finish = () => {
+      navigation.popToTop();
+      endUploadNavigationCoop();
+    };
+
+    if (
+      shellProps.enabled &&
+      !route.params.instant &&
+      shellProps.slideRef.current
+    ) {
+      shellProps.slideRef.current.slideOut(finish);
+      return;
+    }
+
+    finish();
+  }, [navigation, route.params.instant, shellProps.enabled, shellProps.slideRef]);
 
   async function handleOpenAlbum() {
     if (albumLink) {
       try {
         await Linking.openURL(albumLink);
       } catch (error) {
-        console.error('[CulledAlbumUploadSuccessScreen] Failed to open album', error);
+        console.error(
+          '[CulledAlbumUploadSuccessScreen] Failed to open album',
+          error,
+        );
       }
     }
-    handleClose();
+    handleCloseToHome();
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View
-        style={[
-          styles.header,
-          {paddingHorizontal: screenPaddingHorizontal},
-          isMobileLayout && styles.headerMobile,
-        ]}
-        onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
-        <GumpLogo width={112} height={40} />
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-          activeOpacity={0.7}>
-          <IconClose width={32} height={32} color={colors.text} />
-        </TouchableOpacity>
-      </View>
-      <View
-        style={[
-          styles.body,
-          {
-            paddingBottom: headerHeight,
-            paddingHorizontal: screenPaddingHorizontal,
-          },
-        ]}>
-        <View style={styles.content}>
-          <View style={styles.titleIconContainer}>
-            <GumpLogoOnly width={48} height={48} />
-            <View style={styles.infoContainer}>
-              <Text style={styles.title}>Your Album is Ready</Text>
-              <Text style={styles.subtitle}>Access your album in Gump.gg now.</Text>
-            </View>
-          </View>
+    <UploadAwareModalShell {...shellProps}>
+      <SafeAreaView style={styles.container}>
+        <View
+          style={[
+            styles.header,
+            {paddingHorizontal: screenPaddingHorizontal},
+            isMobileLayout && styles.headerMobile,
+          ]}
+          onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
+          <GumpLogo width={112} height={40} />
           <TouchableOpacity
-            style={styles.openButton}
-            onPress={handleOpenAlbum}
-            activeOpacity={0.8}
-            disabled={!albumLink}>
-            <Text style={styles.openButtonText}>Open Album</Text>
+            onPress={handleBack}
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+            activeOpacity={0.7}>
+            <IconClose width={32} height={32} color={colors.text} />
           </TouchableOpacity>
         </View>
-      </View>
-    </SafeAreaView>
+        <View
+          style={[
+            styles.body,
+            {
+              paddingBottom: headerHeight,
+              paddingHorizontal: screenPaddingHorizontal,
+            },
+          ]}>
+          <View style={styles.content}>
+            <View style={styles.titleIconContainer}>
+              <GumpLogoOnly width={48} height={48} />
+              <View style={styles.infoContainer}>
+                <Text style={styles.title}>Your Album is Ready</Text>
+                <Text style={styles.subtitle}>
+                  Access your album in Gump.gg now.
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.openButton}
+              onPress={handleOpenAlbum}
+              activeOpacity={0.8}
+              disabled={!albumLink}>
+              <Text style={styles.openButtonText}>Open Album</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    </UploadAwareModalShell>
   );
 }
 

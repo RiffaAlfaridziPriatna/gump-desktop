@@ -1,4 +1,5 @@
 import {ProgressBar} from '@components/ui';
+import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {
   useCulledAlbumActions,
   useCulledAlbumServerUploadBatch,
@@ -14,6 +15,7 @@ import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useEffect, useState} from 'react';
 import {useLayout} from '@hooks/useLayout';
+import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {TouchableOpacity} from '@components/ui';
 import {StyleSheet, Text, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -27,6 +29,11 @@ export default function CulledAlbumUploadProgressScreen({
   route,
 }: Props) {
   const {albumId, photoCount, albumName, albumLink} = route.params;
+  const {shellProps, handleBack} = useUploadAwareModalScreen(
+    navigation,
+    route.params.instant,
+    {albumId},
+  );
   const {screenPaddingHorizontal, isMobileLayout} = useLayout();
   const {resumeInFlightWork} = useCulledAlbumActions();
   const {batchPhotoIds, photos} = useCulledAlbumServerUploadBatch(albumId);
@@ -61,49 +68,51 @@ export default function CulledAlbumUploadProgressScreen({
   }, [albumId, albumLink, albumName, finished, navigation]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View
-        style={[
-          styles.header,
-          {paddingHorizontal: screenPaddingHorizontal},
-          isMobileLayout && styles.headerMobile,
-        ]}
-        onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
-        <GumpLogo width={112} height={40} />
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-          activeOpacity={0.7}>
-          <IconClose width={32} height={32} color={colors.text} />
-        </TouchableOpacity>
-      </View>
-
-      <View
-        style={[
-          styles.body,
-          {
-            paddingBottom: headerHeight,
-            paddingHorizontal: screenPaddingHorizontal,
-          },
-        ]}>
-        <View style={styles.content}>
-          <View style={styles.infoContainer}>
-            <Text style={styles.title}>{title}</Text>
-            <Text style={styles.subtitle}>
-              Your photos are being uploaded to your Gump album.{'\n'}
-              Please keep this window open.
-            </Text>
-          </View>
-          <ProgressBar
-            progress={progress}
-            height={8}
-            trackColor={colors.border}
-            fillColor={colors.accent}
-            style={styles.progressBar}
-          />
+    <UploadAwareModalShell {...shellProps}>
+      <SafeAreaView style={styles.container}>
+        <View
+          style={[
+            styles.header,
+            {paddingHorizontal: screenPaddingHorizontal},
+            isMobileLayout && styles.headerMobile,
+          ]}
+          onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
+          <GumpLogo width={112} height={40} />
+          <TouchableOpacity
+            onPress={handleBack}
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+            activeOpacity={0.7}>
+            <IconClose width={32} height={32} color={colors.text} />
+          </TouchableOpacity>
         </View>
-      </View>
-    </SafeAreaView>
+
+        <View
+          style={[
+            styles.body,
+            {
+              paddingBottom: headerHeight,
+              paddingHorizontal: screenPaddingHorizontal,
+            },
+          ]}>
+          <View style={styles.content}>
+            <View style={styles.infoContainer}>
+              <Text style={styles.title}>{title}</Text>
+              <Text style={styles.subtitle}>
+                Your photos are being uploaded to your Gump album.{'\n'}
+                Please keep this window open.
+              </Text>
+            </View>
+            <ProgressBar
+              progress={progress}
+              height={8}
+              trackColor={colors.border}
+              fillColor={colors.accent}
+              style={styles.progressBar}
+            />
+          </View>
+        </View>
+      </SafeAreaView>
+    </UploadAwareModalShell>
   );
 }
 

@@ -1,7 +1,9 @@
 import {FaceStatusTooltip, type KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
 import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
 import {PhotoDetailImageViewer} from '@components/culling/PhotoDetailImageViewer';
+import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {useCulledAlbumPhotosState, useCulledAlbumStore} from '@context/culledAlbum';
+import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
@@ -22,6 +24,7 @@ import {Pressable, TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
   FlatList,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -47,6 +50,11 @@ export default function CulledAlbumPhotoDetailScreen({
   route,
 }: Props) {
   const {albumId, photoId} = route.params;
+  const {shellProps, handleBack} = useUploadAwareModalScreen(
+    navigation,
+    route.params.instant,
+    {albumId},
+  );
   const {isMobileLayout, screenPaddingHorizontal} = useLayout();
   const albumPhotos = useCulledAlbumPhotosState(albumId);
   const cullingHasUploads = useCulledAlbumStore(
@@ -163,185 +171,189 @@ export default function CulledAlbumPhotoDetailScreen({
 
   if (!photo || !analysis) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.missingState}>
-          <Text style={styles.missingStateText}>Photo not found.</Text>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.backLink}>Go back</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <UploadAwareModalShell {...shellProps}>
+        <SafeAreaView style={styles.container}>
+          <View style={styles.missingState}>
+            <Text style={styles.missingStateText}>Photo not found.</Text>
+            <TouchableOpacity onPress={handleBack}>
+              <Text style={styles.backLink}>Go back</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </UploadAwareModalShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View
-        ref={screenRootRef}
-        style={styles.screenRoot}
-        onLayout={syncScreenOrigin}
-      >
+    <UploadAwareModalShell {...shellProps}>
+      <SafeAreaView style={styles.container}>
         <View
-          style={[
-            styles.header,
-            {paddingHorizontal: screenPaddingHorizontal},
-            isMobileLayout && styles.headerMobile,
-          ]}>
+          ref={screenRootRef}
+          style={styles.screenRoot}
+          onLayout={syncScreenOrigin}
+        >
           <View
             style={[
-              styles.headerLeft,
-              isMobileLayout && styles.headerLeftMobile,
+              styles.header,
+              {paddingHorizontal: screenPaddingHorizontal},
+              isMobileLayout && styles.headerMobile,
             ]}>
-            <Text style={styles.fileName} numberOfLines={1}>
-              {fileName}
-            </Text>
+            <View
+              style={[
+                styles.headerLeft,
+                isMobileLayout && styles.headerLeftMobile,
+              ]}>
+              <Text style={styles.fileName} numberOfLines={1}>
+                {fileName}
+              </Text>
 
-            <View style={styles.otherInfoContainer}>
-              <View style={styles.starRatingContainer}>
-                {[...Array(5)].map((_, index) => {
-                  const filled = starRating > index;
-                  const Icon = filled ? IconStar : IconStarOutlined;
+              <View style={styles.otherInfoContainer}>
+                <View style={styles.starRatingContainer}>
+                  {[...Array(5)].map((_, index) => {
+                    const filled = starRating > index;
+                    const Icon = filled ? IconStar : IconStarOutlined;
 
-                  return (
-                    <Pressable
-                      key={index}
-                      onPress={() => updateStarRating(index)}
-                      style={[
-                        styles.starButton,
-                        disabled && styles.controlDisabled,
-                      ]}
-                      disabled={disabled}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Rate ${index + 1} stars`}
-                    >
-                      <Icon width={24} height={24} color={colors.accent} />
-                    </Pressable>
-                  );
-                })}
+                    return (
+                      <Pressable
+                        key={index}
+                        onPress={() => updateStarRating(index)}
+                        style={[
+                          styles.starButton,
+                          disabled && styles.controlDisabled,
+                        ]}
+                        disabled={disabled}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Rate ${index + 1} stars`}
+                      >
+                        <Icon width={24} height={24} color={colors.accent} />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Pressable
+                  onPress={toggleSelection}
+                  style={[
+                    styles.selectionButton,
+                    disabled && styles.controlDisabled,
+                  ]}
+                  disabled={disabled}
+                  accessibilityRole="button"
+                  accessibilityState={{selected: isSelected}}
+                >
+                  {isSelected ? (
+                    <IconCheckCircle width={24} height={24} color={colors.text} />
+                  ) : (
+                    <IconCheckCircleOutlined
+                      width={24}
+                      height={24}
+                      color={colors.text}
+                    />
+                  )}
+                </Pressable>
+              </View>
+            </View>
+
+            <Pressable
+              onPress={handleBack}
+              style={styles.closeButton}
+              accessibilityRole="button"
+              accessibilityLabel="Close photo detail"
+            >
+              <IconClose width={32} height={32} color={colors.text} />
+            </Pressable>
+          </View>
+
+          <ScrollAwareTooltipContext.Provider value={scrollStoreRef.current}>
+            <View
+              style={[
+                styles.content,
+                {paddingHorizontal: screenPaddingHorizontal},
+                isMobileLayout && styles.contentMobile,
+              ]}>
+              <View
+                style={[
+                  styles.mainColumn,
+                  isMobileLayout && styles.mainColumnMobile,
+                ]}>
+                <PhotoDetailImageViewer
+                  uri={uri}
+                  faces={faces}
+                  zoomFaceIndex={zoomFaceIndex}
+                  imageSize={imageSize}
+                  onImageReady={handleMainImageReady}
+                  onTooltipAnchorChange={handleTooltipChange}
+                />
               </View>
 
-              <Pressable
-                onPress={toggleSelection}
+              <View
                 style={[
-                  styles.selectionButton,
-                  disabled && styles.controlDisabled,
-                ]}
-                disabled={disabled}
-                accessibilityRole="button"
-                accessibilityState={{selected: isSelected}}
-              >
-                {isSelected ? (
-                  <IconCheckCircle width={24} height={24} color={colors.text} />
-                ) : (
-                  <IconCheckCircleOutlined
-                    width={24}
-                    height={24}
-                    color={colors.text}
+                  styles.sidebar,
+                  isMobileLayout && styles.sidebarMobile,
+                ]}>
+                <Text style={styles.sidebarTitle}>Key Faces ({faces.length})</Text>
+                {mainImageReady && imageSize ? (
+                  <FlatList
+                    {...keyFaceScrollHandlers}
+                    data={faces}
+                    keyExtractor={(_, index) => `face-${index}`}
+                    renderItem={renderKeyFaceItem}
+                    horizontal={isMobileLayout}
+                    numColumns={isMobileLayout ? undefined : KEY_FACE_COLUMN_COUNT}
+                    columnWrapperStyle={
+                      isMobileLayout ? undefined : styles.keyFaceRow
+                    }
+                    style={styles.keyFaceScroll}
+                    contentContainerStyle={[
+                      styles.keyFaceGrid,
+                      isMobileLayout && styles.keyFaceGridMobile,
+                    ]}
+                    showsVerticalScrollIndicator={!isMobileLayout}
+                    showsHorizontalScrollIndicator={isMobileLayout}
+                    initialNumToRender={
+                      isMobileLayout ? 6 : KEY_FACE_COLUMN_COUNT * 3
+                    }
+                    maxToRenderPerBatch={
+                      isMobileLayout ? 6 : KEY_FACE_COLUMN_COUNT * 3
+                    }
+                    windowSize={3}
+                    removeClippedSubviews={Platform.OS !== 'windows'}
                   />
+                ) : (
+                  <View style={styles.keyFaceLoading}>
+                    <ActivityIndicator size="small" color={colors.accent} />
+                  </View>
                 )}
-              </Pressable>
+              </View>
             </View>
-          </View>
+          </ScrollAwareTooltipContext.Provider>
 
-          <Pressable
-            onPress={() => navigation.goBack()}
-            style={styles.closeButton}
-            accessibilityRole="button"
-            accessibilityLabel="Close photo detail"
-          >
-            <IconClose width={32} height={32} color={colors.text} />
-          </Pressable>
-        </View>
-
-        <ScrollAwareTooltipContext.Provider value={scrollStoreRef.current}>
-          <View
-            style={[
-              styles.content,
-              {paddingHorizontal: screenPaddingHorizontal},
-              isMobileLayout && styles.contentMobile,
-            ]}>
+          {tooltip && (
             <View
+              pointerEvents="none"
               style={[
-                styles.mainColumn,
-                isMobileLayout && styles.mainColumnMobile,
-              ]}>
-              <PhotoDetailImageViewer
-                uri={uri}
-                faces={faces}
-                zoomFaceIndex={zoomFaceIndex}
-                imageSize={imageSize}
-                onImageReady={handleMainImageReady}
-                onTooltipAnchorChange={handleTooltipChange}
+                styles.tooltipHost,
+                {
+                  top: tooltip.bottomY - screenOrigin.y + 6,
+                  left: tooltip.centerX - screenOrigin.x,
+                  transform: [{translateX: -tooltipWidth / 2}],
+                  opacity: tooltipWidth > 0 ? 1 : 0,
+                },
+              ]}
+              onLayout={event =>
+                setTooltipWidth(event.nativeEvent.layout.width)
+              }
+            >
+              <FaceStatusTooltip
+                backgroundColor={tooltip.backgroundColor}
+                eyeMeta={tooltip.eyeMeta}
+                focusMeta={tooltip.focusMeta}
               />
             </View>
-
-            <View
-              style={[
-                styles.sidebar,
-                isMobileLayout && styles.sidebarMobile,
-              ]}>
-              <Text style={styles.sidebarTitle}>Key Faces ({faces.length})</Text>
-              {mainImageReady && imageSize ? (
-                <FlatList
-                  {...keyFaceScrollHandlers}
-                  data={faces}
-                  keyExtractor={(_, index) => `face-${index}`}
-                  renderItem={renderKeyFaceItem}
-                  horizontal={isMobileLayout}
-                  numColumns={isMobileLayout ? undefined : KEY_FACE_COLUMN_COUNT}
-                  columnWrapperStyle={
-                    isMobileLayout ? undefined : styles.keyFaceRow
-                  }
-                  style={styles.keyFaceScroll}
-                  contentContainerStyle={[
-                    styles.keyFaceGrid,
-                    isMobileLayout && styles.keyFaceGridMobile,
-                  ]}
-                  showsVerticalScrollIndicator={!isMobileLayout}
-                  showsHorizontalScrollIndicator={isMobileLayout}
-                  initialNumToRender={
-                    isMobileLayout ? 6 : KEY_FACE_COLUMN_COUNT * 3
-                  }
-                  maxToRenderPerBatch={
-                    isMobileLayout ? 6 : KEY_FACE_COLUMN_COUNT * 3
-                  }
-                  windowSize={3}
-                  removeClippedSubviews
-                />
-              ) : (
-                <View style={styles.keyFaceLoading}>
-                  <ActivityIndicator size="small" color={colors.accent} />
-                </View>
-              )}
-            </View>
-          </View>
-        </ScrollAwareTooltipContext.Provider>
-
-        {tooltip && (
-          <View
-            pointerEvents="none"
-            style={[
-              styles.tooltipHost,
-              {
-                top: tooltip.bottomY - screenOrigin.y + 6,
-                left: tooltip.centerX - screenOrigin.x,
-                transform: [{translateX: -tooltipWidth / 2}],
-                opacity: tooltipWidth > 0 ? 1 : 0,
-              },
-            ]}
-            onLayout={event =>
-              setTooltipWidth(event.nativeEvent.layout.width)
-            }
-          >
-            <FaceStatusTooltip
-              backgroundColor={tooltip.backgroundColor}
-              eyeMeta={tooltip.eyeMeta}
-              focusMeta={tooltip.focusMeta}
-            />
-          </View>
-        )}
-      </View>
-    </SafeAreaView>
+          )}
+        </View>
+      </SafeAreaView>
+    </UploadAwareModalShell>
   );
 }
 

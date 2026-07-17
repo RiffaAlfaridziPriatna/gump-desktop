@@ -71,7 +71,7 @@ export function usesCustomModalEnterAnimation(): boolean {
 export function uploadAwareModalScreenOptions({
   route,
 }: {
-  route: {params?: InstantNavParams};
+  route: {params?: InstantNavParams | Record<string, unknown> | undefined};
 }): StackNavigationOptions {
   if (usesCustomModalEnterAnimation()) {
     return {
@@ -84,7 +84,8 @@ export function uploadAwareModalScreenOptions({
     };
   }
 
-  if (route.params?.instant) {
+  const params = route.params as InstantNavParams | undefined;
+  if (params?.instant) {
     return {
       animation: 'none',
       gestureEnabled: true,

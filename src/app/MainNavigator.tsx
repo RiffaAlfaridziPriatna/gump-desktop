@@ -1,7 +1,6 @@
 import {colors} from '@lib/ui/colors';
 import {
   InstantNavParams,
-  modalSlideFromBottomOptions,
   uploadAwareModalScreenOptions,
   WithInstantNav,
 } from '@lib/navigation/uploadAwareNavigation';
@@ -29,21 +28,21 @@ export type MainStackParamList = {
   CulledAlbumDetail: WithInstantNav<{
     albumId: string;
   }>;
-  CulledAlbumPhotoDetail: {
+  CulledAlbumPhotoDetail: WithInstantNav<{
     albumId: string;
     photoId: string;
-  };
-  CulledAlbumUploadProgress: {
+  }>;
+  CulledAlbumUploadProgress: WithInstantNav<{
     albumId: string;
     photoCount: number;
     albumName: string;
     albumLink: string;
-  };
-  CulledAlbumUploadSuccess: {
+  }>;
+  CulledAlbumUploadSuccess: WithInstantNav<{
     albumId: string;
     albumName: string;
     albumLink: string;
-  };
+  }>;
 };
 
 const Stack = createStackNavigator<MainStackParamList>();
@@ -76,17 +75,17 @@ export function MainNavigator() {
       <Stack.Screen
         name="CulledAlbumPhotoDetail"
         component={CulledAlbumPhotoDetailScreen}
-        options={modalSlideFromBottomOptions}
+        options={uploadAwareModalScreenOptions}
       />
       <Stack.Screen
         name="CulledAlbumUploadProgress"
         component={CulledAlbumUploadProgressScreen}
-        options={modalSlideFromBottomOptions}
+        options={uploadAwareModalScreenOptions}
       />
       <Stack.Screen
         name="CulledAlbumUploadSuccess"
         component={CulledAlbumUploadSuccessScreen}
-        options={modalSlideFromBottomOptions}
+        options={uploadAwareModalScreenOptions}
       />
     </Stack.Navigator>
   );
