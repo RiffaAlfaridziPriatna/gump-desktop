@@ -1,7 +1,6 @@
 import {useCulledAlbumPhotosState, useCulledAlbumStore} from '@context/culledAlbum';
 import {cullingEngine} from '@lib/culling/cullingEngine';
-import {computeKeyFaces, computeStats, orderPhotosForCulling} from '@lib/culling/cullingUtil';
-import {persistAlbum, updateCullingSummary} from '@lib/culledAlbum/store';
+import {computeStats, orderPhotosForCulling} from '@lib/culling/cullingUtil';
 import {toCullingPhoto} from '@lib/culledAlbum/types';
 import {APIResponse} from '@services/api';
 import {useCallback, useEffect, useMemo} from 'react';
@@ -14,11 +13,8 @@ export function useCulledAlbumDetailData(
   const persistedStats = useCulledAlbumStore(
     state => state.albums[albumId]?.cullingStats ?? null,
   );
-  const persistedKeyFaces = useCulledAlbumStore(
-    state => state.albums[albumId]?.cullingKeyFaces ?? null,
-  );
-  const cullingCompleted = useCulledAlbumStore(
-    state => state.albums[albumId]?.cullingCompleted ?? false,
+  const keyFaces = useCulledAlbumStore(
+    state => state.albums[albumId]?.cullingKeyFaces ?? [],
   );
 
   const analyzedPhotos = useMemo(
@@ -53,20 +49,6 @@ export function useCulledAlbumDetailData(
     [albumPhotos],
   );
 
-  const shouldRecomputeKeyFacesLive =
-    isAnalyzing ||
-    !cullingCompleted ||
-    !persistedKeyFaces ||
-    persistedKeyFaces.length === 0;
-
-  const liveKeyFaces = useMemo(
-    () =>
-      shouldRecomputeKeyFacesLive && photosReady && analyzedPhotos.length > 0
-        ? computeKeyFaces(analyzedPhotos)
-        : null,
-    [analyzedPhotos, photosReady, shouldRecomputeKeyFacesLive],
-  );
-
   const mySelectionsLive = useMemo(
     () => analyzedPhotos.filter(photo => photo.selected).length,
     [analyzedPhotos],
@@ -82,8 +64,6 @@ export function useCulledAlbumDetailData(
     return {...liveStats, mySelections: mySelectionsLive};
   }, [liveStats, mySelectionsLive, persistedStats]);
 
-  const keyFaces = liveKeyFaces ?? persistedKeyFaces ?? [];
-
   useEffect(() => {
     if (!photosReady || analyzedPhotos.length === 0) {
       return;
@@ -92,31 +72,11 @@ export function useCulledAlbumDetailData(
     const missingCrops = analyzedPhotos.filter(
       photo => photo.faces.length > 0 && photo.faces.some(face => !face.cropUri),
     );
-    
+
     if (missingCrops.length > 0) {
       cullingEngine.refreshAssets(albumId).catch(() => undefined);
     }
-
-    const liveCount = liveKeyFaces?.length ?? 0;
-    if (liveCount === 0) {
-      return;
-    }
-    if (
-      persistedKeyFaces &&
-      persistedKeyFaces.length > 0 &&
-      liveCount === persistedKeyFaces.length
-    ) {
-      return;
-    }
-    updateCullingSummary(albumId);
-    persistAlbum(albumId).catch(() => undefined);
-  }, [
-    albumId,
-    analyzedPhotos,
-    liveKeyFaces?.length,
-    persistedKeyFaces,
-    photosReady,
-  ]);
+  }, [albumId, analyzedPhotos, photosReady]);
 
   const photoMap = useMemo(() => {
     const map = new Map<string, APIResponse.CullingPhoto>();

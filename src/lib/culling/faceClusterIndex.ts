@@ -1,9 +1,18 @@
 import {CulledAlbumPhoto} from '@lib/culledAlbum/types';
-import {CullingFace, faceFingerprint} from './cullingUtil';
+import {
+  CullingFace,
+  FaceClusterRepresentative,
+  faceFingerprint,
+} from './cullingUtil';
 
-const clusterIndexes = new Map<string, Map<string, number[]>>();
+const clusterIndexes = new Map<
+  string,
+  Map<string, FaceClusterRepresentative>
+>();
 
-export function getFaceClusterIndex(albumId: string): Map<string, number[]> {
+export function getFaceClusterIndex(
+  albumId: string,
+): Map<string, FaceClusterRepresentative> {
   let index = clusterIndexes.get(albumId);
   if (!index) {
     index = new Map();
@@ -27,8 +36,13 @@ export function seedFaceClusterIndex(
     }
     for (const face of photo.faces) {
       const clusterId = face.rekognitionFaceId;
+      const cullingFace = face as CullingFace;
       if (clusterId && !index.has(clusterId)) {
-        index.set(clusterId, faceFingerprint(face as CullingFace));
+        const box = cullingFace.boundingBox;
+        index.set(clusterId, {
+          fingerprint: faceFingerprint(cullingFace),
+          area: Math.max(0, box.width) * Math.max(0, box.height),
+        });
       }
     }
   }

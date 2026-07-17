@@ -12,6 +12,7 @@ import {
 import {
   getAlbum,
   flushPendingPhotoUpdates,
+  updateCullingSummary,
   type UpdatePhotoOptions,
 } from './store';
 import {
@@ -347,8 +348,10 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
           {
             recomputeTotals: false,
             analysisCountShift: {from: 'analyzing', to: 'analyzed'},
+            immediate: true,
           },
         );
+        updateCullingSummary(albumId);
         runOrDeferHeavyWorkForNavigation(() => {
           queuePhotoPersist(albumId, photoId);
           schedulePersist(albumId);

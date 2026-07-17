@@ -387,79 +387,6 @@ function scoreKeyFaceRepresentative(
   return score;
 }
 
-const VISUAL_SIMILARITY_THRESHOLD = 0.08;
-
-type KeyFaceCandidate = {
-  faceId: string;
-  photoIds: string[];
-  eyeStatus: APIResponse.CullingEyeStatus;
-  focusLevel: APIResponse.CullingFocusLevel;
-  occurrenceCount: number;
-  sourcePhotoId: string;
-  sourceFaceIndex: number;
-  boundingBox: CullingFace['boundingBox'];
-  cropUri?: string;
-  fingerprint: number[];
-};
-
-function deduplicateKeyFacesByVisualSimilarity(
-  keyFaces: KeyFaceCandidate[],
-): APIResponse.CullingKeyFace[] {
-  const kept: KeyFaceCandidate[] = [];
-
-  for (const candidate of keyFaces) {
-    const duplicate = kept.find(
-      existing =>
-        existing.eyeStatus === candidate.eyeStatus &&
-        existing.focusLevel === candidate.focusLevel &&
-        fingerprintDistance(candidate.fingerprint, existing.fingerprint) <
-          VISUAL_SIMILARITY_THRESHOLD,
-    );
-
-    if (duplicate) {
-      duplicate.occurrenceCount += candidate.occurrenceCount;
-      const existingIds = new Set(duplicate.photoIds);
-      for (const photoId of candidate.photoIds) {
-        if (!existingIds.has(photoId)) {
-          duplicate.photoIds.push(photoId);
-        }
-      }
-      if (!duplicate.cropUri && candidate.cropUri) {
-        duplicate.cropUri = candidate.cropUri;
-        duplicate.sourcePhotoId = candidate.sourcePhotoId;
-        duplicate.sourceFaceIndex = candidate.sourceFaceIndex;
-        duplicate.boundingBox = candidate.boundingBox;
-      }
-    } else {
-      kept.push(candidate);
-    }
-  }
-
-  return kept.map(
-    ({
-      faceId,
-      photoIds,
-      eyeStatus,
-      focusLevel,
-      occurrenceCount,
-      sourcePhotoId,
-      sourceFaceIndex,
-      boundingBox,
-      cropUri,
-    }) => ({
-      faceId,
-      photoIds,
-      eyeStatus,
-      focusLevel,
-      occurrenceCount,
-      sourcePhotoId,
-      sourceFaceIndex,
-      boundingBox,
-      cropUri,
-    }),
-  );
-}
-
 type VariantBucket = {
   faceId: string;
   photoIds: string[];
@@ -474,7 +401,6 @@ type VariantBucket = {
   boundingBox: CullingFace['boundingBox'];
   sourceCropUri?: string;
   representativeScore: number;
-  fingerprint: number[];
 };
 
 function createVariantBucket(
@@ -484,7 +410,6 @@ function createVariantBucket(
   faceIndex: number,
   photoOrder: number,
   representativeScore: number,
-  fingerprint: number[],
 ): VariantBucket {
   return {
     faceId: variantId,
@@ -500,7 +425,6 @@ function createVariantBucket(
     boundingBox: face.boundingBox,
     sourceCropUri: face.cropUri,
     representativeScore,
-    fingerprint,
   };
 }
 
@@ -534,7 +458,6 @@ export function computeKeyFaces(
         face.focusLevel,
       );
       const representativeScore = scoreKeyFaceRepresentative(face, photoOrder);
-      const fingerprint = faceFingerprint(face);
 
       const bucket = variants.get(variantId);
       if (!bucket) {
@@ -545,7 +468,6 @@ export function computeKeyFaces(
           faceIndex,
           photoOrder,
           representativeScore,
-          fingerprint,
         );
         variants.set(variantId, newBucket);
         addFaceToBucket(newBucket, photo.photoId);
@@ -555,43 +477,71 @@ export function computeKeyFaces(
     });
   });
 
-  const sorted = [...variants.values()].sort((a, b) => {
-    if (a.firstPhotoOrder !== b.firstPhotoOrder) {
-      return a.firstPhotoOrder - b.firstPhotoOrder;
-    }
-    if (a.firstSourceFaceIndex !== b.firstSourceFaceIndex) {
-      return a.firstSourceFaceIndex - b.firstSourceFaceIndex;
-    }
-    return a.faceId.localeCompare(b.faceId);
-  });
-
-  const candidates: KeyFaceCandidate[] = sorted.map(v => ({
-    faceId: v.faceId,
-    photoIds: v.photoIds,
-    eyeStatus: v.eyeStatus,
-    focusLevel: v.focusLevel,
-    occurrenceCount: v.occurrenceCount,
-    sourcePhotoId: v.sourcePhotoId,
-    sourceFaceIndex: v.sourceFaceIndex,
-    boundingBox: v.boundingBox,
-    cropUri: v.sourceCropUri,
-    fingerprint: v.fingerprint,
-  }));
-
-  return deduplicateKeyFacesByVisualSimilarity(candidates);
+  return [...variants.values()]
+    .sort((a, b) => {
+      if (a.firstPhotoOrder !== b.firstPhotoOrder) {
+        return a.firstPhotoOrder - b.firstPhotoOrder;
+      }
+      if (a.firstSourceFaceIndex !== b.firstSourceFaceIndex) {
+        return a.firstSourceFaceIndex - b.firstSourceFaceIndex;
+      }
+      return a.faceId.localeCompare(b.faceId);
+    })
+    .map(
+      ({
+        faceId,
+        photoIds,
+        eyeStatus,
+        focusLevel,
+        occurrenceCount,
+        sourcePhotoId,
+        sourceFaceIndex,
+        boundingBox,
+        sourceCropUri,
+      }) => ({
+        faceId,
+        photoIds,
+        eyeStatus,
+        focusLevel,
+        occurrenceCount,
+        sourcePhotoId,
+        sourceFaceIndex,
+        boundingBox,
+        cropUri: sourceCropUri,
+      }),
+    );
 }
 
-/**
- * Max fingerprint distance to reuse a person cluster across photos.
- * Lower = harder to merge (more Key Faces). Higher = more aggressive merging.
- */
 export const FACE_CLUSTER_CROSS_PHOTO_THRESHOLD = 0.05;
 
+export const FACE_CLUSTER_MAX_AREA_RATIO = 3;
+
+export type FaceClusterRepresentative = {
+  fingerprint: number[];
+  area: number;
+};
+
+function faceAreasCompatibleForClustering(
+  areaA: number,
+  areaB: number,
+): boolean {
+  const minArea = Math.min(areaA, areaB);
+  if (minArea <= 1e-8) {
+    return false;
+  }
+  return Math.max(areaA, areaB) / minArea <= FACE_CLUSTER_MAX_AREA_RATIO;
+}
+
 function blendClusterRepresentatives(
-  existing: number[],
-  incoming: number[],
-): number[] {
-  return existing.map((value, index) => value * 0.65 + incoming[index]! * 0.35);
+  existing: FaceClusterRepresentative,
+  incoming: FaceClusterRepresentative,
+): FaceClusterRepresentative {
+  return {
+    fingerprint: existing.fingerprint.map(
+      (value, index) => value * 0.65 + incoming.fingerprint[index]! * 0.35,
+    ),
+    area: existing.area * 0.65 + incoming.area * 0.35,
+  };
 }
 
 type FaceClusterMatch = {
@@ -613,10 +563,11 @@ type FaceClusterMatch = {
  */
 export function assignFaceClustersToSinglePhoto(
   faces: CullingFace[],
-  clusterRepresentatives: Map<string, number[]>,
+  clusterRepresentatives: Map<string, FaceClusterRepresentative>,
   nextClusterId: number,
 ): number {
   const fingerprints = faces.map(faceFingerprint);
+  const areas = faces.map(face => faceBoxArea(face.boundingBox));
   const assignedClusterIds: (string | null)[] = new Array(faces.length).fill(
     null,
   );
@@ -625,8 +576,15 @@ export function assignFaceClustersToSinglePhoto(
     const candidateMatches: FaceClusterMatch[] = [];
     for (let faceIndex = 0; faceIndex < faces.length; faceIndex++) {
       const fingerprint = fingerprints[faceIndex]!;
+      const area = areas[faceIndex]!;
       for (const [clusterId, representative] of clusterRepresentatives) {
-        const distance = fingerprintDistance(fingerprint, representative);
+        if (!faceAreasCompatibleForClustering(area, representative.area)) {
+          continue;
+        }
+        const distance = fingerprintDistance(
+          fingerprint,
+          representative.fingerprint,
+        );
         if (distance < FACE_CLUSTER_CROSS_PHOTO_THRESHOLD) {
           candidateMatches.push({faceIndex, clusterId, distance});
         }
@@ -649,10 +607,10 @@ export function assignFaceClustersToSinglePhoto(
       if (representative) {
         clusterRepresentatives.set(
           match.clusterId,
-          blendClusterRepresentatives(
-            representative,
-            fingerprints[match.faceIndex]!,
-          ),
+          blendClusterRepresentatives(representative, {
+            fingerprint: fingerprints[match.faceIndex]!,
+            area: areas[match.faceIndex]!,
+          }),
         );
       }
     }
@@ -662,7 +620,10 @@ export function assignFaceClustersToSinglePhoto(
     let clusterId = assignedClusterIds[faceIndex];
     if (!clusterId) {
       clusterId = `person-${nextClusterId++}`;
-      clusterRepresentatives.set(clusterId, fingerprints[faceIndex]!);
+      clusterRepresentatives.set(clusterId, {
+        fingerprint: fingerprints[faceIndex]!,
+        area: areas[faceIndex]!,
+      });
     }
     faces[faceIndex]!.rekognitionFaceId = clusterId;
   }

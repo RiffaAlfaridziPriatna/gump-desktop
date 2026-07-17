@@ -217,7 +217,7 @@ function reconcileFaceClusterIdsForAlbum(albumId: string): void {
           nextFaceClusterId,
         );
       },
-      {recomputeTotals: false},
+      {recomputeTotals: false, immediate: true},
     );
     syncedPhotoIds.push(photo.photoId);
   }
@@ -259,7 +259,7 @@ function assignFaceClusterIdsIncremental(
         nextFaceClusterId,
       );
     },
-    {recomputeTotals: false},
+    {recomputeTotals: false, immediate: true},
   );
 
   if (!updated) {
@@ -323,7 +323,7 @@ export const cullingEngine = {
       photo.duplicated = existing.duplicated ?? false;
       photo.starRating = initialStarRating;
       photo.selected = isFirstAnalysis ? flags.selected : existing.selected;
-    }, {recomputeTotals: false});
+    }, {recomputeTotals: false, immediate: true});
 
     syncPhotoFromStore(albumId, photoId);
 
