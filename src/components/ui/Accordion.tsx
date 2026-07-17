@@ -10,6 +10,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import {Pressable} from './Pressable';
+import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
 import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
 
 const ANIMATION_DURATION_MS = 300;
@@ -24,6 +25,8 @@ type AccordionProps = {
   style?: ViewStyle;
 };
 
+type ChevronDirection = 'up' | 'down';
+
 export function Accordion({
   title,
   expanded,
@@ -34,7 +37,15 @@ export function Accordion({
   style,
 }: AccordionProps) {
   const [measuredHeight, setMeasuredHeight] = useState(0);
+  const [chevronDirection, setChevronDirection] = useState<ChevronDirection>(
+    expanded ? 'up' : 'down',
+  );
+  const [isChevronAnimating, setIsChevronAnimating] = useState(false);
   const heightProgress = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+  const chevronProgress = useRef(new Animated.Value(0)).current;
+  const prevExpandedRef = useRef(expanded);
+  const hasMountedRef = useRef(false);
+  const chevronAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
     Animated.timing(heightProgress, {
@@ -45,6 +56,49 @@ export function Accordion({
     }).start();
   }, [expanded, heightProgress]);
 
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      prevExpandedRef.current = expanded;
+      setChevronDirection(expanded ? 'up' : 'down');
+      setIsChevronAnimating(false);
+      chevronProgress.setValue(0);
+      return;
+    }
+
+    if (prevExpandedRef.current === expanded) {
+      return;
+    }
+    prevExpandedRef.current = expanded;
+
+    // Animate from the leaving icon, then settle on the target icon with no transform.
+    // Steady-state SVG+rotate is what blanks the chevron when tooltips remount nearby.
+    setChevronDirection(expanded ? 'down' : 'up');
+    setIsChevronAnimating(true);
+    chevronProgress.setValue(0);
+    chevronAnimationRef.current?.stop();
+
+    const animation = Animated.timing(chevronProgress, {
+      toValue: 1,
+      duration: ANIMATION_DURATION_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+    chevronAnimationRef.current = animation;
+    animation.start(({finished}) => {
+      if (!finished) {
+        return;
+      }
+      setChevronDirection(expanded ? 'up' : 'down');
+      setIsChevronAnimating(false);
+      chevronProgress.setValue(0);
+    });
+
+    return () => {
+      animation.stop();
+    };
+  }, [expanded, chevronProgress]);
+
   const hasMeasurement = measuredHeight > 0;
 
   const animatedHeight = heightProgress.interpolate({
@@ -52,10 +106,18 @@ export function Accordion({
     outputRange: [0, measuredHeight],
   });
 
+  const chevronRotation = chevronProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg'],
+  });
+
   const handleContentLayout = (height: number) => {
     if (hasMeasurement) return;
     setMeasuredHeight(height);
   };
+
+  const ChevronIcon =
+    chevronDirection === 'up' ? IconChevronUp : IconChevronDown;
 
   return (
     <View
@@ -69,13 +131,13 @@ export function Accordion({
         style={styles.header}
         accessibilityRole="button"
         accessibilityState={{expanded}}>
-        <View
+        <Animated.View
           style={[
             styles.chevron,
-            {transform: [{rotate: expanded ? '0deg' : '180deg'}]},
+            isChevronAnimating ? {transform: [{rotate: chevronRotation}]} : null,
           ]}>
-          <IconChevronUp width={24} height={24} color={colors.textGray} />
-        </View>
+          <ChevronIcon width={24} height={24} color={colors.textGray} />
+        </Animated.View>
         <Text style={styles.title}>{title}</Text>
       </Pressable>
 
