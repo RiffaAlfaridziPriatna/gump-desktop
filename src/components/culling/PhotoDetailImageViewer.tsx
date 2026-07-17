@@ -10,10 +10,7 @@ import {
   getEyeStatusMeta,
   getFocusStatusMeta,
 } from '@lib/culling/faceStatus';
-import {
-  isScrollAwareTooltipLocked,
-  useScrollAwareTooltipStore,
-} from '@lib/ui/scrollAwareTooltip';
+import {useMeasuredTooltipHover} from '@hooks/useMeasuredTooltipHover';
 import {getCachedImageDimensions, ImageDimensions, putCachedImageDimensions} from '@lib/media/imageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
 import {colors} from '@lib/ui/colors';
@@ -55,34 +52,24 @@ function FaceStatusOverlay({
   mode,
   onTooltipAnchorChange,
 }: FaceOverlayProps) {
-  const overlayRef = useRef<View>(null);
-  const scrollAwareTooltipStore = useScrollAwareTooltipStore();
   const eyeMeta = getEyeStatusMeta(face.eyeStatus);
   const focusMeta = getFocusStatusMeta(face.focusLevel);
 
-  const showTooltip = useCallback(() => {
-    if (isScrollAwareTooltipLocked(scrollAwareTooltipStore)) {
-      return;
-    }
+  const buildAnchor = useCallback(
+    (x: number, y: number, measuredWidth: number, measuredHeight: number) => ({
+      centerX: x + measuredWidth / 2,
+      bottomY: y + measuredHeight,
+      eyeMeta: getEyeStatusMeta(face.eyeStatus),
+      focusMeta: getFocusStatusMeta(face.focusLevel),
+      backgroundColor: `${colors.textDark}E5`,
+    }),
+    [face.eyeStatus, face.focusLevel],
+  );
 
-    overlayRef.current?.measureInWindow((x, y, measuredWidth, measuredHeight) => {
-      onTooltipAnchorChange?.({
-        centerX: x + measuredWidth / 2,
-        bottomY: y + measuredHeight,
-        eyeMeta,
-        focusMeta,
-        backgroundColor: `${colors.textDark}E5`,
-      });
-    });
-  }, [eyeMeta, focusMeta, onTooltipAnchorChange, scrollAwareTooltipStore]);
-
-  const hideTooltip = useCallback(() => {
-    if (isScrollAwareTooltipLocked(scrollAwareTooltipStore)) {
-      return;
-    }
-
-    onTooltipAnchorChange?.(null);
-  }, [onTooltipAnchorChange, scrollAwareTooltipStore]);
+  const {targetRef: overlayRef, onHoverIn, onHoverOut} = useMeasuredTooltipHover(
+    onTooltipAnchorChange,
+    buildAnchor,
+  );
 
   const tooltipEnabled = mode === 'attached';
 
@@ -90,14 +77,14 @@ function FaceStatusOverlay({
     <View style={styles.faceStatusBadges}>
       <FaceStatusIconBadge
         meta={eyeMeta}
-        onHoverIn={tooltipEnabled ? showTooltip : undefined}
-        onHoverOut={tooltipEnabled ? hideTooltip : undefined}
+        onHoverIn={tooltipEnabled ? onHoverIn : undefined}
+        onHoverOut={tooltipEnabled ? onHoverOut : undefined}
         size="large"
       />
       <FaceStatusIconBadge
         meta={focusMeta}
-        onHoverIn={tooltipEnabled ? showTooltip : undefined}
-        onHoverOut={tooltipEnabled ? hideTooltip : undefined}
+        onHoverIn={tooltipEnabled ? onHoverIn : undefined}
+        onHoverOut={tooltipEnabled ? onHoverOut : undefined}
         size="large"
       />
     </View>

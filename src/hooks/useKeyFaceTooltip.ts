@@ -8,6 +8,7 @@ export function useKeyFaceTooltip() {
   const [keyFaceTooltipWidth, setKeyFaceTooltipWidth] = useState(0);
   const [screenOrigin, setScreenOrigin] = useState({x: 0, y: 0});
   const screenRootRef = useRef<View>(null);
+  const tooltipRequestIdRef = useRef(0);
 
   const syncScreenOrigin = useCallback(() => {
     screenRootRef.current?.measureInWindow((x, y) => {
@@ -17,6 +18,8 @@ export function useKeyFaceTooltip() {
 
   const handleKeyFaceTooltipChange = useCallback(
     (anchor: KeyFaceTooltipAnchor | null) => {
+      const requestId = ++tooltipRequestIdRef.current;
+
       if (!anchor) {
         setKeyFaceTooltip(null);
         setKeyFaceTooltipWidth(0);
@@ -24,6 +27,10 @@ export function useKeyFaceTooltip() {
       }
 
       screenRootRef.current?.measureInWindow((x, y) => {
+        if (requestId !== tooltipRequestIdRef.current) {
+          return;
+        }
+
         setScreenOrigin({x, y});
         setKeyFaceTooltipWidth(0);
         setKeyFaceTooltip(anchor);

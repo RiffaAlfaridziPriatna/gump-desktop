@@ -6,14 +6,11 @@ import {
   getEyeStatusMeta,
   getFocusStatusMeta,
 } from '@lib/culling/faceStatus';
-import {
-  isScrollAwareTooltipLocked,
-  useScrollAwareTooltipStore,
-} from '@lib/ui/scrollAwareTooltip';
+import {useMeasuredTooltipHover} from '@hooks/useMeasuredTooltipHover';
 import {colors} from '@lib/ui/colors';
 import {ImageDimensions} from '@lib/media/imageDimensions';
 import {APIResponse} from '@services/api';
-import {memo, useCallback, useRef} from 'react';
+import {memo, useCallback} from 'react';
 import {Pressable} from '@components/ui';
 import {StyleSheet, View} from 'react-native';
 
@@ -43,44 +40,32 @@ export const KeyFaceSidebarItem = memo(
     onPress,
     onTooltipAnchorChange,
   }: KeyFaceSidebarItemProps) {
-  const avatarRef = useRef<View>(null);
-  const scrollAwareTooltipStore = useScrollAwareTooltipStore();
   const eyeMeta = getEyeStatusMeta(eyeStatus);
   const focusMeta = getFocusStatusMeta(focusLevel);
   const hasCrop = Boolean(cropUri);
   const hasTransformCrop = Boolean(uri && boundingBox);
 
-  const handleHoverIn = useCallback(() => {
-    if (isScrollAwareTooltipLocked(scrollAwareTooltipStore)) {
-      return;
-    }
+  const buildAnchor = useCallback(
+    (x: number, y: number, measuredWidth: number, measuredHeight: number) => ({
+      centerX: x + measuredWidth / 2,
+      bottomY: y + measuredHeight,
+      eyeMeta: getEyeStatusMeta(eyeStatus),
+      focusMeta: getFocusStatusMeta(focusLevel),
+    }),
+    [eyeStatus, focusLevel],
+  );
 
-    avatarRef.current?.measureInWindow(
-      (x, y, measuredWidth, measuredHeight) => {
-        onTooltipAnchorChange?.({
-          centerX: x + measuredWidth / 2,
-          bottomY: y + measuredHeight,
-          eyeMeta,
-          focusMeta,
-        });
-      },
-    );
-  }, [eyeMeta, focusMeta, onTooltipAnchorChange, scrollAwareTooltipStore]);
-
-  const handleHoverOut = useCallback(() => {
-    if (isScrollAwareTooltipLocked(scrollAwareTooltipStore)) {
-      return;
-    }
-
-    onTooltipAnchorChange?.(null);
-  }, [onTooltipAnchorChange, scrollAwareTooltipStore]);
+  const {targetRef: avatarRef, onHoverIn, onHoverOut} = useMeasuredTooltipHover(
+    onTooltipAnchorChange,
+    buildAnchor,
+  );
 
   return (
     <Pressable
       style={[styles.container, {width, height: width}]}
       onPress={onPress}
-      onHoverIn={handleHoverIn}
-      onHoverOut={handleHoverOut}>
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}>
       <View style={[styles.root, {width, height: width}]}>
         <View
           ref={avatarRef}
