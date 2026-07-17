@@ -492,6 +492,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 16,
     color: colors.text,
+    fontWeight: 600,
   },
   keyFaceScroll: {
     flex: 1,
