@@ -45,6 +45,9 @@ using ReactPromiseJS = winrtRN::ReactPromise<winrtRN::JSValue>;
 constexpr uint32_t kThumbnailMaxPixelSize = 768;
 constexpr float kThumbnailJpegQuality = 0.80f;
 constexpr int kThumbnailMaxConcurrent = 4;
+constexpr uint32_t kFaceDetectMaxPixelSize = 1280;
+constexpr uint32_t kPerceptualHashMaxPixelSize = 256;
+constexpr uint32_t kFaceCropSourceMaxPixelSize = 1600;
 constexpr float kFaceCropSidePadding = 0.3f;
 constexpr float kFaceCropTopPadding = 0.3f;
 constexpr float kFaceCropBottomPadding = 0.5f;
@@ -357,6 +360,18 @@ bool IsReusableThumbnailFile(const std::filesystem::path &thumbPath) {
   }
 }
 
+std::optional<std::filesystem::path> SiblingThumbnailPath(const std::filesystem::path &photoPath) {
+  if (photoPath.empty()) {
+    return std::nullopt;
+  }
+  const auto thumbPath =
+      photoPath.parent_path() / L"thumbs" / (photoPath.stem().wstring() + L".jpg");
+  if (!IsReusableThumbnailFile(thumbPath)) {
+    return std::nullopt;
+  }
+  return thumbPath;
+}
+
 std::optional<std::filesystem::path> GenerateThumbnailAtPath(
     const std::filesystem::path &sourcePath,
     std::string_view albumId,
@@ -629,6 +644,37 @@ SoftwareBitmap LoadSoftwareBitmap(const std::filesystem::path &path) {
   return bitmap;
 }
 
+SoftwareBitmap LoadSoftwareBitmapScaled(
+    const std::filesystem::path &path,
+    uint32_t maxPixelSize) {
+  const auto file = GetStorageFileFromPath(path);
+  const auto stream = file.OpenAsync(FileAccessMode::Read).get();
+  const auto decoder = BitmapDecoder::CreateAsync(stream).get();
+
+  const auto targetSize = ComputeThumbnailSize(
+      decoder.PixelWidth(), decoder.PixelHeight(), maxPixelSize);
+  if (targetSize.width == 0 || targetSize.height == 0) {
+    throw std::runtime_error("Invalid image dimensions");
+  }
+
+  BitmapTransform transform;
+  if (targetSize.width != decoder.PixelWidth() ||
+      targetSize.height != decoder.PixelHeight()) {
+    transform.ScaledWidth(targetSize.width);
+    transform.ScaledHeight(targetSize.height);
+    transform.InterpolationMode(BitmapInterpolationMode::Linear);
+  }
+
+  return decoder
+      .GetSoftwareBitmapAsync(
+          BitmapPixelFormat::Bgra8,
+          BitmapAlphaMode::Premultiplied,
+          transform,
+          ExifOrientationMode::RespectExifOrientation,
+          ColorManagementMode::DoNotColorManage)
+      .get();
+}
+
 struct BitmapPixels {
   std::vector<uint8_t> bytes;
   int width{0};
@@ -656,7 +702,8 @@ BitmapPixels ReadBitmapPixels(const SoftwareBitmap &bitmap) {
 }
 
 std::optional<uint64_t> ComputeDifferenceHash(const std::filesystem::path &path) {
-  const auto bitmap = LoadSoftwareBitmap(path);
+  const auto hashPath = SiblingThumbnailPath(path).value_or(path);
+  const auto bitmap = LoadSoftwareBitmapScaled(hashPath, kPerceptualHashMaxPixelSize);
   const auto pixels = ReadBitmapPixels(bitmap);
   const int srcWidth = pixels.width;
   const int srcHeight = pixels.height;
@@ -702,8 +749,8 @@ constexpr float kFaceBoxProximityIoUThreshold = 0.18f;
 constexpr float kFaceBoxProximityCenterFactor = 0.48f;
 constexpr float kFaceBoxProximityMinAreaRatio = 1.8f;
 constexpr float kTileOverlapFraction = 0.25f;
-constexpr int kMinFacesToSkipTiling = 2;
-constexpr int kMinPixelsForTiling = 4000000;
+constexpr int kMinFacesToSkipTiling = 1;
+constexpr int kMinPixelsForTiling = 2500000;
 
 struct NormalizedFaceBox {
   float left{0.0f};
@@ -870,7 +917,7 @@ winrtRN::JSValue GenerateFaceCropsAtPath(
     return winrtRN::JSValueObject{{"cropUris", std::move(cropUris)}};
   }
 
-  const auto bitmap = LoadSoftwareBitmap(sourcePath);
+  const auto bitmap = LoadSoftwareBitmapScaled(sourcePath, kFaceCropSourceMaxPixelSize);
   const int imageWidth = bitmap.PixelWidth();
   const int imageHeight = bitmap.PixelHeight();
   if (imageWidth <= 0 || imageHeight <= 0) {
@@ -925,8 +972,6 @@ winrtRN::JSValue GenerateFaceCropsAtPath(
 }
 
 std::vector<BitmapBounds> DetectFaceBoxesInBitmap(const FaceDetector &detector, const SoftwareBitmap &bitmap) {
-  static std::mutex detectMutex;
-  std::lock_guard<std::mutex> lock(detectMutex);
   const auto faces = detector.DetectFacesAsync(bitmap).get();
   std::vector<BitmapBounds> boxes;
   for (const auto &face : faces) {
@@ -987,8 +1032,16 @@ std::vector<BitmapBounds> CollectFaceBoxes(
     const BitmapPixels &sourcePixels) {
   const int imageWidth = bitmap.PixelWidth();
   const int imageHeight = bitmap.PixelHeight();
-  const int pixelCount = imageWidth * imageHeight;
+  const int longestEdge = std::max(imageWidth, imageHeight);
 
+  // Detection already runs on a downscaled bitmap; tiling adds serial detector
+  // passes with little recall benefit at this size.
+  if (longestEdge <= static_cast<int>(kFaceDetectMaxPixelSize)) {
+    return DeduplicateFaceBoxes(
+        DetectFaceBoxesInBitmap(detector, bitmap), imageWidth, imageHeight);
+  }
+
+  const int pixelCount = imageWidth * imageHeight;
   std::vector<BitmapBounds> combined = DetectFaceBoxesInBitmap(detector, bitmap);
   std::vector<BitmapBounds> deduped = DeduplicateFaceBoxes(combined, imageWidth, imageHeight);
   if (deduped.size() >= static_cast<size_t>(kMinFacesToSkipTiling) || pixelCount < kMinPixelsForTiling) {
@@ -1282,16 +1335,20 @@ winrtRN::JSValueObject BuildFaceObject(
   };
 }
 
-FaceDetector GetCachedFaceDetector() {
-  static std::once_flag once;
-  static FaceDetector detector{nullptr};
-  std::call_once(once, []() { detector = FaceDetector::CreateAsync().get(); });
+FaceDetector GetThreadFaceDetector() {
+  thread_local FaceDetector detector{nullptr};
+  thread_local bool ready = false;
+  if (!ready) {
+    detector = FaceDetector::CreateAsync().get();
+    ready = true;
+  }
   return detector;
 }
 
 winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
-  const auto detector = GetCachedFaceDetector();
-  const auto bitmap = LoadSoftwareBitmap(path);
+  const auto detector = GetThreadFaceDetector();
+  const auto detectPath = SiblingThumbnailPath(path).value_or(path);
+  const auto bitmap = LoadSoftwareBitmapScaled(detectPath, kFaceDetectMaxPixelSize);
   const auto pixels = ReadBitmapPixels(bitmap);
   const auto faceBoxes = CollectFaceBoxes(detector, bitmap, pixels);
 

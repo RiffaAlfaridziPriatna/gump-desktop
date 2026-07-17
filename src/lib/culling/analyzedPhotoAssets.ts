@@ -3,8 +3,9 @@ import {getPhotoById, updatePhoto} from '@lib/culledAlbum/store';
 import {CulledAlbumPhoto} from '@lib/culledAlbum/types';
 import {ensureThumbnail} from '@lib/storage/localStorage';
 import {attachFaceCropUris} from './faceCropThumbnails';
+import {Platform} from 'react-native';
 
-const BACKFILL_CONCURRENCY = 4;
+const BACKFILL_CONCURRENCY = Platform.OS === 'windows' ? 2 : 4;
 
 export type AnalyzedPhotoAssetsBackfillOptions = {
   regenerateFaceCrops?: boolean;
@@ -65,7 +66,7 @@ export async function ensureAnalyzedPhotoAssetsForPhoto(
   file: CulledAlbumPhoto['file'],
 ): Promise<void> {
   const photo = getPhotoById(albumId, photoId);
-  if (!photo || photo.analysisStatus !== 'analyzed') {
+  if (!photo) {
     return;
   }
 

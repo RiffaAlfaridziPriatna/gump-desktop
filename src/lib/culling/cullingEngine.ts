@@ -460,7 +460,7 @@ export const cullingEngine = {
 
     reconcileFaceClusterIdsForAlbum(albumId);
     await backfillMissingAnalyzedPhotoAssets(albumId, albumPhotos, {
-      regenerateFaceCrops: true,
+      regenerateFaceCrops: false,
     });
     flushPendingPhotoUpdates();
     await applyDuplicateFlags(albumId);
