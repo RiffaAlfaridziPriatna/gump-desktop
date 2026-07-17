@@ -692,7 +692,11 @@ std::string FormatHashHex(uint64_t hash) {
   return buffer;
 }
 
-constexpr float kFaceBoxIoUThreshold = 0.50f;
+constexpr float kFaceBoxIoUThreshold = 0.42f;
+constexpr float kFaceBoxIoSThreshold = 0.50f;
+constexpr float kFaceBoxProximityIoUThreshold = 0.18f;
+constexpr float kFaceBoxProximityCenterFactor = 0.48f;
+constexpr float kFaceBoxProximityMinAreaRatio = 1.8f;
 constexpr float kTileOverlapFraction = 0.25f;
 constexpr int kMinFacesToSkipTiling = 2;
 constexpr int kMinPixelsForTiling = 4000000;
@@ -713,14 +717,18 @@ NormalizedFaceBox ToNormalizedFaceBox(const BitmapBounds &box, int imageWidth, i
   };
 }
 
-float IntersectionOverUnion(const NormalizedFaceBox &a, const NormalizedFaceBox &b) {
+float IntersectionArea(const NormalizedFaceBox &a, const NormalizedFaceBox &b) {
   const float intersectLeft = std::max(a.left, b.left);
   const float intersectTop = std::max(a.top, b.top);
   const float intersectRight = std::min(a.left + a.width, b.left + b.width);
   const float intersectBottom = std::min(a.top + a.height, b.top + b.height);
   const float intersectWidth = std::max(0.0f, intersectRight - intersectLeft);
   const float intersectHeight = std::max(0.0f, intersectBottom - intersectTop);
-  const float intersection = intersectWidth * intersectHeight;
+  return intersectWidth * intersectHeight;
+}
+
+float IntersectionOverUnion(const NormalizedFaceBox &a, const NormalizedFaceBox &b) {
+  const float intersection = IntersectionArea(a, b);
   if (intersection <= 0.0f) {
     return 0.0f;
   }
@@ -730,6 +738,38 @@ float IntersectionOverUnion(const NormalizedFaceBox &a, const NormalizedFaceBox 
     return 0.0f;
   }
   return intersection / unionArea;
+}
+
+bool FaceBoxesAreRedundant(const NormalizedFaceBox &a, const NormalizedFaceBox &b) {
+  const float iou = IntersectionOverUnion(a, b);
+  if (iou >= kFaceBoxIoUThreshold) {
+    return true;
+  }
+
+  const float intersection = IntersectionArea(a, b);
+  const float minArea = std::min(a.width * a.height, b.width * b.height);
+  const float maxArea = std::max(a.width * a.height, b.width * b.height);
+  const float areaRatio = maxArea / std::max(minArea, 1e-8f);
+  if (minArea > 1e-8f &&
+      areaRatio >= kFaceBoxProximityMinAreaRatio &&
+      (intersection / minArea) >= kFaceBoxIoSThreshold) {
+    return true;
+  }
+
+  if (areaRatio < kFaceBoxProximityMinAreaRatio) {
+    return false;
+  }
+
+  const float aCenterX = a.left + a.width * 0.5f;
+  const float aCenterY = a.top + a.height * 0.5f;
+  const float bCenterX = b.left + b.width * 0.5f;
+  const float bCenterY = b.top + b.height * 0.5f;
+  const float centerDistance =
+      std::hypot(aCenterX - bCenterX, aCenterY - bCenterY);
+  const float minDiagonal =
+      std::min(std::hypot(a.width, a.height), std::hypot(b.width, b.height));
+  return iou >= kFaceBoxProximityIoUThreshold &&
+         centerDistance < kFaceBoxProximityCenterFactor * minDiagonal;
 }
 
 std::vector<BitmapBounds> DeduplicateFaceBoxes(
@@ -749,8 +789,8 @@ std::vector<BitmapBounds> DeduplicateFaceBoxes(
   for (const auto &candidate : sorted) {
     const auto candidateNormalized = ToNormalizedFaceBox(candidate, imageWidth, imageHeight);
     const bool overlapsExisting = std::any_of(kept.begin(), kept.end(), [&](const BitmapBounds &existing) {
-      return IntersectionOverUnion(candidateNormalized, ToNormalizedFaceBox(existing, imageWidth, imageHeight)) >=
-             kFaceBoxIoUThreshold;
+      return FaceBoxesAreRedundant(
+          candidateNormalized, ToNormalizedFaceBox(existing, imageWidth, imageHeight));
     });
     if (!overlapsExisting) {
       kept.push_back(candidate);
@@ -956,6 +996,184 @@ std::vector<BitmapBounds> CollectFaceBoxes(
   return DeduplicateFaceBoxes(combined, imageWidth, imageHeight);
 }
 
+float SampleRegionMeanLuma(
+    const uint8_t *pixels,
+    int width,
+    int height,
+    int stride,
+    int left,
+    int top,
+    int regionWidth,
+    int regionHeight) {
+  const int safeLeft = std::max(0, left);
+  const int safeTop = std::max(0, top);
+  const int safeRight = std::min(width, safeLeft + std::max(1, regionWidth));
+  const int safeBottom = std::min(height, safeTop + std::max(1, regionHeight));
+  const int rows = safeBottom - safeTop;
+  const int cols = safeRight - safeLeft;
+  if (rows < 2 || cols < 2) {
+    return -1.0f;
+  }
+
+  double sum = 0.0;
+  int count = 0;
+  for (int y = safeTop; y < safeBottom; ++y) {
+    for (int x = safeLeft; x < safeRight; ++x) {
+      const int index = y * stride + x * 4;
+      sum += pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+      ++count;
+    }
+  }
+  return count > 0 ? static_cast<float>(sum / static_cast<double>(count)) : -1.0f;
+}
+
+float HorizontalSymmetryScore(
+    const uint8_t *pixels,
+    int width,
+    int height,
+    int stride,
+    const BitmapBounds &box) {
+  const int left = std::max(0, static_cast<int>(box.X));
+  const int top = std::max(0, static_cast<int>(box.Y));
+  const int right = std::min(width, left + static_cast<int>(box.Width));
+  const int bottom = std::min(height, top + static_cast<int>(box.Height));
+  const int boxWidth = right - left;
+  const int boxHeight = bottom - top;
+  if (boxWidth < 12 || boxHeight < 12) {
+    return 1.0f;
+  }
+
+  const int sampleBottom = top + boxHeight / 2;
+  const int halfWidth = boxWidth / 2;
+  double absDiff = 0.0;
+  int count = 0;
+  for (int y = top; y < sampleBottom; y += 2) {
+    for (int x = 0; x < halfWidth; x += 2) {
+      const int leftIndex = y * stride + (left + x) * 4;
+      const int rightIndex = y * stride + (right - 1 - x) * 4;
+      const double leftGray =
+          pixels[leftIndex] * 0.299 + pixels[leftIndex + 1] * 0.587 + pixels[leftIndex + 2] * 0.114;
+      const double rightGray =
+          pixels[rightIndex] * 0.299 + pixels[rightIndex + 1] * 0.587 + pixels[rightIndex + 2] * 0.114;
+      absDiff += std::abs(leftGray - rightGray);
+      ++count;
+    }
+  }
+  if (count == 0) {
+    return 1.0f;
+  }
+  const double meanAbsDiff = absDiff / static_cast<double>(count);
+  return static_cast<float>(std::max(0.0, std::min(1.0, 1.0 - meanAbsDiff / 70.0)));
+}
+
+float EstimateEyeSocketDarkness(
+    const uint8_t *pixels,
+    int width,
+    int height,
+    int stride,
+    int left,
+    int top,
+    int regionWidth,
+    int regionHeight) {
+  const int safeLeft = std::max(0, left);
+  const int safeTop = std::max(0, top);
+  const int safeRight = std::min(width, safeLeft + std::max(1, regionWidth));
+  const int safeBottom = std::min(height, safeTop + std::max(1, regionHeight));
+  const int rows = safeBottom - safeTop;
+  const int cols = safeRight - safeLeft;
+  if (rows < 4 || cols < 4) {
+    return 0.0f;
+  }
+
+  auto grayAt = [&](int px, int py) {
+    const int pixelIndex = py * stride + px * 4;
+    return pixels[pixelIndex] * 0.299 + pixels[pixelIndex + 1] * 0.587 +
+           pixels[pixelIndex + 2] * 0.114;
+  };
+
+  std::vector<double> rowMean(static_cast<size_t>(rows), 0.0);
+  for (int y = 0; y < rows; ++y) {
+    double sum = 0.0;
+    for (int x = safeLeft; x < safeRight; ++x) {
+      sum += grayAt(x, safeTop + y);
+    }
+    rowMean[static_cast<size_t>(y)] = sum / static_cast<double>(cols);
+  }
+
+  const int topEnd = std::max(1, rows / 4);
+  const int bottomStart = rows - topEnd;
+  const int midStart = topEnd;
+  const int midEnd = std::max(midStart + 1, bottomStart);
+  double topSum = 0.0;
+  double midSum = 0.0;
+  double bottomSum = 0.0;
+  for (int y = 0; y < topEnd; ++y) {
+    topSum += rowMean[static_cast<size_t>(y)];
+  }
+  for (int y = midStart; y < midEnd; ++y) {
+    midSum += rowMean[static_cast<size_t>(y)];
+  }
+  for (int y = bottomStart; y < rows; ++y) {
+    bottomSum += rowMean[static_cast<size_t>(y)];
+  }
+
+  const double lidMean =
+      (topSum / static_cast<double>(topEnd) + bottomSum / static_cast<double>(rows - bottomStart)) *
+      0.5;
+  const double midMean = midSum / static_cast<double>(midEnd - midStart);
+  const double darkness = std::max(0.0, (lidMean - midMean) / 255.0);
+  return static_cast<float>(std::max(0.0, std::min(1.0, darkness / 0.22)));
+}
+
+bool HasFaceLikeStructure(
+    const uint8_t *pixels,
+    int width,
+    int height,
+    int stride,
+    const BitmapBounds &box) {
+  const int eyeTop = static_cast<int>(box.Y + box.Height * 0.22f);
+  const int eyeHeight = std::max(2, static_cast<int>(box.Height * 0.16f));
+  const int cheekTop = static_cast<int>(box.Y + box.Height * 0.48f);
+  const int cheekHeight = std::max(2, static_cast<int>(box.Height * 0.14f));
+  const int bandLeft = static_cast<int>(box.X + box.Width * 0.18f);
+  const int bandWidth = std::max(2, static_cast<int>(box.Width * 0.64f));
+  const int leftEyeLeft = static_cast<int>(box.X + box.Width * 0.16f);
+  const int leftEyeWidth = std::max(2, static_cast<int>(box.Width * 0.24f));
+  const int rightEyeLeft = static_cast<int>(box.X + box.Width * 0.60f);
+  const int rightEyeWidth = std::max(2, static_cast<int>(box.Width * 0.24f));
+
+  const float leftDark = EstimateEyeSocketDarkness(
+      pixels, width, height, stride, leftEyeLeft, eyeTop, leftEyeWidth, eyeHeight);
+  const float rightDark = EstimateEyeSocketDarkness(
+      pixels, width, height, stride, rightEyeLeft, eyeTop, rightEyeWidth, eyeHeight);
+  const float maxSocketDark = std::max(leftDark, rightDark);
+
+  if (maxSocketDark < 0.08f) {
+    return false;
+  }
+
+  const float eyeMean =
+      SampleRegionMeanLuma(pixels, width, height, stride, bandLeft, eyeTop, bandWidth, eyeHeight);
+  const float cheekMean =
+      SampleRegionMeanLuma(pixels, width, height, stride, bandLeft, cheekTop, bandWidth, cheekHeight);
+  if (eyeMean < 0.0f || cheekMean < 0.0f) {
+    return true;
+  }
+
+  const float eyeCheekDelta = cheekMean - eyeMean;
+  const float symmetry = HorizontalSymmetryScore(pixels, width, height, stride, box);
+  if (eyeCheekDelta < 2.5f && maxSocketDark < 0.16f) {
+    return false;
+  }
+  if (eyeCheekDelta < 4.0f && symmetry < 0.42f) {
+    return false;
+  }
+  if (eyeCheekDelta < 1.5f && symmetry < 0.55f) {
+    return false;
+  }
+  return true;
+}
+
 bool IsAcceptableFaceBox(const BitmapBounds &box, int imageWidth, int imageHeight) {
   if (box.Width < 30 || box.Height < 30) {
     return false;
@@ -963,7 +1181,7 @@ bool IsAcceptableFaceBox(const BitmapBounds &box, int imageWidth, int imageHeigh
 
   const float aspect =
       static_cast<float>(box.Width) / static_cast<float>(std::max(1U, box.Height));
-  if (aspect < 0.35f || aspect > 1.8f) {
+  if (aspect < 0.50f || aspect > 1.65f) {
     return false;
   }
 
@@ -1078,12 +1296,23 @@ winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
   const int stride = pixels.stride;
   const uint8_t *pixelData = pixels.bytes.data();
 
-  winrtRN::JSValueArray result;
-  int index = 0;
+  std::vector<BitmapBounds> accepted;
+  accepted.reserve(faceBoxes.size());
   for (const auto &box : faceBoxes) {
     if (!IsAcceptableFaceBox(box, imageWidth, imageHeight)) {
       continue;
     }
+    if (!HasFaceLikeStructure(pixelData, imageWidth, imageHeight, stride, box)) {
+      continue;
+    }
+    accepted.push_back(box);
+  }
+
+  accepted = DeduplicateFaceBoxes(accepted, imageWidth, imageHeight);
+
+  winrtRN::JSValueArray result;
+  int index = 0;
+  for (const auto &box : accepted) {
     result.push_back(BuildFaceObject(box, index, pixelData, imageWidth, imageHeight, stride));
     ++index;
   }

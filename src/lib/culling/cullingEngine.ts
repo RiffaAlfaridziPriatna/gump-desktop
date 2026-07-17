@@ -31,6 +31,7 @@ import {
   DuplicateDetectionPhoto,
   assignFaceClustersToSinglePhoto,
 } from './cullingUtil';
+import {suppressSpatiallyRedundantFaces, rejectOpenBlurredNonFaces} from './faceSpatialDedupe';
 import {
   backfillMissingAnalyzedPhotoAssets,
   ensureAnalyzedPhotoAssetsForPhoto,
@@ -83,7 +84,8 @@ class NativeDetector implements PlatformDetector {
       throw new Error('Native module not available');
     }
     const faces = await NativeLocalStorage.detectFacesForCulling(uri);
-    return faces.map((face, index) => mapNativeFace(face, photoId, index));
+    const mapped = faces.map((face, index) => mapNativeFace(face, photoId, index));
+    return suppressSpatiallyRedundantFaces(rejectOpenBlurredNonFaces(mapped));
   }
 }
 

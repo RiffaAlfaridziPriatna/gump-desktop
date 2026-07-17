@@ -63,6 +63,12 @@ const EYE_CONFIDENCE_THRESHOLD = 85;
 const FOCUS_GOOD_THRESHOLD = 62;
 const FOCUS_SOFT_THRESHOLD = 40;
 
+export {
+  faceBoxesAreSpatiallyRedundant,
+  rejectOpenBlurredNonFaces,
+  suppressSpatiallyRedundantFaces,
+} from './faceSpatialDedupe';
+
 export function classifyEyeStatus(eyesOpen?: {
   value?: boolean;
   confidence?: number;

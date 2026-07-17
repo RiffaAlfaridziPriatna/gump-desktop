@@ -436,6 +436,38 @@ static const NSUInteger kFaceCropOutputPixelSize = 128;
   return maxX - minX;
 }
 
+- (BOOL)hasPlausibleFaceContourSpan:(VNFaceLandmarkRegion2D *)contour
+{
+  if (contour == nil || contour.pointCount < 8) {
+    return NO;
+  }
+
+  const CGPoint *points = contour.normalizedPoints;
+  CGFloat minX = points[0].x;
+  CGFloat maxX = points[0].x;
+  CGFloat minY = points[0].y;
+  CGFloat maxY = points[0].y;
+  for (NSUInteger i = 1; i < contour.pointCount; i++) {
+    minX = MIN(minX, points[i].x);
+    maxX = MAX(maxX, points[i].x);
+    minY = MIN(minY, points[i].y);
+    maxY = MAX(maxY, points[i].y);
+  }
+
+  CGFloat width = maxX - minX;
+  CGFloat height = maxY - minY;
+  if (width < 0.35f || height < 0.45f) {
+    return NO;
+  }
+
+  CGFloat aspect = width / MAX(height, 1e-5f);
+  if (aspect < 0.40f || aspect > 1.50f) {
+    return NO;
+  }
+
+  return YES;
+}
+
 - (BOOL)hasPlausibleLandmarkLayout:(VNFaceLandmarks2D *)landmarks
 {
   CGPoint leftEye = [self centroidOfLandmarkRegion:landmarks.leftEye];
@@ -501,6 +533,30 @@ static const NSUInteger kFaceCropOutputPixelSize = 128;
     return NO;
   }
   if (mouthWidth < eyeDistance * 0.55f) {
+    return NO;
+  }
+
+  CGFloat eyeWidthAvg = (leftEyeWidth + rightEyeWidth) * 0.5f;
+  if (eyeWidthAvg > 1e-5f &&
+      fabs(leftEyeWidth - rightEyeWidth) / eyeWidthAvg > 0.55f) {
+    return NO;
+  }
+
+  CGFloat leftEAR = [self eyeAspectRatioFromRegion:landmarks.leftEye];
+  CGFloat rightEAR = [self eyeAspectRatioFromRegion:landmarks.rightEye];
+  if (leftEAR >= 0.0f && rightEAR >= 0.0f) {
+    CGFloat earAvg = (leftEAR + rightEAR) * 0.5f;
+    if (earAvg > 1e-5f && fabs(leftEAR - rightEAR) / earAvg > 0.75f) {
+      return NO;
+    }
+  }
+
+  CGFloat eyeToMouth = eyesY - mouth.y;
+  if (eyeToMouth < eyeDistance * 0.55f || eyeToMouth > eyeDistance * 2.20f) {
+    return NO;
+  }
+
+  if (![self hasPlausibleFaceContourSpan:landmarks.faceContour]) {
     return NO;
   }
 
@@ -587,12 +643,16 @@ static const NSUInteger kFaceCropOutputPixelSize = 128;
   };
 }
 
-static const CGFloat kGumpFaceBoxIoUThreshold = 0.50f;
+static const CGFloat kGumpFaceBoxIoUThreshold = 0.42f;
+static const CGFloat kGumpFaceBoxIoSThreshold = 0.50f;
+static const CGFloat kGumpFaceBoxProximityIoUThreshold = 0.18f;
+static const CGFloat kGumpFaceBoxProximityCenterFactor = 0.48f;
+static const CGFloat kGumpFaceBoxProximityMinAreaRatio = 1.8f;
 static const CGFloat kGumpTileOverlapFraction = 0.25f;
 static const NSUInteger kGumpMinFacesToSkipTiling = 8;
 static const NSUInteger kGumpMinPixelsForTiling = 2000000;
 
-- (CGFloat)intersectionOverUnionForBoxA:(CGRect)a boxB:(CGRect)b
+- (CGFloat)intersectionAreaForBoxA:(CGRect)a boxB:(CGRect)b
 {
   CGFloat intersectLeft = MAX(a.origin.x, b.origin.x);
   CGFloat intersectBottom = MAX(a.origin.y, b.origin.y);
@@ -600,7 +660,12 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
   CGFloat intersectTop = MIN(CGRectGetMaxY(a), CGRectGetMaxY(b));
   CGFloat intersectWidth = MAX(0.0f, intersectRight - intersectLeft);
   CGFloat intersectHeight = MAX(0.0f, intersectTop - intersectBottom);
-  CGFloat intersection = intersectWidth * intersectHeight;
+  return intersectWidth * intersectHeight;
+}
+
+- (CGFloat)intersectionOverUnionForBoxA:(CGRect)a boxB:(CGRect)b
+{
+  CGFloat intersection = [self intersectionAreaForBoxA:a boxB:b];
   if (intersection <= 0.0f) {
     return 0.0f;
   }
@@ -610,6 +675,41 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
     return 0.0f;
   }
   return intersection / unionArea;
+}
+
+- (BOOL)faceBox:(CGRect)a isRedundantWithBox:(CGRect)b
+{
+  CGFloat iou = [self intersectionOverUnionForBoxA:a boxB:b];
+  if (iou >= kGumpFaceBoxIoUThreshold) {
+    return YES;
+  }
+
+  CGFloat intersection = [self intersectionAreaForBoxA:a boxB:b];
+  CGFloat minArea = MIN(a.size.width * a.size.height, b.size.width * b.size.height);
+  CGFloat maxArea = MAX(a.size.width * a.size.height, b.size.width * b.size.height);
+  CGFloat areaRatio = maxArea / MAX(minArea, 1e-8f);
+  if (minArea > 1e-8f &&
+      areaRatio >= kGumpFaceBoxProximityMinAreaRatio &&
+      (intersection / minArea) >= kGumpFaceBoxIoSThreshold) {
+    return YES;
+  }
+
+  if (areaRatio < kGumpFaceBoxProximityMinAreaRatio) {
+    return NO;
+  }
+
+  CGFloat aCenterX = a.origin.x + a.size.width * 0.5f;
+  CGFloat aCenterY = a.origin.y + a.size.height * 0.5f;
+  CGFloat bCenterX = b.origin.x + b.size.width * 0.5f;
+  CGFloat bCenterY = b.origin.y + b.size.height * 0.5f;
+  CGFloat centerDistance = hypot(aCenterX - bCenterX, aCenterY - bCenterY);
+  CGFloat minDiagonal = MIN(hypot(a.size.width, a.size.height), hypot(b.size.width, b.size.height));
+  if (iou >= kGumpFaceBoxProximityIoUThreshold &&
+      centerDistance < kGumpFaceBoxProximityCenterFactor * minDiagonal) {
+    return YES;
+  }
+
+  return NO;
 }
 
 - (NSArray<VNFaceObservation *> *)deduplicateFaceObservations:
@@ -628,6 +728,14 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
         if (left.confidence < right.confidence) {
           return NSOrderedDescending;
         }
+        CGFloat leftArea = left.boundingBox.size.width * left.boundingBox.size.height;
+        CGFloat rightArea = right.boundingBox.size.width * right.boundingBox.size.height;
+        if (leftArea > rightArea) {
+          return NSOrderedAscending;
+        }
+        if (leftArea < rightArea) {
+          return NSOrderedDescending;
+        }
         return NSOrderedSame;
       }];
 
@@ -635,8 +743,7 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
   for (VNFaceObservation *candidate in sorted) {
     BOOL overlapsExisting = NO;
     for (VNFaceObservation *existing in kept) {
-      if ([self intersectionOverUnionForBoxA:candidate.boundingBox
-                                       boxB:existing.boundingBox] >= kGumpFaceBoxIoUThreshold) {
+      if ([self faceBox:candidate.boundingBox isRedundantWithBox:existing.boundingBox]) {
         overlapsExisting = YES;
         break;
       }
@@ -867,6 +974,16 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
     return NO;
   }
 
+  CGFloat eyeToMouth = eyesY - mouth.y;
+  if (eyeToMouth < 0.12f || eyeToMouth > 0.70f) {
+    return NO;
+  }
+
+  if (landmarks.faceContour != nil && landmarks.faceContour.pointCount >= 8 &&
+      ![self hasPlausibleFaceContourSpan:landmarks.faceContour]) {
+    return NO;
+  }
+
   return YES;
 }
 
@@ -1020,7 +1137,8 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
     }
   }
 
-  NSMutableArray *faces = [NSMutableArray arrayWithCapacity:analysisFaces.count];
+  NSMutableArray<VNFaceObservation *> *acceptedFaces =
+      [NSMutableArray arrayWithCapacity:analysisFaces.count];
   for (NSInteger index = 0; index < (NSInteger)analysisFaces.count; index++) {
     VNFaceObservation *face = analysisFaces[index];
     NSNumber *captureQuality = qualityByFaceId[face.uuid];
@@ -1034,6 +1152,16 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
                             captureQuality:captureQuality]) {
       continue;
     }
+    [acceptedFaces addObject:face];
+  }
+
+  NSArray<VNFaceObservation *> *dedupedAccepted =
+      [self deduplicateFaceObservations:acceptedFaces];
+
+  NSMutableArray *faces = [NSMutableArray arrayWithCapacity:dedupedAccepted.count];
+  for (NSInteger index = 0; index < (NSInteger)dedupedAccepted.count; index++) {
+    VNFaceObservation *face = dedupedAccepted[index];
+    NSNumber *captureQuality = qualityByFaceId[face.uuid];
     [faces addObject:[self faceDictionaryFromObservation:face
                                                    index:index
                                          captureQuality:captureQuality
