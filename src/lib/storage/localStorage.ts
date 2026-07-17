@@ -19,7 +19,7 @@ type NativeLocalStorageModule = {
   ) => Promise<{thumbnailUri: string | null}>;
   getImageDimensions: (
     uri: string,
-  ) => Promise<{width: number; height: number; orientation?: number}>;
+  ) => Promise<{width: number; height: number}>;
   readImageCaptureTime: (uri: string) => Promise<number | null>;
   computePerceptualHash: (uri: string) => Promise<string | null>;
   ensureFaceCrops: (
@@ -136,6 +136,13 @@ export function resolveGridDisplayUri(file: FileAsset): string | null {
 }
 
 export function resolveOriginalUri(file: FileAsset): string {
+  return file.uri;
+}
+
+export function resolveDetailDisplayUri(file: FileAsset): string {
+  if (Platform.OS === 'windows') {
+    return resolveGridDisplayUri(file) ?? file.uri;
+  }
   return file.uri;
 }
 

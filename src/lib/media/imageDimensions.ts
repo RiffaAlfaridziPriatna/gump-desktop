@@ -4,13 +4,10 @@ import {LruCache} from './lruCache';
 export type ImageDimensions = {
   width: number;
   height: number;
-  orientation?: number;
 };
 
 type NativeLocalStorageModule = {
-  getImageDimensions?: (
-    uri: string,
-  ) => Promise<{width: number; height: number; orientation?: number}>;
+  getImageDimensions?: (uri: string) => Promise<ImageDimensions>;
 };
 
 const NativeLocalStorage = NativeModules.GumpLocalStorage as
@@ -55,15 +52,8 @@ export async function loadImageDimensions(
     try {
       const dimensions = await NativeLocalStorage.getImageDimensions(uri);
       if (dimensions.width > 0 && dimensions.height > 0) {
-        const normalized: ImageDimensions = {
-          width: dimensions.width,
-          height: dimensions.height,
-        };
-        if (typeof dimensions.orientation === 'number') {
-          normalized.orientation = dimensions.orientation;
-        }
-        dimensionCache.set(uri, normalized);
-        return normalized;
+        dimensionCache.set(uri, dimensions);
+        return dimensions;
       }
     } catch {
       // Fall through to Image.getSize.

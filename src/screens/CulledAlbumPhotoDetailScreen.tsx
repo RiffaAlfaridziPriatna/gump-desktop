@@ -19,7 +19,7 @@ import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from
 import {useLayout} from '@hooks/useLayout';
 import {useImageDimensions} from '@hooks/useImageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
-import {resolveOriginalUri} from '@lib/storage/localStorage';
+import {resolveDetailDisplayUri, ensureThumbnail} from '@lib/storage/localStorage';
 import {Pressable, TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
@@ -107,8 +107,40 @@ export default function CulledAlbumPhotoDetailScreen({
 
   const faces = analysis?.faces ?? [];
   const fileName = photo?.file.name ?? 'Photo';
-  const uri = photo ? resolveOriginalUri(photo.file) : '';
+  const [uri, setUri] = useState(() =>
+    photo ? resolveDetailDisplayUri(photo.file) : '',
+  );
   const imageSize = useImageDimensions(uri);
+
+  useEffect(() => {
+    if (!photo) {
+      setUri('');
+      return;
+    }
+
+    if (Platform.OS !== 'windows') {
+      setUri(resolveDetailDisplayUri(photo.file));
+      return;
+    }
+
+    const orientedUri = resolveDetailDisplayUri(photo.file);
+    if (orientedUri !== photo.file.uri) {
+      setUri(orientedUri);
+      return;
+    }
+
+    let cancelled = false;
+    setUri(photo.file.uri);
+    ensureThumbnail(albumId, photo.file, photo.photoId).then(updated => {
+      if (!cancelled) {
+        setUri(resolveDetailDisplayUri(updated));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [albumId, photo]);
 
   useLayoutEffect(() => {
     setMainImageReady(false);

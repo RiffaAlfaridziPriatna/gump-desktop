@@ -309,34 +309,6 @@ ThumbnailSize ComputeThumbnailSize(uint32_t sourceWidth, uint32_t sourceHeight, 
   return {std::max(1u, scaledWidth), maxPixelSize};
 }
 
-uint16_t ReadExifOrientation(BitmapDecoder const &decoder) {
-  try {
-    auto propertyKeys = winrt::single_threaded_vector<winrt::hstring>(
-        {L"/app1/ifd/{ushort=274}"});
-    auto properties =
-        decoder.BitmapProperties().GetPropertiesAsync(propertyKeys).get();
-    if (properties.HasKey(L"/app1/ifd/{ushort=274}")) {
-      auto typedValue = properties.Lookup(L"/app1/ifd/{ushort=274}");
-      return winrt::unbox_value<uint16_t>(typedValue.Value());
-    }
-  } catch (...) {
-  }
-
-  try {
-    auto propertyKeys = winrt::single_threaded_vector<winrt::hstring>(
-        {L"System.Photo.Orientation"});
-    auto properties =
-        decoder.BitmapProperties().GetPropertiesAsync(propertyKeys).get();
-    if (properties.HasKey(L"System.Photo.Orientation")) {
-      auto typedValue = properties.Lookup(L"System.Photo.Orientation");
-      return winrt::unbox_value<uint16_t>(typedValue.Value());
-    }
-  } catch (...) {
-  }
-
-  return 1;
-}
-
 class ThumbnailConcurrencyGuard {
  public:
   ThumbnailConcurrencyGuard() {
@@ -1692,7 +1664,6 @@ void GumpLocalStorage::GetImageDimensions(std::string uri, ReactPromiseJS &&prom
         return winrtRN::JSValue(winrtRN::JSValueObject{
             {"width", static_cast<double>(decoder.OrientedPixelWidth())},
             {"height", static_cast<double>(decoder.OrientedPixelHeight())},
-            {"orientation", static_cast<double>(ReadExifOrientation(decoder))},
         });
       },
       std::move(promise));
