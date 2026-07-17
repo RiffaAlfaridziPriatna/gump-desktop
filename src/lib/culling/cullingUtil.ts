@@ -173,6 +173,13 @@ export function deriveStarRating(faces: CullingFace[]): number {
 
 const FACE_DUPLICATE_THRESHOLD = 0.06;
 export const PERCEPTUAL_HASH_DUPLICATE_THRESHOLD = 4;
+/**
+ * Max larger/smaller face-area ratio still treated as the same framing/zoom.
+ * Close-up vs wide of the same person typically exceeds this.
+ */
+export const FACE_FRAMING_MAX_AREA_RATIO = 1.85;
+/** Burst / near-duplicate candidates must fall within this capture-time window. */
+export const DUPLICATE_TEMPORAL_WINDOW_MS = 5 * 60 * 1000;
 
 export type DuplicateDetectionPhoto = CullingPhoto & {
   capturedAt?: number | null;
@@ -213,6 +220,65 @@ export function areFacesSimilar(facesA: CullingFace[], facesB: CullingFace[]): b
 
   const avgDistance = totalDistance / fingerprintsA.length;
   return avgDistance < FACE_DUPLICATE_THRESHOLD;
+}
+
+function faceBoxArea(box: CullingFace['boundingBox']): number {
+  return Math.max(0, box.width) * Math.max(0, box.height);
+}
+
+/**
+ * True when face sizes in-frame are similar (same zoom / crop), independent of
+ * identity fingerprint. Sorted by area so multi-face photos pair largest-to-largest.
+ */
+export function areFaceFramingsSimilar(
+  facesA: CullingFace[],
+  facesB: CullingFace[],
+): boolean {
+  if (facesA.length === 0 || facesB.length === 0) {
+    return false;
+  }
+  if (facesA.length !== facesB.length) {
+    return false;
+  }
+
+  const areasA = facesA.map(face => faceBoxArea(face.boundingBox)).sort((a, b) => b - a);
+  const areasB = facesB.map(face => faceBoxArea(face.boundingBox)).sort((a, b) => b - a);
+
+  for (let i = 0; i < areasA.length; i++) {
+    const areaA = areasA[i]!;
+    const areaB = areasB[i]!;
+    const minArea = Math.min(areaA, areaB);
+    if (minArea <= 1e-8) {
+      return false;
+    }
+    if (Math.max(areaA, areaB) / minArea > FACE_FRAMING_MAX_AREA_RATIO) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Near-duplicate rule for burst culling:
+ * - similar perceptual hash (same composition), or
+ * - similar faces AND similar framing (same person, same zoom — not close-up vs wide)
+ */
+export function arePhotosNearDuplicates(
+  photoA: Pick<DuplicateDetectionPhoto, 'perceptualHash' | 'faces'>,
+  photoB: Pick<DuplicateDetectionPhoto, 'perceptualHash' | 'faces'>,
+): boolean {
+  if (
+    arePerceptualHashesSimilar(photoA.perceptualHash, photoB.perceptualHash)
+  ) {
+    return true;
+  }
+
+  if (!areFacesSimilar(photoA.faces, photoB.faces)) {
+    return false;
+  }
+
+  return areFaceFramingsSimilar(photoA.faces, photoB.faces);
 }
 
 export function computeStats(photos: CullingPhoto[]): APIResponse.CullingStats {
