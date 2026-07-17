@@ -14,12 +14,22 @@ import {
   isScrollAwareTooltipLocked,
   useScrollAwareTooltipStore,
 } from '@lib/ui/scrollAwareTooltip';
-import {getCachedImageDimensions, ImageDimensions} from '@lib/media/imageDimensions';
+import {getCachedImageDimensions, ImageDimensions, putCachedImageDimensions} from '@lib/media/imageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
 import {colors} from '@lib/ui/colors';
 import {APIResponse} from '@services/api';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {ActivityIndicator, Image, StyleSheet, View} from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  type ImageLoadEventData,
+  Platform,
+  StyleSheet,
+  View,
+  type NativeSyntheticEvent,
+} from 'react-native';
+
+const isWindows = Platform.OS === 'windows';
 
 type PhotoDetailImageViewerProps = {
   uri: string;
@@ -141,12 +151,15 @@ export function PhotoDetailImageViewer({
   );
   const [imageDecoded, setImageDecoded] = useState(false);
   const imageReadyNotifiedRef = useRef(false);
-  const imageSize = imageSizeProp ?? loadedImageSize;
+  const imageSize = isWindows
+    ? loadedImageSize ?? imageSizeProp
+    : imageSizeProp ?? loadedImageSize;
   const isZoomed = zoomFaceIndex !== null;
 
   useEffect(() => {
     setImageDecoded(false);
     imageReadyNotifiedRef.current = false;
+    setLoadedImageSize(getCachedImageDimensions(uri) ?? null);
   }, [uri]);
 
   useEffect(() => {
@@ -156,7 +169,7 @@ export function PhotoDetailImageViewer({
   }, [zoomFaceIndex, onTooltipAnchorChange]);
 
   useEffect(() => {
-    if (imageSizeProp) {
+    if (imageSizeProp && !isWindows) {
       return;
     }
 
@@ -183,13 +196,23 @@ export function PhotoDetailImageViewer({
     preloadImage(uri).catch(() => undefined);
   }, [uri]);
 
-  const handleImageLoad = useCallback(() => {
-    setImageDecoded(true);
-    if (!imageReadyNotifiedRef.current) {
-      imageReadyNotifiedRef.current = true;
-      onImageReady?.();
-    }
-  }, [onImageReady]);
+  const handleImageLoad = useCallback(
+    (event: NativeSyntheticEvent<ImageLoadEventData>) => {
+      const {width, height} = event.nativeEvent.source;
+      if (width > 0 && height > 0) {
+        const dimensions = {width, height};
+        putCachedImageDimensions(uri, dimensions);
+        setLoadedImageSize(dimensions);
+      }
+
+      setImageDecoded(true);
+      if (!imageReadyNotifiedRef.current) {
+        imageReadyNotifiedRef.current = true;
+        onImageReady?.();
+      }
+    },
+    [onImageReady, uri],
+  );
 
   const imageLayout = useMemo(() => {
     if (!imageSize || containerSize.width <= 0 || containerSize.height <= 0) {
@@ -249,7 +272,14 @@ export function PhotoDetailImageViewer({
       }}
     >
       <View style={styles.imageFrame}>
-        {imageLayout ? (
+        {isWindows ? (
+          <Image
+            source={{uri}}
+            resizeMode="contain"
+            style={StyleSheet.absoluteFill}
+            onLoad={handleImageLoad}
+          />
+        ) : imageLayout ? (
           <Image
             source={{uri}}
             style={{

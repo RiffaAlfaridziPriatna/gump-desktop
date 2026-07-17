@@ -393,7 +393,25 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
   }
 
   if (IsReusableThumbnailFile(desiredThumbPath)) {
-    return desiredThumbPath;
+    try {
+      const auto sourceFile = GetStorageFileFromPath(sourcePath);
+      const auto sourceStream = sourceFile.OpenAsync(FileAccessMode::Read).get();
+      const auto sourceDecoder = BitmapDecoder::CreateAsync(sourceStream).get();
+      const auto thumbFile = GetStorageFileFromPath(desiredThumbPath);
+      const auto thumbStream = thumbFile.OpenAsync(FileAccessMode::Read).get();
+      const auto thumbDecoder = BitmapDecoder::CreateAsync(thumbStream).get();
+      const bool sourcePortrait =
+          sourceDecoder.OrientedPixelHeight() > sourceDecoder.OrientedPixelWidth();
+      const bool thumbPortrait =
+          thumbDecoder.OrientedPixelHeight() > thumbDecoder.OrientedPixelWidth();
+      if (sourcePortrait == thumbPortrait) {
+        return desiredThumbPath;
+      }
+      std::error_code ec;
+      std::filesystem::remove(desiredThumbPath, ec);
+    } catch (...) {
+      return desiredThumbPath;
+    }
   }
 
   auto decodeOrientedThumbnail = [&](const std::filesystem::path &decodePath) -> SoftwareBitmap {

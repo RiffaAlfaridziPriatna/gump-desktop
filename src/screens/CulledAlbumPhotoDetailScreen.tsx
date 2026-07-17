@@ -123,15 +123,13 @@ export default function CulledAlbumPhotoDetailScreen({
       return;
     }
 
-    const orientedUri = resolveDetailDisplayUri(photo.file);
-    if (orientedUri !== photo.file.uri) {
-      setUri(orientedUri);
-      return;
-    }
-
     let cancelled = false;
-    setUri(photo.file.uri);
-    ensureThumbnail(albumId, photo.file, photo.photoId).then(updated => {
+    const fallbackUri = resolveDetailDisplayUri(photo.file);
+    setUri(fallbackUri);
+
+    ensureThumbnail(albumId, photo.file, photo.photoId, {
+      verifyOrientation: true,
+    }).then(updated => {
       if (!cancelled) {
         setUri(resolveDetailDisplayUri(updated));
       }

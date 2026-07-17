@@ -160,13 +160,16 @@ export async function ensureThumbnail(
   albumId: string,
   file: FileAsset,
   photoId: string,
-  options?: {regenerate?: boolean},
+  options?: {regenerate?: boolean; verifyOrientation?: boolean},
 ): Promise<FileAsset> {
-  if (isUsableThumbnailUri(file.thumbnailUri) && !options?.regenerate) {
+  const mustHitNative =
+    Boolean(options?.regenerate) || Boolean(options?.verifyOrientation);
+
+  if (isUsableThumbnailUri(file.thumbnailUri) && !mustHitNative) {
     return file;
   }
 
-  if (!options?.regenerate) {
+  if (!mustHitNative) {
     const existing = await getThumbnailUri(albumId, photoId);
     if (isUsableThumbnailUri(existing)) {
       return {...file, thumbnailUri: existing!};
