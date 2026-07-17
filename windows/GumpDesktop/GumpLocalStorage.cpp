@@ -89,7 +89,9 @@ std::filesystem::path PathFromUri(std::string_view uri) {
     }
   }
 
-  return std::filesystem::path(ToWide(pathPart));
+  std::filesystem::path path(ToWide(pathPart));
+  path.make_preferred();
+  return path;
 }
 
 std::filesystem::path CullingAlbumDirectory(std::string_view albumId) {
@@ -157,7 +159,9 @@ FaceCropRect ComputePaddedFaceCropRect(
 }
 
 StorageFile GetStorageFileFromPath(const std::filesystem::path &path) {
-  return StorageFile::GetFileFromPathAsync(path.wstring()).get();
+  std::filesystem::path nativePath = path.lexically_normal();
+  nativePath.make_preferred();
+  return StorageFile::GetFileFromPathAsync(nativePath.wstring()).get();
 }
 
 bool WriteBytesToPath(const std::filesystem::path &path, const std::vector<uint8_t> &bytes) {
