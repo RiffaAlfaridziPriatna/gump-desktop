@@ -151,9 +151,7 @@ export function PhotoDetailImageViewer({
   );
   const [imageDecoded, setImageDecoded] = useState(false);
   const imageReadyNotifiedRef = useRef(false);
-  const imageSize = isWindows
-    ? loadedImageSize ?? imageSizeProp
-    : imageSizeProp ?? loadedImageSize;
+  const imageSize = imageSizeProp ?? loadedImageSize;
   const isZoomed = zoomFaceIndex !== null;
 
   useEffect(() => {
@@ -169,7 +167,7 @@ export function PhotoDetailImageViewer({
   }, [zoomFaceIndex, onTooltipAnchorChange]);
 
   useEffect(() => {
-    if (imageSizeProp && !isWindows) {
+    if (imageSizeProp) {
       return;
     }
 
@@ -198,7 +196,9 @@ export function PhotoDetailImageViewer({
 
   const handleImageLoad = useCallback(
     (event: NativeSyntheticEvent<ImageLoadEventData>) => {
-      const {width, height} = event.nativeEvent.source;
+      const source = event.nativeEvent?.source;
+      const width = source?.width ?? 0;
+      const height = source?.height ?? 0;
       if (width > 0 && height > 0) {
         const dimensions = {width, height};
         putCachedImageDimensions(uri, dimensions);
@@ -213,6 +213,14 @@ export function PhotoDetailImageViewer({
     },
     [onImageReady, uri],
   );
+
+  const handleImageError = useCallback(() => {
+    setImageDecoded(true);
+    if (!imageReadyNotifiedRef.current) {
+      imageReadyNotifiedRef.current = true;
+      onImageReady?.();
+    }
+  }, [onImageReady]);
 
   const imageLayout = useMemo(() => {
     if (!imageSize || containerSize.width <= 0 || containerSize.height <= 0) {
@@ -262,6 +270,9 @@ export function PhotoDetailImageViewer({
   }, [imageLayout, visibleFaces]);
 
   const canRenderOverlays = imageDecoded && imageLayout !== null;
+  const showLoadingOverlay = isWindows
+    ? !imageDecoded
+    : !imageDecoded || !imageLayout;
 
   return (
     <View
@@ -278,6 +289,7 @@ export function PhotoDetailImageViewer({
             resizeMode="contain"
             style={StyleSheet.absoluteFill}
             onLoad={handleImageLoad}
+            onError={handleImageError}
           />
         ) : imageLayout ? (
           <Image
@@ -290,10 +302,11 @@ export function PhotoDetailImageViewer({
               top: imageLayout.top,
             }}
             onLoad={handleImageLoad}
+            onError={handleImageError}
           />
         ) : null}
 
-        {!imageDecoded || !imageLayout ? (
+        {showLoadingOverlay ? (
           <View pointerEvents="none" style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color={colors.accent} />
           </View>

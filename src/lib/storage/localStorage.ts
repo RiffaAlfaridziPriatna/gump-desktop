@@ -62,7 +62,7 @@ export function isUsableThumbnailUri(thumbnailUri: string | null | undefined): b
   const normalized = thumbnailUri.replace(/\\/g, '/');
   return (
     normalized.includes('/thumbs/') &&
-    normalized.includes('.jpg') &&
+    normalized.includes('.w2.jpg') &&
     !normalized.includes('.o1.jpg')
   );
 }
@@ -160,16 +160,13 @@ export async function ensureThumbnail(
   albumId: string,
   file: FileAsset,
   photoId: string,
-  options?: {regenerate?: boolean; verifyOrientation?: boolean},
+  options?: {regenerate?: boolean},
 ): Promise<FileAsset> {
-  const mustHitNative =
-    Boolean(options?.regenerate) || Boolean(options?.verifyOrientation);
-
-  if (isUsableThumbnailUri(file.thumbnailUri) && !mustHitNative) {
+  if (isUsableThumbnailUri(file.thumbnailUri) && !options?.regenerate) {
     return file;
   }
 
-  if (!mustHitNative) {
+  if (!options?.regenerate) {
     const existing = await getThumbnailUri(albumId, photoId);
     if (isUsableThumbnailUri(existing)) {
       return {...file, thumbnailUri: existing!};

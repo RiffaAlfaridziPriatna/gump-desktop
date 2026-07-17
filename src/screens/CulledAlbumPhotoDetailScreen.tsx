@@ -127,9 +127,7 @@ export default function CulledAlbumPhotoDetailScreen({
     const fallbackUri = resolveDetailDisplayUri(photo.file);
     setUri(fallbackUri);
 
-    ensureThumbnail(albumId, photo.file, photo.photoId, {
-      verifyOrientation: true,
-    }).then(updated => {
+    ensureThumbnail(albumId, photo.file, photo.photoId).then(updated => {
       if (!cancelled) {
         setUri(resolveDetailDisplayUri(updated));
       }
