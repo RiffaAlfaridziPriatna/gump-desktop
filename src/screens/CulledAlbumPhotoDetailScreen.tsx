@@ -19,7 +19,7 @@ import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from
 import {useLayout} from '@hooks/useLayout';
 import {useImageDimensions} from '@hooks/useImageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
-import {resolveDetailDisplayUri, ensureThumbnail} from '@lib/storage/localStorage';
+import {resolveDetailDisplayUri} from '@lib/storage/localStorage';
 import {Pressable, TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
@@ -117,26 +117,8 @@ export default function CulledAlbumPhotoDetailScreen({
       setUri('');
       return;
     }
-
-    if (Platform.OS !== 'windows') {
-      setUri(resolveDetailDisplayUri(photo.file));
-      return;
-    }
-
-    let cancelled = false;
-    const fallbackUri = resolveDetailDisplayUri(photo.file);
-    setUri(fallbackUri);
-
-    ensureThumbnail(albumId, photo.file, photo.photoId).then(updated => {
-      if (!cancelled) {
-        setUri(resolveDetailDisplayUri(updated));
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [albumId, photo]);
+    setUri(resolveDetailDisplayUri(photo.file));
+  }, [photo]);
 
   useLayoutEffect(() => {
     setMainImageReady(false);

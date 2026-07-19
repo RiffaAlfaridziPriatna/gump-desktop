@@ -153,9 +153,6 @@ export function resolveOriginalUri(file: FileAsset): string {
 }
 
 export function resolveDetailDisplayUri(file: FileAsset): string {
-  if (Platform.OS === 'windows') {
-    return resolveGridDisplayUri(file) ?? file.uri;
-  }
   return file.uri;
 }
 
