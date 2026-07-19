@@ -27,6 +27,9 @@
     <ClInclude Include="GumpLocalStorage.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="YuNetFaceDetector.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="GumpDesktop.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -42,6 +45,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GumpLocalStorage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="YuNetFaceDetector.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GumpDesktop.cpp">

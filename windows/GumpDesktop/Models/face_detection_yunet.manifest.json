@@ -1,0 +1,35 @@
+{
+  "id": "yunet-2023mar",
+  "engineVersion": "windows-yunet-1",
+  "file": "face_detection_yunet_2023mar.onnx",
+  "license": "MIT",
+  "source": "https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet",
+  "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+  "input": {
+    "name": "input",
+    "layout": "NCHW",
+    "color": "BGR",
+    "dtype": "float32",
+    "maxLongEdge": 1280,
+    "padDivisor": 32
+  },
+  "thresholds": {
+    "score": 0.6,
+    "nms": 0.3,
+    "topK": 5000
+  },
+  "outputs": [
+    "cls_8",
+    "cls_16",
+    "cls_32",
+    "obj_8",
+    "obj_16",
+    "obj_32",
+    "bbox_8",
+    "bbox_16",
+    "bbox_32",
+    "kps_8",
+    "kps_16",
+    "kps_32"
+  ]
+}

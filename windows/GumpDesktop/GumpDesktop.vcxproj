@@ -98,8 +98,12 @@
   </ItemDefinitionGroup>
   <PropertyGroup Label="UserMacros" />
   <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+  </ItemGroup>
+  <ItemGroup>
     <ClInclude Include="GumpFilePicker.h" />
     <ClInclude Include="GumpLocalStorage.h" />
+    <ClInclude Include="YuNetFaceDetector.h" />
     <ClInclude Include="GumpDesktop.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="AutolinkedNativeModules.g.h" />
@@ -110,6 +114,7 @@
     <ClCompile Include="GumpDesktop.cpp" />
     <ClCompile Include="GumpFilePicker.cpp" />
     <ClCompile Include="GumpLocalStorage.cpp" />
+    <ClCompile Include="YuNetFaceDetector.cpp" />
     <ClCompile Include="AutolinkedNativeModules.g.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -133,6 +138,18 @@
   </ImportGroup>
   <Import Project="AutolinkedNativeModules.Copy.targets" />
   <ItemGroup>
+    <None Include="Models\face_detection_yunet_2023mar.onnx">
+      <Link>Assets\Models\face_detection_yunet_2023mar.onnx</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Models\face_detection_yunet.LICENSE">
+      <Link>Assets\Models\face_detection_yunet.LICENSE</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Models\face_detection_yunet.manifest.json">
+      <Link>Assets\Models\face_detection_yunet.manifest.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="..\..\src\assets\fonts\DMSerifDisplay-Regular.ttf">
       <Link>Assets\Fonts\DMSerifDisplay-Regular.ttf</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

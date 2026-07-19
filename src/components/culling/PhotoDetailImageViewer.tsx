@@ -270,7 +270,7 @@ export function PhotoDetailImageViewer({
       }}
     >
       <View style={styles.imageFrame}>
-        {isWindows ? (
+        {isWindows && !isZoomed ? (
           <Image
             source={{uri}}
             resizeMode="contain"

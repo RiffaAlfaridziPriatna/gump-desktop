@@ -137,6 +137,7 @@ async function ensureMigrated(): Promise<void> {
             analysisStatus: legacyPhoto.analysisStatus,
             analysisProgress: legacyPhoto.analysisProgress,
             analysisError: legacyPhoto.analysisError,
+            analysisEngineVersion: legacyPhoto.analysisEngineVersion,
             faces: legacyPhoto.faces.map((f, index) =>
               Face.fromPlain({
                 ...f,
@@ -231,6 +232,7 @@ export async function writeAllAlbums(
         analysisStatus: legacyPhoto.analysisStatus,
         analysisProgress: legacyPhoto.analysisProgress,
         analysisError: legacyPhoto.analysisError,
+        analysisEngineVersion: legacyPhoto.analysisEngineVersion,
         faces: legacyPhoto.faces.map((f, index) =>
           Face.fromPlain({
             ...f,

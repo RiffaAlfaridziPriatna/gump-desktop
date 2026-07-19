@@ -17,6 +17,7 @@ export class CulledPhoto {
   private _analysisStatus: AnalysisStatus;
   private _analysisProgress: number;
   private _analysisError: string | null;
+  private _analysisEngineVersion: string | null;
   private _faces: Face[];
 
   private _serverUploadStatus: ServerUploadStatus;
@@ -44,6 +45,7 @@ export class CulledPhoto {
     analysisStatus?: AnalysisStatus;
     analysisProgress?: number;
     analysisError?: string | null;
+    analysisEngineVersion?: string | null;
     faces?: Face[];
     serverUploadStatus?: ServerUploadStatus;
     serverUploadProgress?: number;
@@ -70,6 +72,7 @@ export class CulledPhoto {
     this._analysisStatus = data.analysisStatus ?? 'idle';
     this._analysisProgress = data.analysisProgress ?? 0;
     this._analysisError = data.analysisError ?? null;
+    this._analysisEngineVersion = data.analysisEngineVersion ?? null;
     this._faces = data.faces ?? [];
 
     this._serverUploadStatus = data.serverUploadStatus ?? 'idle';
@@ -111,6 +114,10 @@ export class CulledPhoto {
 
   get analysisError(): string | null {
     return this._analysisError;
+  }
+
+  get analysisEngineVersion(): string | null {
+    return this._analysisEngineVersion;
   }
 
   get faces(): Face[] {
@@ -193,11 +200,12 @@ export class CulledPhoto {
     maybe: boolean;
     blurred: boolean;
     closedEyes: boolean;
-  }): void {
+  }, analysisEngineVersion?: string | null): void {
     this._faces = faces;
     this._analysisStatus = 'analyzed';
     this._analysisProgress = 100;
     this._analysisError = null;
+    this._analysisEngineVersion = analysisEngineVersion ?? this._analysisEngineVersion;
     this._aiSelected = aiFlags.aiSelected;
     this._maybe = aiFlags.maybe;
     this._blurred = aiFlags.blurred;
@@ -267,6 +275,7 @@ export class CulledPhoto {
       analysisProgress: this._analysisProgress,
       analysisStatus: this._analysisStatus,
       analysisError: this._analysisError,
+      analysisEngineVersion: this._analysisEngineVersion,
       faces: this._faces.map(f => f.toPlain()),
       serverUploadStatus: this._serverUploadStatus,
       serverUploadProgress: this._serverUploadProgress,
@@ -295,6 +304,7 @@ export class CulledPhoto {
       analysisStatus: data.analysisStatus,
       analysisProgress: data.analysisProgress,
       analysisError: data.analysisError,
+      analysisEngineVersion: data.analysisEngineVersion,
       faces: (data.faces || []).map(Face.fromPlain),
       serverUploadStatus: data.serverUploadStatus,
       serverUploadProgress: data.serverUploadProgress,

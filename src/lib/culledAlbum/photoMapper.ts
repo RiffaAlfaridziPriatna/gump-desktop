@@ -18,6 +18,7 @@ export function legacyPhotoToDomain(
     analysisProgress: photo.analysisProgress,
     analysisStatus: photo.analysisStatus,
     analysisError: photo.analysisError,
+    analysisEngineVersion: photo.analysisEngineVersion,
     faces: photo.faces.map((face, index) =>
       Face.fromPlain({
         ...face,
@@ -57,6 +58,7 @@ export function domainPhotoToLegacy(photo: CulledPhoto): CulledAlbumPhoto {
     analysisProgress: photo.analysisProgress,
     analysisStatus: photo.analysisStatus,
     analysisError: photo.analysisError ?? undefined,
+    analysisEngineVersion: photo.analysisEngineVersion ?? null,
     faces: photo.faces.map(face => face.toPlain()),
     selected: photo.selected,
     starRating: photo.starRating,

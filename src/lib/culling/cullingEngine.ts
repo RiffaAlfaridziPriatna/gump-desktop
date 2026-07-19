@@ -31,6 +31,7 @@ import {
   DuplicateDetectionPhoto,
   assignFaceClustersToSinglePhoto,
 } from './cullingUtil';
+import {currentAnalysisEngineVersion} from './analysisEngine';
 import {suppressSpatiallyRedundantFaces, rejectOpenBlurredNonFaces} from './faceSpatialDedupe';
 import {
   backfillMissingAnalyzedPhotoAssets,
@@ -85,7 +86,9 @@ class NativeDetector implements PlatformDetector {
     }
     const faces = await NativeLocalStorage.detectFacesForCulling(uri);
     const mapped = faces.map((face, index) => mapNativeFace(face, photoId, index));
-    return suppressSpatiallyRedundantFaces(rejectOpenBlurredNonFaces(mapped));
+    const qualityFiltered =
+      Platform.OS === 'windows' ? mapped : rejectOpenBlurredNonFaces(mapped);
+    return suppressSpatiallyRedundantFaces(qualityFiltered);
   }
 }
 
@@ -316,6 +319,7 @@ export const cullingEngine = {
       if (capturedAt != null) {
         photo.capturedAt = capturedAt;
       }
+      photo.analysisEngineVersion = currentAnalysisEngineVersion();
       photo.aiSelected = flags.aiSelected;
       photo.maybe = flags.maybe;
       photo.blurred = flags.blurred;

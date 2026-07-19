@@ -82,6 +82,8 @@ export type CulledAlbumPhoto = {
   analysisProgress: number;
   analysisStatus: CulledAlbumPhotoAnalysisStatus;
   analysisError?: string;
+  /** Native detector pipeline version used for the latest successful analysis. */
+  analysisEngineVersion?: string | null;
   faces: APIResponse.CullingFace[];
   selected: boolean;
   starRating: number | null;
@@ -157,6 +159,7 @@ export function createCulledAlbumPhoto(
     serverUploadProgress: 0,
     analysisProgress: 0,
     analysisStatus: 'idle',
+    analysisEngineVersion: null,
     faces: [],
     selected: false,
     starRating: null,
