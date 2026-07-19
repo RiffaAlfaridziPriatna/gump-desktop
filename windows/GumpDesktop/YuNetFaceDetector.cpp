@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "YuNetFaceDetector.h"
 
 #include <Windows.h>
