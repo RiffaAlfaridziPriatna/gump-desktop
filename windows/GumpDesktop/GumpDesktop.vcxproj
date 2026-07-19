@@ -103,6 +103,7 @@
   <ItemGroup>
     <ClInclude Include="GumpFilePicker.h" />
     <ClInclude Include="GumpLocalStorage.h" />
+    <ClInclude Include="OcecEyeStateClassifier.h" />
     <ClInclude Include="YuNetFaceDetector.h" />
     <ClInclude Include="GumpDesktop.h" />
     <ClInclude Include="resource.h" />
@@ -114,6 +115,7 @@
     <ClCompile Include="GumpDesktop.cpp" />
     <ClCompile Include="GumpFilePicker.cpp" />
     <ClCompile Include="GumpLocalStorage.cpp" />
+    <ClCompile Include="OcecEyeStateClassifier.cpp" />
     <ClCompile Include="YuNetFaceDetector.cpp" />
     <ClCompile Include="AutolinkedNativeModules.g.cpp" />
     <ClCompile Include="pch.cpp">
@@ -138,6 +140,18 @@
   </ImportGroup>
   <Import Project="AutolinkedNativeModules.Copy.targets" />
   <ItemGroup>
+    <None Include="Models\eye_state_ocec_s.onnx">
+      <Link>Assets\Models\eye_state_ocec_s.onnx</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Models\eye_state_ocec.LICENSE">
+      <Link>Assets\Models\eye_state_ocec.LICENSE</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Models\eye_state_ocec.manifest.json">
+      <Link>Assets\Models\eye_state_ocec.manifest.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="Models\face_detection_yunet_2023mar.onnx">
       <Link>Assets\Models\face_detection_yunet_2023mar.onnx</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

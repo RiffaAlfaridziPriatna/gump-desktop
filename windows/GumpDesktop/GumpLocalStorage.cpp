@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "GumpLocalStorage.h"
+#include "OcecEyeStateClassifier.h"
 #include "YuNetFaceDetector.h"
 
 #include <ShlObj.h>
@@ -516,6 +517,18 @@ winrtRN::JSValueObject EyesOpenFromScore(float minOpen, float maxOpen, float avg
     eyesOpen["value"] = false;
     eyesOpen["confidence"] = 72.0;
   }
+  return eyesOpen;
+}
+
+winrtRN::JSValueObject EyesOpenFromOcec(
+    const GumpDesktop::EyeStateResult &eyeState) {
+  winrtRN::JSValueObject eyesOpen;
+  eyesOpen["value"] = eyeState.state == GumpDesktop::EyeState::Open;
+  eyesOpen["confidence"] = static_cast<double>(eyeState.confidence);
+  eyesOpen["leftProbability"] =
+      static_cast<double>(eyeState.leftOpenProbability);
+  eyesOpen["rightProbability"] =
+      static_cast<double>(eyeState.rightOpenProbability);
   return eyesOpen;
 }
 
@@ -1156,7 +1169,8 @@ winrtRN::JSValueObject BuildFaceObject(
     const float *leftEyeXy = nullptr,
     const float *rightEyeXy = nullptr,
     const float *noseXy = nullptr,
-    const float *mouthXy = nullptr) {
+    const float *mouthXy = nullptr,
+    const GumpDesktop::EyeStateResult *eyeState = nullptr) {
   const float left = static_cast<float>(box.X) / static_cast<float>(imageWidth);
   const float top = static_cast<float>(box.Y) / static_cast<float>(imageHeight);
   const float width = static_cast<float>(box.Width) / static_cast<float>(imageWidth);
@@ -1241,7 +1255,9 @@ winrtRN::JSValueObject BuildFaceObject(
            {"width", static_cast<double>(width)},
            {"height", static_cast<double>(height)},
        }},
-      {"eyesOpen", EyesOpenFromScore(minOpen, maxOpen, avgOpen)},
+      {"eyesOpen",
+       eyeState ? EyesOpenFromOcec(*eyeState)
+                : EyesOpenFromScore(minOpen, maxOpen, avgOpen)},
       {"sharpness", static_cast<double>(sharpness)},
       {"brightness", static_cast<double>(brightness)},
       {"confidence", static_cast<double>(confidence)},
@@ -1295,6 +1311,8 @@ winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
   auto &yunet = GumpDesktop::YuNetFaceDetector::Shared();
   if (yunet.EnsureReady()) {
     const auto detections = yunet.DetectBgra(pixelData, imageWidth, imageHeight, stride);
+    auto &eyeClassifier = GumpDesktop::OcecEyeStateClassifier::Shared();
+    const bool eyeClassifierReady = eyeClassifier.EnsureReady();
     winrtRN::JSValueArray result;
     int index = 0;
     for (const auto &detection : detections) {
@@ -1314,6 +1332,15 @@ winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
           (detection.leftMouth.x + detection.rightMouth.x) * 0.5f,
           (detection.leftMouth.y + detection.rightMouth.y) * 0.5f,
       };
+      const auto eyeState = eyeClassifierReady
+                                ? eyeClassifier.ClassifyBgra(
+                                      pixelData,
+                                      imageWidth,
+                                      imageHeight,
+                                      stride,
+                                      {detection.leftEye.x, detection.leftEye.y},
+                                      {detection.rightEye.x, detection.rightEye.y})
+                                : GumpDesktop::EyeStateResult{};
       result.push_back(BuildFaceObject(
           box,
           index,
@@ -1325,7 +1352,8 @@ winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
           leftEyeXy,
           rightEyeXy,
           noseXy,
-          mouthXy));
+          mouthXy,
+          &eyeState));
       ++index;
     }
     if (!result.empty()) {

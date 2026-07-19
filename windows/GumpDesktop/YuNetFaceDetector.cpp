@@ -118,10 +118,12 @@ YuNetFaceDetector &YuNetFaceDetector::Shared() {
 }
 
 bool YuNetFaceDetector::IsReady() const {
+  std::lock_guard<std::mutex> lock(initMutex_);
   return ready_;
 }
 
 std::string YuNetFaceDetector::LastError() const {
+  std::lock_guard<std::mutex> lock(initMutex_);
   return lastError_;
 }
 
@@ -144,6 +146,7 @@ std::filesystem::path YuNetFaceDetector::ResolveModelPath() const {
 }
 
 bool YuNetFaceDetector::EnsureReady() {
+  std::lock_guard<std::mutex> lock(initMutex_);
   if (ready_) {
     return true;
   }

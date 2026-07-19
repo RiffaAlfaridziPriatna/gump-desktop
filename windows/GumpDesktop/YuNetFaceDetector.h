@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -44,6 +45,7 @@ class YuNetFaceDetector {
   bool Initialize();
   std::filesystem::path ResolveModelPath() const;
 
+  mutable std::mutex initMutex_;
   bool ready_{false};
   bool initAttempted_{false};
   mutable std::string lastError_;
