@@ -137,12 +137,14 @@ export function PhotoDetailImageViewer({
     () => getCachedImageDimensions(uri) ?? null,
   );
   const [imageDecoded, setImageDecoded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const imageReadyNotifiedRef = useRef(false);
   const imageSize = imageSizeProp ?? loadedImageSize;
   const isZoomed = zoomFaceIndex !== null;
 
   useEffect(() => {
     setImageDecoded(false);
+    setLoadFailed(false);
     imageReadyNotifiedRef.current = false;
     setLoadedImageSize(getCachedImageDimensions(uri) ?? null);
   }, [uri]);
@@ -168,14 +170,23 @@ export function PhotoDetailImageViewer({
 
     preloadImage(uri).then(() => {
       if (!cancelled) {
-        setLoadedImageSize(getCachedImageDimensions(uri) ?? null);
+        const dimensions = getCachedImageDimensions(uri) ?? null;
+        setLoadedImageSize(dimensions);
+        if (!dimensions) {
+          setLoadFailed(true);
+          setImageDecoded(true);
+          if (!imageReadyNotifiedRef.current) {
+            imageReadyNotifiedRef.current = true;
+            onImageReady?.();
+          }
+        }
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [imageSizeProp, uri]);
+  }, [imageSizeProp, onImageReady, uri]);
 
   useEffect(() => {
     preloadImage(uri).catch(() => undefined);
@@ -186,22 +197,31 @@ export function PhotoDetailImageViewer({
       const source = event.nativeEvent?.source;
       const width = source?.width ?? 0;
       const height = source?.height ?? 0;
-      if (width > 0 && height > 0) {
-        const dimensions = {width, height};
-        putCachedImageDimensions(uri, dimensions);
-        setLoadedImageSize(dimensions);
+      if (width > 0 && height > 0 && !imageSizeProp) {
+        setLoadedImageSize(current => {
+          if (current) {
+            return current;
+          }
+          const dimensions = {width, height};
+          if (!getCachedImageDimensions(uri)) {
+            putCachedImageDimensions(uri, dimensions);
+          }
+          return dimensions;
+        });
       }
 
+      setLoadFailed(false);
       setImageDecoded(true);
       if (!imageReadyNotifiedRef.current) {
         imageReadyNotifiedRef.current = true;
         onImageReady?.();
       }
     },
-    [onImageReady, uri],
+    [imageSizeProp, onImageReady, uri],
   );
 
   const handleImageError = useCallback(() => {
+    setLoadFailed(true);
     setImageDecoded(true);
     if (!imageReadyNotifiedRef.current) {
       imageReadyNotifiedRef.current = true;
@@ -256,10 +276,18 @@ export function PhotoDetailImageViewer({
     }));
   }, [imageLayout, visibleFaces]);
 
-  const canRenderOverlays = imageDecoded && imageLayout !== null;
-  const showLoadingOverlay = isWindows
-    ? !imageDecoded
-    : !imageDecoded || !imageLayout;
+  const canRenderOverlays = imageDecoded && !loadFailed && imageLayout !== null;
+  const showLoadingOverlay = !imageDecoded && !loadFailed;
+
+  const fallbackImage = (
+    <Image
+      source={{uri}}
+      resizeMode="contain"
+      style={StyleSheet.absoluteFill}
+      onLoad={handleImageLoad}
+      onError={handleImageError}
+    />
+  );
 
   return (
     <View
@@ -271,16 +299,11 @@ export function PhotoDetailImageViewer({
     >
       <View style={styles.imageFrame}>
         {isWindows && !isZoomed ? (
-          <Image
-            source={{uri}}
-            resizeMode="contain"
-            style={StyleSheet.absoluteFill}
-            onLoad={handleImageLoad}
-            onError={handleImageError}
-          />
+          fallbackImage
         ) : imageLayout ? (
           <Image
             source={{uri}}
+            resizeMode="contain"
             style={{
               position: 'absolute',
               width: imageLayout.width,
@@ -291,7 +314,9 @@ export function PhotoDetailImageViewer({
             onLoad={handleImageLoad}
             onError={handleImageError}
           />
-        ) : null}
+        ) : (
+          fallbackImage
+        )}
 
         {showLoadingOverlay ? (
           <View pointerEvents="none" style={styles.loadingOverlay}>

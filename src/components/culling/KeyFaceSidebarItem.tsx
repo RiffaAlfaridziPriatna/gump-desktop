@@ -12,7 +12,7 @@ import {ImageDimensions} from '@lib/media/imageDimensions';
 import {APIResponse} from '@services/api';
 import {memo, useCallback} from 'react';
 import {Pressable} from '@components/ui';
-import {StyleSheet, View} from 'react-native';
+import {ActivityIndicator, StyleSheet, View} from 'react-native';
 
 type KeyFaceSidebarItemProps = {
   cropUri?: string;
@@ -84,8 +84,9 @@ export const KeyFaceSidebarItem = memo(
               style={[
                 styles.placeholder,
                 {width, height: width, borderRadius: width / 2},
-              ]}
-            />
+              ]}>
+              <ActivityIndicator size="small" color={colors.accent} />
+            </View>
           )}
         </View>
 
@@ -139,6 +140,8 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     backgroundColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statusBadges: {
     position: 'absolute',

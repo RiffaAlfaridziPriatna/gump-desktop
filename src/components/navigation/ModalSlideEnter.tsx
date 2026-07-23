@@ -38,6 +38,8 @@ export const ModalSlideEnter = forwardRef<
   ref,
 ) {
   const {height} = useWindowDimensions();
+  const heightRef = useRef(height);
+  heightRef.current = height;
   const shouldAnimate = enabled && !instant;
   const translateY = useRef(
     new Animated.Value(shouldAnimate ? height : 0),
@@ -45,6 +47,7 @@ export const ModalSlideEnter = forwardRef<
   const backdropOpacity = useRef(
     new Animated.Value(shouldAnimate ? 0 : BACKDROP_OPACITY),
   ).current;
+  const didEnterRef = useRef(false);
 
   useImperativeHandle(
     ref,
@@ -57,7 +60,7 @@ export const ModalSlideEnter = forwardRef<
 
         Animated.parallel([
           Animated.timing(translateY, {
-            toValue: height,
+            toValue: heightRef.current,
             duration: EXIT_DURATION_MS,
             easing: Easing.in(Easing.cubic),
             useNativeDriver,
@@ -73,7 +76,7 @@ export const ModalSlideEnter = forwardRef<
         });
       },
     }),
-    [backdropOpacity, enabled, height, translateY],
+    [backdropOpacity, enabled, translateY],
   );
 
   useLayoutEffect(() => {
@@ -81,6 +84,11 @@ export const ModalSlideEnter = forwardRef<
       onEnterComplete?.();
       return;
     }
+
+    if (didEnterRef.current) {
+      return;
+    }
+    didEnterRef.current = true;
 
     const animation = Animated.parallel([
       Animated.timing(translateY, {
@@ -106,7 +114,7 @@ export const ModalSlideEnter = forwardRef<
     return () => {
       animation.stop();
     };
-  }, [backdropOpacity, enabled, height, instant, onEnterComplete, translateY]);
+  }, [backdropOpacity, enabled, instant, onEnterComplete, translateY]);
 
   if (!enabled) {
     return <>{children}</>;

@@ -1,6 +1,7 @@
 import {
   getCachedImageDimensions,
   ImageDimensions,
+  loadImageDimensions,
 } from '@lib/media/imageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
 import {useLayoutEffect, useState} from 'react';
@@ -19,17 +20,19 @@ export function useImageDimensions(uri: string | undefined) {
     const cached = getCachedImageDimensions(uri);
     if (cached) {
       setImageSize(cached);
-      preloadImage(uri).catch(() => undefined);
-      return;
     }
 
     let cancelled = false;
 
-    preloadImage(uri).then(() => {
-      if (!cancelled) {
-        setImageSize(getCachedImageDimensions(uri) ?? null);
-      }
-    });
+    loadImageDimensions(uri, {bypassCache: true})
+      .then(dimensions => {
+        if (!cancelled && dimensions) {
+          setImageSize(dimensions);
+        }
+      })
+      .catch(() => undefined);
+
+    preloadImage(uri).catch(() => undefined);
 
     return () => {
       cancelled = true;

@@ -5,10 +5,11 @@ import {
   putCachedImageDimensions,
   type ImageDimensions,
 } from '@lib/media/imageDimensions';
+import {isImagePrefetched} from '@lib/media/imagePreload';
 import {resolveGridDisplayUri} from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
 import {FileAsset} from '@services/upload/types';
-import {memo, useCallback, useEffect, useMemo, useState} from 'react';
+import {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Image,
   type ImageLoadEventData,
@@ -26,20 +27,30 @@ type CulledAlbumPhotoThumbnailProps = {
   width: number;
 };
 
+function hasWarmThumbnail(uri: string): boolean {
+  return Boolean(uri) && (isImagePrefetched(uri) || Boolean(getCachedImageDimensions(uri)));
+}
+
 export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail({
   file,
   width,
 }: CulledAlbumPhotoThumbnailProps) {
-  const [isLoaded, setIsLoaded] = useState(false);
   const uri = resolveGridDisplayUri(file) ?? '';
   const height = width / THUMBNAIL_ASPECT_RATIO;
   const [imageSize, setImageSize] = useState<ImageDimensions | null>(
     () => (uri ? getCachedImageDimensions(uri) ?? null : null),
   );
+  const [isLoaded, setIsLoaded] = useState(() => hasWarmThumbnail(uri));
+  const displayedUriRef = useRef(uri);
 
   useEffect(() => {
-    setIsLoaded(false);
-    setImageSize(uri ? getCachedImageDimensions(uri) ?? null : null);
+    if (displayedUriRef.current === uri) {
+      return;
+    }
+    displayedUriRef.current = uri;
+    const cached = uri ? getCachedImageDimensions(uri) ?? null : null;
+    setImageSize(cached);
+    setIsLoaded(hasWarmThumbnail(uri));
   }, [uri]);
 
   const imageLayout = useMemo(() => {

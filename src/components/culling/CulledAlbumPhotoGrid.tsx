@@ -352,10 +352,10 @@ export function CulledAlbumPhotoGrid({
         getItemLayout={getItemLayout}
         contentContainerStyle={contentContainerStyle}
         style={styles.list}
-        initialNumToRender={4}
-        maxToRenderPerBatch={2}
-        windowSize={3}
-        updateCellsBatchingPeriod={150}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
         removeClippedSubviews={Platform.OS !== 'windows'}
         showsVerticalScrollIndicator
         onScrollBeginDrag={handleScrollBegin}

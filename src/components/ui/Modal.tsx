@@ -2,7 +2,7 @@ import {useModalViewport} from '@hooks/useModalViewport';
 import {colors} from '@lib/ui/colors';
 import {MODAL_OVERLAY_PADDING, ModalDesignSize} from '@lib/ui/modalDimensions';
 import {isDesktopPlatform} from '@lib/system/platform';
-import {ReactNode, useEffect, useMemo, useRef, useState} from 'react';
+import {ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {
   Animated,
   Easing,
@@ -165,7 +165,7 @@ function useDesktopModalTransition(
   setMounted: (value: boolean) => void,
 ) {
   const overlayOpacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(slideOffset)).current;
   const slideOffsetRef = useRef(slideOffset);
   const hasEnteredRef = useRef(false);
   slideOffsetRef.current = slideOffset;
@@ -176,19 +176,19 @@ function useDesktopModalTransition(
     }
   }, [visible]);
 
-  useEffect(() => {
-    overlayOpacity.stopAnimation();
-    translateY.stopAnimation();
+  useLayoutEffect(() => {
     const offset = slideOffsetRef.current;
 
     if (visible) {
       setMounted(true);
 
-      if (!canAnimateIn || hasEnteredRef.current) {
-        if (!hasEnteredRef.current) {
-          overlayOpacity.setValue(0);
-          translateY.setValue(offset);
-        }
+      if (!canAnimateIn) {
+        overlayOpacity.setValue(0);
+        translateY.setValue(offset);
+        return;
+      }
+
+      if (hasEnteredRef.current) {
         return;
       }
 
@@ -217,6 +217,9 @@ function useDesktopModalTransition(
     if (!mounted) {
       return;
     }
+
+    overlayOpacity.stopAnimation();
+    translateY.stopAnimation();
 
     Animated.parallel([
       Animated.timing(overlayOpacity, {
@@ -254,8 +257,8 @@ function DesktopModal(props: ModalProps) {
   const [mounted, setMounted] = useState(visible);
   const measureActive = visible || mounted;
   const viewport = useModalViewport(measureActive, design);
-  const {resolved, viewportHeight, isLayoutReady} = viewport;
-  const canAnimateIn = isLayoutReady;
+  const {resolved, viewportHeight, isViewportMeasured} = viewport;
+  const canAnimateIn = isViewportMeasured;
 
   const slideOffset = useMemo(() => {
     const height = resolved.height ?? FALLBACK_CARD_HEIGHT;

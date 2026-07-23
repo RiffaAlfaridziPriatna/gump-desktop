@@ -1,8 +1,8 @@
-import {Image} from 'react-native';
-import {FileAsset} from '@services/upload/types';
-import {resolveDisplayUri} from '@lib/storage/localStorage';
-import {loadImageDimensions} from './imageDimensions';
-import {LruCache} from './lruCache';
+import { resolveDisplayUri } from '@lib/storage/localStorage';
+import { FileAsset } from '@services/upload/types';
+import { Image } from 'react-native';
+import { loadImageDimensions } from './imageDimensions';
+import { LruCache } from './lruCache';
 
 const DEFAULT_CONCURRENCY = 4;
 const PREFETCH_CACHE_MAX = 200;
@@ -32,8 +32,10 @@ export function preloadImage(uri: string): Promise<void> {
     loadImageDimensions(uri),
     Image.prefetch(uri).catch(() => undefined),
   ])
-    .then(() => {
-      prefetchedUris.set(uri, true);
+    .then(([dimensions]) => {
+      if (dimensions) {
+        prefetchedUris.set(uri, true);
+      }
     })
     .finally(() => {
       inflight.delete(uri);
