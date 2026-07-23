@@ -6,9 +6,6 @@ import { CulledAlbumPhoto } from '@lib/culledAlbum/types';
 export type CullingFace = APIResponse.CullingFace;
 export type CullingPhoto = APIResponse.CullingPhoto;
 
-/**
- * Orders photos to match the culling grid (filename order / photoOrder store).
- */
 export function orderPhotosForCulling<T extends {photoId: string}>(
   albumId: string,
   photos: T[],
@@ -65,18 +62,30 @@ const FOCUS_SOFT_THRESHOLD = 40;
 
 export {
   faceBoxesAreSpatiallyRedundant,
+  rejectLikelyDisplayedMediaFaces,
+  rejectLikelyNonFaceArtifacts,
   rejectOpenBlurredNonFaces,
   suppressSpatiallyRedundantFaces,
 } from './faceSpatialDedupe';
 
-export function classifyEyeStatus(eyesOpen?: {
-  value?: boolean;
-  confidence?: number;
-}): APIResponse.CullingEyeStatus {
+export function classifyEyeStatus(
+  eyesOpen?: {
+    value?: boolean;
+    confidence?: number;
+  },
+  pose?: {pitch?: number},
+): APIResponse.CullingEyeStatus {
   if (!eyesOpen || eyesOpen.confidence === undefined) {
     return 'partial';
   }
   if (eyesOpen.confidence >= EYE_CONFIDENCE_THRESHOLD) {
+    let pitch = pose?.pitch ?? 0;
+    if (Math.abs(pitch) > Math.PI + 0.01) {
+      pitch = (pitch * Math.PI) / 180;
+    }
+    if (eyesOpen.value && pitch < -0.12) {
+      return 'partial';
+    }
     return eyesOpen.value ? 'open' : 'closed';
   }
   return 'partial';
@@ -173,18 +182,65 @@ export function deriveStarRating(faces: CullingFace[]): number {
 
 const FACE_DUPLICATE_THRESHOLD = 0.06;
 export const PERCEPTUAL_HASH_DUPLICATE_THRESHOLD = 4;
-/**
- * Max larger/smaller face-area ratio still treated as the same framing/zoom.
- * Close-up vs wide of the same person typically exceeds this.
- */
+export const PERCEPTUAL_HASH_SAME_SCENE_THRESHOLD = 24;
+export const PERCEPTUAL_HASH_ADJACENT_SCENE_THRESHOLD = 30;
 export const FACE_FRAMING_MAX_AREA_RATIO = 1.85;
-/** Burst / near-duplicate candidates must fall within this capture-time window. */
+export const FACE_FRAMING_MAX_ASPECT_RATIO = 1.35;
 export const DUPLICATE_TEMPORAL_WINDOW_MS = 5 * 60 * 1000;
+export const BURST_FILENAME_MAX_INDEX_GAP = 10;
+export const ADJACENT_BURST_INDEX_GAP = 2;
 
 export type DuplicateDetectionPhoto = CullingPhoto & {
   capturedAt?: number | null;
   perceptualHash?: string | null;
 };
+
+type BurstFileNameParts = {
+  prefix: string;
+  index: number;
+};
+
+export function parseBurstFileName(
+  fileName: string | null | undefined,
+): BurstFileNameParts | null {
+  if (!fileName) {
+    return null;
+  }
+  const stem = fileName.replace(/\.[^.]+$/, '');
+  const match = stem.match(/^(.*?)(\d+)$/);
+  if (!match) {
+    return null;
+  }
+  const prefix = match[1]!.toLowerCase();
+  const index = Number(match[2]);
+  if (!Number.isFinite(index)) {
+    return null;
+  }
+  return {prefix, index};
+}
+
+export function areFileNamesBurstRelated(
+  fileNameA: string | null | undefined,
+  fileNameB: string | null | undefined,
+): boolean {
+  const gap = burstFileNameIndexGap(fileNameA, fileNameB);
+  return gap !== null && gap <= BURST_FILENAME_MAX_INDEX_GAP;
+}
+
+export function burstFileNameIndexGap(
+  fileNameA: string | null | undefined,
+  fileNameB: string | null | undefined,
+): number | null {
+  const a = parseBurstFileName(fileNameA);
+  const b = parseBurstFileName(fileNameB);
+  if (!a || !b) {
+    return null;
+  }
+  if (a.prefix !== b.prefix) {
+    return null;
+  }
+  return Math.abs(a.index - b.index);
+}
 
 export function arePerceptualHashesSimilar(
   hashA: string | null | undefined,
@@ -194,6 +250,17 @@ export function arePerceptualHashesSimilar(
     return false;
   }
   return hammingDistance(hashA, hashB) <= PERCEPTUAL_HASH_DUPLICATE_THRESHOLD;
+}
+
+export function arePerceptualHashesSameScene(
+  hashA: string | null | undefined,
+  hashB: string | null | undefined,
+  threshold: number = PERCEPTUAL_HASH_SAME_SCENE_THRESHOLD,
+): boolean {
+  if (!hashA || !hashB) {
+    return false;
+  }
+  return hammingDistance(hashA, hashB) <= threshold;
 }
 
 export function areFacesSimilar(facesA: CullingFace[], facesB: CullingFace[]): boolean {
@@ -226,10 +293,10 @@ function faceBoxArea(box: CullingFace['boundingBox']): number {
   return Math.max(0, box.width) * Math.max(0, box.height);
 }
 
-/**
- * True when face sizes in-frame are similar (same zoom / crop), independent of
- * identity fingerprint. Sorted by area so multi-face photos pair largest-to-largest.
- */
+function faceBoxAspect(box: CullingFace['boundingBox']): number {
+  return box.width / Math.max(box.height, 1e-8);
+}
+
 export function areFaceFramingsSimilar(
   facesA: CullingFace[],
   facesB: CullingFace[],
@@ -241,12 +308,20 @@ export function areFaceFramingsSimilar(
     return false;
   }
 
-  const areasA = facesA.map(face => faceBoxArea(face.boundingBox)).sort((a, b) => b - a);
-  const areasB = facesB.map(face => faceBoxArea(face.boundingBox)).sort((a, b) => b - a);
+  const sortedA = [...facesA].sort(
+    (left, right) =>
+      faceBoxArea(right.boundingBox) - faceBoxArea(left.boundingBox),
+  );
+  const sortedB = [...facesB].sort(
+    (left, right) =>
+      faceBoxArea(right.boundingBox) - faceBoxArea(left.boundingBox),
+  );
 
-  for (let i = 0; i < areasA.length; i++) {
-    const areaA = areasA[i]!;
-    const areaB = areasB[i]!;
+  for (let i = 0; i < sortedA.length; i++) {
+    const boxA = sortedA[i]!.boundingBox;
+    const boxB = sortedB[i]!.boundingBox;
+    const areaA = faceBoxArea(boxA);
+    const areaB = faceBoxArea(boxB);
     const minArea = Math.min(areaA, areaB);
     if (minArea <= 1e-8) {
       return false;
@@ -254,22 +329,60 @@ export function areFaceFramingsSimilar(
     if (Math.max(areaA, areaB) / minArea > FACE_FRAMING_MAX_AREA_RATIO) {
       return false;
     }
+
+    const aspectA = faceBoxAspect(boxA);
+    const aspectB = faceBoxAspect(boxB);
+    const minAspect = Math.min(aspectA, aspectB);
+    if (minAspect <= 1e-8) {
+      return false;
+    }
+    if (Math.max(aspectA, aspectB) / minAspect > FACE_FRAMING_MAX_ASPECT_RATIO) {
+      return false;
+    }
   }
 
   return true;
 }
 
-/**
- * Near-duplicate rule for burst culling:
- * - similar perceptual hash (same composition), or
- * - similar faces AND similar framing (same person, same zoom — not close-up vs wide)
- */
 export function arePhotosNearDuplicates(
-  photoA: Pick<DuplicateDetectionPhoto, 'perceptualHash' | 'faces'>,
-  photoB: Pick<DuplicateDetectionPhoto, 'perceptualHash' | 'faces'>,
+  photoA: Pick<DuplicateDetectionPhoto, 'fileName' | 'perceptualHash' | 'faces'>,
+  photoB: Pick<DuplicateDetectionPhoto, 'fileName' | 'perceptualHash' | 'faces'>,
 ): boolean {
+  const indexGap = burstFileNameIndexGap(photoA.fileName, photoB.fileName);
+  if (indexGap === null || indexGap > BURST_FILENAME_MAX_INDEX_GAP) {
+    return false;
+  }
+
   if (
     arePerceptualHashesSimilar(photoA.perceptualHash, photoB.perceptualHash)
+  ) {
+    return true;
+  }
+
+  const adjacent = indexGap <= ADJACENT_BURST_INDEX_GAP;
+  const sceneThreshold = adjacent
+    ? PERCEPTUAL_HASH_ADJACENT_SCENE_THRESHOLD
+    : PERCEPTUAL_HASH_SAME_SCENE_THRESHOLD;
+
+  const hasBothHashes =
+    Boolean(photoA.perceptualHash) && Boolean(photoB.perceptualHash);
+  if (
+    hasBothHashes &&
+    !arePerceptualHashesSameScene(
+      photoA.perceptualHash,
+      photoB.perceptualHash,
+      sceneThreshold,
+    )
+  ) {
+    return false;
+  }
+
+  // Adjacent burst frames often shift pose/landmarks enough to fail face
+  // fingerprinting; similar framing + not-wildly-different pHash is enough.
+  if (
+    adjacent &&
+    hasBothHashes &&
+    areFaceFramingsSimilar(photoA.faces, photoB.faces)
   ) {
     return true;
   }
@@ -550,17 +663,6 @@ type FaceClusterMatch = {
   distance: number;
 };
 
-/**
- * Assigns a cluster id to every face in a single photo.
- *
- * Every face in one photo is a distinct person, so each existing cluster can be
- * reused at most once per photo. This guarantees a group photo acts as a lower
- * bound: N faces in one photo always yield at least N unique clusters overall.
- *
- * Matching against clusters from other photos is done globally (best pairs
- * first) instead of greedily per face, so the closest face/cluster pairs win
- * and the rest become new people.
- */
 export function assignFaceClustersToSinglePhoto(
   faces: CullingFace[],
   clusterRepresentatives: Map<string, FaceClusterRepresentative>,
