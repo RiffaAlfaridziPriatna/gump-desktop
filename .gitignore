@@ -84,3 +84,9 @@ yarn-error.log
 
 /references
 /docs
+
+# Local Vision face harness binary
+/scripts/face_detect_harness
+/scripts/face_detect_harness.swift
+/scripts/compare_face_baselines.py
+/scripts/face_baseline_refresh.sh
