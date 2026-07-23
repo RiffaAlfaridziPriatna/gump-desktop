@@ -1,7 +1,12 @@
-import {syncPhotosFromStore, syncPhotoFromStore} from '@/application/syncPhotoRepository';
-import {deleteLocalPhotoFile} from '@lib/storage/localStorage';
-import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
-import {hydratePhotos} from '@lib/culledAlbum/photoLoader';
+import {
+  clearSyncPhotoFromStore,
+  syncPhotoFromStore,
+  syncPhotosFromStore,
+} from '@/application/syncPhotoRepository';
+import { hydratePhotos } from '@lib/culledAlbum/photoLoader';
+import { photoKey, photoStateStore } from '@lib/culledAlbum/photoStateStore';
+import { purgeLocalCulledAlbum } from '@lib/culledAlbum/service';
+import { removePersistedPhoto } from '@lib/culledAlbum/storage';
 import {
   culledAlbumStore,
   ensureAlbumLoaded,
@@ -14,12 +19,27 @@ import {
   updateCullingSummary,
   updatePhoto,
 } from '@lib/culledAlbum/store';
-import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
-import {toCullingPhoto, isCulledPhotoDisabled, CulledAlbumPhoto} from '@lib/culledAlbum/types';
-import {APIResponse} from '@services/api';
-import {FileAsset} from '@services/upload/types';
-import {NativeModules, Platform} from 'react-native';
+import { CulledAlbumPhoto, isCulledPhotoDisabled, NativeDetectedFace, toCullingPhoto } from '@lib/culledAlbum/types';
+import { readImageCaptureTime } from '@lib/media/imageCaptureTime';
+import { computeImagePerceptualHash } from '@lib/media/perceptualHash';
 import {
+  analyzePhotoForCulling,
+  deleteLocalPhotoFile,
+  detectFacesForCulling,
+  hasNativeDetectFacesForCulling,
+} from '@lib/storage/localStorage';
+import { APIResponse } from '@services/api';
+import { FileAsset } from '@services/upload/types';
+import { Platform } from 'react-native';
+import { currentAnalysisEngineVersion } from './analysisEngine';
+import {
+  backfillMissingAnalyzedPhotoAssets,
+  clearScheduledAnalyzedPhotoAssets,
+  ensureAnalyzedPhotoAssetsForPhoto,
+  scheduleAnalyzedPhotoAssetsForPhoto,
+} from './analyzedPhotoAssets';
+import {
+  assignFaceClustersToSinglePhoto,
   classifyEyeStatus,
   classifyFocus,
   computeKeyFaces,
@@ -29,31 +49,29 @@ import {
   derivePhotoFlags,
   deriveStarRating,
   DuplicateDetectionPhoto,
-  assignFaceClustersToSinglePhoto,
 } from './cullingUtil';
-import {currentAnalysisEngineVersion} from './analysisEngine';
-import {suppressSpatiallyRedundantFaces, rejectOpenBlurredNonFaces} from './faceSpatialDedupe';
+import { detectDuplicatesAsync } from './duplicateDetection';
 import {
-  backfillMissingAnalyzedPhotoAssets,
-  ensureAnalyzedPhotoAssetsForPhoto,
-} from './analyzedPhotoAssets';
-import {detectDuplicates, detectDuplicatesAsync} from './duplicateDetection';
+  addStatsDelta,
+  combineStatsDelta,
+  patchDuplicateGroupsAfterDelete,
+  patchKeyFacesAfterDelete,
+  statsContributionFromPhoto,
+  subtractStatsDelta,
+  syncKeyFaceCropUrisFromPhotos,
+} from './deletePhotoDerivedState';
 import {
   clearFaceClusterIndex,
   getFaceClusterIndex,
   seedFaceClusterIndex,
 } from './faceClusterIndex';
-import {NativeDetectedFace} from '@lib/culledAlbum/types';
-import {readImageCaptureTime} from '@lib/media/imageCaptureTime';
-import {computeImagePerceptualHash} from '@lib/media/perceptualHash';
+import { rejectLikelyNonFaceArtifacts, rejectLikelyDisplayedMediaFaces, suppressSpatiallyRedundantFaces } from './faceSpatialDedupe';
 
-type NativeLocalStorageModule = {
-  detectFacesForCulling: (uri: string) => Promise<NativeDetectedFace[]>;
+type AnalyzedNativePhoto = {
+  faces: CullingFace[];
+  perceptualHash: string | null;
+  capturedAt: number | null;
 };
-
-const NativeLocalStorage = NativeModules.GumpLocalStorage as
-  | NativeLocalStorageModule
-  | undefined;
 
 function mapNativeFace(
   face: NativeDetectedFace,
@@ -64,7 +82,7 @@ function mapNativeFace(
 
   return {
     boundingBox: face.boundingBox,
-    eyeStatus: classifyEyeStatus(face.eyesOpen),
+    eyeStatus: classifyEyeStatus(face.eyesOpen, face.pose),
     eyeConfidence: face.eyesOpen?.confidence ?? 0,
     focusLevel: classifyFocus(sharpness),
     sharpness,
@@ -77,18 +95,61 @@ function mapNativeFace(
 
 interface PlatformDetector {
   detectFaces(uri: string, photoId: string): Promise<CullingFace[]>;
+  analyzePhoto(uri: string, photoId: string): Promise<AnalyzedNativePhoto>;
+}
+
+function normalizePerceptualHash(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^[0-9a-f]{16}$/i.test(value)) {
+    return null;
+  }
+  return value.toLowerCase();
+}
+
+function normalizeCapturedAt(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return value;
+}
+
+function mapDetectedFaces(
+  faces: NativeDetectedFace[],
+  photoId: string,
+): CullingFace[] {
+  const mapped = faces.map((face, index) => mapNativeFace(face, photoId, index));
+  return suppressSpatiallyRedundantFaces(
+    rejectLikelyDisplayedMediaFaces(rejectLikelyNonFaceArtifacts(mapped)),
+  );
 }
 
 class NativeDetector implements PlatformDetector {
   async detectFaces(uri: string, photoId: string): Promise<CullingFace[]> {
-    if (!NativeLocalStorage?.detectFacesForCulling) {
+    if (!hasNativeDetectFacesForCulling()) {
       throw new Error('Native module not available');
     }
-    const faces = await NativeLocalStorage.detectFacesForCulling(uri);
-    const mapped = faces.map((face, index) => mapNativeFace(face, photoId, index));
-    const qualityFiltered =
-      Platform.OS === 'windows' ? mapped : rejectOpenBlurredNonFaces(mapped);
-    return suppressSpatiallyRedundantFaces(qualityFiltered);
+    const faces = await detectFacesForCulling(uri);
+    return mapDetectedFaces(faces, photoId);
+  }
+
+  async analyzePhoto(
+    uri: string,
+    photoId: string,
+  ): Promise<AnalyzedNativePhoto> {
+    const unified = await analyzePhotoForCulling(uri);
+    if (unified) {
+      return {
+        faces: mapDetectedFaces(unified.faces ?? [], photoId),
+        perceptualHash: normalizePerceptualHash(unified.perceptualHash),
+        capturedAt: normalizeCapturedAt(unified.capturedAt),
+      };
+    }
+
+    const [faces, perceptualHash, capturedAt] = await Promise.all([
+      this.detectFaces(uri, photoId),
+      computeImagePerceptualHash(uri),
+      readImageCaptureTime(uri),
+    ]);
+    return {faces, perceptualHash, capturedAt};
   }
 }
 
@@ -107,6 +168,18 @@ class FallbackDetector implements PlatformDetector {
         rekognitionFaceId: `local-${photoId}-0`,
       },
     ];
+  }
+
+  async analyzePhoto(
+    uri: string,
+    photoId: string,
+  ): Promise<AnalyzedNativePhoto> {
+    const [faces, perceptualHash, capturedAt] = await Promise.all([
+      this.detectFaces(uri, photoId),
+      computeImagePerceptualHash(uri),
+      readImageCaptureTime(uri),
+    ]);
+    return {faces, perceptualHash, capturedAt};
   }
 }
 
@@ -155,7 +228,7 @@ async function applyDuplicateFlags(albumId: string): Promise<void> {
     };
   }
 
-  await detectDuplicatesAsync(photoMap);
+  const groups = await detectDuplicatesAsync(photoMap);
 
   const syncedPhotoIds: string[] = [];
   photoStateStore.setState(state => {
@@ -164,10 +237,15 @@ async function applyDuplicateFlags(albumId: string): Promise<void> {
       if (!entry) {
         continue;
       }
-      entry.duplicated = photo.duplicated;
-      if (entry.duplicated) {
-        entry.selected = false;
+      const nextSelected = photo.duplicated ? false : entry.selected;
+      if (
+        entry.duplicated === photo.duplicated &&
+        entry.selected === nextSelected
+      ) {
+        continue;
       }
+      entry.duplicated = photo.duplicated;
+      entry.selected = nextSelected;
       syncedPhotoIds.push(photo.photoId);
     }
   });
@@ -178,15 +256,22 @@ async function applyDuplicateFlags(albumId: string): Promise<void> {
       return;
     }
 
+    album.cullingDuplicateGroups = groups;
+
     for (const photo of Object.values(photoMap)) {
       const entry = album.photos.find(item => item.photoId === photo.photoId);
       if (!entry) {
         continue;
       }
-      entry.duplicated = photo.duplicated;
-      if (entry.duplicated) {
-        entry.selected = false;
+      const nextSelected = photo.duplicated ? false : entry.selected;
+      if (
+        entry.duplicated === photo.duplicated &&
+        entry.selected === nextSelected
+      ) {
+        continue;
       }
+      entry.duplicated = photo.duplicated;
+      entry.selected = nextSelected;
     }
   });
 
@@ -195,10 +280,61 @@ async function applyDuplicateFlags(albumId: string): Promise<void> {
   }
 }
 
-/**
- * Re-assigns cluster ids for every analyzed photo in album order.
- * Runs once at analysis completion — pure in-memory fingerprint math, no I/O.
- */
+function applyDuplicatedFlagChanges(
+  albumId: string,
+  changes: Array<{photoId: string; duplicated: boolean}>,
+): void {
+  if (changes.length === 0) {
+    return;
+  }
+
+  const syncedPhotoIds: string[] = [];
+  for (const change of changes) {
+    updatePhoto(
+      albumId,
+      change.photoId,
+      photo => {
+        photo.duplicated = change.duplicated;
+        if (change.duplicated) {
+          photo.selected = false;
+        }
+      },
+      {recomputeTotals: false, immediate: true},
+    );
+    syncedPhotoIds.push(change.photoId);
+  }
+
+  if (syncedPhotoIds.length > 0) {
+    syncPhotosFromStore(albumId, syncedPhotoIds);
+  }
+}
+
+async function backfillSuccessorKeyFaceCrops(
+  albumId: string,
+  successorPhotoIds: string[],
+): Promise<void> {
+  const uniqueIds = [...new Set(successorPhotoIds)];
+  for (const photoId of uniqueIds) {
+    const photo = getPhotoById(albumId, photoId);
+    if (!photo) {
+      continue;
+    }
+    await ensureAnalyzedPhotoAssetsForPhoto(albumId, photoId, photo.file);
+  }
+
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (!album?.cullingKeyFaces) {
+      return;
+    }
+    album.cullingKeyFaces = syncKeyFaceCropUrisFromPhotos(
+      album.cullingKeyFaces,
+      id => getPhotoById(albumId, id),
+    );
+  });
+  await persistAlbum(albumId);
+}
+
 function reconcileFaceClusterIdsForAlbum(albumId: string): void {
   clearFaceClusterIndex(albumId);
   const clusterRepresentatives = getFaceClusterIndex(albumId);
@@ -292,21 +428,11 @@ export const cullingEngine = {
       throw new Error('Photo not found in album store');
     }
 
-    const captureTimePromise =
-      existing.capturedAt != null
-        ? Promise.resolve(existing.capturedAt)
-        : readImageCaptureTime(file.uri);
+    const analyzed = await detector.analyzePhoto(file.uri, photoId);
+    const faces = analyzed.faces;
+    const perceptualHash = existing.perceptualHash ?? analyzed.perceptualHash;
+    const capturedAt = existing.capturedAt ?? analyzed.capturedAt;
 
-    const perceptualHashPromise =
-      existing.perceptualHash != null
-        ? Promise.resolve(existing.perceptualHash)
-        : computeImagePerceptualHash(file.uri);
-
-    const [faces, perceptualHash, capturedAt] = await Promise.all([
-      detector.detectFaces(file.uri, photoId),
-      perceptualHashPromise,
-      captureTimePromise,
-    ]);
     const flags = derivePhotoFlags(faces);
 
     const isFirstAnalysis = existing.faces.length === 0;
@@ -333,10 +459,7 @@ export const cullingEngine = {
 
     assignFaceClusterIdsIncremental(albumId, photoId);
 
-    const analyzedPhoto = getPhotoById(albumId, photoId);
-    if (analyzedPhoto) {
-      await ensureAnalyzedPhotoAssetsForPhoto(albumId, photoId, file);
-    }
+    scheduleAnalyzedPhotoAssetsForPhoto(albumId, photoId, file);
 
     const updated = getPhotoById(albumId, photoId);
     if (!updated) {
@@ -429,27 +552,73 @@ export const cullingEngine = {
       throw new Error('Cannot delete uploaded photo');
     }
 
-    const removed = removePhotoFromAlbum(albumId, photoId);
-    if (!removed) {
-      throw new Error('Photo analysis not found');
-    }
+    const deletedContribution = statsContributionFromPhoto(photo);
+    const groupsBefore = album?.cullingDuplicateGroups ?? [];
+    const keyFacesBefore = album?.cullingKeyFaces ?? [];
+    const statsBefore = album?.cullingStats;
 
-    await deleteLocalPhotoFile(photo.file.uri);
+    const groupPatch = patchDuplicateGroupsAfterDelete(
+      groupsBefore,
+      photoId,
+      id => getPhotoById(albumId, id),
+    );
+
+    clearSyncPhotoFromStore(albumId, photoId);
+    removePhotoFromAlbum(albumId, photoId);
+    applyDuplicatedFlagChanges(albumId, groupPatch.flagChanges);
+
+    const keyFacePatch = patchKeyFacesAfterDelete(
+      keyFacesBefore,
+      photoId,
+      id => getPhotoById(albumId, id),
+    );
+
+    const statsDelta = combineStatsDelta(
+      subtractStatsDelta(
+        {
+          totalPhotos: 0,
+          mySelections: 0,
+          aiSelected: 0,
+          maybe: 0,
+          blurred: 0,
+          closedEyes: 0,
+          duplicated: 0,
+        },
+        deletedContribution,
+      ),
+      groupPatch.statsDelta,
+    );
+
+    culledAlbumStore.setState(state => {
+      const entry = state.albums[albumId];
+      if (!entry) {
+        return;
+      }
+      entry.cullingDuplicateGroups = groupPatch.groups;
+      entry.cullingKeyFaces = keyFacePatch.keyFaces;
+      if (statsBefore) {
+        entry.cullingStats = addStatsDelta(statsBefore, statsDelta);
+      } else {
+        const analyzed = getPhotosForAlbum(albumId)
+          .filter(item => item.analysisStatus === 'analyzed')
+          .map(toCullingPhoto);
+        entry.cullingStats =
+          analyzed.length > 0 ? computeStats(analyzed) : undefined;
+      }
+    });
+
+    await removePersistedPhoto(albumId, photoId);
+    try {
+      await deleteLocalPhotoFile(photo.file.uri);
+    } catch (error) {}
+
     await persistAlbum(albumId);
 
-    const remaining = await getAnalyzedPhotos(albumId);
-    if (remaining.length > 0) {
-      reconcileFaceClusterIdsForAlbum(albumId);
-      await backfillMissingAnalyzedPhotoAssets(
+    if (keyFacePatch.successorPhotoIds.length > 0) {
+      void backfillSuccessorKeyFaceCrops(
         albumId,
-        getPhotosForAlbum(albumId),
+        keyFacePatch.successorPhotoIds,
       );
-      await applyDuplicateFlags(albumId);
-      updateCullingSummary(albumId);
-      await persistAlbum(albumId);
-    } else {
-      updateCullingSummary(albumId);
-      await persistAlbum(albumId);
     }
   },
 
@@ -497,9 +666,11 @@ export const cullingEngine = {
   },
 
   async clearAlbum(albumId: string): Promise<void> {
+    clearScheduledAnalyzedPhotoAssets(albumId);
     clearFaceClusterIndex(albumId);
     await purgeLocalCulledAlbum(albumId);
   },
 };
 
-export type {CullingPhoto};
+export type { CullingPhoto };
+

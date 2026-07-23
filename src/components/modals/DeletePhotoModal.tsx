@@ -25,14 +25,14 @@ export function DeletePhotoModal({
     }
 
     setDeleting(true);
-    onClose();
 
-    onDelete()
+    void onDelete()
       .catch(error => {
         console.error('[DeletePhotoModal] Failed to delete photo', error);
       })
       .finally(() => {
         setDeleting(false);
+        onClose();
       });
   }
 

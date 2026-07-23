@@ -122,7 +122,14 @@ export type CulledAlbum = {
   syncedStorageGb?: number;
   cullingStats?: APIResponse.CullingStats;
   cullingKeyFaces?: APIResponse.CullingKeyFace[];
+  cullingDuplicateGroups?: CullingDuplicateGroup[];
   photos: CulledAlbumPhoto[];
+};
+
+export type CullingDuplicateGroup = {
+  groupId: string;
+  photoIds: string[];
+  bestPhotoId: string;
 };
 
 export type CulledAlbumListItem = Pick<
@@ -195,6 +202,7 @@ export function createCulledAlbumFromSelection(
     totalStorage: 0,
     cullingStats: undefined,
     cullingKeyFaces: undefined,
+    cullingDuplicateGroups: undefined,
     photos: [],
   };
 }
@@ -416,6 +424,7 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.analysisBatchCounts = undefined;
   album.cullingStats ??= undefined;
   album.cullingKeyFaces ??= undefined;
+  album.cullingDuplicateGroups ??= undefined;
   album.createdAt ??= new Date(0).toISOString();
   album.totalPhotos ??= album.photos.length;
   album.totalStorage ??= 0;

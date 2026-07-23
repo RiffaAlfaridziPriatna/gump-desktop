@@ -51,6 +51,7 @@ export class CulledAlbum {
   private _syncedStorageGb: number | null;
   private _cullingStats: Record<string, number> | null;
   private _cullingKeyFaces: unknown[] | null;
+  private _cullingDuplicateGroups: unknown[] | null;
 
   constructor(data: {
     albumId: string;
@@ -69,6 +70,7 @@ export class CulledAlbum {
     syncedStorageGb?: number | null;
     cullingStats?: Record<string, number> | null;
     cullingKeyFaces?: unknown[] | null;
+    cullingDuplicateGroups?: unknown[] | null;
   }) {
     this.albumId = data.albumId;
     this.name = data.name;
@@ -87,6 +89,7 @@ export class CulledAlbum {
     this._syncedStorageGb = data.syncedStorageGb ?? null;
     this._cullingStats = data.cullingStats ?? null;
     this._cullingKeyFaces = data.cullingKeyFaces ?? null;
+    this._cullingDuplicateGroups = data.cullingDuplicateGroups ?? null;
   }
 
   get cullingCompleted(): boolean {
@@ -125,6 +128,10 @@ export class CulledAlbum {
     return this._cullingKeyFaces;
   }
 
+  get cullingDuplicateGroups(): unknown[] | null {
+    return this._cullingDuplicateGroups;
+  }
+
   markCullingCompleted(): void {
     this._cullingCompleted = true;
   }
@@ -135,6 +142,10 @@ export class CulledAlbum {
   ): void {
     this._cullingStats = stats;
     this._cullingKeyFaces = keyFaces;
+  }
+
+  setCullingDuplicateGroups(groups: unknown[] | null): void {
+    this._cullingDuplicateGroups = groups;
   }
 
   markHasUploads(): void {
@@ -175,6 +186,7 @@ export class CulledAlbum {
       syncedStorageGb: this._syncedStorageGb,
       cullingStats: this._cullingStats,
       cullingKeyFaces: this._cullingKeyFaces,
+      cullingDuplicateGroups: this._cullingDuplicateGroups,
     };
   }
 
@@ -196,6 +208,7 @@ export class CulledAlbum {
       syncedStorageGb: data.syncedStorageGb,
       cullingStats: data.cullingStats ?? null,
       cullingKeyFaces: data.cullingKeyFaces ?? null,
+      cullingDuplicateGroups: data.cullingDuplicateGroups ?? null,
     });
   }
 }

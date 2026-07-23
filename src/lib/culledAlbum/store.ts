@@ -114,10 +114,6 @@ export function syncPhotoStateForAlbum(
   albumId: string,
   photos: CulledAlbumPhoto[],
 ): void {
-  if (photos.length === 0) {
-    return;
-  }
-
   photoStateStore.setState(state => {
     const nextPhotoIds = photos.map(p => p.photoId);
     const nextIdSet = new Set(nextPhotoIds);
@@ -127,6 +123,11 @@ export function syncPhotoStateForAlbum(
       if (!nextIdSet.has(prevPhotoId)) {
         delete state.photoState[photoKey(albumId, prevPhotoId)];
       }
+    }
+
+    if (photos.length === 0) {
+      delete state.photoOrder[albumId];
+      return;
     }
 
     state.photoOrder[albumId] = nextPhotoIds;
@@ -954,7 +955,7 @@ export function removePhotoFromAlbum(
   albumId: string,
   photoId: string,
 ): boolean {
-  let removed = false;
+  let removedFromAlbum = false;
   culledAlbumStore.setState(state => {
     const album = state.albums[albumId];
     if (!album) {
@@ -962,23 +963,39 @@ export function removePhotoFromAlbum(
     }
     const nextLength = album.photos.length;
     album.photos = album.photos.filter(photo => photo.photoId !== photoId);
-    removed = album.photos.length < nextLength;
-    if (removed) {
+    removedFromAlbum = album.photos.length < nextLength;
+    if (removedFromAlbum) {
       recomputeAlbumTotals(album);
     }
   });
 
-  if (removed) {
-    const album = getAlbumFromState(albumId);
-    if (album) {
-      syncPhotoStateForAlbum(albumId, album.photos);
-    } else {
-      photoStateStore.setState(state => {
-        delete state.photoState[photoKey(albumId, photoId)];
-      });
+  let removedFromPhotoState = false;
+  photoStateStore.setState(state => {
+    const key = photoKey(albumId, photoId);
+    if (state.photoState[key]) {
+      delete state.photoState[key];
+      removedFromPhotoState = true;
     }
-  }
-  return removed;
+
+    const order = state.photoOrder[albumId];
+    if (order) {
+      const nextOrder = order.filter(id => id !== photoId);
+      if (nextOrder.length !== order.length) {
+        if (nextOrder.length === 0) {
+          delete state.photoOrder[albumId];
+        } else {
+          state.photoOrder[albumId] = nextOrder;
+        }
+        removedFromPhotoState = true;
+      }
+    }
+
+    if (removedFromAlbum || removedFromPhotoState) {
+      state.gridRevision[albumId] = (state.gridRevision[albumId] ?? 0) + 1;
+    }
+  });
+
+  return removedFromAlbum || removedFromPhotoState;
 }
 
 export function getPhotoById(

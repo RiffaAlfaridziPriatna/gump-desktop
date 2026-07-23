@@ -37,6 +37,7 @@ function legacyAlbumToDomainAlbum(album: LegacyCulledAlbum): CulledAlbum {
     syncedStorageGb: album.syncedStorageGb,
     cullingStats: album.cullingStats ?? null,
     cullingKeyFaces: album.cullingKeyFaces ?? null,
+    cullingDuplicateGroups: album.cullingDuplicateGroups ?? null,
   });
 }
 
@@ -73,6 +74,9 @@ function domainAlbumToLegacy(
     cullingStats: (album.cullingStats as LegacyCulledAlbum['cullingStats']) ?? undefined,
     cullingKeyFaces:
       (album.cullingKeyFaces as LegacyCulledAlbum['cullingKeyFaces']) ?? undefined,
+    cullingDuplicateGroups:
+      (album.cullingDuplicateGroups as LegacyCulledAlbum['cullingDuplicateGroups']) ??
+      undefined,
     photos,
   };
 }
@@ -119,6 +123,7 @@ async function ensureMigrated(): Promise<void> {
           syncedStorageGb: normalized.syncedStorageGb,
           cullingStats: normalized.cullingStats ?? null,
           cullingKeyFaces: normalized.cullingKeyFaces ?? null,
+          cullingDuplicateGroups: normalized.cullingDuplicateGroups ?? null,
         });
 
         await albumRepo.save(album);
@@ -214,6 +219,7 @@ export async function writeAllAlbums(
       syncedStorageGb: legacyAlbum.syncedStorageGb,
       cullingStats: legacyAlbum.cullingStats ?? null,
       cullingKeyFaces: legacyAlbum.cullingKeyFaces ?? null,
+      cullingDuplicateGroups: legacyAlbum.cullingDuplicateGroups ?? null,
     });
 
     await albumRepo.save(album);
@@ -317,6 +323,15 @@ export async function saveAlbum(
 
   const photoRepo = container.resolve<IPhotoRepository>(TOKENS.IPhotoRepository);
   await photoRepo.saveMany(legacyPhotosToDomainPhotos(album.albumId, album.photos));
+}
+
+export async function removePersistedPhoto(
+  albumId: string,
+  photoId: string,
+): Promise<void> {
+  await ensureMigrated();
+  const photoRepo = container.resolve<IPhotoRepository>(TOKENS.IPhotoRepository);
+  await photoRepo.delete(albumId, photoId);
 }
 
 export async function removeAlbum(albumId: string): Promise<void> {

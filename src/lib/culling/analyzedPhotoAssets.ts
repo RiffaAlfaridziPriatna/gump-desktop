@@ -5,11 +5,27 @@ import {ensureThumbnail} from '@lib/storage/localStorage';
 import {attachFaceCropUris} from './faceCropThumbnails';
 import {Platform} from 'react-native';
 
-const BACKFILL_CONCURRENCY = Platform.OS === 'windows' ? 2 : 4;
+const BACKFILL_CONCURRENCY = Platform.OS === 'windows' ? 2 : 3;
 
 export type AnalyzedPhotoAssetsBackfillOptions = {
   regenerateFaceCrops?: boolean;
 };
+
+type PendingAssetBackfill = {
+  albumId: string;
+  photoId: string;
+  file: CulledAlbumPhoto['file'];
+  options?: AnalyzedPhotoAssetsBackfillOptions;
+};
+
+function assetBackfillKey(albumId: string, photoId: string): string {
+  return `${albumId}:${photoId}`;
+}
+
+const pendingAssetBackfills: PendingAssetBackfill[] = [];
+const pendingAssetBackfillKeys = new Set<string>();
+const activeAssetBackfillKeys = new Set<string>();
+let activeAssetBackfills = 0;
 
 async function backfillAnalyzedPhotoAssets(
   albumId: string,
@@ -58,6 +74,72 @@ async function backfillAnalyzedPhotoAssets(
     {recomputeTotals: false},
   );
   syncPhotoFromStore(albumId, photo.photoId);
+}
+
+function pumpAssetBackfillQueue(): void {
+  while (
+    activeAssetBackfills < BACKFILL_CONCURRENCY &&
+    pendingAssetBackfills.length > 0
+  ) {
+    const next = pendingAssetBackfills.shift();
+    if (!next) {
+      return;
+    }
+
+    const key = assetBackfillKey(next.albumId, next.photoId);
+    pendingAssetBackfillKeys.delete(key);
+    if (activeAssetBackfillKeys.has(key)) {
+      continue;
+    }
+
+    activeAssetBackfillKeys.add(key);
+    activeAssetBackfills += 1;
+    const photo = getPhotoById(next.albumId, next.photoId);
+    const work = photo
+      ? backfillAnalyzedPhotoAssets(
+          next.albumId,
+          {...photo, file: next.file},
+          next.options,
+        )
+      : Promise.resolve();
+    work
+      .catch(error => {
+        console.error('[CulledAlbum] Deferred asset backfill failed', error);
+      })
+      .finally(() => {
+        activeAssetBackfillKeys.delete(key);
+        activeAssetBackfills -= 1;
+        pumpAssetBackfillQueue();
+      });
+  }
+}
+
+export function scheduleAnalyzedPhotoAssetsForPhoto(
+  albumId: string,
+  photoId: string,
+  file: CulledAlbumPhoto['file'],
+  options?: AnalyzedPhotoAssetsBackfillOptions,
+): void {
+  const key = assetBackfillKey(albumId, photoId);
+  if (pendingAssetBackfillKeys.has(key) || activeAssetBackfillKeys.has(key)) {
+    return;
+  }
+
+  pendingAssetBackfillKeys.add(key);
+  pendingAssetBackfills.push({albumId, photoId, file, options});
+  pumpAssetBackfillQueue();
+}
+
+export function clearScheduledAnalyzedPhotoAssets(albumId: string): void {
+  for (let index = pendingAssetBackfills.length - 1; index >= 0; index -= 1) {
+    if (pendingAssetBackfills[index].albumId !== albumId) {
+      continue;
+    }
+    const [removed] = pendingAssetBackfills.splice(index, 1);
+    pendingAssetBackfillKeys.delete(
+      assetBackfillKey(removed.albumId, removed.photoId),
+    );
+  }
 }
 
 export async function ensureAnalyzedPhotoAssetsForPhoto(

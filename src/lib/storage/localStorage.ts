@@ -1,5 +1,12 @@
 import {FileAsset} from '@services/upload/types';
+import {NativeDetectedFace} from '@lib/culledAlbum/types';
 import {NativeModules, Platform} from 'react-native';
+
+export type NativeAnalyzePhotoResult = {
+  faces: NativeDetectedFace[];
+  perceptualHash?: string | null;
+  capturedAt?: number | null;
+};
 
 type NativeLocalStorageModule = {
   copyPhoto: (
@@ -22,6 +29,8 @@ type NativeLocalStorageModule = {
   ) => Promise<{width: number; height: number}>;
   readImageCaptureTime: (uri: string) => Promise<number | null>;
   computePerceptualHash: (uri: string) => Promise<string | null>;
+  detectFacesForCulling?: (uri: string) => Promise<NativeDetectedFace[]>;
+  analyzePhotoForCulling?: (uri: string) => Promise<NativeAnalyzePhotoResult>;
   ensureFaceCrops: (
     albumId: string,
     sourceUri: string,
@@ -130,6 +139,36 @@ export async function computePerceptualHash(uri: string): Promise<string | null>
     return NativeLocalStorage.computePerceptualHash(uri);
   }
   return null;
+}
+
+export async function detectFacesForCulling(
+  uri: string,
+): Promise<NativeDetectedFace[]> {
+  if (!hasNativeLocalStorage() || !NativeLocalStorage?.detectFacesForCulling) {
+    throw new Error('Native face detection is not available');
+  }
+  return NativeLocalStorage.detectFacesForCulling(uri);
+}
+
+export async function analyzePhotoForCulling(
+  uri: string,
+): Promise<NativeAnalyzePhotoResult | null> {
+  if (!hasNativeLocalStorage() || !NativeLocalStorage?.analyzePhotoForCulling) {
+    return null;
+  }
+  return NativeLocalStorage.analyzePhotoForCulling(uri);
+}
+
+export function hasNativeAnalyzePhotoForCulling(): boolean {
+  return (
+    hasNativeLocalStorage() && NativeLocalStorage?.analyzePhotoForCulling != null
+  );
+}
+
+export function hasNativeDetectFacesForCulling(): boolean {
+  return (
+    hasNativeLocalStorage() && NativeLocalStorage?.detectFacesForCulling != null
+  );
 }
 
 export function resolveDisplayUri(file: FileAsset): string {

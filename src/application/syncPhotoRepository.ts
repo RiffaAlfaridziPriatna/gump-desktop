@@ -103,6 +103,18 @@ export async function syncPhotoFromStoreNow(
   await container.resolve<IPhotoRepository>(TOKENS.IPhotoRepository).save(domain);
 }
 
+export function clearSyncPhotoFromStore(
+  albumId: string,
+  photoId: string,
+): void {
+  const key = `${albumId}:${photoId}`;
+  const existing = syncTimers.get(key);
+  if (existing) {
+    clearTimeout(existing);
+    syncTimers.delete(key);
+  }
+}
+
 export function syncPhotoFromStore(albumId: string, photoId: string): void {
   const key = `${albumId}:${photoId}`;
   const existing = syncTimers.get(key);
