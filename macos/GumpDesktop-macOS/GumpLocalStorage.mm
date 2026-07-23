@@ -9,6 +9,7 @@
 RCT_EXPORT_MODULE();
 
 static const NSUInteger THUMBNAIL_MAX_PIXEL_SIZE = 1920;
+static const NSUInteger kGumpAnalysisMaxPixelSize = 4096;
 static const CGFloat kFaceCropSidePadding = 0.3;
 static const CGFloat kFaceCropTopPadding = 0.3;
 static const CGFloat kFaceCropBottomPadding = 0.5;
@@ -93,8 +94,6 @@ static const NSUInteger kFaceCropOutputPixelSize = 128;
     return -1;
   }
 
-  // Sort by X and measure vertical span in each half — avoids inflated EAR when
-  // the full landmark bbox includes eyelid folds on closed eyes.
   NSMutableArray<NSValue *> *sorted = [NSMutableArray arrayWithCapacity:region.pointCount];
   for (NSUInteger i = 0; i < region.pointCount; i++) {
     [sorted addObject:[NSValue valueWithPoint:points[i]]];
@@ -470,13 +469,14 @@ static const NSUInteger kFaceCropOutputPixelSize = 128;
 
 - (BOOL)hasPlausibleLandmarkLayout:(VNFaceLandmarks2D *)landmarks
 {
-  CGPoint leftEye = [self centroidOfLandmarkRegion:landmarks.leftEye];
-  CGPoint rightEye = [self centroidOfLandmarkRegion:landmarks.rightEye];
+  CGPoint leftEyeRaw = [self centroidOfLandmarkRegion:landmarks.leftEye];
+  CGPoint rightEyeRaw = [self centroidOfLandmarkRegion:landmarks.rightEye];
   CGPoint nose = [self centroidOfLandmarkRegion:landmarks.nose];
   VNFaceLandmarkRegion2D *mouthRegion = landmarks.outerLips ?: landmarks.innerLips;
   CGPoint mouth = [self centroidOfLandmarkRegion:mouthRegion];
+  BOOL hasMouth = mouth.x >= 0;
 
-  if (leftEye.x < 0 || rightEye.x < 0 || nose.x < 0 || mouth.x < 0) {
+  if (leftEyeRaw.x < 0 || rightEyeRaw.x < 0 || nose.x < 0) {
     return NO;
   }
 
@@ -489,9 +489,13 @@ static const NSUInteger kFaceCropOutputPixelSize = 128;
     return NO;
   }
 
-  if (leftEye.x >= rightEye.x) {
-    return NO;
-  }
+  BOOL eyesSwapped = leftEyeRaw.x > rightEyeRaw.x;
+  CGPoint leftEye = eyesSwapped ? rightEyeRaw : leftEyeRaw;
+  CGPoint rightEye = eyesSwapped ? leftEyeRaw : rightEyeRaw;
+  VNFaceLandmarkRegion2D *leftEyeRegion =
+      eyesSwapped ? landmarks.rightEye : landmarks.leftEye;
+  VNFaceLandmarkRegion2D *rightEyeRegion =
+      eyesSwapped ? landmarks.leftEye : landmarks.rightEye;
 
   CGFloat eyeDistance = rightEye.x - leftEye.x;
   if (eyeDistance < 0.15f || eyeDistance > 0.65f) {
@@ -508,32 +512,59 @@ static const NSUInteger kFaceCropOutputPixelSize = 128;
   }
 
   CGFloat eyesY = (leftEye.y + rightEye.y) / 2.0f;
-  if (eyesY <= nose.y || nose.y <= mouth.y) {
-    return NO;
+  BOOL invertedVertical = NO;
+  if (hasMouth) {
+    BOOL normalOrder = eyesY + 0.02f >= nose.y && nose.y + 0.02f >= mouth.y;
+    BOOL invertedOrder = eyesY <= nose.y + 0.02f && nose.y <= mouth.y + 0.02f;
+    if (normalOrder) {
+      invertedVertical = NO;
+    } else if (invertedOrder) {
+      invertedVertical = YES;
+    } else {
+      return NO;
+    }
+  } else if (eyesY + 0.10f < nose.y) {
+    invertedVertical = YES;
   }
 
-  if (eyesY < 0.48f || mouth.y > 0.52f) {
-    return NO;
+  if (!invertedVertical) {
+    if (eyesY < 0.36f) {
+      return NO;
+    }
+    if (hasMouth && mouth.y > 0.68f) {
+      return NO;
+    }
+  } else {
+    if (eyesY > 0.64f) {
+      return NO;
+    }
+    if (hasMouth && mouth.y < 0.32f) {
+      return NO;
+    }
   }
 
-  CGFloat eyeToNose = eyesY - nose.y;
-  CGFloat noseToMouth = nose.y - mouth.y;
-  if (eyeToNose < 0.12f || eyeToNose > 0.45f) {
+  CGFloat eyeToNose = fabs(eyesY - nose.y);
+  if (eyeToNose < 0.08f || eyeToNose > 0.50f) {
     return NO;
   }
-  if (noseToMouth < 0.08f || noseToMouth > 0.35f) {
-    return NO;
+  if (hasMouth) {
+    CGFloat noseToMouth = fabs(nose.y - mouth.y);
+    if (noseToMouth < 0.05f || noseToMouth > 0.40f) {
+      return NO;
+    }
   }
 
-  CGFloat leftEyeWidth = [self landmarkHorizontalSpan:landmarks.leftEye];
-  CGFloat rightEyeWidth = [self landmarkHorizontalSpan:landmarks.rightEye];
-  CGFloat mouthWidth = [self landmarkHorizontalSpan:mouthRegion];
+  CGFloat leftEyeWidth = [self landmarkHorizontalSpan:leftEyeRegion];
+  CGFloat rightEyeWidth = [self landmarkHorizontalSpan:rightEyeRegion];
   if (leftEyeWidth < 0.06f || leftEyeWidth > 0.40f ||
       rightEyeWidth < 0.06f || rightEyeWidth > 0.40f) {
     return NO;
   }
-  if (mouthWidth < eyeDistance * 0.55f) {
-    return NO;
+  if (hasMouth) {
+    CGFloat mouthWidth = [self landmarkHorizontalSpan:mouthRegion];
+    if (mouthWidth < eyeDistance * 0.55f) {
+      return NO;
+    }
   }
 
   CGFloat eyeWidthAvg = (leftEyeWidth + rightEyeWidth) * 0.5f;
@@ -542,8 +573,8 @@ static const NSUInteger kFaceCropOutputPixelSize = 128;
     return NO;
   }
 
-  CGFloat leftEAR = [self eyeAspectRatioFromRegion:landmarks.leftEye];
-  CGFloat rightEAR = [self eyeAspectRatioFromRegion:landmarks.rightEye];
+  CGFloat leftEAR = [self eyeAspectRatioFromRegion:leftEyeRegion];
+  CGFloat rightEAR = [self eyeAspectRatioFromRegion:rightEyeRegion];
   if (leftEAR >= 0.0f && rightEAR >= 0.0f) {
     CGFloat earAvg = (leftEAR + rightEAR) * 0.5f;
     if (earAvg > 1e-5f && fabs(leftEAR - rightEAR) / earAvg > 0.75f) {
@@ -551,9 +582,11 @@ static const NSUInteger kFaceCropOutputPixelSize = 128;
     }
   }
 
-  CGFloat eyeToMouth = eyesY - mouth.y;
-  if (eyeToMouth < eyeDistance * 0.55f || eyeToMouth > eyeDistance * 2.20f) {
-    return NO;
+  if (hasMouth) {
+    CGFloat eyeToMouth = fabs(eyesY - mouth.y);
+    if (eyeToMouth < eyeDistance * 0.55f || eyeToMouth > eyeDistance * 2.20f) {
+      return NO;
+    }
   }
 
   if (![self hasPlausibleFaceContourSpan:landmarks.faceContour]) {
@@ -563,12 +596,41 @@ static const NSUInteger kFaceCropOutputPixelSize = 128;
   return YES;
 }
 
+- (CGFloat)pupilRelativeYInEye:(VNFaceLandmarkRegion2D *)eye
+                         pupil:(VNFaceLandmarkRegion2D *)pupil
+{
+  if (eye == nil || eye.pointCount < 4 || pupil == nil || pupil.pointCount == 0) {
+    return -1.0f;
+  }
+
+  const CGPoint *points = eye.normalizedPoints;
+  CGFloat minY = points[0].y;
+  CGFloat maxY = points[0].y;
+  for (NSUInteger i = 1; i < eye.pointCount; i++) {
+    minY = MIN(minY, points[i].y);
+    maxY = MAX(maxY, points[i].y);
+  }
+  CGFloat height = maxY - minY;
+  if (height < 1e-5f) {
+    return -1.0f;
+  }
+
+  CGPoint pupilPoint = pupil.normalizedPoints[0];
+  return (pupilPoint.y - minY) / height;
+}
+
 - (NSDictionary *)eyesOpenFromLandmarks:(VNFaceLandmarks2D *)landmarks
+                                  pitch:(NSNumber *)pitch
+                               faceArea:(CGFloat)faceArea
 {
   static const CGFloat kOpenAvgThreshold = 0.18f;
   static const CGFloat kOpenMinThreshold = 0.14f;
   static const CGFloat kClosedMaxThreshold = 0.14f;
   static const CGFloat kClosedAvgThreshold = 0.12f;
+  static const CGFloat kStrongOpenAvgThreshold = 0.24f;
+  static const CGFloat kDownGazeClosedThreshold = 0.35f;
+  static const CGFloat kDownGazePartialThreshold = 0.48f;
+  static const CGFloat kMinFaceAreaForPupilGaze = 0.008f;
 
   CGFloat leftRatio = [self eyeAspectRatioFromRegion:landmarks.leftEye];
   CGFloat rightRatio = [self eyeAspectRatioFromRegion:landmarks.rightEye];
@@ -592,8 +654,60 @@ static const NSUInteger kFaceCropOutputPixelSize = 128;
     avgRatio = minRatio;
   }
 
+  if (faceArea >= kMinFaceAreaForPupilGaze) {
+    CGFloat leftPupilY =
+        [self pupilRelativeYInEye:landmarks.leftEye pupil:landmarks.leftPupil];
+    CGFloat rightPupilY =
+        [self pupilRelativeYInEye:landmarks.rightEye pupil:landmarks.rightPupil];
+    CGFloat pupilRelY = -1.0f;
+    if (leftPupilY >= 0.0f && rightPupilY >= 0.0f) {
+      pupilRelY = (leftPupilY + rightPupilY) / 2.0f;
+    } else if (leftPupilY >= 0.0f) {
+      pupilRelY = leftPupilY;
+    } else if (rightPupilY >= 0.0f) {
+      pupilRelY = rightPupilY;
+    }
+
+    // Pupil low in the eye socket => looking down / lids covering iris.
+    // Only demote open/ambiguous EAR results — never promote a clear blink to open.
+    BOOL earLooksOpen =
+        avgRatio >= kOpenAvgThreshold && minRatio >= kOpenMinThreshold;
+    BOOL earLooksClosed =
+        maxRatio <= kClosedMaxThreshold || avgRatio <= kClosedAvgThreshold;
+    if (pupilRelY >= 0.0f && pupilRelY < kDownGazeClosedThreshold &&
+        !earLooksClosed) {
+      return @{@"value" : @NO, @"confidence" : @(90.0f)};
+    }
+    if (pupilRelY >= 0.0f && pupilRelY < kDownGazePartialThreshold &&
+        earLooksOpen) {
+      return @{@"value" : @YES, @"confidence" : @(72.0f)};
+    }
+  }
+
+  BOOL lookingDown = NO;
+  if (pitch != nil) {
+    CGFloat pitchValue = pitch.floatValue;
+    if (fabs(pitchValue) > (CGFloat)M_PI + 0.01f) {
+      pitchValue = (pitchValue * (CGFloat)M_PI) / 180.0f;
+    }
+    lookingDown = pitchValue < -0.12f;
+  }
+  if (!lookingDown && landmarks.leftEye != nil && landmarks.rightEye != nil) {
+    CGPoint leftEye = [self centroidOfLandmarkRegion:landmarks.leftEye];
+    CGPoint rightEye = [self centroidOfLandmarkRegion:landmarks.rightEye];
+    CGFloat eyesY = (leftEye.y + rightEye.y) * 0.5f;
+    lookingDown = eyesY < 0.52f && eyesY >= 0.36f;
+  }
+
+  if (lookingDown && avgRatio < kStrongOpenAvgThreshold) {
+    return @{@"value" : @YES, @"confidence" : @(72.0f)};
+  }
+
   if (avgRatio >= kOpenAvgThreshold && minRatio >= kOpenMinThreshold) {
     CGFloat confidence = MIN(98.0f, 86.0f + (avgRatio - kOpenAvgThreshold) * 250.0f);
+    if (lookingDown) {
+      confidence = MIN(confidence, 78.0f);
+    }
     return @{@"value" : @YES, @"confidence" : @(confidence)};
   }
   if (maxRatio <= kClosedMaxThreshold || avgRatio <= kClosedAvgThreshold) {
@@ -621,7 +735,9 @@ static const NSUInteger kFaceCropOutputPixelSize = 128;
   }
   (void)captureQuality;
 
-  NSDictionary *eyesOpen = [self eyesOpenFromLandmarks:face.landmarks];
+  NSDictionary *eyesOpen = [self eyesOpenFromLandmarks:face.landmarks
+                                                 pitch:face.pitch
+                                              faceArea:(width * height)];
 
   return @{
     @"boundingBox" : @{
@@ -649,8 +765,23 @@ static const CGFloat kGumpFaceBoxProximityIoUThreshold = 0.18f;
 static const CGFloat kGumpFaceBoxProximityCenterFactor = 0.48f;
 static const CGFloat kGumpFaceBoxProximityMinAreaRatio = 1.8f;
 static const CGFloat kGumpTileOverlapFraction = 0.25f;
-static const NSUInteger kGumpMinFacesToSkipTiling = 8;
+static const NSUInteger kGumpMinFacesToSkipTiling = 10;
+static const NSUInteger kGumpDenseGroupAlwaysTileBelowCount = 36;
+static const CGFloat kGumpDenseGroupMaxFaceArea = 0.0025f;
 static const NSUInteger kGumpMinPixelsForTiling = 2000000;
+static const NSUInteger kGumpTileDetectMaxConcurrency = 3;
+static const CGFloat kGumpMinKeepFaceArea = 0.0004f;
+static const CGFloat kGumpMinSoftFaceArea = 0.012f;
+static const CGFloat kGumpRelativeTinyFaceArea = 0.00075f;
+static const CGFloat kGumpRelativeTinyFaceMaxRatio = 0.50f;
+static const CGFloat kGumpRelativeTinyDeferMediaRatio = 8.0f;
+static const CGFloat kGumpDisplayedMediaMinArea = 0.0035f;
+static const CGFloat kGumpDisplayedMediaMaxArea = 0.16f;
+static const CGFloat kGumpDisplayedMediaMinPersonArea = 0.0004f;
+static const NSUInteger kGumpDisplayedMediaSideSimilarMaxFaces = 6;
+static const CGFloat kGumpFocusGoodThreshold = 62.0f;
+static const CGFloat kGumpFocusSoftThreshold = 40.0f;
+static const CGFloat kGumpEyeConfidenceThreshold = 85.0f;
 
 - (CGFloat)intersectionAreaForBoxA:(CGRect)a boxB:(CGRect)b
 {
@@ -820,6 +951,13 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
   CGFloat stepY = (CGFloat)imageHeight / (CGFloat)gridCount;
 
   NSMutableArray<VNFaceObservation *> *merged = [NSMutableArray array];
+  NSObject *mergedLock = [[NSObject alloc] init];
+  dispatch_group_t group = dispatch_group_create();
+  dispatch_queue_t queue =
+      dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
+  dispatch_semaphore_t concurrency =
+      dispatch_semaphore_create((long)kGumpTileDetectMaxConcurrency);
+
   for (NSUInteger row = 0; row < gridCount; row++) {
     for (NSUInteger col = 0; col < gridCount; col++) {
       CGFloat originX = col * stepX;
@@ -832,29 +970,67 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
       }
 
       CGRect tileCrop = CGRectMake(originX, originY, tileWidth, tileHeight);
-      CGImageRef tileImage = CGImageCreateWithImageInRect(cgImage, tileCrop);
-      if (tileImage == NULL) {
-        continue;
-      }
-
-      NSArray<VNFaceObservation *> *tileFaces =
-          [self detectRectanglesInCGImage:tileImage revision:revision];
-      CGImageRelease(tileImage);
-
-      for (VNFaceObservation *tileFace in tileFaces) {
-        CGRect mappedBox = [self mapTileBoundingBox:tileFace.boundingBox
-                                       tileCropRect:tileCrop
-                                         imageWidth:imageWidth
-                                        imageHeight:imageHeight];
-        VNFaceObservation *mappedFace = [self faceObservationWithBoundingBox:mappedBox];
-        if (mappedFace != nil) {
-          [merged addObject:mappedFace];
+      dispatch_group_async(group, queue, ^{
+        dispatch_semaphore_wait(concurrency, DISPATCH_TIME_FOREVER);
+        CGImageRef tileImage = CGImageCreateWithImageInRect(cgImage, tileCrop);
+        if (tileImage == NULL) {
+          dispatch_semaphore_signal(concurrency);
+          return;
         }
-      }
+
+        NSArray<VNFaceObservation *> *tileFaces =
+            [self detectRectanglesInCGImage:tileImage revision:revision];
+        CGImageRelease(tileImage);
+
+        NSMutableArray<VNFaceObservation *> *mappedFaces = [NSMutableArray array];
+        for (VNFaceObservation *tileFace in tileFaces) {
+          CGRect mappedBox = [self mapTileBoundingBox:tileFace.boundingBox
+                                         tileCropRect:tileCrop
+                                           imageWidth:imageWidth
+                                          imageHeight:imageHeight];
+          VNFaceObservation *mappedFace = [self faceObservationWithBoundingBox:mappedBox];
+          if (mappedFace != nil) {
+            [mappedFaces addObject:mappedFace];
+          }
+        }
+
+        @synchronized(mergedLock) {
+          [merged addObjectsFromArray:mappedFaces];
+        }
+        dispatch_semaphore_signal(concurrency);
+      });
     }
   }
 
+  dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
   return [self deduplicateFaceObservations:merged];
+}
+
+- (CGFloat)maxFaceAreaInObservations:(NSArray<VNFaceObservation *> *)observations
+{
+  CGFloat maxArea = 0.0f;
+  for (VNFaceObservation *face in observations) {
+    CGFloat area = face.boundingBox.size.width * face.boundingBox.size.height;
+    if (area > maxArea) {
+      maxArea = area;
+    }
+  }
+  return maxArea;
+}
+
+- (BOOL)shouldSkipFurtherTilingForFaces:(NSArray<VNFaceObservation *> *)faces
+{
+  if (faces.count == 0) {
+    return NO;
+  }
+  if (faces.count >= kGumpDenseGroupAlwaysTileBelowCount) {
+    return YES;
+  }
+  CGFloat maxArea = [self maxFaceAreaInObservations:faces];
+  if (maxArea > 0.0f && maxArea < kGumpDenseGroupMaxFaceArea) {
+    return NO;
+  }
+  return faces.count >= kGumpMinFacesToSkipTiling;
 }
 
 - (NSArray<VNFaceObservation *> *)collectFaceRectanglesFromCGImage:(CGImageRef)cgImage
@@ -871,8 +1047,8 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
   size_t imageWidth = CGImageGetWidth(cgImage);
   size_t imageHeight = CGImageGetHeight(cgImage);
   NSUInteger pixelCount = imageWidth * imageHeight;
-  if (bestFullFrame.count >= kGumpMinFacesToSkipTiling ||
-      pixelCount < kGumpMinPixelsForTiling) {
+  if (pixelCount < kGumpMinPixelsForTiling ||
+      [self shouldSkipFurtherTilingForFaces:bestFullFrame]) {
     return bestFullFrame;
   }
 
@@ -884,7 +1060,7 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
       [NSMutableArray arrayWithArray:bestFullFrame];
   [combined addObjectsFromArray:tiledTwoByTwo];
   NSArray<VNFaceObservation *> *deduped = [self deduplicateFaceObservations:combined];
-  if (deduped.count >= kGumpMinFacesToSkipTiling) {
+  if ([self shouldSkipFurtherTilingForFaces:deduped]) {
     return deduped;
   }
 
@@ -907,14 +1083,14 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
   CGRect box = face.boundingBox;
   CGFloat facePixelWidth = box.size.width * (CGFloat)imageWidth;
   CGFloat facePixelHeight = box.size.height * (CGFloat)imageHeight;
-  if (facePixelWidth < 30.0f || facePixelHeight < 30.0f) {
+  if (facePixelWidth < 24.0f || facePixelHeight < 24.0f) {
     return NO;
   }
 
   CGFloat faceAreaFraction =
       (box.size.width * box.size.height * (CGFloat)imageWidth * (CGFloat)imageHeight) /
       ((CGFloat)imageWidth * (CGFloat)imageHeight);
-  if (faceAreaFraction < 0.0003f) {
+  if (faceAreaFraction < 0.00035f) {
     return NO;
   }
 
@@ -931,9 +1107,18 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
     return NO;
   }
 
+  BOOL hasLeftEye = landmarks.leftEye != nil && landmarks.leftEye.pointCount >= 4;
+  BOOL hasRightEye = landmarks.rightEye != nil && landmarks.rightEye.pointCount >= 4;
+  if (!hasLeftEye && !hasRightEye) {
+    return NO;
+  }
+
   BOOL hasMouth = (landmarks.outerLips != nil && landmarks.outerLips.pointCount >= 3) ||
                   (landmarks.innerLips != nil && landmarks.innerLips.pointCount >= 3);
-  return hasMouth;
+  if (hasMouth) {
+    return YES;
+  }
+  return hasLeftEye && hasRightEye;
 }
 
 - (BOOL)hasPlausibleProfileLandmarkLayout:(VNFaceLandmarks2D *)landmarks
@@ -970,11 +1155,14 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
     eyesY = [self centroidOfLandmarkRegion:landmarks.rightEye].y;
   }
 
-  if (eyesY <= nose.y || nose.y <= mouth.y) {
-    return NO;
+  if (eyesY + 0.10f < nose.y || nose.y + 0.10f < mouth.y) {
+    BOOL inverted = eyesY <= nose.y + 0.02f && nose.y <= mouth.y + 0.02f;
+    if (!inverted) {
+      return NO;
+    }
   }
 
-  CGFloat eyeToMouth = eyesY - mouth.y;
+  CGFloat eyeToMouth = fabs(eyesY - mouth.y);
   if (eyeToMouth < 0.12f || eyeToMouth > 0.70f) {
     return NO;
   }
@@ -1022,11 +1210,11 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
   }
 
   NSNumber *effectiveQuality = captureQuality ?: face.faceCaptureQuality;
-  if (effectiveQuality != nil && effectiveQuality.floatValue < 0.15f) {
+  if (effectiveQuality != nil && effectiveQuality.floatValue < 0.12f) {
     return NO;
   }
 
-  if (effectiveQuality == nil && face.confidence < 0.82f) {
+  if (effectiveQuality == nil && face.confidence < 0.80f) {
     return NO;
   }
 
@@ -1054,11 +1242,11 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
   }
 
   NSNumber *effectiveQuality = captureQuality ?: face.faceCaptureQuality;
-  if (effectiveQuality != nil && effectiveQuality.floatValue < 0.12f) {
+  if (effectiveQuality != nil && effectiveQuality.floatValue < 0.10f) {
     return NO;
   }
 
-  if (effectiveQuality == nil && face.confidence < 0.78f) {
+  if (effectiveQuality == nil && face.confidence < 0.76f) {
     return NO;
   }
 
@@ -1083,7 +1271,8 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
                                    captureQuality:captureQuality];
 }
 
-- (CGImageRef)orientedCGImageFromPath:(NSString *)path CF_RETURNS_RETAINED
+- (CGImageRef)orientedCGImageFromPath:(NSString *)path
+                         maxPixelSize:(NSUInteger)maxPixelSize CF_RETURNS_RETAINED
 {
   NSURL *url = [NSURL fileURLWithPath:path isDirectory:NO];
   CGImageSourceRef imageSource = CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL);
@@ -1091,15 +1280,349 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
     return NULL;
   }
 
-  NSDictionary *options = @{
+  NSMutableDictionary *options = [NSMutableDictionary dictionaryWithDictionary:@{
     (NSString *)kCGImageSourceCreateThumbnailFromImageAlways : @YES,
     (NSString *)kCGImageSourceCreateThumbnailWithTransform : @YES,
     (NSString *)kCGImageSourceShouldCacheImmediately : @YES,
-  };
+  }];
+  if (maxPixelSize > 0) {
+    options[(NSString *)kCGImageSourceThumbnailMaxPixelSize] = @(maxPixelSize);
+  }
   CGImageRef image = CGImageSourceCreateThumbnailAtIndex(imageSource, 0,
                                                          (__bridge CFDictionaryRef)options);
   CFRelease(imageSource);
   return image;
+}
+
+- (CGImageRef)orientedCGImageFromPath:(NSString *)path CF_RETURNS_RETAINED
+{
+  return [self orientedCGImageFromPath:path maxPixelSize:0];
+}
+
+- (CGFloat)faceDictionaryArea:(NSDictionary *)face
+{
+  NSDictionary *box = face[@"boundingBox"];
+  if (![box isKindOfClass:[NSDictionary class]]) {
+    return 0;
+  }
+  CGFloat width = [box[@"width"] floatValue];
+  CGFloat height = [box[@"height"] floatValue];
+  return MAX(0.0f, width) * MAX(0.0f, height);
+}
+
+- (CGPoint)faceDictionaryCenter:(NSDictionary *)face
+{
+  NSDictionary *box = face[@"boundingBox"];
+  if (![box isKindOfClass:[NSDictionary class]]) {
+    return CGPointMake(0.5f, 0.5f);
+  }
+  CGFloat left = [box[@"left"] floatValue];
+  CGFloat top = [box[@"top"] floatValue];
+  CGFloat width = [box[@"width"] floatValue];
+  CGFloat height = [box[@"height"] floatValue];
+  return CGPointMake(left + width * 0.5f, top + height * 0.5f);
+}
+
+- (CGFloat)faceDictionaryAbsYawRadians:(NSDictionary *)face
+{
+  NSDictionary *pose = face[@"pose"];
+  CGFloat yaw = [pose[@"yaw"] floatValue];
+  CGFloat value = fabs(yaw);
+  if (value > (CGFloat)M_PI + 0.01f) {
+    return (value * (CGFloat)M_PI) / 180.0f;
+  }
+  return value;
+}
+
+- (NSArray *)reindexFaceDictionaries:(NSArray *)faces
+{
+  NSMutableArray *reindexed = [NSMutableArray arrayWithCapacity:faces.count];
+  for (NSInteger index = 0; index < (NSInteger)faces.count; index++) {
+    NSDictionary *face = faces[index];
+    if (![face isKindOfClass:[NSDictionary class]]) {
+      continue;
+    }
+    NSMutableDictionary *copy = [face mutableCopy];
+    copy[@"faceId"] = [NSString stringWithFormat:@"local-face-%ld", (long)index];
+    [reindexed addObject:copy];
+  }
+  return reindexed;
+}
+
+- (CGFloat)upperHalfMeanFaceAreaFromDictionaries:(NSArray *)faces
+{
+  NSMutableArray<NSNumber *> *areas = [NSMutableArray arrayWithCapacity:faces.count];
+  for (NSDictionary *face in faces) {
+    if (![face isKindOfClass:[NSDictionary class]]) {
+      continue;
+    }
+    CGFloat area = [self faceDictionaryArea:face];
+    if (area > 0.0f) {
+      [areas addObject:@(area)];
+    }
+  }
+  if (areas.count == 0) {
+    return 0.0f;
+  }
+  [areas sortUsingSelector:@selector(compare:)];
+  NSUInteger start = areas.count / 2;
+  CGFloat sum = 0.0f;
+  NSUInteger count = 0;
+  for (NSUInteger index = start; index < areas.count; index++) {
+    sum += areas[index].floatValue;
+    count += 1;
+  }
+  return count > 0 ? sum / (CGFloat)count : 0.0f;
+}
+
+- (NSArray *)rejectLikelyNonFaceArtifactDictionaries:(NSArray *)faces
+{
+  if (faces.count == 0) {
+    return faces;
+  }
+
+  CGFloat referenceArea = [self upperHalfMeanFaceAreaFromDictionaries:faces];
+
+  NSMutableArray *kept = [NSMutableArray arrayWithCapacity:faces.count];
+  for (NSDictionary *face in faces) {
+    if (![face isKindOfClass:[NSDictionary class]]) {
+      continue;
+    }
+    CGFloat area = [self faceDictionaryArea:face];
+    if (area < kGumpMinKeepFaceArea) {
+      continue;
+    }
+    if (faces.count >= 2 &&
+        referenceArea > 0.0f &&
+        area < kGumpRelativeTinyFaceArea &&
+        area < referenceArea * kGumpRelativeTinyFaceMaxRatio) {
+      CGFloat sizeRatio = referenceArea / MAX(area, 1e-8f);
+      BOOL deferToMediaFilter = NO;
+      if (sizeRatio >= kGumpRelativeTinyDeferMediaRatio) {
+        CGPoint center = [self faceDictionaryCenter:face];
+        for (NSDictionary *other in faces) {
+          if (![other isKindOfClass:[NSDictionary class]]) {
+            continue;
+          }
+          CGFloat otherArea = [self faceDictionaryArea:other];
+          if (otherArea < referenceArea * 0.85f) {
+            continue;
+          }
+          CGPoint otherCenter = [self faceDictionaryCenter:other];
+          if (otherCenter.y + 0.03f < center.y) {
+            deferToMediaFilter = YES;
+            break;
+          }
+        }
+      }
+      if (!deferToMediaFilter) {
+        continue;
+      }
+    }
+
+    CGFloat sharpness = [face[@"sharpness"] floatValue];
+    NSDictionary *eyesOpen = face[@"eyesOpen"];
+    BOOL openConfident =
+        [eyesOpen[@"value"] boolValue] &&
+        [eyesOpen[@"confidence"] floatValue] >= kGumpEyeConfidenceThreshold;
+
+    if (openConfident && sharpness < kGumpFocusSoftThreshold) {
+      continue;
+    }
+    if (faces.count >= 2 &&
+        sharpness >= kGumpFocusSoftThreshold &&
+        sharpness < kGumpFocusGoodThreshold &&
+        area < kGumpMinSoftFaceArea) {
+      if (!(referenceArea > 0.0f &&
+            area >= referenceArea * kGumpRelativeTinyFaceMaxRatio)) {
+        continue;
+      }
+    }
+    [kept addObject:face];
+  }
+  return kept;
+}
+
+- (NSArray *)rejectLikelyDisplayedMediaFaceDictionaries:(NSArray *)faces
+{
+  if (faces.count < 2) {
+    return faces;
+  }
+
+  NSUInteger count = faces.count;
+  NSMutableArray<NSNumber *> *areas = [NSMutableArray arrayWithCapacity:count];
+  NSMutableArray<NSNumber *> *centerXs = [NSMutableArray arrayWithCapacity:count];
+  NSMutableArray<NSNumber *> *centerYs = [NSMutableArray arrayWithCapacity:count];
+  NSMutableArray<NSNumber *> *yaws = [NSMutableArray arrayWithCapacity:count];
+  for (NSDictionary *face in faces) {
+    CGPoint center = [self faceDictionaryCenter:face];
+    [areas addObject:@([self faceDictionaryArea:face])];
+    [centerXs addObject:@(center.x)];
+    [centerYs addObject:@(center.y)];
+    [yaws addObject:@([self faceDictionaryAbsYawRadians:face])];
+  }
+
+  NSMutableIndexSet *reject = [NSMutableIndexSet indexSet];
+  for (NSUInteger candidate = 0; candidate < count; candidate++) {
+    CGFloat candidateArea = areas[candidate].floatValue;
+    CGFloat candidateCenterY = centerYs[candidate].floatValue;
+    CGFloat candidateCenterX = centerXs[candidate].floatValue;
+    CGFloat candidateYaw = yaws[candidate].floatValue;
+
+    BOOL oversizedAbove = NO;
+    if (candidateArea >= kGumpDisplayedMediaMinArea &&
+        candidateArea <= kGumpDisplayedMediaMaxArea) {
+      for (NSUInteger other = 0; other < count; other++) {
+        if (other == candidate) {
+          continue;
+        }
+        CGFloat otherArea = areas[other].floatValue;
+        if (otherArea < kGumpDisplayedMediaMinPersonArea || otherArea >= candidateArea) {
+          continue;
+        }
+        if (centerYs[other].floatValue <= candidateCenterY + 0.04f) {
+          continue;
+        }
+        if (candidateArea / MAX(otherArea, 1e-8f) >= 3.0f) {
+          oversizedAbove = YES;
+          break;
+        }
+      }
+    }
+    if (oversizedAbove) {
+      [reject addIndex:candidate];
+      continue;
+    }
+
+    BOOL onSide = candidateCenterX <= 0.38f || candidateCenterX >= 0.62f;
+    if (count <= kGumpDisplayedMediaSideSimilarMaxFaces &&
+        (candidateCenterX <= 0.32f || candidateCenterX >= 0.68f) &&
+        candidateArea >= kGumpDisplayedMediaMinArea &&
+        candidateArea <= kGumpDisplayedMediaMaxArea) {
+      BOOL sidePanelNearPerson = NO;
+      for (NSUInteger other = 0; other < count; other++) {
+        if (other == candidate) {
+          continue;
+        }
+        CGFloat otherArea = areas[other].floatValue;
+        CGFloat otherCenterX = centerXs[other].floatValue;
+        CGFloat otherCenterY = centerYs[other].floatValue;
+        if (otherArea < kGumpDisplayedMediaMinArea * 0.5f) {
+          continue;
+        }
+        CGFloat areaRatio = candidateArea / MAX(otherArea, 1e-8f);
+        if (areaRatio < 0.40f || areaRatio > 2.50f) {
+          continue;
+        }
+        CGFloat candidateEdge = fabs(candidateCenterX - 0.5f);
+        CGFloat otherEdge = fabs(otherCenterX - 0.5f);
+        if (candidateEdge < otherEdge + 0.20f) {
+          continue;
+        }
+        if (candidateCenterY > otherCenterY + 0.06f) {
+          continue;
+        }
+        sidePanelNearPerson = YES;
+        break;
+      }
+      if (sidePanelNearPerson) {
+        [reject addIndex:candidate];
+        continue;
+      }
+    }
+
+    if (candidateYaw >= 0.4f && onSide) {
+      BOOL hasFrontalPerson = NO;
+      for (NSUInteger other = 0; other < count; other++) {
+        if (other == candidate) {
+          continue;
+        }
+        if (yaws[other].floatValue <= 0.35f &&
+            areas[other].floatValue >= kGumpMinKeepFaceArea) {
+          hasFrontalPerson = YES;
+          break;
+        }
+      }
+      if (hasFrontalPerson) {
+        [reject addIndex:candidate];
+        continue;
+      }
+    }
+
+    if (candidateArea >= 0.015f && onSide) {
+      BOOL hasMoreCenteredSmaller = NO;
+      for (NSUInteger other = 0; other < count; other++) {
+        if (other == candidate) {
+          continue;
+        }
+        CGFloat otherArea = areas[other].floatValue;
+        if (otherArea < kGumpMinKeepFaceArea || otherArea >= candidateArea * 0.85f) {
+          continue;
+        }
+        if (fabs(centerXs[other].floatValue - 0.5f) < fabs(candidateCenterX - 0.5f)) {
+          hasMoreCenteredSmaller = YES;
+          break;
+        }
+      }
+      if (hasMoreCenteredSmaller) {
+        [reject addIndex:candidate];
+      }
+    }
+  }
+
+  if (reject.count == 0) {
+    return faces;
+  }
+
+  NSMutableArray *kept = [NSMutableArray arrayWithCapacity:count - reject.count];
+  for (NSUInteger index = 0; index < count; index++) {
+    if (![reject containsIndex:index]) {
+      [kept addObject:faces[index]];
+    }
+  }
+  return kept;
+}
+
+- (NSArray *)rejectLikelyBackdropBillboardFaceDictionaries:(NSArray *)faces
+{
+  if (faces.count <= 1) {
+    return faces;
+  }
+
+  NSMutableIndexSet *stageIndexes = [NSMutableIndexSet indexSet];
+  NSMutableIndexSet *billboardIndexes = [NSMutableIndexSet indexSet];
+  for (NSUInteger index = 0; index < faces.count; index++) {
+    NSDictionary *face = faces[index];
+    CGFloat area = [self faceDictionaryArea:face];
+    CGPoint center = [self faceDictionaryCenter:face];
+    if (area >= kGumpMinKeepFaceArea && center.y >= 0.45f && center.y <= 0.88f) {
+      [stageIndexes addIndex:index];
+    }
+    if (area >= 0.012f && center.y < 0.40f) {
+      [billboardIndexes addIndex:index];
+    }
+  }
+
+  if (stageIndexes.count == 0 || billboardIndexes.count == 0) {
+    return faces;
+  }
+
+  NSMutableArray *kept = [NSMutableArray arrayWithCapacity:faces.count];
+  for (NSUInteger index = 0; index < faces.count; index++) {
+    if ([billboardIndexes containsIndex:index]) {
+      continue;
+    }
+    [kept addObject:faces[index]];
+  }
+  return kept.count > 0 ? kept : faces;
+}
+
+- (NSArray *)postProcessFaceDictionaries:(NSArray *)faces
+{
+  NSArray *filtered = [self rejectLikelyNonFaceArtifactDictionaries:faces];
+  filtered = [self rejectLikelyDisplayedMediaFaceDictionaries:filtered];
+  filtered = [self rejectLikelyBackdropBillboardFaceDictionaries:filtered];
+  return [self reindexFaceDictionaries:filtered];
 }
 
 - (NSArray *)buildFaceResultsFromRectObservations:(NSArray<VNFaceObservation *> *)rectFaces
@@ -1119,7 +1642,8 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
   landmarksRequest.inputFaceObservations = rectFaces;
 
   NSArray<VNFaceObservation *> *analysisFaces = rectFaces;
-  if ([handler performRequests:@[ landmarksRequest ] error:&error] && landmarksRequest.results.count > 0) {
+  if ([handler performRequests:@[ landmarksRequest ] error:&error] &&
+      landmarksRequest.results.count > 0) {
     analysisFaces = landmarksRequest.results;
   }
 
@@ -1146,6 +1670,9 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
         index < (NSInteger)qualityFaces.count) {
       captureQuality = qualityFaces[index].faceCaptureQuality;
     }
+    if (captureQuality != nil) {
+      qualityByFaceId[face.uuid] = captureQuality;
+    }
     if (![self isAcceptableFaceObservation:face
                                 imageWidth:imageWidth
                                imageHeight:imageHeight
@@ -1167,7 +1694,49 @@ static const NSUInteger kGumpMinPixelsForTiling = 2000000;
                                          captureQuality:captureQuality
                                                 cgImage:cgImage]];
   }
-  return faces;
+  return [self postProcessFaceDictionaries:faces];
+}
+
+- (NSArray *)facesFromCGImage:(CGImageRef)cgImage
+{
+  if (cgImage == NULL) {
+    return @[];
+  }
+
+  size_t imageWidth = CGImageGetWidth(cgImage);
+  size_t imageHeight = CGImageGetHeight(cgImage);
+  NSArray<VNFaceObservation *> *rectFaces = [self collectFaceRectanglesFromCGImage:cgImage];
+  if (rectFaces.count == 0) {
+    return @[];
+  }
+
+  VNImageRequestHandler *handler =
+      [[VNImageRequestHandler alloc] initWithCGImage:cgImage options:@{}];
+  return [self buildFaceResultsFromRectObservations:rectFaces
+                                            handler:handler
+                                         imageWidth:imageWidth
+                                        imageHeight:imageHeight
+                                            cgImage:cgImage];
+}
+
+- (NSDictionary *)analyzePhotoPayloadFromPath:(NSString *)path
+{
+  CGImageRef cgImage =
+      [self orientedCGImageFromPath:path maxPixelSize:kGumpAnalysisMaxPixelSize];
+  if (cgImage == NULL) {
+    return nil;
+  }
+
+  NSString *perceptualHash = [self differenceHashHexFromCGImage:cgImage];
+  NSNumber *capturedAt = [self captureTimestampMillisFromPath:path];
+  NSArray *faces = [self facesFromCGImage:cgImage];
+  CGImageRelease(cgImage);
+
+  return @{
+    @"faces" : faces,
+    @"perceptualHash" : perceptualHash ?: [NSNull null],
+    @"capturedAt" : capturedAt ?: [NSNull null],
+  };
 }
 
 RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
@@ -1185,7 +1754,8 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
         return;
       }
 
-      CGImageRef cgImage = [self orientedCGImageFromPath:path];
+      CGImageRef cgImage =
+          [self orientedCGImageFromPath:path maxPixelSize:kGumpAnalysisMaxPixelSize];
       if (cgImage == NULL) {
         dispatch_async(dispatch_get_main_queue(), ^{
           reject(@"EIMAGE", @"Unable to decode image", nil);
@@ -1193,24 +1763,7 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
         return;
       }
 
-      size_t imageWidth = CGImageGetWidth(cgImage);
-      size_t imageHeight = CGImageGetHeight(cgImage);
-      NSArray<VNFaceObservation *> *rectFaces = [self collectFaceRectanglesFromCGImage:cgImage];
-      if (rectFaces.count == 0) {
-        CGImageRelease(cgImage);
-        dispatch_async(dispatch_get_main_queue(), ^{
-          resolve(@[]);
-        });
-        return;
-      }
-
-      VNImageRequestHandler *handler =
-          [[VNImageRequestHandler alloc] initWithCGImage:cgImage options:@{}];
-      NSArray *faces = [self buildFaceResultsFromRectObservations:rectFaces
-                                                          handler:handler
-                                                       imageWidth:imageWidth
-                                                      imageHeight:imageHeight
-                                                          cgImage:cgImage];
+      NSArray *faces = [self facesFromCGImage:cgImage];
       CGImageRelease(cgImage);
 
       dispatch_async(dispatch_get_main_queue(), ^{
@@ -1219,6 +1772,40 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
     } @catch (NSException *exception) {
       dispatch_async(dispatch_get_main_queue(), ^{
         reject(@"EDETECT", exception.reason ?: @"Face detection failed", nil);
+      });
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      NSString *path = [self pathFromUri:uri];
+      if (path.length == 0 ||
+          ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"ENOENT", @"Photo file not found", nil);
+        });
+        return;
+      }
+
+      NSDictionary *payload = [self analyzePhotoPayloadFromPath:path];
+      if (payload == nil) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"EIMAGE", @"Unable to decode image", nil);
+        });
+        return;
+      }
+
+      dispatch_async(dispatch_get_main_queue(), ^{
+        resolve(payload);
+      });
+    } @catch (NSException *exception) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        reject(@"EANALYZE", exception.reason ?: @"Photo analysis failed", nil);
       });
     }
   });
@@ -1425,6 +2012,7 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
   }
 
   NSMutableArray *cropUris = [NSMutableArray arrayWithCapacity:faces.count];
+  CGImageRef sourceImage = NULL;
   for (NSDictionary *face in faces) {
     NSNumber *faceIndexValue = face[@"faceIndex"];
     NSDictionary *boundingBox = face[@"boundingBox"];
@@ -1441,10 +2029,13 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
       continue;
     }
 
-    CGImageRef sourceImage = [self orientedCGImageFromPath:sourcePath];
     if (sourceImage == NULL) {
-      [cropUris addObject:[NSNull null]];
-      continue;
+      sourceImage =
+          [self orientedCGImageFromPath:sourcePath maxPixelSize:kGumpAnalysisMaxPixelSize];
+      if (sourceImage == NULL) {
+        [cropUris addObject:[NSNull null]];
+        continue;
+      }
     }
 
     BOOL saved = [self writeFaceCropImage:sourceImage
@@ -1452,7 +2043,6 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
                                   albumId:albumId
                                   photoId:photoId
                                 faceIndex:faceIndex];
-    CGImageRelease(sourceImage);
 
     if (!saved) {
       [cropUris addObject:[NSNull null]];
@@ -1460,6 +2050,10 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
     }
 
     [cropUris addObject:[NSString stringWithFormat:@"file://%@", cropPath]];
+  }
+
+  if (sourceImage != NULL) {
+    CGImageRelease(sourceImage);
   }
 
   return cropUris;
@@ -2001,20 +2595,8 @@ RCT_EXPORT_METHOD(deleteAlbum:(NSString *)albumId
   return @((long long)([date timeIntervalSince1970] * 1000.0));
 }
 
-- (NSString *)differenceHashHexFromPath:(NSString *)path
+- (NSString *)differenceHashHexFromCGImage:(CGImageRef)image
 {
-  NSURL *url = [NSURL fileURLWithPath:path isDirectory:NO];
-  NSDictionary *options = @{
-    (NSString *)kCGImageSourceCreateThumbnailFromImageAlways : @YES,
-    (NSString *)kCGImageSourceThumbnailMaxPixelSize : @256,
-    (NSString *)kCGImageSourceCreateThumbnailWithTransform : @YES,
-  };
-  CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL);
-  if (source == NULL) {
-    return nil;
-  }
-  CGImageRef image = CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)options);
-  CFRelease(source);
   if (image == NULL) {
     return nil;
   }
@@ -2022,13 +2604,16 @@ RCT_EXPORT_METHOD(deleteAlbum:(NSString *)albumId
   uint8_t pixels[72];
   CGColorSpaceRef grayColorSpace = CGColorSpaceCreateDeviceGray();
   CGContextRef context = CGBitmapContextCreate(pixels, 9, 8, 8, 9, grayColorSpace, kCGImageAlphaNone);
+  if (context == NULL) {
+    CGColorSpaceRelease(grayColorSpace);
+    return nil;
+  }
   CGContextSetInterpolationQuality(context, kCGInterpolationLow);
   CGContextTranslateCTM(context, 0, 8);
   CGContextScaleCTM(context, 1.0, -1.0);
   CGContextDrawImage(context, CGRectMake(0, 0, 9, 8), image);
   CGContextRelease(context);
   CGColorSpaceRelease(grayColorSpace);
-  CGImageRelease(image);
 
   uint64_t hash = 0;
   int bit = 0;
@@ -2041,6 +2626,17 @@ RCT_EXPORT_METHOD(deleteAlbum:(NSString *)albumId
     }
   }
   return [NSString stringWithFormat:@"%016llx", hash];
+}
+
+- (NSString *)differenceHashHexFromPath:(NSString *)path
+{
+  CGImageRef image = [self orientedCGImageFromPath:path maxPixelSize:256];
+  if (image == NULL) {
+    return nil;
+  }
+  NSString *hash = [self differenceHashHexFromCGImage:image];
+  CGImageRelease(image);
+  return hash;
 }
 
 RCT_EXPORT_METHOD(readImageCaptureTime:(NSString *)uri
