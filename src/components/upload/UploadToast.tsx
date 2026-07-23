@@ -1,4 +1,4 @@
-import {ProgressBar} from '@components/ui';
+import { ProgressBar, TouchableOpacity } from '@components/ui';
 import {
   useCulledAlbumActions,
   useCulledAlbumAnalysisCounts,
@@ -6,17 +6,16 @@ import {
   useCulledAlbumServerUploadBatch,
   useCulledAlbumUiState,
 } from '@context/culledAlbum';
-import {colors} from '@lib/ui/colors';
-import {fonts, sansBoldStyle} from '@lib/ui/typography';
-import {computeLocalImportBatchProgress} from '@lib/culledAlbum/localImportProgress';
-import {computeServerUploadBatchProgress} from '@lib/culledAlbum/serverUploadProgress';
-import {CulledAlbumPhoto, LocalImportBatchCounts} from '@lib/culledAlbum/types';
+import { computeLocalImportBatchProgress } from '@lib/culledAlbum/localImportProgress';
+import { computeServerUploadBatchProgress } from '@lib/culledAlbum/serverUploadProgress';
+import { CulledAlbumPhoto, LocalImportBatchCounts } from '@lib/culledAlbum/types';
 import {
   QueueToastMode,
   useAlbumQueueOperation,
 } from '@lib/culledAlbum/uploadQueueStore';
-import {useEffect, useMemo, useRef, useState} from 'react';
-import {TouchableOpacity} from '@components/ui';
+import { colors } from '@lib/ui/colors';
+import { fonts, sansBoldStyle } from '@lib/ui/typography';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -92,6 +91,8 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
 
   const {
     hideToast,
+    requestCancelUpload,
+    requestCancelAnalysis,
     failNotUploadedItems,
     failNotAnalyzedItems,
     clearCompleted,
@@ -115,6 +116,9 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
 
   const shouldBeVisible = visible && hasRenderableBatch;
   const [mounted, setMounted] = useState(shouldBeVisible);
+  const [isCanceling, setIsCanceling] = useState(false);
+  const cancelSessionRef = useRef(0);
+  const frozenProgressRef = useRef<number | null>(null);
 
   const translateY = useRef(
     new Animated.Value(shouldBeVisible ? 0 : SLIDE_DISTANCE),
@@ -231,8 +235,18 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     serverBatchPhotoIds,
   ]);
 
-  const inProgressLabel =
-    mode === 'upload'
+  const displayProgress =
+    isCanceling && frozenProgressRef.current !== null
+      ? frozenProgressRef.current
+      : totalProgress;
+
+  const inProgressLabel = isCanceling
+    ? mode === 'upload'
+      ? 'Canceling upload...'
+      : mode === 'analyze'
+        ? 'Finalizing analysis...'
+        : 'Canceling upload...'
+    : mode === 'upload'
       ? `Uploading ${uploadInProgressRemaining} photos`
       : mode === 'analyze'
         ? isFinalizingAnalysis
@@ -251,7 +265,38 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
         : `Uploaded ${counts.completed} photos to server`;
 
   useEffect(() => {
-    if (!visible || !completed || batchTotal === 0) {
+    if (!isCanceling) {
+      return;
+    }
+
+    const session = cancelSessionRef.current;
+    const timer = setTimeout(() => {
+      const cancelWork =
+        mode === 'upload'
+          ? failNotUploadedItems(albumId, 'Upload cancelled')
+          : mode === 'analyze'
+            ? failNotAnalyzedItems(albumId, 'Analysis cancelled')
+            : Promise.resolve();
+      void cancelWork.finally(() => {
+        if (cancelSessionRef.current !== session) {
+          return;
+        }
+        frozenProgressRef.current = null;
+        setIsCanceling(false);
+      });
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [
+    albumId,
+    failNotAnalyzedItems,
+    failNotUploadedItems,
+    isCanceling,
+    mode,
+  ]);
+
+  useEffect(() => {
+    if (!visible || !completed || batchTotal === 0 || isCanceling) {
       return;
     }
     const timer = setTimeout(() => {
@@ -259,7 +304,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
       hideToast(mode, albumId);
     }, AUTO_CLOSE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [albumId, batchTotal, completed, hideToast, mode, visible]);
+  }, [albumId, batchTotal, completed, hideToast, isCanceling, mode, visible]);
 
   useEffect(() => {
     const wasVisible = wasVisibleRef.current;
@@ -316,20 +361,30 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   }
 
   function handleClose() {
-    if (!completed) {
-      if (mode === 'upload') {
-        failNotUploadedItems(albumId, 'Upload cancelled');
-      } else if (mode === 'analyze') {
-        failNotAnalyzedItems(albumId, 'Analysis cancelled');
-      }
-    } else {
-      shouldClearCompletedAfterCloseRef.current = true;
+    if (isCanceling) {
+      return;
     }
+
+    if (!completed && (mode === 'upload' || mode === 'analyze')) {
+      if (mode === 'upload') {
+        requestCancelUpload(albumId);
+        frozenProgressRef.current = totalProgress;
+      } else {
+        requestCancelAnalysis(albumId);
+        frozenProgressRef.current = 1;
+      }
+      cancelSessionRef.current += 1;
+      setIsCanceling(true);
+      return;
+    }
+
+    shouldClearCompletedAfterCloseRef.current = true;
     hideToast(mode, albumId);
   }
 
   const showCompletedBadge =
     completed &&
+    !isCanceling &&
     !allAnalyzeFailed &&
     (mode === 'upload'
       ? queueOperation.status === 'completed'
@@ -345,26 +400,28 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
       <View style={styles.header}>
         <View style={styles.titleContainer}>
           <Text style={styles.title}>
-            {completed ? completedLabel : inProgressLabel}
+            {completed && !isCanceling ? completedLabel : inProgressLabel}
           </Text>
           {showCompletedBadge && (
             <Text style={styles.completedText}>Completed</Text>
           )}
         </View>
-        <TouchableOpacity
-          onPress={handleClose}
-          hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-          activeOpacity={0.7}
-          style={styles.closeButton}>
-          <IconClose width={12} height={12} color={colors.white} />
-        </TouchableOpacity>
+        {!isCanceling ? (
+          <TouchableOpacity
+            onPress={handleClose}
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+            activeOpacity={0.7}
+            style={styles.closeButton}>
+            <IconClose width={12} height={12} color={colors.white} />
+          </TouchableOpacity>
+        ) : null}
       </View>
       {allAnalyzeFailed && analyzeError ? (
         <Text style={styles.errorText}>{analyzeError}</Text>
       ) : null}
-      {!completed ? (
+      {!completed || isCanceling ? (
         <View collapsable={false} style={styles.progressBarContainer}>
-          <ProgressBar progress={totalProgress} />
+          <ProgressBar progress={displayProgress} />
         </View>
       ) : null}
     </Animated.View>

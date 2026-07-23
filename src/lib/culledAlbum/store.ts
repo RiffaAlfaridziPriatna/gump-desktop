@@ -710,6 +710,69 @@ export function clearLocalImportBatch(albumId: string): void {
   });
 }
 
+export function pruneCancelledLocalImportPhotos(albumId: string): {
+  uploadedPhotoIds: string[];
+  removedPhotoIds: string[];
+} {
+  const removedPhotoIds: string[] = [];
+  const uploadedPhotoIds: string[] = [];
+
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (!album) {
+      return;
+    }
+
+    const nextPhotos: CulledAlbumPhoto[] = [];
+    for (const photo of album.photos) {
+      if (photo.status === 'uploaded') {
+        nextPhotos.push(photo);
+        uploadedPhotoIds.push(photo.photoId);
+      } else {
+        removedPhotoIds.push(photo.photoId);
+      }
+    }
+
+    album.photos = nextPhotos;
+    album.localImportBatchPhotoIds = uploadedPhotoIds;
+    album.localImportBatchTotal = uploadedPhotoIds.length;
+    album.localImportBatchCounts =
+      uploadedPhotoIds.length > 0
+        ? {
+            total: uploadedPhotoIds.length,
+            pending: 0,
+            uploading: 0,
+            uploaded: uploadedPhotoIds.length,
+            failed: 0,
+          }
+        : undefined;
+    recomputeAlbumTotals(album);
+  });
+
+  if (removedPhotoIds.length > 0) {
+    photoStateStore.setState(state => {
+      for (const photoId of removedPhotoIds) {
+        delete state.photoState[photoKey(albumId, photoId)];
+      }
+
+      const order = state.photoOrder[albumId];
+      if (order) {
+        const removed = new Set(removedPhotoIds);
+        const nextOrder = order.filter(photoId => !removed.has(photoId));
+        if (nextOrder.length === 0) {
+          delete state.photoOrder[albumId];
+        } else {
+          state.photoOrder[albumId] = nextOrder;
+        }
+      }
+
+      state.gridRevision[albumId] = (state.gridRevision[albumId] ?? 0) + 1;
+    });
+  }
+
+  return {uploadedPhotoIds, removedPhotoIds};
+}
+
 export function getAlbum(albumId: string): CulledAlbum | null {
   return getAlbumFromState(albumId);
 }

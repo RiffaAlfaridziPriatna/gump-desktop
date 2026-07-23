@@ -1,4 +1,5 @@
 import {AnalyzePhotoUseCase} from '@/application/useCases/AnalyzePhotoUseCase';
+import {clearScheduledAnalyzedPhotoAssets} from '@lib/culling/analyzedPhotoAssets';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {
   runOrDeferHeavyWorkForNavigation,
@@ -67,6 +68,36 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
   const batchSignatureByAlbum = new Map<string, string>();
   const completedSincePersistByAlbum = new Map<string, number>();
   const pendingPhotoPersistByAlbum = new Map<string, string[]>();
+  const cancelGenerationByAlbum = new Map<string, number>();
+  const cancelledAlbums = new Set<string>();
+
+  function getCancelGeneration(albumId: string): number {
+    return cancelGenerationByAlbum.get(albumId) ?? 0;
+  }
+
+  function bumpCancelGeneration(albumId: string): number {
+    const next = getCancelGeneration(albumId) + 1;
+    cancelGenerationByAlbum.set(albumId, next);
+    return next;
+  }
+
+  function beginBatch(albumId: string): void {
+    cancelledAlbums.delete(albumId);
+    bumpCancelGeneration(albumId);
+    settledPhotoIdsByAlbum.delete(albumId);
+    pendingCursorByAlbum.delete(albumId);
+    batchSignatureByAlbum.delete(albumId);
+  }
+
+  function isCancelled(albumId: string, generation?: number): boolean {
+    if (cancelledAlbums.has(albumId)) {
+      return true;
+    }
+    if (generation !== undefined && generation !== getCancelGeneration(albumId)) {
+      return true;
+    }
+    return false;
+  }
 
   function getInFlightPhotoIds(albumId: string): Set<string> {
     let ids = inFlightPhotoIdsByAlbum.get(albumId);
@@ -215,7 +246,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
   }
 
   function tryCompleteAlbum(albumId: string): void {
-    if (isSynced(albumId)) {
+    if (isCancelled(albumId) || isSynced(albumId)) {
       return;
     }
 
@@ -275,7 +306,11 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
 
   function failPhoto(albumId: string, photoId: string, error?: string): void {
     const photo = getPhoto(albumId, photoId);
-    if (!photo || photo.analysisStatus === 'analyzed') {
+    if (
+      !photo ||
+      photo.analysisStatus === 'analyzed' ||
+      photo.analysisStatus === 'failed'
+    ) {
       return;
     }
 
@@ -308,6 +343,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     photoId: string,
     file: FileAsset,
   ): Promise<void> {
+    const generation = getCancelGeneration(albumId);
     const existing = getPhoto(albumId, photoId);
     const fromStatus =
       existing?.analysisStatus === 'analyzing' ? 'analyzing' : 'pending';
@@ -337,6 +373,10 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     return cullingEngine
       .analyzePhoto(albumId, photoId, file)
       .then(() => {
+        if (isCancelled(albumId, generation)) {
+          getSettledPhotoIds(albumId).add(photoId);
+          return;
+        }
         getSettledPhotoIds(albumId).add(photoId);
         updatePhoto(
           albumId,
@@ -363,12 +403,90 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       .finally(() => {
         inFlight.delete(photoId);
         trackActiveAnalysis(albumId, -1);
-        processPending(albumId);
-        tryCompleteAlbum(albumId);
+        if (!isCancelled(albumId, generation)) {
+          processPending(albumId);
+          tryCompleteAlbum(albumId);
+        }
       });
   }
 
+  function waitForActiveAnalysis(albumId: string): Promise<void> {
+    return new Promise(resolve => {
+      const tick = () => {
+        if (getActiveAnalysisCount(albumId) === 0) {
+          resolve();
+          return;
+        }
+        setTimeout(tick, 32);
+      };
+      tick();
+    });
+  }
+
+  function yieldToMain(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  function requestCancel(albumId: string): void {
+    if (cancelledAlbums.has(albumId)) {
+      return;
+    }
+    bumpCancelGeneration(albumId);
+    cancelledAlbums.add(albumId);
+    clearScheduledAnalyzedPhotoAssets(albumId);
+  }
+
+  async function failQueuedAnalysis(
+    albumId: string,
+    error: string,
+    skipInFlight: boolean,
+  ): Promise<void> {
+    const inFlight = getInFlightPhotoIds(albumId);
+    const batchPhotoIds = getAlbum(albumId)?.analysisBatchPhotoIds ?? [];
+    const photoIds =
+      batchPhotoIds.length > 0
+        ? batchPhotoIds
+        : getPhotos(albumId)
+            .filter(photo => photo.analysisStatus !== 'analyzed')
+            .map(photo => photo.photoId);
+
+    for (let index = 0; index < photoIds.length; index++) {
+      const photoId = photoIds[index]!;
+      if (skipInFlight && inFlight.has(photoId)) {
+        continue;
+      }
+      const photo = getPhoto(albumId, photoId);
+      if (
+        !photo ||
+        photo.analysisStatus === 'analyzed' ||
+        photo.analysisStatus === 'failed'
+      ) {
+        continue;
+      }
+      failPhoto(albumId, photoId, error);
+      if (index > 0 && index % 40 === 0) {
+        await yieldToMain();
+      }
+    }
+  }
+
+  async function cancel(
+    albumId: string,
+    error = 'Analysis cancelled',
+  ): Promise<void> {
+    requestCancel(albumId);
+    await failQueuedAnalysis(albumId, error, true);
+    await waitForActiveAnalysis(albumId);
+    await failQueuedAnalysis(albumId, error, false);
+    flushPendingPhotoUpdates();
+    schedulePersist(albumId);
+  }
+
   function processPending(albumId: string): void {
+    if (isCancelled(albumId)) {
+      return;
+    }
+
     if (shouldYieldUploadQueueForNavigation()) {
       setTimeout(() => processPending(albumId), QUEUE_YIELD_MS);
       return;
@@ -438,5 +556,5 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     }
   }
 
-  return {processPending, tryCompleteAlbum};
+  return {beginBatch, requestCancel, cancel, processPending, tryCompleteAlbum};
 }

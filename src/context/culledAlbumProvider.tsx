@@ -16,6 +16,7 @@ import {
   queuePhotosForAnalysis,
   reconcileAnalysisBatchCounts,
   reconcileLocalImportBatchCounts,
+  pruneCancelledLocalImportPhotos,
   startServerUploadBatch,
   updatePhoto,
 } from '@lib/culledAlbum/store';
@@ -38,9 +39,17 @@ import {
   resetQueueOperation,
   setQueueOperationStatus,
 } from '@lib/culledAlbum/uploadQueueStore';
+import {
+  clearSyncPhotoFromStore,
+  syncPhotosFromStoreAwait,
+} from '@/application/syncPhotoRepository';
+import {container} from '@di/container';
+import {TOKENS} from '@di/tokens';
+import {IPhotoRepository} from '@/domain/repositories/IPhotoRepository';
 import {createStateStore, StateStore} from '@lib/react/state';
 import {FileAsset} from '@services/upload/types';
 import {PropsWithChildren, useCallback, useEffect, useRef} from 'react';
+import {Platform} from 'react-native';
 import {
   CulledAlbumActions,
   CulledAlbumActionsContext,
@@ -49,9 +58,20 @@ import {
   CulledAlbumUiState,
 } from './culledAlbumContext';
 
-const MAX_CONCURRENT_UPLOADS = 8;
+const MAX_CONCURRENT_UPLOADS = 12;
 const MAX_CONCURRENT_SERVER_UPLOADS = 8;
-const MAX_CONCURRENT_ANALYSIS = 4;
+
+function maxConcurrentAnalysisForPlatform(): number {
+  switch (Platform.OS) {
+    case 'macos':
+    case 'ios':
+      return 8;
+    case 'windows':
+      return 4;
+    default:
+      return 6;
+  }
+}
 
 let cachedUseCases: ReturnType<typeof resolveUseCases> | null = null;
 
@@ -101,7 +121,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
   if (!analysisQueueRef.current) {
     analysisQueueRef.current = createAnalysisQueue({
-      maxConcurrent: MAX_CONCURRENT_ANALYSIS,
+      maxConcurrent: maxConcurrentAnalysisForPlatform(),
       analyzePhotoUseCase: getUseCases().analyzePhoto,
       getPhotos: getPhotosForAlbum,
       getPhoto: getPhotoById,
@@ -185,6 +205,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
     uiStoreRef.current!.setState({uploadError: null});
     beginLocalImportQueue(albumId, added.length);
+    uploadQueueRef.current!.beginBatch(albumId);
     uploadQueueRef.current!.processPending(albumId);
   }, []);
 
@@ -195,6 +216,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
     queuePhotosForAnalysis(albumId);
     flushPendingPhotoUpdates();
+    analysisQueueRef.current!.beginBatch(albumId);
     analysisQueueRef.current!.processPending(albumId);
   }, []);
 
@@ -231,72 +253,120 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     resetQueueOperation(albumId, operation);
   }, []);
 
-  const failNotUploadedItems = useCallback((albumId: string, error?: string) => {
-    const batchPhotoIds = getAlbum(albumId)?.localImportBatchPhotoIds ?? [];
-    const photoIds =
-      batchPhotoIds.length > 0
-        ? batchPhotoIds
-        : getPhotosForAlbum(albumId)
-            .filter(photo => photo.status !== 'uploaded')
-            .map(photo => photo.photoId);
+  const requestCancelUpload = useCallback((albumId: string) => {
+    uploadQueueRef.current!.requestCancel(albumId);
+  }, []);
 
-    for (const photoId of photoIds) {
-      const photo = getPhotoById(albumId, photoId);
-      if (!photo || photo.status === 'uploaded') {
-        continue;
-      }
+  const requestCancelAnalysis = useCallback((albumId: string) => {
+    analysisQueueRef.current!.requestCancel(albumId);
+  }, []);
 
-      updatePhoto(albumId, photoId, entry => {
-        if (entry.status !== 'uploaded') {
-          entry.status = 'failed';
-          if (error && entry.error === undefined) {
-            entry.error = error;
-          }
-        }
-      }, {recomputeTotals: false});
-    }
+  const failNotUploadedItems = useCallback(async (albumId: string, error?: string) => {
+    await uploadQueueRef.current!.cancel(albumId, error ?? 'Upload cancelled');
 
     flushPendingPhotoUpdates();
     reconcileLocalImportBatchCounts(albumId);
-    const album = getAlbum(albumId);
+
+    const albumBeforePrune = getAlbum(albumId);
+    const batchPhotoIds = albumBeforePrune?.localImportBatchPhotoIds ?? [];
     const batchTotal =
-      album?.localImportBatchTotal || batchPhotoIds.length;
+      albumBeforePrune?.localImportBatchTotal || batchPhotoIds.length;
     const counts =
-      album && batchPhotoIds.length > 0
+      albumBeforePrune && batchPhotoIds.length > 0
         ? countLocalImportBatchForAlbum(
             batchPhotoIds,
             batchTotal,
             photoId => getPhotoById(albumId, photoId),
           )
         : null;
-    finishLocalImportQueue(albumId, {
-      status: 'failed',
-      uploadedCount: counts?.uploaded ?? 0,
-      failedCount: counts?.failed ?? batchTotal,
-    });
-  }, []);
+    const uploadedCount = counts?.uploaded ?? 0;
+    const failedCount =
+      counts?.failed ?? Math.max(0, batchTotal - uploadedCount);
 
-  const failNotAnalyzedItems = useCallback((albumId: string, error?: string) => {
-    const batchPhotoIds = getAlbum(albumId)?.analysisBatchPhotoIds ?? [];
-    const photoIds =
-      batchPhotoIds.length > 0
-        ? batchPhotoIds
-        : getPhotosForAlbum(albumId)
-            .filter(photo => photo.analysisStatus !== 'analyzed')
-            .map(photo => photo.photoId);
+    const {uploadedPhotoIds, removedPhotoIds} =
+      pruneCancelledLocalImportPhotos(albumId);
 
-    for (const photoId of photoIds) {
-      updatePhoto(albumId, photoId, entry => {
-        if (entry.analysisStatus !== 'analyzed') {
-          entry.analysisStatus = 'failed';
-          if (error && entry.analysisError === undefined) {
-            entry.analysisError = error;
-          }
-        }
-      });
+    for (const photoId of removedPhotoIds) {
+      clearSyncPhotoFromStore(albumId, photoId);
     }
 
-    setQueueOperationStatus(albumId, 'analysis', 'failed');
+    finishLocalImportQueue(albumId, {
+      status: uploadedCount > 0 ? 'completed' : 'failed',
+      uploadedCount,
+      failedCount,
+    });
+
+    if (uploadedPhotoIds.length > 0) {
+      try {
+        await syncPhotosFromStoreAwait(albumId, uploadedPhotoIds);
+      } catch (syncError) {
+        console.error(
+          '[CulledAlbum] Failed to sync photos after upload cancel',
+          albumId,
+          syncError,
+        );
+      }
+    }
+
+    if (removedPhotoIds.length > 0) {
+      const photoRepo = container.resolve<IPhotoRepository>(
+        TOKENS.IPhotoRepository,
+      );
+      await Promise.all(
+        removedPhotoIds.map(photoId =>
+          photoRepo.delete(albumId, photoId).catch(() => undefined),
+        ),
+      );
+    }
+
+    await persistAlbum(albumId).catch(() => undefined);
+  }, []);
+
+  const failNotAnalyzedItems = useCallback(async (albumId: string, error?: string) => {
+    syncedAlbumsRef.current.delete(albumId);
+    setQueueOperationStatus(albumId, 'analysis', 'finalizing');
+    await analysisQueueRef.current!.cancel(albumId, error ?? 'Analysis cancelled');
+    flushPendingPhotoUpdates();
+    reconcileAnalysisBatchCounts(albumId);
+
+    const album = getAlbum(albumId);
+    const batchPhotoIds = album?.analysisBatchPhotoIds ?? [];
+    const analyzedCount =
+      album?.analysisBatchCounts?.analyzed ??
+      batchPhotoIds.reduce((count, photoId) => {
+        const photo = getPhotoById(albumId, photoId);
+        return photo?.analysisStatus === 'analyzed' ? count + 1 : count;
+      }, 0);
+
+    if (analyzedCount === 0) {
+      uiStoreRef.current!.setState({
+        analyzeError:
+          error ?? 'All photos failed to analyze. Please try again.',
+      });
+      setQueueOperationStatus(albumId, 'analysis', 'failed');
+      await persistAlbum(albumId).catch(() => undefined);
+      return;
+    }
+
+    syncedAlbumsRef.current.add(albumId);
+    try {
+      await cullingEngine.completeAnalysis(albumId);
+      await markCullingCompleted(albumId);
+      setQueueOperationStatus(albumId, 'analysis', 'completed');
+    } catch (completeError) {
+      syncedAlbumsRef.current.delete(albumId);
+      const message =
+        completeError instanceof Error
+          ? completeError.message
+          : 'Failed to complete culling analysis';
+      uiStoreRef.current!.setState({analyzeError: message});
+      setQueueOperationStatus(albumId, 'analysis', 'failed');
+      console.error(
+        '[CulledAlbum] Failed to finalize analysis after cancel',
+        completeError,
+      );
+    }
+    await persistAlbum(albumId).catch(() => undefined);
   }, []);
 
   const actions: CulledAlbumActions = {
@@ -308,6 +378,8 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     purgeAlbum,
     hideToast,
     clearCompleted,
+    requestCancelUpload,
+    requestCancelAnalysis,
     failNotUploadedItems,
     failNotAnalyzedItems,
   };

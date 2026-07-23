@@ -18,8 +18,10 @@ export type CulledAlbumActions = {
   purgeAlbum: (albumId: string) => Promise<void>;
   hideToast: (mode: CulledAlbumToastMode, albumId: string) => void;
   clearCompleted: (mode: CulledAlbumToastMode, albumId: string) => void;
-  failNotUploadedItems: (albumId: string, error?: string) => void;
-  failNotAnalyzedItems: (albumId: string, error?: string) => void;
+  requestCancelUpload: (albumId: string) => void;
+  requestCancelAnalysis: (albumId: string) => void;
+  failNotUploadedItems: (albumId: string, error?: string) => Promise<void>;
+  failNotAnalyzedItems: (albumId: string, error?: string) => Promise<void>;
 };
 
 export const CulledAlbumUiContext =

@@ -155,6 +155,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     [rawGridPhotos],
   );
 
+  const totalPhotos = gridPhotos.length;
+
   const {
     activeFilters,
     selectionFilter,
@@ -317,7 +319,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           {isMobileLayout && (
             <CulledAlbumDetailSidebar
               isMobileLayout={isMobileLayout}
-              totalPhotos={stats?.totalPhotos ?? photos.length}
+              totalPhotos={totalPhotos}
               selectedCount={selectedCount}
               selectionFilter={selectionFilter}
               onSelectionFilterChange={setSelectionFilter}
@@ -364,7 +366,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           {!isMobileLayout && (
             <CulledAlbumDetailSidebar
               isMobileLayout={isMobileLayout}
-              totalPhotos={stats?.totalPhotos ?? photos.length}
+              totalPhotos={totalPhotos}
               selectedCount={selectedCount}
               selectionFilter={selectionFilter}
               onSelectionFilterChange={setSelectionFilter}

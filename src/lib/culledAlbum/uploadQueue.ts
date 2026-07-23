@@ -66,6 +66,30 @@ export function createUploadQueue(deps: UploadQueueDeps) {
   const settledPhotoIdsByAlbum = new Map<string, Set<string>>();
   const pendingCursorByAlbum = new Map<string, number>();
   const batchSignatureByAlbum = new Map<string, string>();
+  const cancelGenerationByAlbum = new Map<string, number>();
+  const cancelledAlbums = new Set<string>();
+
+  function getCancelGeneration(albumId: string): number {
+    return cancelGenerationByAlbum.get(albumId) ?? 0;
+  }
+
+  function bumpCancelGeneration(albumId: string): number {
+    const next = getCancelGeneration(albumId) + 1;
+    cancelGenerationByAlbum.set(albumId, next);
+    return next;
+  }
+
+  function beginBatch(albumId: string): void {
+    cancelledAlbums.delete(albumId);
+    bumpCancelGeneration(albumId);
+    settledPhotoIdsByAlbum.delete(albumId);
+    pendingCursorByAlbum.delete(albumId);
+    batchSignatureByAlbum.delete(albumId);
+  }
+
+  function isCancelled(albumId: string): boolean {
+    return cancelledAlbums.has(albumId);
+  }
 
   function getInFlightPhotoIds(albumId: string): Set<string> {
     let ids = inFlightPhotoIdsByAlbum.get(albumId);
@@ -208,7 +232,7 @@ export function createUploadQueue(deps: UploadQueueDeps) {
 
   function failPhoto(albumId: string, photoId: string, error?: string) {
     const photo = getPhoto(albumId, photoId);
-    if (!photo || photo.status === 'uploaded') {
+    if (!photo || photo.status === 'uploaded' || photo.status === 'failed') {
       return;
     }
 
@@ -313,12 +337,83 @@ export function createUploadQueue(deps: UploadQueueDeps) {
       .finally(() => {
         inFlight.delete(photoId);
         trackActiveUpload(albumId, -1);
-        processPending(albumId);
+        if (!isCancelled(albumId)) {
+          processPending(albumId);
+        }
         scheduleLocalImportBatchCompleteCheck(albumId);
       });
   }
 
+  function waitForActiveUploads(albumId: string): Promise<void> {
+    return new Promise(resolve => {
+      const tick = () => {
+        if (getActiveUploadCount(albumId) === 0) {
+          resolve();
+          return;
+        }
+        setTimeout(tick, 32);
+      };
+      tick();
+    });
+  }
+
+  function yieldToMain(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  function requestCancel(albumId: string): void {
+    if (cancelledAlbums.has(albumId)) {
+      return;
+    }
+    bumpCancelGeneration(albumId);
+    cancelledAlbums.add(albumId);
+  }
+
+  async function failQueuedUploads(
+    albumId: string,
+    error: string,
+    skipInFlight: boolean,
+  ): Promise<void> {
+    const inFlight = getInFlightPhotoIds(albumId);
+    const batchPhotoIds = getAlbum(albumId)?.localImportBatchPhotoIds ?? [];
+    const photoIds =
+      batchPhotoIds.length > 0
+        ? batchPhotoIds
+        : getPhotos(albumId)
+            .filter(photo => photo.status !== 'uploaded')
+            .map(photo => photo.photoId);
+
+    for (let index = 0; index < photoIds.length; index++) {
+      const photoId = photoIds[index]!;
+      if (skipInFlight && inFlight.has(photoId)) {
+        continue;
+      }
+      const photo = getPhoto(albumId, photoId);
+      if (!photo || photo.status === 'uploaded' || photo.status === 'failed') {
+        continue;
+      }
+      failPhoto(albumId, photoId, error);
+      if (index > 0 && index % 40 === 0) {
+        await yieldToMain();
+      }
+    }
+  }
+
+  async function cancel(
+    albumId: string,
+    error = 'Upload cancelled',
+  ): Promise<void> {
+    requestCancel(albumId);
+    await failQueuedUploads(albumId, error, true);
+    await waitForActiveUploads(albumId);
+    await failQueuedUploads(albumId, error, false);
+  }
+
   function processPending(albumId: string): void {
+    if (isCancelled(albumId)) {
+      return;
+    }
+
     if (shouldYieldUploadQueueForNavigation()) {
       setTimeout(() => processPending(albumId), QUEUE_YIELD_MS);
       return;
@@ -379,5 +474,5 @@ export function createUploadQueue(deps: UploadQueueDeps) {
     }
   }
 
-  return {processPending, failPhoto};
+  return {beginBatch, requestCancel, cancel, processPending, failPhoto};
 }

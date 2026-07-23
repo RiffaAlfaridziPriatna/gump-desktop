@@ -139,7 +139,9 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     (localImportProgress?.uploaded ?? 0) > 0 ||
     (!isUploading && totalPhotos > 0);
 
-  const displayTotalPhotos = Math.max(totalPhotos, batchTotal);
+  const displayTotalPhotos = isUploading
+    ? Math.max(totalPhotos, batchTotal)
+    : totalPhotos;
 
   const analysisBatchIdCount = useCulledAlbumStore(
     state => state.albums[albumId]?.analysisBatchPhotoIds.length ?? 0,
