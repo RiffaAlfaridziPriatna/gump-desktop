@@ -54,6 +54,7 @@ export type CulledAlbumDetailSidebarProps = {
   keyFacesExpanded: boolean;
   onKeyFacesToggle: () => void;
   onKeyFaceTooltipChange: (anchor: KeyFaceTooltipAnchor | null) => void;
+  onKeyFacePress?: (photoId: string, faceIndex?: number) => void;
 };
 
 type KeyFaceRow = {
@@ -80,22 +81,39 @@ function buildKeyFaceRows(faces: KeyFaceWithSource[]): KeyFaceRow[] {
 type KeyFaceGridRowProps = {
   row: KeyFaceRow;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
+  onKeyFacePress?: (photoId: string, faceIndex?: number) => void;
 };
 
+function resolveKeyFacePhotoId(face: KeyFaceWithSource): string | undefined {
+  return face.sourcePhotoId ?? face.photoIds[0];
+}
+
 const KeyFaceGridRow = memo(
-  function KeyFaceGridRow({row, onTooltipAnchorChange}: KeyFaceGridRowProps) {
+  function KeyFaceGridRow({
+    row,
+    onTooltipAnchorChange,
+    onKeyFacePress,
+  }: KeyFaceGridRowProps) {
     return (
       <View style={styles.keyFaceRow}>
-        {row.faces.map(face => (
-          <KeyFaceSidebarItem
-            key={face.faceId}
-            cropUri={face.cropUri}
-            eyeStatus={face.eyeStatus}
-            focusLevel={face.focusLevel}
-            width={KEY_FACE_SIZE}
-            onTooltipAnchorChange={onTooltipAnchorChange}
-          />
-        ))}
+        {row.faces.map(face => {
+          const photoId = resolveKeyFacePhotoId(face);
+          return (
+            <KeyFaceSidebarItem
+              key={face.faceId}
+              cropUri={face.cropUri}
+              eyeStatus={face.eyeStatus}
+              focusLevel={face.focusLevel}
+              width={KEY_FACE_SIZE}
+              onPress={
+                photoId && onKeyFacePress
+                  ? () => onKeyFacePress(photoId, face.sourceFaceIndex)
+                  : undefined
+              }
+              onTooltipAnchorChange={onTooltipAnchorChange}
+            />
+          );
+        })}
         {row.faces.length < KEY_FACE_COLUMNS &&
           Array.from({length: KEY_FACE_COLUMNS - row.faces.length}).map(
             (_, fillerIndex) => (
@@ -126,10 +144,13 @@ function CulledAlbumDetailSidebarComponent({
   keyFacesExpanded,
   onKeyFacesToggle,
   onKeyFaceTooltipChange,
+  onKeyFacePress,
 }: CulledAlbumDetailSidebarProps) {
   const scrollStoreRef = useRef(createScrollAwareTooltipStore());
   const onKeyFaceTooltipChangeRef = useRef(onKeyFaceTooltipChange);
   onKeyFaceTooltipChangeRef.current = onKeyFaceTooltipChange;
+  const onKeyFacePressRef = useRef(onKeyFacePress);
+  onKeyFacePressRef.current = onKeyFacePress;
 
   const keyFaceScrollHandlers = useScrollAwareTooltipHandlers(
     scrollStoreRef.current,
@@ -146,27 +167,43 @@ function CulledAlbumDetailSidebarComponent({
     onSelectionFilterChange(selectionFilter === 'selected' ? null : 'selected');
   }, [onSelectionFilterChange, selectionFilter]);
 
+  const handleKeyFacePress = useCallback(
+    (photoId: string, faceIndex?: number) => {
+      onKeyFacePressRef.current?.(photoId, faceIndex);
+    },
+    [],
+  );
+
   const renderKeyFaceRow = useCallback(
     ({item}: ListRenderItemInfo<KeyFaceRow>) => (
       <KeyFaceGridRow
         row={item}
         onTooltipAnchorChange={onKeyFaceTooltipChangeRef.current}
+        onKeyFacePress={handleKeyFacePress}
       />
     ),
-    [],
+    [handleKeyFacePress],
   );
 
   const renderKeyFaceItem = useCallback(
-    ({item}: ListRenderItemInfo<KeyFaceWithSource>) => (
-      <KeyFaceSidebarItem
-        cropUri={item.cropUri}
-        eyeStatus={item.eyeStatus}
-        focusLevel={item.focusLevel}
-        width={KEY_FACE_SIZE}
-        onTooltipAnchorChange={onKeyFaceTooltipChangeRef.current}
-      />
-    ),
-    [],
+    ({item}: ListRenderItemInfo<KeyFaceWithSource>) => {
+      const photoId = resolveKeyFacePhotoId(item);
+      return (
+        <KeyFaceSidebarItem
+          cropUri={item.cropUri}
+          eyeStatus={item.eyeStatus}
+          focusLevel={item.focusLevel}
+          width={KEY_FACE_SIZE}
+          onPress={
+            photoId
+              ? () => handleKeyFacePress(photoId, item.sourceFaceIndex)
+              : undefined
+          }
+          onTooltipAnchorChange={onKeyFaceTooltipChangeRef.current}
+        />
+      );
+    },
+    [handleKeyFacePress],
   );
 
   const keyExtractor = useCallback((face: KeyFaceWithSource) => face.faceId, []);

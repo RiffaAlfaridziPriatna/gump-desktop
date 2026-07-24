@@ -49,7 +49,7 @@ export default function CulledAlbumPhotoDetailScreen({
   navigation,
   route,
 }: Props) {
-  const {albumId, photoId} = route.params;
+  const {albumId, photoId, faceIndex: initialFaceIndex} = route.params;
   const {shellProps, handleBack} = useUploadAwareModalScreen(
     navigation,
     route.params.instant,
@@ -74,7 +74,9 @@ export default function CulledAlbumPhotoDetailScreen({
       setAnalysis(toCullingPhoto(photo));
     }
   }, [photo]);
-  const [zoomFaceIndex, setZoomFaceIndex] = useState<number | null>(null);
+  const [zoomFaceIndex, setZoomFaceIndex] = useState<number | null>(() =>
+    typeof initialFaceIndex === 'number' ? initialFaceIndex : null,
+  );
   const [mainImageReady, setMainImageReady] = useState(false);
   const [tooltip, setTooltip] = useState<KeyFaceTooltipAnchor | null>(null);
   const [tooltipWidth, setTooltipWidth] = useState(0);
@@ -107,6 +109,18 @@ export default function CulledAlbumPhotoDetailScreen({
 
   const faces = analysis?.faces ?? [];
   const fileName = photo?.file.name ?? 'Photo';
+
+  useEffect(() => {
+    if (typeof initialFaceIndex !== 'number') {
+      return;
+    }
+    if (initialFaceIndex < 0 || initialFaceIndex >= faces.length) {
+      setZoomFaceIndex(null);
+      return;
+    }
+    setZoomFaceIndex(initialFaceIndex);
+  }, [faces.length, initialFaceIndex, photoId]);
+
   const [uri, setUri] = useState(() =>
     photo ? resolveDetailDisplayUri(photo.file) : '',
   );

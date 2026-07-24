@@ -170,14 +170,26 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   } = useCulledAlbumFilters(gridPhotos, stats);
 
   const handleOpenPhotoDetail = useCallback(
-    (photoId: string) => {
+    (photoId: string, faceIndex?: number) => {
       const entry = gridPhotos.find(photo => photo.photoId === photoId);
       if (entry?.file) {
         preloadImage(resolveOriginalUri(entry.file)).catch(() => undefined);
       }
-      navigation.navigate('CulledAlbumPhotoDetail', {albumId, photoId});
+      navigation.navigate('CulledAlbumPhotoDetail', {
+        albumId,
+        photoId,
+        ...(typeof faceIndex === 'number' ? {faceIndex} : {}),
+      });
     },
     [albumId, gridPhotos, navigation],
+  );
+
+  const handleKeyFacePress = useCallback(
+    (photoId: string, faceIndex?: number) => {
+      dismissKeyFaceTooltip();
+      handleOpenPhotoDetail(photoId, faceIndex);
+    },
+    [dismissKeyFaceTooltip, handleOpenPhotoDetail],
   );
 
   const handleDeletePhotoPress = useCallback(
@@ -332,6 +344,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               keyFacesExpanded={keyFacesExpanded}
               onKeyFacesToggle={handleKeyFacesToggle}
               onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
+              onKeyFacePress={handleKeyFacePress}
             />
           )}
           <View
@@ -379,6 +392,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               keyFacesExpanded={keyFacesExpanded}
               onKeyFacesToggle={handleKeyFacesToggle}
               onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
+              onKeyFacePress={handleKeyFacePress}
             />
           )}
         </View>

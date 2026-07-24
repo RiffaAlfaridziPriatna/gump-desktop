@@ -31,6 +31,7 @@ export type MainStackParamList = {
   CulledAlbumPhotoDetail: WithInstantNav<{
     albumId: string;
     photoId: string;
+    faceIndex?: number;
   }>;
   CulledAlbumUploadProgress: WithInstantNav<{
     albumId: string;
