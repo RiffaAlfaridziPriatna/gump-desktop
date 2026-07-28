@@ -12,12 +12,19 @@ export type NativeDetectedFace = {
   eyesOpen?: {
     value: boolean;
     confidence: number;
+    leftProbability?: number;
+    rightProbability?: number;
   };
+  eyeStatus?: 'open' | 'closed' | 'partial';
+  focusLevel?: 'good' | 'soft' | 'blurred';
   sharpness: number;
   brightness: number;
+  /** Detector score when available (SCRFD). */
+  confidence?: number;
   landmarks: Array<{type: string; x: number; y: number}>;
   pose: {pitch: number; roll: number; yaw: number};
   faceId: string;
+  engine?: string;
 };
 
 export type CulledAlbumPhotoUploadStatus =

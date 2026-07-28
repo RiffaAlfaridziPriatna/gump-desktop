@@ -401,19 +401,37 @@ describe('rejectLikelyDisplayedMediaFaces', () => {
     expect(kept).toHaveLength(2);
   });
 
-  it('keeps a close subject with a tiny distant face behind', () => {
-    const subject = {
-      id: 'subject',
-      boundingBox: {left: 0.25, top: 0.2, width: 0.4, height: 0.5},
-      pose: {yaw: 0.05, pitch: 0, roll: 0},
-    };
-    const distant = {
-      id: 'distant',
-      boundingBox: {left: 0.05, top: 0.55, width: 0.06, height: 0.08},
-      pose: {yaw: 0.1, pitch: 0, roll: 0},
-    };
+  it('keeps a dense group photo when SCRFD yaw is in radians (Vision units)', () => {
+    // TR5_1353-style: many similar faces, side columns with mild pose.
+    // SCRFD must emit radians; degree yaw (~1–3) was misread as radians and
+    // wiped the left/right columns via the profile-on-side gate.
+    const faces = [
+      {id: 'l0', boundingBox: {left: 0.14, top: 0.53, width: 0.02, height: 0.035}, pose: {yaw: 0.03}},
+      {id: 'l1', boundingBox: {left: 0.21, top: 0.52, width: 0.019, height: 0.034}, pose: {yaw: -0.04}},
+      {id: 'l2', boundingBox: {left: 0.28, top: 0.50, width: 0.017, height: 0.033}, pose: {yaw: 0.05}},
+      {id: 'c0', boundingBox: {left: 0.45, top: 0.51, width: 0.016, height: 0.03}, pose: {yaw: 0.01}},
+      {id: 'c1', boundingBox: {left: 0.52, top: 0.50, width: 0.017, height: 0.034}, pose: {yaw: -0.02}},
+      {id: 'r0', boundingBox: {left: 0.68, top: 0.50, width: 0.017, height: 0.032}, pose: {yaw: 0.04}},
+      {id: 'r1', boundingBox: {left: 0.78, top: 0.55, width: 0.018, height: 0.033}, pose: {yaw: -0.05}},
+      {id: 'r2', boundingBox: {left: 0.88, top: 0.54, width: 0.018, height: 0.034}, pose: {yaw: 0.02}},
+    ];
 
-    const kept = rejectLikelyDisplayedMediaFaces([subject, distant]);
-    expect(kept.map(face => face.id).sort()).toEqual(['distant', 'subject']);
+    const kept = rejectLikelyDisplayedMediaFaces(faces);
+    expect(kept).toHaveLength(faces.length);
+  });
+
+  it('still drops a true side profile (radians) next to frontal people', () => {
+    const profile = {
+      id: 'profile',
+      boundingBox: {left: 0.05, top: 0.5, width: 0.02, height: 0.035},
+      pose: {yaw: 0.85},
+    };
+    const frontal = {
+      id: 'frontal',
+      boundingBox: {left: 0.45, top: 0.5, width: 0.02, height: 0.035},
+      pose: {yaw: 0.05},
+    };
+    const kept = rejectLikelyDisplayedMediaFaces([profile, frontal]);
+    expect(kept.map(face => face.id)).toEqual(['frontal']);
   });
 });

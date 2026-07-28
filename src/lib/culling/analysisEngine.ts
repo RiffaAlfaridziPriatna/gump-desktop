@@ -1,5 +1,6 @@
 import {Platform} from 'react-native';
 
+export const SCRFD_OCEC_ENGINE_VERSION = 'scrfd-ocec-8';
 export const WINDOWS_YUNET_ENGINE_VERSION = 'windows-yunet-1';
 export const WINDOWS_YUNET_OCEC_ENGINE_VERSION = 'windows-yunet-ocec-2';
 export const MACOS_VISION_ENGINE_VERSION = 'macos-vision-1';
@@ -8,8 +9,8 @@ export const FALLBACK_ENGINE_VERSION = 'fallback-1';
 export function currentAnalysisEngineVersion(): string {
   switch (Platform.OS) {
     case 'windows':
-      return WINDOWS_YUNET_OCEC_ENGINE_VERSION;
     case 'macos':
+      return SCRFD_OCEC_ENGINE_VERSION;
     case 'ios':
       return MACOS_VISION_ENGINE_VERSION;
     default:

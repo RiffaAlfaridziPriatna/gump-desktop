@@ -50,7 +50,6 @@ import {
   deriveStarRating,
   DuplicateDetectionPhoto,
 } from './cullingUtil';
-import { detectDuplicatesAsync } from './duplicateDetection';
 import {
   addStatsDelta,
   combineStatsDelta,
@@ -60,12 +59,14 @@ import {
   subtractStatsDelta,
   syncKeyFaceCropUrisFromPhotos,
 } from './deletePhotoDerivedState';
+import { detectDuplicatesAsync } from './duplicateDetection';
 import {
   clearFaceClusterIndex,
   getFaceClusterIndex,
   seedFaceClusterIndex,
 } from './faceClusterIndex';
-import { rejectLikelyNonFaceArtifacts, rejectLikelyDisplayedMediaFaces, suppressSpatiallyRedundantFaces } from './faceSpatialDedupe';
+import { rejectLikelyDisplayedMediaFaces, rejectLikelyNonFaceArtifacts, suppressSpatiallyRedundantFaces } from './faceSpatialDedupe';
+import { selectDominantFaceCluster } from './subjectFaceCluster';
 
 type AnalyzedNativePhoto = {
   faces: CullingFace[];
@@ -79,12 +80,24 @@ function mapNativeFace(
   index: number,
 ): CullingFace {
   const sharpness = face.sharpness ?? 0;
+  const nativeEye =
+    face.eyeStatus === 'open' ||
+    face.eyeStatus === 'closed' ||
+    face.eyeStatus === 'partial'
+      ? face.eyeStatus
+      : null;
+  const nativeFocus =
+    face.focusLevel === 'good' ||
+    face.focusLevel === 'soft' ||
+    face.focusLevel === 'blurred'
+      ? face.focusLevel
+      : null;
 
   return {
     boundingBox: face.boundingBox,
-    eyeStatus: classifyEyeStatus(face.eyesOpen, face.pose),
+    eyeStatus: nativeEye ?? classifyEyeStatus(face.eyesOpen, face.pose),
     eyeConfidence: face.eyesOpen?.confidence ?? 0,
-    focusLevel: classifyFocus(sharpness),
+    focusLevel: nativeFocus ?? classifyFocus(sharpness),
     sharpness,
     brightness: face.brightness ?? 0,
     landmarks: face.landmarks ?? [],
@@ -117,9 +130,10 @@ function mapDetectedFaces(
   photoId: string,
 ): CullingFace[] {
   const mapped = faces.map((face, index) => mapNativeFace(face, photoId, index));
-  return suppressSpatiallyRedundantFaces(
+  const deduped = suppressSpatiallyRedundantFaces(
     rejectLikelyDisplayedMediaFaces(rejectLikelyNonFaceArtifacts(mapped)),
   );
+  return selectDominantFaceCluster(deduped);
 }
 
 class NativeDetector implements PlatformDetector {

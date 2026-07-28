@@ -19,6 +19,9 @@ export type FaceQualitySignals = {
 export type MediaRejectableFace = {
   boundingBox: FaceBox;
   pose?: {yaw?: number; pitch?: number; roll?: number};
+  /** When present, sharp real people are not treated as wall/screen faces. */
+  sharpness?: number | null;
+  focusLevel?: 'good' | 'soft' | 'blurred';
 };
 
 const FACE_BOX_IOU_THRESHOLD = 0.42;
@@ -35,6 +38,8 @@ const DISPLAYED_MEDIA_MIN_AREA = 0.0035;
 const DISPLAYED_MEDIA_MAX_AREA = 0.16;
 const DISPLAYED_MEDIA_MIN_PERSON_AREA = 0.0004;
 const DISPLAYED_MEDIA_SIDE_SIMILAR_MAX_FACES = 6;
+/** Soft/screen faces; sharp event subjects must not hit media rejects. */
+const DISPLAYED_MEDIA_MAX_SHARPNESS = 48;
 
 function faceBoxArea(box: FaceBox): number {
   return Math.max(0, box.width) * Math.max(0, box.height);
@@ -48,6 +53,11 @@ function faceBoxIntersectionArea(a: FaceBox, b: FaceBox): number {
   return Math.max(0, right - left) * Math.max(0, bottom - top);
 }
 
+/**
+ * Normalize pose yaw to radians for media-reject gates.
+ * Vision and shared SCRFD both emit radians. Legacy / mistaken degree values
+ * (|yaw| > π) are converted so old cached analyses still filter sanely.
+ */
 function absYawRadians(yaw: number): number {
   const value = Math.abs(yaw);
   if (value > Math.PI + 0.01) {
@@ -201,18 +211,27 @@ export function rejectLikelyDisplayedMediaFaces<
   const meta = faces.map((face, index) => {
     const area = faceBoxArea(face.boundingBox);
     const center = faceCenter(face.boundingBox);
+    const sharpness = face.sharpness ?? 0;
+    const softMedia =
+      face.focusLevel === 'blurred' ||
+      sharpness < DISPLAYED_MEDIA_MAX_SHARPNESS;
     return {
       index,
       area,
       centerX: center.x,
       centerY: center.y,
       yaw: absYawRadians(face.pose?.yaw ?? 0),
+      softMedia,
     };
   });
 
   const reject = new Set<number>();
 
   for (const candidate of meta) {
+    if (!candidate.softMedia) {
+      continue;
+    }
+
     const smallerLowerPeople = meta.filter(
       other =>
         other.index !== candidate.index &&

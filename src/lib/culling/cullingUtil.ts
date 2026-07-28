@@ -1,7 +1,7 @@
-import { APIResponse } from '@services/api';
-import { hammingDistance } from '@lib/media/perceptualHash';
 import { photoStateStore } from '@lib/culledAlbum/photoStateStore';
 import { CulledAlbumPhoto } from '@lib/culledAlbum/types';
+import { hammingDistance } from '@lib/media/perceptualHash';
+import { APIResponse } from '@services/api';
 
 export type CullingFace = APIResponse.CullingFace;
 export type CullingPhoto = APIResponse.CullingPhoto;
@@ -56,7 +56,8 @@ export function orderCulledAlbumPhotosForCulling(
   );
 }
 
-const EYE_CONFIDENCE_THRESHOLD = 85;
+const EYE_OPEN_CONFIDENCE_THRESHOLD = 70;
+const EYE_CLOSED_CONFIDENCE_THRESHOLD = 88;
 const FOCUS_GOOD_THRESHOLD = 62;
 const FOCUS_SOFT_THRESHOLD = 40;
 
@@ -65,28 +66,75 @@ export {
   rejectLikelyDisplayedMediaFaces,
   rejectLikelyNonFaceArtifacts,
   rejectOpenBlurredNonFaces,
-  suppressSpatiallyRedundantFaces,
+  suppressSpatiallyRedundantFaces
 } from './faceSpatialDedupe';
 
+export type EyesOpenSignal = {
+  value?: boolean;
+  confidence?: number;
+  leftProbability?: number;
+  rightProbability?: number;
+};
+
 export function classifyEyeStatus(
-  eyesOpen?: {
-    value?: boolean;
-    confidence?: number;
-  },
-  pose?: {pitch?: number},
+  eyesOpen?: EyesOpenSignal,
+  _pose?: {pitch?: number},
 ): APIResponse.CullingEyeStatus {
   if (!eyesOpen || eyesOpen.confidence === undefined) {
     return 'partial';
   }
-  if (eyesOpen.confidence >= EYE_CONFIDENCE_THRESHOLD) {
-    let pitch = pose?.pitch ?? 0;
-    if (Math.abs(pitch) > Math.PI + 0.01) {
-      pitch = (pitch * Math.PI) / 180;
-    }
-    if (eyesOpen.value && pitch < -0.12) {
+
+  const confidence = eyesOpen.confidence;
+  const left = eyesOpen.leftProbability;
+  const right = eyesOpen.rightProbability;
+  const hasProbs =
+    typeof left === 'number' &&
+    Number.isFinite(left) &&
+    typeof right === 'number' &&
+    Number.isFinite(right);
+
+  if (hasProbs) {
+    const maxOpen = Math.max(left!, right!);
+    const minOpen = Math.min(left!, right!);
+
+    if (maxOpen <= 0.22 && minOpen <= 0.18) {
+      if (!eyesOpen.value && confidence >= EYE_CLOSED_CONFIDENCE_THRESHOLD) {
+        return 'closed';
+      }
+      if (eyesOpen.value && confidence >= EYE_OPEN_CONFIDENCE_THRESHOLD) {
+        return 'open';
+      }
+      if (confidence >= EYE_CLOSED_CONFIDENCE_THRESHOLD) {
+        return 'closed';
+      }
       return 'partial';
     }
-    return eyesOpen.value ? 'open' : 'closed';
+
+    if (maxOpen >= 0.45 && minOpen <= 0.22) {
+      return maxOpen >= 0.55 ? 'open' : 'partial';
+    }
+    if (maxOpen >= 0.5 && minOpen >= 0.35) {
+      return 'open';
+    }
+    if (
+      maxOpen <= 0.40 &&
+      minOpen >= 0.08 &&
+      minOpen <= 0.25 &&
+      confidence < EYE_OPEN_CONFIDENCE_THRESHOLD + 10
+    ) {
+      return 'partial';
+    }
+  }
+
+  if (eyesOpen.value) {
+    if (confidence >= EYE_OPEN_CONFIDENCE_THRESHOLD) {
+      return 'open';
+    }
+    return 'partial';
+  }
+
+  if (confidence >= EYE_CLOSED_CONFIDENCE_THRESHOLD) {
+    return 'closed';
   }
   return 'partial';
 }
