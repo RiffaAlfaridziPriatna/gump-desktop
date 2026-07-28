@@ -45,8 +45,6 @@ export function getAlbumGridColumns(deviceType: DeviceType): number {
   switch (deviceType) {
     case 'mobile':
       return 2;
-    case 'tablet':
-      return 3;
     default:
       return 4;
   }
