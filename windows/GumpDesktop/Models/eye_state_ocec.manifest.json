@@ -1,6 +1,6 @@
 {
   "id": "ocec-s-onnx",
-  "engineVersion": "windows-yunet-ocec-2",
+  "engineVersion": "scrfd-ocec-1",
   "file": "eye_state_ocec_s.onnx",
   "license": "MIT",
   "source": "https://github.com/PINTO0309/OCEC",

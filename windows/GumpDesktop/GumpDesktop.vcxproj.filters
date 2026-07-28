@@ -27,10 +27,16 @@
     <ClInclude Include="GumpLocalStorage.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="OcecEyeStateClassifier.h">
+    <ClInclude Include="..\..\cpp\face-detection\ScrfdFaceDetector.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="YuNetFaceDetector.h">
+    <ClInclude Include="..\..\cpp\face-detection\FaceLabeling.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cpp\face-detection\OcecEyeStateClassifier.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cpp\face-detection\FaceDetectionPipeline.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="GumpDesktop.h">
@@ -50,10 +56,16 @@
     <ClCompile Include="GumpLocalStorage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="OcecEyeStateClassifier.cpp">
+    <ClCompile Include="..\..\cpp\face-detection\ScrfdFaceDetector.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="YuNetFaceDetector.cpp">
+    <ClCompile Include="..\..\cpp\face-detection\OcecEyeStateClassifier.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\face-detection\FaceLabeling.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\face-detection\FaceDetectionPipeline.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GumpDesktop.cpp">

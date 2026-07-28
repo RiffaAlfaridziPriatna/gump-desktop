@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "GumpLocalStorage.h"
-#include "OcecEyeStateClassifier.h"
-#include "YuNetFaceDetector.h"
+#include "FaceDetectionPipeline.h"
 
 #include <ShlObj.h>
 #include <combaseapi.h>
@@ -12,7 +11,6 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Graphics.Imaging.h>
-#include <winrt/Windows.Media.FaceAnalysis.h>
 #include <winrt/Windows.Security.Cryptography.h>
 #include <winrt/Windows.Storage.h>
 #include <winrt/Windows.Storage.FileProperties.h>
@@ -33,7 +31,6 @@
 
 namespace winrtRN = winrt::Microsoft::ReactNative;
 using namespace winrt::Windows::Graphics::Imaging;
-using namespace winrt::Windows::Media::FaceAnalysis;
 using namespace winrt::Windows::Security::Cryptography;
 using namespace winrt::Windows::Storage;
 using namespace winrt::Windows::Storage::FileProperties;
@@ -47,7 +44,7 @@ using ReactPromiseJS = winrtRN::ReactPromise<winrtRN::JSValue>;
 constexpr uint32_t kThumbnailMaxPixelSize = 768;
 constexpr float kThumbnailJpegQuality = 0.80f;
 constexpr int kThumbnailMaxConcurrent = 4;
-constexpr uint32_t kFaceDetectMaxPixelSize = 1920;
+constexpr uint32_t kFaceDetectMaxPixelSize = 4096;
 constexpr uint32_t kPerceptualHashMaxPixelSize = 256;
 constexpr uint32_t kFaceCropSourceMaxPixelSize = 1600;
 constexpr float kFaceCropSidePadding = 0.3f;
@@ -497,157 +494,45 @@ std::optional<double> ReadCaptureTimestampMillis(const std::filesystem::path &pa
   return static_cast<double>(ToUnixMillis(dateTaken));
 }
 
-winrtRN::JSValueObject EyesOpenFromScore(float minOpen, float maxOpen, float avgOpen) {
-  const float openThreshold = 0.58f;
-  const float openMinThreshold = 0.48f;
-  const float closedMaxThreshold = 0.36f;
-  const float closedAvgThreshold = 0.32f;
-
-  winrtRN::JSValueObject eyesOpen;
-  if (avgOpen >= openThreshold && minOpen >= openMinThreshold) {
-    eyesOpen["value"] = true;
-    eyesOpen["confidence"] = std::min(98.0, 86.0 + (avgOpen - openThreshold) * 200.0);
-  } else if (maxOpen <= closedMaxThreshold || avgOpen <= closedAvgThreshold) {
-    eyesOpen["value"] = false;
-    eyesOpen["confidence"] = std::min(98.0, 86.0 + (closedMaxThreshold - maxOpen) * 400.0);
-  } else if (avgOpen < 0.45f && maxOpen < 0.52f) {
-    eyesOpen["value"] = false;
-    eyesOpen["confidence"] = 88.0;
-  } else {
-    eyesOpen["value"] = false;
-    eyesOpen["confidence"] = 72.0;
+std::filesystem::path ModuleDirectory() {
+  wchar_t buffer[MAX_PATH]{};
+  const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+  if (length == 0 || length >= MAX_PATH) {
+    return {};
   }
-  return eyesOpen;
+  return std::filesystem::path(buffer).parent_path();
 }
 
-winrtRN::JSValueObject EyesOpenFromOcec(
-    const GumpDesktop::EyeStateResult &eyeState) {
-  winrtRN::JSValueObject eyesOpen;
-  eyesOpen["value"] = eyeState.state == GumpDesktop::EyeState::Open;
-  eyesOpen["confidence"] = static_cast<double>(eyeState.confidence);
-  eyesOpen["leftProbability"] =
-      static_cast<double>(eyeState.leftOpenProbability);
-  eyesOpen["rightProbability"] =
-      static_cast<double>(eyeState.rightOpenProbability);
-  return eyesOpen;
-}
-
-float EstimateEyeOpenness(
-    const uint8_t *pixels,
-    int width,
-    int height,
-    int stride,
-    int left,
-    int top,
-    int regionWidth,
-    int regionHeight) {
-  const int safeLeft = std::max(0, left);
-  const int safeTop = std::max(0, top);
-  const int safeRight = std::min(width, safeLeft + std::max(1, regionWidth));
-  const int safeBottom = std::min(height, safeTop + std::max(1, regionHeight));
-  const int rows = safeBottom - safeTop;
-  const int cols = safeRight - safeLeft;
-  if (rows < 4 || cols < 4) {
-    return 0.5f;
-  }
-
-  auto grayAt = [&](int px, int py) {
-    const int pixelIndex = py * stride + px * 4;
-    return pixels[pixelIndex] * 0.114 + pixels[pixelIndex + 1] * 0.587 + pixels[pixelIndex + 2] * 0.299;
-  };
-
-  std::vector<double> rowMean(static_cast<size_t>(rows), 0.0);
-  for (int y = 0; y < rows; ++y) {
-    double sum = 0.0;
-    for (int x = safeLeft; x < safeRight; ++x) {
-      sum += grayAt(x, safeTop + y);
+FaceDetection::FaceDetectionPipeline &SharedFacePipeline() {
+  static FaceDetection::FaceDetectionPipeline pipeline;
+  static std::once_flag initFlag;
+  std::call_once(initFlag, []() {
+    const auto moduleDir = ModuleDirectory();
+    FaceDetection::PipelineConfig config;
+    // Keep in lockstep with macos/GumpSharedFaceDetection.mm — shared C++ defaults
+    // already match, but set explicitly so platform wrappers cannot drift.
+    config.scoreThreshold = 0.50f;
+    config.acceptScoreThreshold = 0.65f;
+    config.nmsThreshold = 0.40f;
+    config.enableTiling = true;
+    config.requireLandmarkPlausibility = true;
+    config.enablePostProcess = false;
+    config.enableTinyAreaArtifactFilter = false;
+    config.enableSharpnessArtifactFilter = false;
+    config.enableNativeFpFilter = true;
+    for (const auto &base : {moduleDir / L"Assets" / L"Models", moduleDir / L"Models"}) {
+      const auto scrfd = base / L"face_detection_scrfd_2.5g_bnkps.onnx";
+      const auto ocec = base / L"eye_state_ocec_s.onnx";
+      // Landmark106 EAR is available but OFF by default (see phase23 eval).
+      if (std::filesystem::exists(scrfd) && std::filesystem::exists(ocec)) {
+        config.scrfdModelPath = scrfd.string();
+        config.ocecModelPath = ocec.string();
+        break;
+      }
     }
-    rowMean[static_cast<size_t>(y)] = sum / static_cast<double>(cols);
-  }
-
-  const int topEnd = std::max(1, rows / 4);
-  const int bottomStart = rows - topEnd;
-  const int midStart = topEnd;
-  const int midEnd = std::max(midStart + 1, bottomStart);
-
-  double topSum = 0.0;
-  double midSum = 0.0;
-  double bottomSum = 0.0;
-  for (int y = 0; y < topEnd; ++y) {
-    topSum += rowMean[static_cast<size_t>(y)];
-  }
-  for (int y = midStart; y < midEnd; ++y) {
-    midSum += rowMean[static_cast<size_t>(y)];
-  }
-  for (int y = bottomStart; y < rows; ++y) {
-    bottomSum += rowMean[static_cast<size_t>(y)];
-  }
-
-  const double topMean = topSum / static_cast<double>(topEnd);
-  const double midMean = midSum / static_cast<double>(midEnd - midStart);
-  const double bottomMean = bottomSum / static_cast<double>(rows - bottomStart);
-  const double lidMean = (topMean + bottomMean) * 0.5;
-  const double darkness = std::max(0.0, (lidMean - midMean) / 255.0);
-  const double darknessScore = std::max(0.0, std::min(1.0, darkness / 0.22));
-
-  double verticalEdges = 0.0;
-  double horizontalEdges = 0.0;
-  int count = 0;
-  for (int y = safeTop + 1; y < safeBottom - 1; ++y) {
-    for (int x = safeLeft + 1; x < safeRight - 1; ++x) {
-      const double gx = grayAt(x + 1, y) - grayAt(x - 1, y);
-      const double gy = grayAt(x, y + 1) - grayAt(x, y - 1);
-      verticalEdges += std::abs(gy);
-      horizontalEdges += std::abs(gx);
-      ++count;
-    }
-  }
-
-  double edgeScore = 0.5;
-  if (count > 0 && horizontalEdges >= 1e-6) {
-    const double ratio = verticalEdges / horizontalEdges;
-    edgeScore = std::max(0.0, std::min(1.0, (ratio - 0.35) / 0.9));
-  }
-
-  return static_cast<float>(std::max(0.0, std::min(1.0, 0.62 * darknessScore + 0.38 * edgeScore)));
-}
-
-float ComputeSharpness(const uint8_t *pixels, int width, int height, int stride, const BitmapBounds &box) {
-  const int left = std::max(0, static_cast<int>(box.X));
-  const int top = std::max(0, static_cast<int>(box.Y));
-  const int right = std::min(width, left + static_cast<int>(box.Width));
-  const int bottom = std::min(height, top + static_cast<int>(box.Height));
-  if (right - left < 3 || bottom - top < 3) {
-    return 30.0f;
-  }
-
-  double sum = 0.0;
-  double sumSquared = 0.0;
-  int count = 0;
-
-  for (int y = top + 1; y < bottom - 1; ++y) {
-    for (int x = left + 1; x < right - 1; ++x) {
-      const auto grayAt = [&](int px, int py) {
-        const int index = py * stride + px * 4;
-        return pixels[index] * 0.114 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.299;
-      };
-
-      const double laplacian =
-          -grayAt(x, y - 1) - grayAt(x - 1, y) + 4 * grayAt(x, y) - grayAt(x + 1, y) - grayAt(x, y + 1);
-      sum += laplacian;
-      sumSquared += laplacian * laplacian;
-      ++count;
-    }
-  }
-
-  if (count == 0) {
-    return 30.0f;
-  }
-
-  const double mean = sum / count;
-  const double variance = (sumSquared / count) - mean * mean;
-  const float normalized = static_cast<float>(std::log(variance + 1.0) / std::log(1000.0) * 100.0);
-  return std::max(0.0f, std::min(100.0f, normalized));
+    pipeline.initialize(config);
+  });
+  return pipeline;
 }
 
 SoftwareBitmap LoadSoftwareBitmap(const std::filesystem::path &path) {
@@ -789,113 +674,6 @@ std::string FormatHashHex(uint64_t hash) {
   return buffer;
 }
 
-constexpr float kFaceBoxIoUThreshold = 0.42f;
-constexpr float kFaceBoxIoSThreshold = 0.50f;
-constexpr float kFaceBoxProximityIoUThreshold = 0.18f;
-constexpr float kFaceBoxProximityCenterFactor = 0.48f;
-constexpr float kFaceBoxProximityMinAreaRatio = 1.8f;
-constexpr float kTileOverlapFraction = 0.25f;
-constexpr int kMinFacesToSkipTiling = 2;
-constexpr int kMinPixelsForTiling = 900000;
-
-struct NormalizedFaceBox {
-  float left{0.0f};
-  float top{0.0f};
-  float width{0.0f};
-  float height{0.0f};
-};
-
-NormalizedFaceBox ToNormalizedFaceBox(const BitmapBounds &box, int imageWidth, int imageHeight) {
-  return NormalizedFaceBox{
-      static_cast<float>(box.X) / static_cast<float>(imageWidth),
-      static_cast<float>(box.Y) / static_cast<float>(imageHeight),
-      static_cast<float>(box.Width) / static_cast<float>(imageWidth),
-      static_cast<float>(box.Height) / static_cast<float>(imageHeight),
-  };
-}
-
-float IntersectionArea(const NormalizedFaceBox &a, const NormalizedFaceBox &b) {
-  const float intersectLeft = std::max(a.left, b.left);
-  const float intersectTop = std::max(a.top, b.top);
-  const float intersectRight = std::min(a.left + a.width, b.left + b.width);
-  const float intersectBottom = std::min(a.top + a.height, b.top + b.height);
-  const float intersectWidth = std::max(0.0f, intersectRight - intersectLeft);
-  const float intersectHeight = std::max(0.0f, intersectBottom - intersectTop);
-  return intersectWidth * intersectHeight;
-}
-
-float IntersectionOverUnion(const NormalizedFaceBox &a, const NormalizedFaceBox &b) {
-  const float intersection = IntersectionArea(a, b);
-  if (intersection <= 0.0f) {
-    return 0.0f;
-  }
-
-  const float unionArea = a.width * a.height + b.width * b.height - intersection;
-  if (unionArea <= 0.0f) {
-    return 0.0f;
-  }
-  return intersection / unionArea;
-}
-
-bool FaceBoxesAreRedundant(const NormalizedFaceBox &a, const NormalizedFaceBox &b) {
-  const float iou = IntersectionOverUnion(a, b);
-  if (iou >= kFaceBoxIoUThreshold) {
-    return true;
-  }
-
-  const float intersection = IntersectionArea(a, b);
-  const float minArea = std::min(a.width * a.height, b.width * b.height);
-  const float maxArea = std::max(a.width * a.height, b.width * b.height);
-  const float areaRatio = maxArea / std::max(minArea, 1e-8f);
-  if (minArea > 1e-8f &&
-      areaRatio >= kFaceBoxProximityMinAreaRatio &&
-      (intersection / minArea) >= kFaceBoxIoSThreshold) {
-    return true;
-  }
-
-  if (areaRatio < kFaceBoxProximityMinAreaRatio) {
-    return false;
-  }
-
-  const float aCenterX = a.left + a.width * 0.5f;
-  const float aCenterY = a.top + a.height * 0.5f;
-  const float bCenterX = b.left + b.width * 0.5f;
-  const float bCenterY = b.top + b.height * 0.5f;
-  const float centerDistance =
-      std::hypot(aCenterX - bCenterX, aCenterY - bCenterY);
-  const float minDiagonal =
-      std::min(std::hypot(a.width, a.height), std::hypot(b.width, b.height));
-  return iou >= kFaceBoxProximityIoUThreshold &&
-         centerDistance < kFaceBoxProximityCenterFactor * minDiagonal;
-}
-
-std::vector<BitmapBounds> DeduplicateFaceBoxes(
-    const std::vector<BitmapBounds> &boxes,
-    int imageWidth,
-    int imageHeight) {
-  if (boxes.size() <= 1) {
-    return boxes;
-  }
-
-  std::vector<BitmapBounds> sorted = boxes;
-  std::sort(sorted.begin(), sorted.end(), [](const BitmapBounds &left, const BitmapBounds &right) {
-    return (left.Width * left.Height) > (right.Width * right.Height);
-  });
-
-  std::vector<BitmapBounds> kept;
-  for (const auto &candidate : sorted) {
-    const auto candidateNormalized = ToNormalizedFaceBox(candidate, imageWidth, imageHeight);
-    const bool overlapsExisting = std::any_of(kept.begin(), kept.end(), [&](const BitmapBounds &existing) {
-      return FaceBoxesAreRedundant(
-          candidateNormalized, ToNormalizedFaceBox(existing, imageWidth, imageHeight));
-    });
-    if (!overlapsExisting) {
-      kept.push_back(candidate);
-    }
-  }
-  return kept;
-}
-
 SoftwareBitmap CropSoftwareBitmap(
     const SoftwareBitmap &source,
     const BitmapPixels &sourcePixels,
@@ -1017,289 +795,6 @@ winrtRN::JSValue GenerateFaceCropsAtPath(
   return winrtRN::JSValueObject{{"cropUris", std::move(cropUris)}};
 }
 
-std::vector<BitmapBounds> DetectFaceBoxesInBitmap(const FaceDetector &detector, const SoftwareBitmap &bitmap) {
-  if (!FaceDetector::IsBitmapPixelFormatSupported(BitmapPixelFormat::Gray8)) {
-    throw std::runtime_error("Windows face detection does not support Gray8 bitmaps");
-  }
-
-  const auto detectorBitmap =
-      bitmap.BitmapPixelFormat() == BitmapPixelFormat::Gray8
-          ? bitmap
-          : SoftwareBitmap::Convert(bitmap, BitmapPixelFormat::Gray8);
-  const auto faces = detector.DetectFacesAsync(detectorBitmap).get();
-  std::vector<BitmapBounds> boxes;
-  for (const auto &face : faces) {
-    boxes.push_back(face.FaceBox());
-  }
-  return boxes;
-}
-
-std::vector<BitmapBounds> DetectTiledFaceBoxes(
-    const FaceDetector &detector,
-    const SoftwareBitmap &bitmap,
-    const BitmapPixels &sourcePixels,
-    int gridCount) {
-  const int imageWidth = bitmap.PixelWidth();
-  const int imageHeight = bitmap.PixelHeight();
-  if (imageWidth <= 0 || imageHeight <= 0 || gridCount <= 0) {
-    return {};
-  }
-
-  const int tileWidth = static_cast<int>(
-      static_cast<float>(imageWidth) / static_cast<float>(gridCount) * (1.0f + kTileOverlapFraction));
-  const int tileHeight = static_cast<int>(
-      static_cast<float>(imageHeight) / static_cast<float>(gridCount) * (1.0f + kTileOverlapFraction));
-  const int stepX = imageWidth / gridCount;
-  const int stepY = imageHeight / gridCount;
-
-  std::vector<BitmapBounds> merged;
-  for (int row = 0; row < gridCount; ++row) {
-    for (int col = 0; col < gridCount; ++col) {
-      int originX = col * stepX;
-      int originY = row * stepY;
-      if (originX + tileWidth > imageWidth) {
-        originX = std::max(0, imageWidth - tileWidth);
-      }
-      if (originY + tileHeight > imageHeight) {
-        originY = std::max(0, imageHeight - tileHeight);
-      }
-
-      const auto tileBitmap = CropSoftwareBitmap(bitmap, sourcePixels, originX, originY, tileWidth, tileHeight);
-      const auto tileFaces = DetectFaceBoxesInBitmap(detector, tileBitmap);
-      for (const auto &tileFace : tileFaces) {
-        merged.push_back(BitmapBounds{
-            tileFace.X + originX,
-            tileFace.Y + originY,
-            tileFace.Width,
-            tileFace.Height,
-        });
-      }
-    }
-  }
-
-  return DeduplicateFaceBoxes(merged, imageWidth, imageHeight);
-}
-
-std::vector<BitmapBounds> CollectFaceBoxes(
-    const FaceDetector &detector,
-    const SoftwareBitmap &bitmap,
-    const BitmapPixels &sourcePixels) {
-  const int imageWidth = bitmap.PixelWidth();
-  const int imageHeight = bitmap.PixelHeight();
-  const int pixelCount = imageWidth * imageHeight;
-
-  std::vector<BitmapBounds> combined = DetectFaceBoxesInBitmap(detector, bitmap);
-  std::vector<BitmapBounds> deduped = DeduplicateFaceBoxes(combined, imageWidth, imageHeight);
-  if (deduped.size() >= static_cast<size_t>(kMinFacesToSkipTiling) ||
-      pixelCount < kMinPixelsForTiling) {
-    return deduped;
-  }
-
-  const auto tiledTwoByTwo = DetectTiledFaceBoxes(detector, bitmap, sourcePixels, 2);
-  combined.insert(combined.end(), tiledTwoByTwo.begin(), tiledTwoByTwo.end());
-  deduped = DeduplicateFaceBoxes(combined, imageWidth, imageHeight);
-  if (!deduped.empty()) {
-    return deduped;
-  }
-
-  const auto tiledThreeByThree = DetectTiledFaceBoxes(detector, bitmap, sourcePixels, 3);
-  combined.insert(combined.end(), tiledThreeByThree.begin(), tiledThreeByThree.end());
-  return DeduplicateFaceBoxes(combined, imageWidth, imageHeight);
-}
-
-bool IsAcceptableFaceBox(const BitmapBounds &box, int imageWidth, int imageHeight) {
-  if (box.Width < 30 || box.Height < 30) {
-    return false;
-  }
-
-  const float aspect =
-      static_cast<float>(box.Width) / static_cast<float>(std::max(1U, box.Height));
-  if (aspect < 0.35f || aspect > 1.8f) {
-    return false;
-  }
-
-  const float areaFraction =
-      (static_cast<float>(box.Width) * static_cast<float>(box.Height)) /
-      (static_cast<float>(imageWidth) * static_cast<float>(imageHeight));
-  if (areaFraction < 0.0003f) {
-    return false;
-  }
-
-  return true;
-}
-
-float MeanFaceBrightness(
-    const uint8_t *pixelData,
-    int imageWidth,
-    int imageHeight,
-    int stride,
-    const BitmapBounds &box) {
-  const int left = std::max(0, static_cast<int>(box.X));
-  const int top = std::max(0, static_cast<int>(box.Y));
-  const int right = std::min(imageWidth, left + static_cast<int>(box.Width));
-  const int bottom = std::min(imageHeight, top + static_cast<int>(box.Height));
-  if (right - left < 2 || bottom - top < 2) {
-    return 60.0f;
-  }
-
-  double sum = 0.0;
-  int count = 0;
-  for (int y = top; y < bottom; y += 2) {
-    for (int x = left; x < right; x += 2) {
-      const int index = y * stride + x * 4;
-      sum += pixelData[index] * 0.114 + pixelData[index + 1] * 0.587 +
-             pixelData[index + 2] * 0.299;
-      ++count;
-    }
-  }
-  if (count == 0) {
-    return 60.0f;
-  }
-  return static_cast<float>(std::max(0.0, std::min(100.0, sum / count / 2.55)));
-}
-
-winrtRN::JSValueObject BuildFaceObject(
-    const BitmapBounds &box,
-    int index,
-    const uint8_t *pixelData,
-    int imageWidth,
-    int imageHeight,
-    int stride,
-    float confidence = 0.0f,
-    const float *leftEyeXy = nullptr,
-    const float *rightEyeXy = nullptr,
-    const float *noseXy = nullptr,
-    const float *mouthXy = nullptr,
-    const GumpDesktop::EyeStateResult *eyeState = nullptr) {
-  const float left = static_cast<float>(box.X) / static_cast<float>(imageWidth);
-  const float top = static_cast<float>(box.Y) / static_cast<float>(imageHeight);
-  const float width = static_cast<float>(box.Width) / static_cast<float>(imageWidth);
-  const float height = static_cast<float>(box.Height) / static_cast<float>(imageHeight);
-
-  const int eyeRegionWidth = std::max(4, static_cast<int>(box.Width * 0.18f));
-  const int eyeRegionHeight = std::max(4, static_cast<int>(box.Height * 0.12f));
-  const int leftEyeLeft = leftEyeXy
-                              ? static_cast<int>(leftEyeXy[0] - eyeRegionWidth * 0.5f)
-                              : static_cast<int>(box.X + box.Width * 0.16f);
-  const int rightEyeLeft = rightEyeXy
-                               ? static_cast<int>(rightEyeXy[0] - eyeRegionWidth * 0.5f)
-                               : static_cast<int>(box.X + box.Width * 0.60f);
-  const int leftEyeTop = leftEyeXy
-                             ? static_cast<int>(leftEyeXy[1] - eyeRegionHeight * 0.5f)
-                             : static_cast<int>(box.Y + box.Height * 0.22f);
-  const int rightEyeTop = rightEyeXy
-                              ? static_cast<int>(rightEyeXy[1] - eyeRegionHeight * 0.5f)
-                              : static_cast<int>(box.Y + box.Height * 0.22f);
-
-  const float leftOpen = EstimateEyeOpenness(
-      pixelData,
-      imageWidth,
-      imageHeight,
-      stride,
-      leftEyeLeft,
-      leftEyeTop,
-      eyeRegionWidth,
-      eyeRegionHeight);
-  const float rightOpen = EstimateEyeOpenness(
-      pixelData,
-      imageWidth,
-      imageHeight,
-      stride,
-      rightEyeLeft,
-      rightEyeTop,
-      eyeRegionWidth,
-      eyeRegionHeight);
-  const float minOpen = std::min(leftOpen, rightOpen);
-  const float maxOpen = std::max(leftOpen, rightOpen);
-  const float avgOpen = (leftOpen + rightOpen) / 2.0f;
-  const BitmapBounds leftEyeBox{
-      static_cast<float>(leftEyeLeft),
-      static_cast<float>(leftEyeTop),
-      static_cast<float>(eyeRegionWidth),
-      static_cast<float>(eyeRegionHeight),
-  };
-  const BitmapBounds rightEyeBox{
-      static_cast<float>(rightEyeLeft),
-      static_cast<float>(rightEyeTop),
-      static_cast<float>(eyeRegionWidth),
-      static_cast<float>(eyeRegionHeight),
-  };
-  const float leftSharp =
-      ComputeSharpness(pixelData, imageWidth, imageHeight, stride, leftEyeBox);
-  const float rightSharp =
-      ComputeSharpness(pixelData, imageWidth, imageHeight, stride, rightEyeBox);
-  const float sharpness = std::min(leftSharp, rightSharp);
-  const float brightness = MeanFaceBrightness(pixelData, imageWidth, imageHeight, stride, box);
-
-  const float eyeLeftX = leftEyeXy ? leftEyeXy[0] / imageWidth : left + width * 0.25f;
-  const float eyeLeftY = leftEyeXy ? leftEyeXy[1] / imageHeight : top + height * 0.32f;
-  const float eyeRightX = rightEyeXy ? rightEyeXy[0] / imageWidth : left + width * 0.75f;
-  const float eyeRightY = rightEyeXy ? rightEyeXy[1] / imageHeight : top + height * 0.32f;
-  const float noseX = noseXy ? noseXy[0] / imageWidth : left + width * 0.5f;
-  const float noseY = noseXy ? noseXy[1] / imageHeight : top + height * 0.55f;
-  const float mouthX = mouthXy ? mouthXy[0] / imageWidth : left + width * 0.5f;
-  const float mouthY = mouthXy ? mouthXy[1] / imageHeight : top + height * 0.78f;
-
-  float yaw = 0.0f;
-  if (leftEyeXy && rightEyeXy && noseXy) {
-    const float eyeMidX = (leftEyeXy[0] + rightEyeXy[0]) * 0.5f;
-    const float eyeDist = std::max(1.0f, std::abs(rightEyeXy[0] - leftEyeXy[0]));
-    yaw = std::max(-45.0f, std::min(45.0f, ((noseXy[0] - eyeMidX) / eyeDist) * 35.0f));
-  }
-
-  return winrtRN::JSValueObject{
-      {"boundingBox",
-       winrtRN::JSValueObject{
-           {"left", static_cast<double>(left)},
-           {"top", static_cast<double>(top)},
-           {"width", static_cast<double>(width)},
-           {"height", static_cast<double>(height)},
-       }},
-      {"eyesOpen",
-       eyeState ? EyesOpenFromOcec(*eyeState)
-                : EyesOpenFromScore(minOpen, maxOpen, avgOpen)},
-      {"sharpness", static_cast<double>(sharpness)},
-      {"brightness", static_cast<double>(brightness)},
-      {"confidence", static_cast<double>(confidence)},
-      {"landmarks",
-       winrtRN::JSValueArray{
-           winrtRN::JSValueObject{
-               {"type", "eyeLeft"},
-               {"x", static_cast<double>(eyeLeftX)},
-               {"y", static_cast<double>(eyeLeftY)},
-           },
-           winrtRN::JSValueObject{
-               {"type", "eyeRight"},
-               {"x", static_cast<double>(eyeRightX)},
-               {"y", static_cast<double>(eyeRightY)},
-           },
-           winrtRN::JSValueObject{
-               {"type", "nose"},
-               {"x", static_cast<double>(noseX)},
-               {"y", static_cast<double>(noseY)},
-           },
-           winrtRN::JSValueObject{
-               {"type", "mouth"},
-               {"x", static_cast<double>(mouthX)},
-               {"y", static_cast<double>(mouthY)},
-           },
-       }},
-      {"pose", winrtRN::JSValueObject{{"pitch", 0.0}, {"roll", 0.0}, {"yaw", static_cast<double>(yaw)}}},
-      {"faceId", "local-face-" + std::to_string(index)},
-      {"engine", confidence > 0.0f ? "yunet" : "winrt"},
-  };
-}
-
-FaceDetector GetThreadFaceDetector() {
-  thread_local FaceDetector detector{nullptr};
-  thread_local bool ready = false;
-  if (!ready) {
-    detector = FaceDetector::CreateAsync().get();
-    ready = true;
-  }
-  return detector;
-}
-
 winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
   const auto bitmap = LoadSoftwareBitmapScaled(path, kFaceDetectMaxPixelSize);
   const auto pixels = ReadBitmapPixels(bitmap);
@@ -1308,80 +803,51 @@ winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
   const int stride = pixels.stride;
   const uint8_t *pixelData = pixels.bytes.data();
 
-  auto &yunet = GumpDesktop::YuNetFaceDetector::Shared();
-  if (yunet.EnsureReady()) {
-    const auto detections = yunet.DetectBgra(pixelData, imageWidth, imageHeight, stride);
-    auto &eyeClassifier = GumpDesktop::OcecEyeStateClassifier::Shared();
-    const bool eyeClassifierReady = eyeClassifier.EnsureReady();
-    winrtRN::JSValueArray result;
-    int index = 0;
-    for (const auto &detection : detections) {
-      BitmapBounds box{
-          detection.left,
-          detection.top,
-          detection.width,
-          detection.height,
-      };
-      if (!IsAcceptableFaceBox(box, imageWidth, imageHeight)) {
-        continue;
-      }
-      const float leftEyeXy[2] = {detection.leftEye.x, detection.leftEye.y};
-      const float rightEyeXy[2] = {detection.rightEye.x, detection.rightEye.y};
-      const float noseXy[2] = {detection.nose.x, detection.nose.y};
-      const float mouthXy[2] = {
-          (detection.leftMouth.x + detection.rightMouth.x) * 0.5f,
-          (detection.leftMouth.y + detection.rightMouth.y) * 0.5f,
-      };
-      const auto eyeState = eyeClassifierReady
-                                ? eyeClassifier.ClassifyBgra(
-                                      pixelData,
-                                      imageWidth,
-                                      imageHeight,
-                                      stride,
-                                      {detection.leftEye.x, detection.leftEye.y},
-                                      {detection.rightEye.x, detection.rightEye.y})
-                                : GumpDesktop::EyeStateResult{};
-      result.push_back(BuildFaceObject(
-          box,
-          index,
-          pixelData,
-          imageWidth,
-          imageHeight,
-          stride,
-          detection.score,
-          leftEyeXy,
-          rightEyeXy,
-          noseXy,
-          mouthXy,
-          &eyeState));
-      ++index;
-    }
-    if (!result.empty()) {
-      return result;
-    }
-  }
-
-  const auto detector = GetThreadFaceDetector();
-  const auto faceBoxes = CollectFaceBoxes(detector, bitmap, pixels);
-
-  std::vector<BitmapBounds> accepted;
-  accepted.reserve(faceBoxes.size());
-  for (const auto &box : faceBoxes) {
-    if (!IsAcceptableFaceBox(box, imageWidth, imageHeight)) {
-      continue;
-    }
-    accepted.push_back(box);
-  }
-
-  accepted = DeduplicateFaceBoxes(accepted, imageWidth, imageHeight);
+  auto &pipeline = SharedFacePipeline();
+  auto faces = pipeline.detectFaces(pixelData, imageWidth, imageHeight, stride);
 
   winrtRN::JSValueArray result;
-  int index = 0;
-  for (const auto &box : accepted) {
-    result.push_back(BuildFaceObject(box, index, pixelData, imageWidth, imageHeight, stride));
-    ++index;
-  }
+  for (const auto &face : faces) {
+    winrtRN::JSValueArray landmarks;
+    for (const auto &lm : face.landmarks) {
+      landmarks.push_back(winrtRN::JSValueObject{
+          {"type", lm.type},
+          {"x", static_cast<double>(lm.x)},
+          {"y", static_cast<double>(lm.y)},
+      });
+    }
 
+    result.push_back(winrtRN::JSValueObject{
+        {"boundingBox",
+         winrtRN::JSValueObject{
+             {"left", static_cast<double>(face.left)},
+             {"top", static_cast<double>(face.top)},
+             {"width", static_cast<double>(face.width)},
+             {"height", static_cast<double>(face.height)},
+         }},
+        {"eyesOpen",
+         winrtRN::JSValueObject{
+             {"value", face.eyesOpen.value},
+             {"confidence", static_cast<double>(face.eyesOpen.confidence)},
+             {"leftProbability", static_cast<double>(face.eyesOpen.leftProbability)},
+             {"rightProbability", static_cast<double>(face.eyesOpen.rightProbability)},
+         }},
+        {"eyeStatus", face.eyeStatus},
+        {"focusLevel", face.focusLevel},
+        {"sharpness", static_cast<double>(face.sharpness)},
+        {"brightness", static_cast<double>(face.brightness)},
+        {"confidence", static_cast<double>(face.confidence)},
+        {"landmarks", std::move(landmarks)},
+        {"pose",
+         winrtRN::JSValueObject{
+             {"pitch", static_cast<double>(face.pose.pitch)},
+             {"roll", static_cast<double>(face.pose.roll)},
+             {"yaw", static_cast<double>(face.pose.yaw)},
+         }},
+        {"faceId", face.faceId},
+        {"engine", face.engine},
+    });
+  }
   return result;
 }
 
