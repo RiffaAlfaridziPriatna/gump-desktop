@@ -80,6 +80,7 @@ export default function CulledAlbumPhotoDetailScreen({
   const [mainImageReady, setMainImageReady] = useState(false);
   const [tooltip, setTooltip] = useState<KeyFaceTooltipAnchor | null>(null);
   const [tooltipWidth, setTooltipWidth] = useState(0);
+  const [tooltipHeight, setTooltipHeight] = useState(0);
   const [screenOrigin, setScreenOrigin] = useState({x: 0, y: 0});
 
   const screenRootRef = useRef<View>(null);
@@ -93,6 +94,7 @@ export default function CulledAlbumPhotoDetailScreen({
   const handleTooltipChange = useCallback(
     (anchor: KeyFaceTooltipAnchor | null) => {
       setTooltipWidth(0);
+      setTooltipHeight(0);
       setTooltip(anchor);
       if (anchor) {
         syncScreenOrigin();
@@ -358,20 +360,35 @@ export default function CulledAlbumPhotoDetailScreen({
               style={[
                 styles.tooltipHost,
                 {
-                  top: tooltip.bottomY - screenOrigin.y + 6,
+                  top:
+                    tooltip.placement === 'above'
+                      ? (tooltip.topY ?? tooltip.bottomY) - screenOrigin.y - 6
+                      : tooltip.bottomY - screenOrigin.y + 6,
                   left: tooltip.centerX - screenOrigin.x,
-                  transform: [{translateX: -tooltipWidth / 2}],
-                  opacity: tooltipWidth > 0 ? 1 : 0,
+                  transform:
+                    tooltip.placement === 'above'
+                      ? [
+                          {translateX: -tooltipWidth / 2},
+                          {translateY: -tooltipHeight},
+                        ]
+                      : [{translateX: -tooltipWidth / 2}],
+                  opacity:
+                    tooltipWidth > 0 &&
+                    (tooltip.placement !== 'above' || tooltipHeight > 0)
+                      ? 1
+                      : 0,
                 },
               ]}
-              onLayout={event =>
-                setTooltipWidth(event.nativeEvent.layout.width)
-              }
+              onLayout={event => {
+                setTooltipWidth(event.nativeEvent.layout.width);
+                setTooltipHeight(event.nativeEvent.layout.height);
+              }}
             >
               <FaceStatusTooltip
                 backgroundColor={tooltip.backgroundColor}
                 eyeMeta={tooltip.eyeMeta}
                 focusMeta={tooltip.focusMeta}
+                placement={tooltip.placement}
               />
             </View>
           )}

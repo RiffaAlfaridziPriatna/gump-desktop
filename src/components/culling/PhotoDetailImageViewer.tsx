@@ -58,12 +58,15 @@ function FaceStatusOverlay({
   const buildAnchor = useCallback(
     (x: number, y: number, measuredWidth: number, measuredHeight: number) => ({
       centerX: x + measuredWidth / 2,
+      topY: y,
       bottomY: y + measuredHeight,
+      // Zoomed badges sit at the bottom edge, so open the tooltip upward.
+      placement: mode === 'fixedBottom' ? ('above' as const) : ('below' as const),
       eyeMeta: getEyeStatusMeta(face.eyeStatus),
       focusMeta: getFocusStatusMeta(face.focusLevel),
       backgroundColor: `${colors.textDark}E5`,
     }),
-    [face.eyeStatus, face.focusLevel],
+    [face.eyeStatus, face.focusLevel, mode],
   );
 
   const {targetRef: overlayRef, onHoverIn, onHoverOut} = useMeasuredTooltipHover(
@@ -71,20 +74,18 @@ function FaceStatusOverlay({
     buildAnchor,
   );
 
-  const tooltipEnabled = mode === 'attached';
-
   const badges = (
     <View style={styles.faceStatusBadges}>
       <FaceStatusIconBadge
         meta={eyeMeta}
-        onHoverIn={tooltipEnabled ? onHoverIn : undefined}
-        onHoverOut={tooltipEnabled ? onHoverOut : undefined}
+        onHoverIn={onHoverIn}
+        onHoverOut={onHoverOut}
         size="large"
       />
       <FaceStatusIconBadge
         meta={focusMeta}
-        onHoverIn={tooltipEnabled ? onHoverIn : undefined}
-        onHoverOut={tooltipEnabled ? onHoverOut : undefined}
+        onHoverIn={onHoverIn}
+        onHoverOut={onHoverOut}
         size="large"
       />
     </View>

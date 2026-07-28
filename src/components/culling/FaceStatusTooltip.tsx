@@ -3,9 +3,14 @@ import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
 import {StyleSheet, Text, View} from 'react-native';
 
+export type FaceStatusTooltipPlacement = 'above' | 'below';
+
 export type KeyFaceTooltipAnchor = {
   centerX: number;
   bottomY: number;
+  /** Top edge of the hover target; used when placement is `above`. */
+  topY?: number;
+  placement?: FaceStatusTooltipPlacement;
   eyeMeta: FaceStatusMeta;
   focusMeta: FaceStatusMeta;
   backgroundColor?: string;
@@ -28,20 +33,32 @@ export function FaceStatusTooltip({
   eyeMeta,
   focusMeta,
   backgroundColor = colors.divider + 'E5',
+  placement = 'below',
 }: {
   eyeMeta: FaceStatusMeta;
   focusMeta: FaceStatusMeta;
   backgroundColor?: string;
+  placement?: FaceStatusTooltipPlacement;
 }) {
+  const pointer =
+    placement === 'above' ? (
+      <View
+        style={[styles.tooltipPointerDown, {borderTopColor: backgroundColor}]}
+      />
+    ) : (
+      <View
+        style={[styles.tooltipPointerUp, {borderBottomColor: backgroundColor}]}
+      />
+    );
+
   return (
     <View style={styles.tooltipWrap}>
-      <View
-        style={[styles.tooltipPointer, {borderBottomColor: backgroundColor}]}
-      />
+      {placement === 'below' ? pointer : null}
       <View style={[styles.tooltip, {backgroundColor}]}>
         <StatusTooltipRow meta={eyeMeta} />
         <StatusTooltipRow meta={focusMeta} />
       </View>
+      {placement === 'above' ? pointer : null}
     </View>
   );
 }
@@ -68,7 +85,7 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     flexShrink: 0,
   },
-  tooltipPointer: {
+  tooltipPointerUp: {
     width: 0,
     height: 0,
     borderLeftWidth: 5,
@@ -77,5 +94,15 @@ const styles = StyleSheet.create({
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     marginBottom: -1,
+  },
+  tooltipPointerDown: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    marginTop: -1,
   },
 });
