@@ -246,13 +246,12 @@ export function recomputeAlbumTotals(album: CulledAlbum): CulledAlbum {
 }
 
 export function isCulledPhotoDisabled(
-  photo: CulledAlbumPhoto,
+  _photo: CulledAlbumPhoto,
   cullingHasUploads: boolean,
 ): boolean {
-  if (!cullingHasUploads) {
-    return false;
-  }
-  return photo.serverUploadStatus === 'uploaded';
+  // Once any photos have been uploaded to the server, the whole album is
+  // read-only: no selection, star rating, or delete changes.
+  return cullingHasUploads;
 }
 
 export function isUploadInFlight(photo: CulledAlbumPhoto): boolean {

@@ -134,7 +134,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
   usePreloadGridImages(initialPreloadUris);
 
-  const canDeletePhoto = cullingCompleted && !isAnalyzing;
+  const canDeletePhoto = cullingCompleted && !isAnalyzing && !cullingHasUploads;
 
   const rawGridPhotos = useMemo(() => {
     return albumPhotos

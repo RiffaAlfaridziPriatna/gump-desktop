@@ -493,7 +493,7 @@ export const cullingEngine = {
     }
     const album = getAlbum(albumId);
     if (isCulledPhotoDisabled(existing, album?.cullingHasUploads ?? false)) {
-      throw new Error('Cannot modify uploaded photo');
+      throw new Error('Cannot modify photos after upload');
     }
     const previousSelected = existing.selected;
     const updated = updatePhoto(albumId, photoId, photo => {
@@ -549,7 +549,7 @@ export const cullingEngine = {
     }
     const album = getAlbum(albumId);
     if (isCulledPhotoDisabled(photo, album?.cullingHasUploads ?? false)) {
-      throw new Error('Cannot delete uploaded photo');
+      throw new Error('Cannot delete photos after upload');
     }
 
     const deletedContribution = statsContributionFromPhoto(photo);
