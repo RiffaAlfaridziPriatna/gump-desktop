@@ -85,3 +85,7 @@ yarn-error.log
 
 /references
 /docs
+
+# Optional local A/B face models (not used in production SCRFD-2.5G + OCEC)
+**/Models/face_detection_scrfd_10g_bnkps.onnx
+**/Models/face_landmarks_2d106det.onnx
