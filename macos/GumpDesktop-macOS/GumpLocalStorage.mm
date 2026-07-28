@@ -1918,6 +1918,30 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
   return CGRectMake(viewLeft, viewTop, viewW, viewH);
 }
 
+// Match Windows MakeSquareCoverCrop: keep aspect by center-cropping the
+// padded rect to a square before scaling into the output thumbnail.
+- (CGRect)squareCoverCropRect:(CGRect)rect
+{
+  if (rect.size.width <= 0.0 || rect.size.height <= 0.0) {
+    return rect;
+  }
+  if (rect.size.width == rect.size.height) {
+    return rect;
+  }
+  if (rect.size.width > rect.size.height) {
+    CGFloat side = rect.size.height;
+    return CGRectMake(rect.origin.x + (rect.size.width - side) / 2.0,
+                      rect.origin.y,
+                      side,
+                      side);
+  }
+  CGFloat side = rect.size.width;
+  return CGRectMake(rect.origin.x,
+                    rect.origin.y + (rect.size.height - side) / 2.0,
+                    side,
+                    side);
+}
+
 - (BOOL)writeFaceCropImage:(CGImageRef)sourceImage
                boundingBox:(NSDictionary *)box
                    albumId:(NSString *)albumId
@@ -1952,6 +1976,7 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
   CGRect viewRect = [self paddedFaceCropRectForImageWidth:imageWidth
                                               imageHeight:imageHeight
                                              boundingBox:box];
+  viewRect = [self squareCoverCropRect:viewRect];
 
   CGImageRef cropped = CGImageCreateWithImageInRect(sourceImage, viewRect);
   if (cropped == NULL) {
