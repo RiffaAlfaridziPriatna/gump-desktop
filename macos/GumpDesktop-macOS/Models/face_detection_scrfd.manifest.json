@@ -1,0 +1,15 @@
+{
+  "id": "scrfd-2.5g-bnkps",
+  "engineVersion": "scrfd-ocec-1",
+  "file": "face_detection_scrfd_2.5g_bnkps.onnx",
+  "description": "SCRFD-2.5G face detector with 5 keypoints (InsightFace, ICLR 2022)",
+  "source": "https://github.com/deepinsight/insightface/tree/master/detection/scrfd",
+  "license": "MIT",
+  "inputSize": [640, 640],
+  "inputFormat": "NCHW float32, (pixel - 127.5) / 128.0",
+  "outputs": ["score_8", "score_16", "score_32", "bbox_8", "bbox_16", "bbox_32", "kps_8", "kps_16", "kps_32"],
+  "strides": [8, 16, 32],
+  "anchorsPerCell": 2,
+  "scoreThreshold": 0.5,
+  "nmsThreshold": 0.4
+}

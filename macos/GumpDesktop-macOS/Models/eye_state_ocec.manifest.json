@@ -1,0 +1,31 @@
+{
+  "id": "ocec-s-onnx",
+  "engineVersion": "scrfd-ocec-1",
+  "file": "eye_state_ocec_s.onnx",
+  "license": "MIT",
+  "source": "https://github.com/PINTO0309/OCEC",
+  "release": "https://github.com/PINTO0309/OCEC/releases/tag/onnx",
+  "doi": "10.5281/zenodo.17505461",
+  "sha256": "9a346a08b256ad70725044cd2aa582858e108c6f45d42a9c3415afc604ba9b64",
+  "input": {
+    "name": "images",
+    "layout": "NCHW",
+    "color": "RGB",
+    "dtype": "float32",
+    "shape": ["batch", 3, 24, 40],
+    "range": [0, 1]
+  },
+  "output": {
+    "name": "prob_open",
+    "shape": ["batch"]
+  },
+  "thresholds": {
+    "open": 0.65,
+    "closed": 0.2,
+    "minimumEyeDistancePixels": 18
+  },
+  "reportedMetrics": {
+    "f1": 0.9943,
+    "cpuLatencyMilliseconds": 0.41
+  }
+}

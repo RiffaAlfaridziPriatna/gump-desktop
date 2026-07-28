@@ -21,6 +21,16 @@
 		C1A2C3D40123456700000001 /* GumpFilePicker.mm in Sources */ = {isa = PBXBuildFile; fileRef = C1A2C3D41123456700000001 /* GumpFilePicker.mm */; };
 		C2B3C4D50123456700000001 /* GumpVisualEffectView.mm in Sources */ = {isa = PBXBuildFile; fileRef = C2B3C4D51123456700000001 /* GumpVisualEffectView.mm */; };
 		C3D4E5F60123456700000001 /* GumpLocalStorage.mm in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F61123456700000001 /* GumpLocalStorage.mm */; };
+		C4E5F6070123456700000001 /* GumpSharedFaceDetection.mm in Sources */ = {isa = PBXBuildFile; fileRef = C4E5F6170123456700000001 /* GumpSharedFaceDetection.mm */; };
+		D1A2C3D40123456700000001 /* ScrfdFaceDetector.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000001 /* ScrfdFaceDetector.cpp */; };
+		D1A2C3D40123456700000002 /* OcecEyeStateClassifier.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000002 /* OcecEyeStateClassifier.cpp */; };
+		D1A2C3D40123456700000003 /* FaceDetectionPipeline.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000003 /* FaceDetectionPipeline.cpp */; };
+		D1A2C3D40123456700000004 /* Landmark106EarClassifier.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000007 /* Landmark106EarClassifier.cpp */; };
+		D1A2C3D40123456700000005 /* FaceLabeling.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000009 /* FaceLabeling.cpp */; };
+		D1A2C3D40123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx */; };
+		D1A2C3D40123456700000011 /* eye_state_ocec_s.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000011 /* eye_state_ocec_s.onnx */; };
+		D1A2C3D40123456700000012 /* face_landmarks_2d106det.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */; };
+		D1A2C3D40123456700000013 /* face_detection_scrfd_10g_bnkps.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000013 /* face_detection_scrfd_10g_bnkps.onnx */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +57,22 @@
 		C2B3C4D51123456700000002 /* GumpVisualEffectView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpVisualEffectView.h; sourceTree = "<group>"; };
 		C3D4E5F61123456700000001 /* GumpLocalStorage.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpLocalStorage.mm; sourceTree = "<group>"; };
 		C3D4E5F61123456700000002 /* GumpLocalStorage.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpLocalStorage.h; sourceTree = "<group>"; };
+		C4E5F6170123456700000001 /* GumpSharedFaceDetection.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpSharedFaceDetection.mm; sourceTree = "<group>"; };
+		C4E5F6170123456700000002 /* GumpSharedFaceDetection.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpSharedFaceDetection.h; sourceTree = "<group>"; };
+		D1A2C3D41123456700000001 /* ScrfdFaceDetector.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ScrfdFaceDetector.cpp; path = "../cpp/face-detection/ScrfdFaceDetector.cpp"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000002 /* OcecEyeStateClassifier.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OcecEyeStateClassifier.cpp; path = "../cpp/face-detection/OcecEyeStateClassifier.cpp"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000003 /* FaceDetectionPipeline.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = FaceDetectionPipeline.cpp; path = "../cpp/face-detection/FaceDetectionPipeline.cpp"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000007 /* Landmark106EarClassifier.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Landmark106EarClassifier.cpp; path = "../cpp/face-detection/Landmark106EarClassifier.cpp"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000009 /* FaceLabeling.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = FaceLabeling.cpp; path = "../cpp/face-detection/FaceLabeling.cpp"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D4112345670000000A /* FaceLabeling.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FaceLabeling.h; path = "../cpp/face-detection/FaceLabeling.h"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000004 /* ScrfdFaceDetector.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ScrfdFaceDetector.h; path = "../cpp/face-detection/ScrfdFaceDetector.h"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000005 /* OcecEyeStateClassifier.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OcecEyeStateClassifier.h; path = "../cpp/face-detection/OcecEyeStateClassifier.h"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000006 /* FaceDetectionPipeline.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FaceDetectionPipeline.h; path = "../cpp/face-detection/FaceDetectionPipeline.h"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000008 /* Landmark106EarClassifier.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Landmark106EarClassifier.h; path = "../cpp/face-detection/Landmark106EarClassifier.h"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = face_detection_scrfd_2.5g_bnkps.onnx; sourceTree = "<group>"; };
+		D1A2C3D41123456700000011 /* eye_state_ocec_s.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = eye_state_ocec_s.onnx; sourceTree = "<group>"; };
+		D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = face_landmarks_2d106det.onnx; sourceTree = "<group>"; };
+		D1A2C3D41123456700000013 /* face_detection_scrfd_10g_bnkps.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = face_detection_scrfd_10g_bnkps.onnx; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -98,8 +124,11 @@
 				C2B3C4D51123456700000001 /* GumpVisualEffectView.mm */,
 				C3D4E5F61123456700000002 /* GumpLocalStorage.h */,
 				C3D4E5F61123456700000001 /* GumpLocalStorage.mm */,
+				C4E5F6170123456700000002 /* GumpSharedFaceDetection.h */,
+				C4E5F6170123456700000001 /* GumpSharedFaceDetection.mm */,
 				514201512437B4B40078DB4F /* Assets.xcassets */,
 				B1A2C3D42123456700000001 /* Fonts */,
+				D1A2C3D42123456700000001 /* Models */,
 				514201532437B4B40078DB4F /* Main.storyboard */,
 				514201562437B4B40078DB4F /* Info.plist */,
 				514201572437B4B40078DB4F /* main.m */,
@@ -119,6 +148,7 @@
 			isa = PBXGroup;
 			children = (
 				5142014A2437B4B30078DB4F /* GumpDesktop-macOS */,
+				D1A2C3D42123456700000002 /* FaceDetection */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
@@ -148,6 +178,34 @@
 				B1A2C3D41123456700000004 /* RedHatDisplay-Bold.ttf */,
 			);
 			path = Fonts;
+			sourceTree = "<group>";
+		};
+		D1A2C3D42123456700000001 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				D1A2C3D41123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx */,
+				D1A2C3D41123456700000013 /* face_detection_scrfd_10g_bnkps.onnx */,
+				D1A2C3D41123456700000011 /* eye_state_ocec_s.onnx */,
+				D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		D1A2C3D42123456700000002 /* FaceDetection */ = {
+			isa = PBXGroup;
+			children = (
+				D1A2C3D41123456700000004 /* ScrfdFaceDetector.h */,
+				D1A2C3D41123456700000001 /* ScrfdFaceDetector.cpp */,
+				D1A2C3D41123456700000005 /* OcecEyeStateClassifier.h */,
+				D1A2C3D41123456700000002 /* OcecEyeStateClassifier.cpp */,
+				D1A2C3D41123456700000008 /* Landmark106EarClassifier.h */,
+				D1A2C3D41123456700000007 /* Landmark106EarClassifier.cpp */,
+				D1A2C3D4112345670000000A /* FaceLabeling.h */,
+				D1A2C3D41123456700000009 /* FaceLabeling.cpp */,
+				D1A2C3D41123456700000006 /* FaceDetectionPipeline.h */,
+				D1A2C3D41123456700000003 /* FaceDetectionPipeline.cpp */,
+			);
+			name = FaceDetection;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -248,6 +306,10 @@
 				B1A2C3D40123456700000002 /* RedHatDisplay-Regular.ttf in Resources */,
 				B1A2C3D40123456700000003 /* RedHatDisplay-Medium.ttf in Resources */,
 				B1A2C3D40123456700000004 /* RedHatDisplay-Bold.ttf in Resources */,
+				D1A2C3D40123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx in Resources */,
+				D1A2C3D40123456700000013 /* face_detection_scrfd_10g_bnkps.onnx in Resources */,
+				D1A2C3D40123456700000011 /* eye_state_ocec_s.onnx in Resources */,
+				D1A2C3D40123456700000012 /* face_landmarks_2d106det.onnx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -375,6 +437,12 @@
 				C1A2C3D40123456700000001 /* GumpFilePicker.mm in Sources */,
 				C2B3C4D50123456700000001 /* GumpVisualEffectView.mm in Sources */,
 				C3D4E5F60123456700000001 /* GumpLocalStorage.mm in Sources */,
+				C4E5F6070123456700000001 /* GumpSharedFaceDetection.mm in Sources */,
+				D1A2C3D40123456700000001 /* ScrfdFaceDetector.cpp in Sources */,
+				D1A2C3D40123456700000002 /* OcecEyeStateClassifier.cpp in Sources */,
+				D1A2C3D40123456700000004 /* Landmark106EarClassifier.cpp in Sources */,
+				D1A2C3D40123456700000005 /* FaceLabeling.cpp in Sources */,
+				D1A2C3D40123456700000003 /* FaceDetectionPipeline.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -447,6 +515,10 @@
 				DEAD_CODE_STRIPPING = NO;
 				DEVELOPMENT_TEAM = FWQ2YTUNN4;
 				EXECUTABLE_NAME = GumpDesktop;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../cpp/face-detection",
+				);
 				INFOPLIST_FILE = "GumpDesktop-macos/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
@@ -478,6 +550,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = FWQ2YTUNN4;
 				EXECUTABLE_NAME = GumpDesktop;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../cpp/face-detection",
+				);
 				INFOPLIST_FILE = "GumpDesktop-macos/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;

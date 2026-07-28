@@ -36,6 +36,7 @@ PODS:
   - hermes-engine (0.81.6):
     - hermes-engine/Pre-built (= 0.81.6)
   - hermes-engine/Pre-built (0.81.6)
+  - onnxruntime-c (1.27.0)
   - op-sqlite (17.1.2):
     - boost
     - DoubleConversion
@@ -2382,6 +2383,7 @@ DEPENDENCIES:
   - fmt (from `../node_modules/react-native-macos/third-party-podspecs/fmt.podspec`)
   - glog (from `../node_modules/react-native-macos/third-party-podspecs/glog.podspec`)
   - hermes-engine (from `../node_modules/react-native-macos/sdks/hermes-engine/hermes-engine.podspec`)
+  - onnxruntime-c (~> 1.20)
   - "op-sqlite (from `../node_modules/@op-engineering/op-sqlite`)"
   - RCT-Folly (from `../node_modules/react-native-macos/third-party-podspecs/RCT-Folly.podspec`)
   - RCTDeprecation (from `../node_modules/react-native-macos/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
@@ -2456,6 +2458,7 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
+    - onnxruntime-c
     - SocketRocket
 
 EXTERNAL SOURCES:
@@ -2624,6 +2627,7 @@ SPEC CHECKSUMS:
   fmt: 24e7591456deb60b4a77518f83d9a916ac84223f
   glog: 0b31c25149b9d350b2666c7d459229861a00ec07
   hermes-engine: 3672d343d7db3bed5efea61af868abd5860824a8
+  onnxruntime-c: 412ab51682e622e3d77ddc9176aa92517d171820
   op-sqlite: 9e1b3205e58a39b0e14a065be90ab471e49b6b3c
   RCT-Folly: c803cf33238782d5fd21a5e02d44f64068e0e130
   RCTDeprecation: 32fb5034012098ad1f67eba8a62d73bdd7d082e7
@@ -2695,6 +2699,6 @@ SPEC CHECKSUMS:
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Yoga: 8a0df683a71bee13fe0b9d8b653d1a062ff65b2e
 
-PODFILE CHECKSUM: d33d6ad8773657f4b9bb8c9e8306a33193dc1085
+PODFILE CHECKSUM: dc96efa96b56524a831501a256538981c1a3dd99
 
 COCOAPODS: 1.16.2

@@ -1,5 +1,4 @@
 #import "GumpLocalStorage.h"
-#import "GumpSharedFaceDetection.h"
 
 #import <AppKit/AppKit.h>
 #import <ImageIO/ImageIO.h>
@@ -11,7 +10,6 @@ RCT_EXPORT_MODULE();
 
 static const NSUInteger THUMBNAIL_MAX_PIXEL_SIZE = 1920;
 static const NSUInteger kGumpAnalysisMaxPixelSize = 4096;
-static const NSUInteger kGumpScrfdAnalysisMaxPixelSize = 4096;
 static const CGFloat kFaceCropSidePadding = 0.3;
 static const CGFloat kFaceCropTopPadding = 0.3;
 static const CGFloat kFaceCropBottomPadding = 0.5;
@@ -1534,24 +1532,20 @@ static const CGFloat kGumpEyeConfidenceThreshold = 85.0f;
     }
 
     if (candidateYaw >= 0.4f && onSide) {
-      NSDictionary *candidateFace = faces[candidate];
-      CGFloat candidateSharpness = [candidateFace[@"sharpness"] floatValue];
-      if (candidateSharpness < 48.0f) {
-        BOOL hasFrontalPerson = NO;
-        for (NSUInteger other = 0; other < count; other++) {
-          if (other == candidate) {
-            continue;
-          }
-          if (yaws[other].floatValue <= 0.35f &&
-              areas[other].floatValue >= kGumpMinKeepFaceArea) {
-            hasFrontalPerson = YES;
-            break;
-          }
-        }
-        if (hasFrontalPerson) {
-          [reject addIndex:candidate];
+      BOOL hasFrontalPerson = NO;
+      for (NSUInteger other = 0; other < count; other++) {
+        if (other == candidate) {
           continue;
         }
+        if (yaws[other].floatValue <= 0.35f &&
+            areas[other].floatValue >= kGumpMinKeepFaceArea) {
+          hasFrontalPerson = YES;
+          break;
+        }
+      }
+      if (hasFrontalPerson) {
+        [reject addIndex:candidate];
+        continue;
       }
     }
 
@@ -1703,9 +1697,7 @@ static const CGFloat kGumpEyeConfidenceThreshold = 85.0f;
   return [self postProcessFaceDictionaries:faces];
 }
 
-/// Preserved Apple Vision path (gold-standard reference / fallback).
-/// Live culling defaults to shared SCRFD+OCEC via GumpSharedFaceDetection.
-- (NSArray *)facesFromCGImageUsingVision:(CGImageRef)cgImage
+- (NSArray *)facesFromCGImage:(CGImageRef)cgImage
 {
   if (cgImage == NULL) {
     return @[];
@@ -1727,49 +1719,10 @@ static const CGFloat kGumpEyeConfidenceThreshold = 85.0f;
                                             cgImage:cgImage];
 }
 
-- (BOOL)shouldUseVisionFaceEngine
-{
-  NSString *env = [[[NSProcessInfo processInfo] environment] objectForKey:@"GUMP_FACE_ENGINE"];
-  if (env.length == 0) {
-    return NO;
-  }
-  env = env.lowercaseString;
-  return [env isEqualToString:@"vision"] || [env isEqualToString:@"macos"] ||
-         [env isEqualToString:@"apple"];
-}
-
-- (NSUInteger)faceAnalysisMaxPixelSize
-{
-  return [self shouldUseVisionFaceEngine] ? kGumpAnalysisMaxPixelSize
-                                          : kGumpScrfdAnalysisMaxPixelSize;
-}
-
-- (NSArray *)facesFromCGImage:(CGImageRef)cgImage
-{
-  if (cgImage == NULL) {
-    return @[];
-  }
-
-  if ([self shouldUseVisionFaceEngine]) {
-    NSLog(@"[GumpLocalStorage] face engine=vision (GUMP_FACE_ENGINE)");
-    return [self facesFromCGImageUsingVision:cgImage];
-  }
-
-  if ([GumpSharedFaceDetection isReady]) {
-    NSArray *faces = [GumpSharedFaceDetection facesFromCGImage:cgImage];
-    NSLog(@"[GumpLocalStorage] face engine=scrfd faces=%lu", (unsigned long)faces.count);
-    return faces;
-  }
-
-  NSLog(@"[GumpLocalStorage] SCRFD unavailable (%@) — falling back to Vision",
-        [GumpSharedFaceDetection lastError]);
-  return [self facesFromCGImageUsingVision:cgImage];
-}
-
 - (NSDictionary *)analyzePhotoPayloadFromPath:(NSString *)path
 {
   CGImageRef cgImage =
-      [self orientedCGImageFromPath:path maxPixelSize:[self faceAnalysisMaxPixelSize]];
+      [self orientedCGImageFromPath:path maxPixelSize:kGumpAnalysisMaxPixelSize];
   if (cgImage == NULL) {
     return nil;
   }
@@ -1802,7 +1755,7 @@ RCT_EXPORT_METHOD(detectFacesForCulling:(NSString *)uri
       }
 
       CGImageRef cgImage =
-          [self orientedCGImageFromPath:path maxPixelSize:[self faceAnalysisMaxPixelSize]];
+          [self orientedCGImageFromPath:path maxPixelSize:kGumpAnalysisMaxPixelSize];
       if (cgImage == NULL) {
         dispatch_async(dispatch_get_main_queue(), ^{
           reject(@"EIMAGE", @"Unable to decode image", nil);
@@ -1965,30 +1918,6 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
   return CGRectMake(viewLeft, viewTop, viewW, viewH);
 }
 
-// Match Windows MakeSquareCoverCrop: keep aspect by center-cropping the
-// padded rect to a square before scaling into the output thumbnail.
-- (CGRect)squareCoverCropRect:(CGRect)rect
-{
-  if (rect.size.width <= 0.0 || rect.size.height <= 0.0) {
-    return rect;
-  }
-  if (rect.size.width == rect.size.height) {
-    return rect;
-  }
-  if (rect.size.width > rect.size.height) {
-    CGFloat side = rect.size.height;
-    return CGRectMake(rect.origin.x + (rect.size.width - side) / 2.0,
-                      rect.origin.y,
-                      side,
-                      side);
-  }
-  CGFloat side = rect.size.width;
-  return CGRectMake(rect.origin.x,
-                    rect.origin.y + (rect.size.height - side) / 2.0,
-                    side,
-                    side);
-}
-
 - (BOOL)writeFaceCropImage:(CGImageRef)sourceImage
                boundingBox:(NSDictionary *)box
                    albumId:(NSString *)albumId
@@ -2023,7 +1952,6 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
   CGRect viewRect = [self paddedFaceCropRectForImageWidth:imageWidth
                                               imageHeight:imageHeight
                                              boundingBox:box];
-  viewRect = [self squareCoverCropRect:viewRect];
 
   CGImageRef cropped = CGImageCreateWithImageInRect(sourceImage, viewRect);
   if (cropped == NULL) {

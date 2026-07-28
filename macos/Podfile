@@ -16,6 +16,9 @@ target 'GumpDesktop-macOS' do
   platform :macos, '14.0'
   use_native_modules!
 
+  # ONNX Runtime C API for shared SCRFD + OCEC face detection pipeline
+  pod 'onnxruntime-c', '~> 1.20'
+
   use_react_native!(
     :path => '../node_modules/react-native-macos',
     :fabric_enabled => ENV['RCT_NEW_ARCH_ENABLED'] == '1',
@@ -26,5 +29,6 @@ target 'GumpDesktop-macOS' do
     react_native_post_install(installer)
     system('ruby', File.join(__dir__, 'scripts', 'patch_secure_text_field.rb'))
     system('ruby', File.join(__dir__, 'scripts', 'patch_third_party_fabric_components.rb'))
+    system('ruby', File.join(__dir__, 'scripts', 'patch_fmt_consteval.rb'))
   end
 end
