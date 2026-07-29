@@ -109,8 +109,8 @@ describe('classifyEyeStatus', () => {
 
 describe('classifyFocus', () => {
   it('uses SCRFD-era sharpness thresholds', () => {
-    expect(classifyFocus(62)).toBe('good');
-    expect(classifyFocus(61)).toBe('soft');
+    expect(classifyFocus(65)).toBe('good');
+    expect(classifyFocus(64)).toBe('soft');
     expect(classifyFocus(40)).toBe('soft');
     expect(classifyFocus(39)).toBe('blurred');
   });

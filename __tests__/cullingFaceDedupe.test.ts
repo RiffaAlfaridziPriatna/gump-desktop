@@ -185,6 +185,53 @@ describe('rejectLikelyNonFaceArtifacts', () => {
     expect(kept).toHaveLength(3);
   });
 
+  it('keeps a soft edge subject in a small-face group lineup (DSC05047 far-left)', () => {
+    const kept = rejectLikelyNonFaceArtifacts([
+      {
+        eyeStatus: 'open',
+        focusLevel: 'soft',
+        boundingBox: {left: 0.116, top: 0.459, width: 0.046, height: 0.093},
+      },
+      {
+        eyeStatus: 'open',
+        focusLevel: 'good',
+        boundingBox: {left: 0.182, top: 0.375, width: 0.054, height: 0.111},
+      },
+      {
+        eyeStatus: 'open',
+        focusLevel: 'good',
+        boundingBox: {left: 0.26, top: 0.331, width: 0.056, height: 0.119},
+      },
+      {
+        eyeStatus: 'open',
+        focusLevel: 'good',
+        boundingBox: {left: 0.375, top: 0.303, width: 0.054, height: 0.116},
+      },
+      {
+        eyeStatus: 'open',
+        focusLevel: 'good',
+        boundingBox: {left: 0.502, top: 0.277, width: 0.063, height: 0.126},
+      },
+      {
+        eyeStatus: 'open',
+        focusLevel: 'good',
+        boundingBox: {left: 0.626, top: 0.255, width: 0.065, height: 0.135},
+      },
+      {
+        eyeStatus: 'open',
+        focusLevel: 'soft',
+        boundingBox: {left: 0.767, top: 0.282, width: 0.059, height: 0.135},
+      },
+      {
+        eyeStatus: 'open',
+        focusLevel: 'soft',
+        boundingBox: {left: 0.908, top: 0.131, width: 0.07, height: 0.157},
+      },
+    ]);
+    expect(kept).toHaveLength(8);
+    expect(kept[0]?.boundingBox.left).toBeCloseTo(0.116);
+  });
+
   it('drops soft mid-size elbow/hand-like detections but keeps soft large faces', () => {
     const kept = rejectLikelyNonFaceArtifacts([
       {

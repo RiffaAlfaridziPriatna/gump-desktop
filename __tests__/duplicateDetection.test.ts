@@ -150,6 +150,57 @@ describe('arePhotosNearDuplicates', () => {
     ).toBe(true);
   });
 
+  it('matches adjacent burst frames when dHash is 6 and face counts differ (IMG_3811/3812)', () => {
+    // Real macOS DeviceGray dHash distance for references/test_dupe IMG_3811 vs
+    // IMG_3812 is 6 — above strict threshold 4. SCRFD keeps 2 vs 1 faces after
+    // subject clustering, so framing/face fallbacks cannot bridge the pair.
+    const faceA = makeFace({
+      boundingBox: {left: 0.486, top: 0.367, width: 0.067, height: 0.125},
+    });
+    const faceA2 = makeFace({
+      boundingBox: {left: 0.69, top: 0.313, width: 0.046, height: 0.148},
+    });
+    const faceB = makeFace({
+      boundingBox: {left: 0.485, top: 0.365, width: 0.067, height: 0.124},
+    });
+    expect(
+      arePhotosNearDuplicates(
+        makePhoto({
+          photoId: '3811',
+          fileName: 'IMG_3811.JPG',
+          perceptualHash: '35de531b646d2da5',
+          faces: [faceA, faceA2],
+        }),
+        makePhoto({
+          photoId: '3812',
+          fileName: 'IMG_3812.JPG',
+          perceptualHash: '35ce9319646d05a5',
+          faces: [faceB],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not match non-adjacent bursts at the adjacent-only dHash gate', () => {
+    // Distance 6 with index gap 3 — must not use the adjacent duplicate threshold.
+    expect(
+      arePhotosNearDuplicates(
+        makePhoto({
+          photoId: 'a',
+          fileName: 'IMG_3811.JPG',
+          perceptualHash: '35de531b646d2da5',
+          faces: [],
+        }),
+        makePhoto({
+          photoId: 'b',
+          fileName: 'IMG_3814.JPG',
+          perceptualHash: '35ce9319646d05a5',
+          faces: [],
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it('does not match similar hashes from different camera stems', () => {
     expect(
       arePhotosNearDuplicates(

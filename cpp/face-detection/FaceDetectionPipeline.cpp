@@ -44,7 +44,7 @@ constexpr float kDisplayedMediaMaxArea = 0.16f;
 constexpr float kDisplayedMediaMinPersonArea = 0.0004f;
 constexpr float kDisplayedMediaSideSimilarMaxFaces = 6;
 constexpr float kDisplayedMediaMaxSharpness = 48.0f;
-constexpr float kFocusGoodThreshold = 62.0f;
+constexpr float kFocusGoodThreshold = 65.0f;
 constexpr float kFocusSoftThreshold = 40.0f;
 constexpr float kEyeOpenConfidenceThreshold = 70.0f;
 constexpr float kEyeClosedConfidenceThreshold = 88.0f;
@@ -658,6 +658,41 @@ std::vector<ScrfdDetection> CollectFaceRectangles(
   return DeduplicateFaces(std::move(deduped), imageWidth, imageHeight);
 }
 
+constexpr int kSharpnessNormWidth = 32;
+constexpr int kSharpnessNormHeight = 32;
+
+float SampleBgraLuma(
+    const uint8_t *pixels,
+    int width,
+    int height,
+    int stride,
+    float x,
+    float y) {
+  x = Clamp(x, 0.0f, static_cast<float>(width - 1));
+  y = Clamp(y, 0.0f, static_cast<float>(height - 1));
+  const int x0 = static_cast<int>(std::floor(x));
+  const int y0 = static_cast<int>(std::floor(y));
+  const int x1 = std::min(width - 1, x0 + 1);
+  const int y1 = std::min(height - 1, y0 + 1);
+  const float tx = x - static_cast<float>(x0);
+  const float ty = y - static_cast<float>(y0);
+
+  const auto lumaAt = [&](int px, int py) {
+    const int index = py * stride + px * 4;
+    return static_cast<float>(
+        pixels[index] * 0.114 + pixels[index + 1] * 0.587 +
+        pixels[index + 2] * 0.299);
+  };
+
+  const float v00 = lumaAt(x0, y0);
+  const float v10 = lumaAt(x1, y0);
+  const float v01 = lumaAt(x0, y1);
+  const float v11 = lumaAt(x1, y1);
+  const float v0 = v00 + (v10 - v00) * tx;
+  const float v1 = v01 + (v11 - v01) * tx;
+  return v0 + (v1 - v0) * ty;
+}
+
 float ComputeSharpness(
     const uint8_t *pixels,
     int width,
@@ -671,66 +706,80 @@ float ComputeSharpness(
   const int top = std::max(0, static_cast<int>(std::lround(boxY)));
   const int right = std::min(width, left + std::max(1, static_cast<int>(std::lround(boxW))));
   const int bottom = std::min(height, top + std::max(1, static_cast<int>(std::lround(boxH))));
-  if (right - left < 3 || bottom - top < 3) {
+  const int roiW = right - left;
+  const int roiH = bottom - top;
+  if (roiW < 3 || roiH < 3) {
     return 30.0f;
   }
 
-  double sum = 0.0;
-  double sumSquared = 0.0;
-  int count = 0;
+  auto laplacianVariance = [](const float *gray, int gw, int gh) {
+    double sum = 0.0;
+    double sumSquared = 0.0;
+    int count = 0;
+    for (int y = 1; y < gh - 1; ++y) {
+      for (int x = 1; x < gw - 1; ++x) {
+        const float center = gray[y * gw + x];
+        const double laplacian = -gray[(y - 1) * gw + x] - gray[y * gw + (x - 1)] +
+                                 4.0 * center - gray[y * gw + (x + 1)] -
+                                 gray[(y + 1) * gw + x];
+        sum += laplacian;
+        sumSquared += laplacian * laplacian;
+        ++count;
+      }
+    }
+    if (count == 0) {
+      return 30.0f;
+    }
+    const double mean = sum / count;
+    const double variance = (sumSquared / count) - mean * mean;
+    const float normalized =
+        static_cast<float>(std::log(variance + 1.0) / std::log(50000.0) * 100.0);
+    return Clamp(normalized, 0.0f, 100.0f);
+  };
 
-  for (int y = top + 1; y < bottom - 1; ++y) {
-    for (int x = left + 1; x < right - 1; ++x) {
-      const auto grayAt = [&](int px, int py) {
-        const int index = py * stride + px * 4;
-        // BGRA → luminance
-        return pixels[index] * 0.114 + pixels[index + 1] * 0.587 +
-               pixels[index + 2] * 0.299;
-      };
+  if (roiW >= kSharpnessNormWidth || roiH >= kSharpnessNormHeight) {
+    float norm[kSharpnessNormWidth * kSharpnessNormHeight];
+    const float srcW = static_cast<float>(std::max(1, roiW - 1));
+    const float srcH = static_cast<float>(std::max(1, roiH - 1));
+    for (int y = 0; y < kSharpnessNormHeight; ++y) {
+      const float srcY =
+          static_cast<float>(top) +
+          (static_cast<float>(y) + 0.5f) * srcH /
+              static_cast<float>(kSharpnessNormHeight) -
+          0.5f;
+      for (int x = 0; x < kSharpnessNormWidth; ++x) {
+        const float srcX =
+            static_cast<float>(left) +
+            (static_cast<float>(x) + 0.5f) * srcW /
+                static_cast<float>(kSharpnessNormWidth) -
+            0.5f;
+        norm[y * kSharpnessNormWidth + x] =
+            SampleBgraLuma(pixels, width, height, stride, srcX, srcY);
+      }
+    }
+    return laplacianVariance(norm, kSharpnessNormWidth, kSharpnessNormHeight);
+  }
 
-      const double laplacian = -grayAt(x, y - 1) - grayAt(x - 1, y) + 4 * grayAt(x, y) -
-                               grayAt(x + 1, y) - grayAt(x, y + 1);
-      sum += laplacian;
-      sumSquared += laplacian * laplacian;
-      ++count;
+  std::vector<float> gray(static_cast<size_t>(roiW * roiH));
+  for (int y = 0; y < roiH; ++y) {
+    for (int x = 0; x < roiW; ++x) {
+      gray[static_cast<size_t>(y * roiW + x)] = SampleBgraLuma(
+          pixels,
+          width,
+          height,
+          stride,
+          static_cast<float>(left + x),
+          static_cast<float>(top + y));
     }
   }
-
-  if (count == 0) {
-    return 30.0f;
+  float score = laplacianVariance(gray.data(), roiW, roiH);
+  const int roiPixels = roiW * roiH;
+  if (roiPixels < 20 * 14) {
+    constexpr float kSoftPrior = 48.0f;
+    constexpr float kTrust = 0.40f;
+    score = kSoftPrior + (score - kSoftPrior) * kTrust;
   }
-
-  const double mean = sum / count;
-  const double variance = (sumSquared / count) - mean * mean;
-  const float normalized =
-      static_cast<float>(std::log(variance + 1.0) / std::log(1000.0) * 100.0);
-  return Clamp(normalized, 0.0f, 100.0f);
-}
-
-// Mirrors macOS combineEyeSharpness — prefer eye sharpness, demote vs nose reference.
-float CombineEyeSharpness(float leftEye, float rightEye, float reference) {
-  float eyeSharp = -1.0f;
-  if (leftEye >= 0.0f && rightEye >= 0.0f) {
-    eyeSharp = std::min(leftEye, rightEye);
-  } else if (leftEye >= 0.0f) {
-    eyeSharp = leftEye;
-  } else if (rightEye >= 0.0f) {
-    eyeSharp = rightEye;
-  }
-
-  if (eyeSharp < 0.0f) {
-    return -1.0f;
-  }
-
-  if (reference >= 0.0f) {
-    constexpr float kMinEyeToReferenceRatio = 1.15f;
-    const float ratio = eyeSharp / std::max(reference, 1.0f);
-    if (ratio < kMinEyeToReferenceRatio) {
-      eyeSharp *= ratio / kMinEyeToReferenceRatio;
-    }
-  }
-
-  return eyeSharp;
+  return score;
 }
 
 float SharpnessFromDetection(
@@ -745,45 +794,7 @@ float SharpnessFromDetection(
     return 30.0f;
   }
 
-  const float eyeRegionW = std::max(4.0f, boxW * 0.22f);
-  const float eyeRegionH = std::max(4.0f, boxH * 0.14f);
-  const float noseRegionW = std::max(4.0f, boxW * 0.18f);
-  const float noseRegionH = std::max(4.0f, boxH * 0.16f);
-
-  const float leftEye = ComputeSharpness(
-      pixels,
-      width,
-      height,
-      stride,
-      detection.leftEye.x - eyeRegionW * 0.5f,
-      detection.leftEye.y - eyeRegionH * 0.5f,
-      eyeRegionW,
-      eyeRegionH);
-  const float rightEye = ComputeSharpness(
-      pixels,
-      width,
-      height,
-      stride,
-      detection.rightEye.x - eyeRegionW * 0.5f,
-      detection.rightEye.y - eyeRegionH * 0.5f,
-      eyeRegionW,
-      eyeRegionH);
-  const float nose = ComputeSharpness(
-      pixels,
-      width,
-      height,
-      stride,
-      detection.nose.x - noseRegionW * 0.5f,
-      detection.nose.y - noseRegionH * 0.5f,
-      noseRegionW,
-      noseRegionH);
-
-  const float eyeSharp = CombineEyeSharpness(leftEye, rightEye, nose);
-  if (eyeSharp >= 0.0f) {
-    return eyeSharp;
-  }
-
-  constexpr float inset = 0.15f;
+  constexpr float inset = 0.24f;
   return ComputeSharpness(
       pixels,
       width,

@@ -183,7 +183,8 @@ export function rejectLikelyNonFaceArtifacts<
     if (
       faces.length >= 2 &&
       face.focusLevel === 'soft' &&
-      area < MIN_SOFT_FACE_AREA
+      area < MIN_SOFT_FACE_AREA &&
+      referenceArea >= MIN_SOFT_FACE_AREA
     ) {
       if (
         !(

@@ -58,7 +58,7 @@ export function orderCulledAlbumPhotosForCulling(
 
 const EYE_OPEN_CONFIDENCE_THRESHOLD = 70;
 const EYE_CLOSED_CONFIDENCE_THRESHOLD = 88;
-const FOCUS_GOOD_THRESHOLD = 62;
+const FOCUS_GOOD_THRESHOLD = 65;
 const FOCUS_SOFT_THRESHOLD = 40;
 
 export {
@@ -230,6 +230,7 @@ export function deriveStarRating(faces: CullingFace[]): number {
 
 const FACE_DUPLICATE_THRESHOLD = 0.06;
 export const PERCEPTUAL_HASH_DUPLICATE_THRESHOLD = 4;
+export const PERCEPTUAL_HASH_ADJACENT_DUPLICATE_THRESHOLD = 8;
 export const PERCEPTUAL_HASH_SAME_SCENE_THRESHOLD = 24;
 export const PERCEPTUAL_HASH_ADJACENT_SCENE_THRESHOLD = 30;
 export const FACE_FRAMING_MAX_AREA_RATIO = 1.85;
@@ -408,12 +409,25 @@ export function arePhotosNearDuplicates(
   }
 
   const adjacent = indexGap <= ADJACENT_BURST_INDEX_GAP;
+  const hasBothHashes =
+    Boolean(photoA.perceptualHash) && Boolean(photoB.perceptualHash);
+
+  if (
+    adjacent &&
+    hasBothHashes &&
+    arePerceptualHashesSameScene(
+      photoA.perceptualHash,
+      photoB.perceptualHash,
+      PERCEPTUAL_HASH_ADJACENT_DUPLICATE_THRESHOLD,
+    )
+  ) {
+    return true;
+  }
+
   const sceneThreshold = adjacent
     ? PERCEPTUAL_HASH_ADJACENT_SCENE_THRESHOLD
     : PERCEPTUAL_HASH_SAME_SCENE_THRESHOLD;
 
-  const hasBothHashes =
-    Boolean(photoA.perceptualHash) && Boolean(photoB.perceptualHash);
   if (
     hasBothHashes &&
     !arePerceptualHashesSameScene(

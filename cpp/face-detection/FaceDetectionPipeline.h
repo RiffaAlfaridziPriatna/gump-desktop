@@ -61,7 +61,6 @@ struct PipelineConfig {
   // Vision media/billboard postprocess over-rejects real SCRFD faces on stage shots.
   bool enablePostProcess{false};
   bool enableTinyAreaArtifactFilter{false};
-  // Vision's open+blurred sharpness gate is unsafe on SCRFD sharpness scale.
   bool enableSharpnessArtifactFilter{false};
   bool enableNativeFpFilter{true};
 };
