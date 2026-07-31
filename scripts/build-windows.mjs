@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
@@ -14,6 +14,14 @@ const REACT_NATIVE_WINDOWS_DIR = path.join(
   'node_modules/react-native-windows',
 );
 
+const ARCH_ALIASES = {
+  arm64: 'ARM64',
+  x86: 'x86',
+  win32: 'x86',
+  x64: 'x64',
+  amd64: 'x64',
+};
+
 const variant = process.argv[2] ?? 'exe';
 
 function log(message) {
@@ -25,22 +33,17 @@ function die(message) {
   process.exit(1);
 }
 
-function resolveWindowsArch() {
-  const override = process.env.WINDOWS_ARCH?.trim();
-  if (override) {
-    const normalized = override.toLowerCase();
-    if (normalized === 'arm64') {
-      return 'ARM64';
-    }
-    if (normalized === 'x86' || normalized === 'win32') {
-      return 'x86';
-    }
-    if (normalized === 'x64' || normalized === 'amd64') {
-      return 'x64';
-    }
-    die(`Unknown WINDOWS_ARCH value: ${override}. Use: x64 | x86 | ARM64`);
+function normalizeArch(value) {
+  const normalized = ARCH_ALIASES[value.trim().toLowerCase()];
+  if (!normalized) {
+    die(
+      `Unknown WINDOWS_ARCH value: ${value}. Use: x64 | x86 | ARM64 | x64,ARM64`,
+    );
   }
+  return normalized;
+}
 
+function detectHostArch() {
   // Prefer the OS CPU arch. On ARM PCs, x64 Node reports process.arch=x64 but
   // PROCESSOR_ARCHITEW6432=ARM64 (common in Parallels with x64 Node).
   const osArch = (
@@ -69,6 +72,33 @@ function resolveWindowsArch() {
   }
 }
 
+function resolveWindowsArchs() {
+  const override = process.env.WINDOWS_ARCH?.trim();
+  if (!override) {
+    return [detectHostArch()];
+  }
+
+  if (override.toLowerCase() === 'all') {
+    return ['x64', 'ARM64'];
+  }
+
+  const archs = [
+    ...new Set(
+      override
+        .split(/[|,]/)
+        .map(part => part.trim())
+        .filter(Boolean)
+        .map(normalizeArch),
+    ),
+  ];
+
+  if (archs.length === 0) {
+    die('WINDOWS_ARCH is empty. Use: x64 | x86 | ARM64 | x64,ARM64 | all');
+  }
+
+  return archs;
+}
+
 function getWasdkPlatform(arch) {
   switch (arch) {
     case 'x86':
@@ -80,8 +110,12 @@ function getWasdkPlatform(arch) {
   }
 }
 
+function getMsbuildPlatform(arch) {
+  return arch === 'x86' ? 'Win32' : arch;
+}
+
 function getReleaseExeCandidates(arch) {
-  const platformDir = arch === 'x86' ? 'Win32' : arch;
+  const platformDir = getMsbuildPlatform(arch);
   return [
     path.join(ROOT_DIR, `windows/${platformDir}/Release/GumpDesktop.exe`),
     path.join(
@@ -107,8 +141,12 @@ function findReleaseExe(arch) {
     }
   }
 
-  const platformDir = arch === 'x86' ? 'Win32' : arch;
-  const releaseRoot = path.join(ROOT_DIR, 'windows', platformDir, 'Release');
+  const releaseRoot = path.join(
+    ROOT_DIR,
+    'windows',
+    getMsbuildPlatform(arch),
+    'Release',
+  );
   if (!fs.existsSync(releaseRoot)) {
     return null;
   }
@@ -131,9 +169,6 @@ function findReleaseExe(arch) {
   return null;
 }
 
-const windowsArch = resolveWindowsArch();
-const wasdkPlatform = getWasdkPlatform(windowsArch);
-
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
@@ -142,7 +177,7 @@ function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: ROOT_DIR,
     stdio: 'inherit',
-    shell: process.platform === 'win32',
+    shell: false,
     ...options,
   });
 
@@ -167,10 +202,108 @@ function ensureWindowsTooling() {
   }
 }
 
+function resolveVsWherePath() {
+  const programFilesX86 =
+    process.env['ProgramFiles(x86)'] || process.env.ProgramFiles;
+  if (!programFilesX86) {
+    return null;
+  }
+  return path.join(
+    programFilesX86,
+    'Microsoft Visual Studio',
+    'Installer',
+    'vswhere.exe',
+  );
+}
+
+function queryVsInstallPath(vsWherePath, requires) {
+  try {
+    const raw = execFileSync(
+      vsWherePath,
+      [
+        '-latest',
+        '-products',
+        '*',
+        '-requires',
+        ...requires,
+        '-property',
+        'installationPath',
+        '-format',
+        'value',
+        '-utf8',
+      ],
+      { encoding: 'utf8' },
+    );
+    return raw
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * MSBuild is not on PATH by default. Locate it the same way RNW does: vswhere
+ * → latest VS with Microsoft.Component.MSBuild → MSBuild/Current/Bin/amd64.
+ */
+function resolveMsbuildExe(requiredArchs) {
+  const vsWherePath = resolveVsWherePath();
+  if (!vsWherePath || !fs.existsSync(vsWherePath)) {
+    die(
+      `vswhere.exe not found. Install Visual Studio 2022+ with MSBuild, or open "Developer PowerShell for VS" and retry.`,
+    );
+  }
+
+  const requires = ['Microsoft.Component.MSBuild'];
+  for (const arch of requiredArchs) {
+    if (arch === 'ARM64') {
+      requires.push('Microsoft.VisualStudio.Component.VC.Tools.ARM64');
+    } else {
+      requires.push('Microsoft.VisualStudio.Component.VC.Tools.x86.x64');
+    }
+  }
+
+  let installs = queryVsInstallPath(vsWherePath, requires);
+
+  // Fall back to any VS with MSBuild if the strict VCTools query misses
+  // (common when ARM64 tools aren't installed yet — surface a clearer error).
+  if (installs.length === 0) {
+    installs = queryVsInstallPath(vsWherePath, ['Microsoft.Component.MSBuild']);
+
+    if (installs.length === 0) {
+      die(
+        'MSBuild not found via vswhere. Install Visual Studio Build Tools / VS with "Desktop development with C++" and Microsoft.Component.MSBuild.',
+      );
+    }
+
+    if (requiredArchs.includes('ARM64')) {
+      die(
+        `Found Visual Studio at ${installs[0]}, but ARM64 C++ tools are missing.\n` +
+          `Install "MSVC v143 - VS 2022 C++ ARM64 build tools" (or current MSVC ARM64 tools), then retry.\n` +
+          `Or build x64 only: set WINDOWS_ARCH=x64`,
+      );
+    }
+  }
+
+  const installationPath = installs[0];
+  const candidates = [
+    path.join(installationPath, 'MSBuild', 'Current', 'Bin', 'amd64', 'MSBuild.exe'),
+    path.join(installationPath, 'MSBuild', 'Current', 'Bin', 'MSBuild.exe'),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      log(`Using MSBuild: ${candidate}`);
+      return candidate;
+    }
+  }
+
+  die(`MSBuild.exe not found under ${installationPath}`);
+}
+
 function runReactNativeWindows(args) {
-  run(process.execPath, [REACT_NATIVE_CLI, 'run-windows', ...args], {
-    shell: false,
-  });
+  run(process.execPath, [REACT_NATIVE_CLI, 'run-windows', ...args]);
 }
 
 function copyArtifact(sourcePath, destinationDir) {
@@ -200,17 +333,29 @@ function findLatestPackage() {
       }
 
       if (entry.name.endsWith('.msix') || entry.name.endsWith('.msixbundle')) {
-        packages.push(entryPath);
+        packages.push({
+          path: entryPath,
+          mtimeMs: fs.statSync(entryPath).mtimeMs,
+        });
       }
     }
   }
 
   walk(WINDOWS_MSIX_DIR);
-  packages.sort();
-  return packages.at(-1) ?? null;
+  packages.sort((a, b) => a.mtimeMs - b.mtimeMs);
+  return packages.at(-1)?.path ?? null;
 }
 
-function buildExe() {
+function buildExe(archs) {
+  if (archs.length !== 1) {
+    die(
+      'build:windows (exe) only supports one architecture. Use WINDOWS_ARCH=x64 (or omit it). For multi-arch installers use: npm run build:windows:msix',
+    );
+  }
+
+  const windowsArch = archs[0];
+  const wasdkPlatform = getWasdkPlatform(windowsArch);
+
   log(`Building Windows release executable (${windowsArch})...`);
   runReactNativeWindows([
     '--release',
@@ -226,25 +371,45 @@ function buildExe() {
   const releaseExe = findReleaseExe(windowsArch);
   if (!releaseExe) {
     die(
-      `Windows executable not found under windows/${windowsArch === 'x86' ? 'Win32' : windowsArch}/Release. Expected GumpDesktop.exe`,
+      `Windows executable not found under windows/${getMsbuildPlatform(windowsArch)}/Release. Expected GumpDesktop.exe`,
     );
   }
 
   copyArtifact(releaseExe, path.join(DIST_DIR, 'windows'));
 }
 
-function buildMsix() {
-  const msbuildPlatform = windowsArch === 'x86' ? 'Win32' : windowsArch;
-  log(`Building Windows MSIX package (${windowsArch})...`);
-  run('msbuild', [
-    'windows/GumpDesktop.sln',
+function buildMsix(archs) {
+  const msbuildExe = resolveMsbuildExe(archs);
+  const primaryArch = archs[0];
+  const wasdkPlatform = getWasdkPlatform(primaryArch);
+  const bundlePlatforms = archs.join('|');
+  const isMultiArch = archs.length > 1;
+
+  log(
+    isMultiArch
+      ? `Building Windows MSIX bundle (${bundlePlatforms})...`
+      : `Building Windows MSIX package (${primaryArch})...`,
+  );
+
+  const msbuildArgs = [
+    path.join('windows', 'GumpDesktop.sln'),
     '/p:Configuration=Release',
-    `/p:Platform=${msbuildPlatform}`,
     `/p:_WindowsAppSDKFoundationPlatform=${wasdkPlatform}`,
     '/p:UseExperimentalNuget=true',
     '/p:AppxBundle=Always',
     '/p:UapAppxPackageBuildMode=StoreUpload',
-  ]);
+  ];
+
+  if (isMultiArch) {
+    // Multi-arch bundle: do not pin a single Platform; let the packaging
+    // project build each entry in AppxBundlePlatforms.
+    msbuildArgs.push(`/p:AppxBundlePlatforms=${bundlePlatforms}`);
+  } else {
+    msbuildArgs.push(`/p:Platform=${getMsbuildPlatform(primaryArch)}`);
+    msbuildArgs.push(`/p:AppxBundlePlatforms=${bundlePlatforms}`);
+  }
+
+  run(msbuildExe, msbuildArgs);
 
   const latestPackage = findLatestPackage();
   if (!latestPackage) {
@@ -261,14 +426,15 @@ if (process.platform !== 'win32') {
 ensureWindowsTooling();
 ensureDir(DIST_DIR);
 
-log(`Detected Windows target architecture: ${windowsArch}`);
+const windowsArchs = resolveWindowsArchs();
+log(`Detected Windows target architecture(s): ${windowsArchs.join(', ')}`);
 
 switch (variant) {
   case 'exe':
-    buildExe();
+    buildExe(windowsArchs);
     break;
   case 'msix':
-    buildMsix();
+    buildMsix(windowsArchs);
     break;
   default:
     die(`Unknown Windows variant: ${variant}. Use: exe | msix`);
