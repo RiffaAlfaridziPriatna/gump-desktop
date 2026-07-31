@@ -44,7 +44,7 @@
     "react-native-svg": "^15.15.5",
     "react-native-svg-transformer": "^1.5.3",
     "react-native-turbo-sqlite": "^0.6.2",
-    "react-native-windows": "^0.81.6",
+    "react-native-windows": "0.81.6",
     "reflect-metadata": "^0.2.2",
     "tsyringe": "^4.10.0",
     "zustand": "^5.0.14"

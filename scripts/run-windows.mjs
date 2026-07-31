@@ -5,6 +5,8 @@ import net from 'node:net';
 import path from 'node:path';
 import url from 'node:url';
 
+import { ensureRnwWindowsPowerShell } from './ensure-rnw-windows-powershell.mjs';
+
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..');
 const REACT_NATIVE_CLI = path.join(ROOT_DIR, 'node_modules/react-native/cli.js');
@@ -44,14 +46,12 @@ async function ensureMetroRunning() {
   console.error('');
   console.error('Debug builds load JS from Metro. Without it the app can crash silently.');
   console.error('');
-  console.error('Run these in TWO terminals inside the Windows VM:');
+  console.error('Run these in TWO terminals:');
   console.error('  Terminal 1:  npm start');
   console.error('  Terminal 2:  npm run windows -- --reset-cache');
   console.error('');
-  console.error(
-    'If Metro runs on your Mac host (not inside Parallels), set the host IP first:',
-  );
-  console.error('  set REACT_NATIVE_PACKAGER_HOSTNAME=<mac-ip-visible-from-vm>');
+  console.error('If Metro runs on another machine/host, set the host IP first:');
+  console.error('  set REACT_NATIVE_PACKAGER_HOSTNAME=<metro-host-ip>');
   console.error('');
   die(`No Metro server at ${host}:${port}`);
 }
@@ -115,6 +115,13 @@ if (process.platform !== 'win32') {
 
 if (!fs.existsSync(REACT_NATIVE_CLI)) {
   die('react-native CLI is not installed. Run: npm install --legacy-peer-deps');
+}
+
+const powershellFix = ensureRnwWindowsPowerShell();
+if (powershellFix.reason === 'powershell-missing') {
+  die(
+    `Windows PowerShell 5.1 not found at ${powershellFix.powershellPath}. Appx deploy requires powershell.exe (not only pwsh).`,
+  );
 }
 
 const windowsArch = resolveWindowsArch();

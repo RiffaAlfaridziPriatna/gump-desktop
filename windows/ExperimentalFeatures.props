@@ -25,6 +25,8 @@
 
     <WinUI3Version>1.7.250401001</WinUI3Version>
     <WindowsAppSdkAutoInitialize>false</WindowsAppSdkAutoInitialize>
+    <!-- WASDK 1.8+ Appx/packages.config check; keep off for native modules with leftover packages.config. -->
+    <WindowsAppSDKVerifyTransitiveDependencies>false</WindowsAppSDKVerifyTransitiveDependencies>
   </PropertyGroup>
 
 </Project>
