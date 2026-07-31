@@ -22,6 +22,9 @@
     <UseExperimentalNuget>true</UseExperimentalNuget>
 
     <ReactExperimentalFeaturesSet>true</ReactExperimentalFeaturesSet>
+
+    <WinUI3Version>1.7.250401001</WinUI3Version>
+    <WindowsAppSdkAutoInitialize>false</WindowsAppSdkAutoInitialize>
   </PropertyGroup>
 
 </Project>
