@@ -317,14 +317,36 @@ function copyArtifact(sourcePath, destinationDir) {
   log(`Artifact copied to ${destinationPath}`);
 }
 
-function findLatestPackage() {
-  if (!fs.existsSync(WINDOWS_MSIX_DIR)) {
-    return null;
+function getAppxBundlePlatform(arch) {
+  // AppxBundlePlatforms expects x86|x64|arm64 (arm64 lowercase).
+  switch (arch) {
+    case 'x86':
+      return 'x86';
+    case 'ARM64':
+      return 'arm64';
+    default:
+      return 'x64';
   }
+}
 
+function getPackageSearchRoots(appxPackageDir) {
+  return [
+    appxPackageDir,
+    WINDOWS_MSIX_DIR,
+    path.join(ROOT_DIR, 'windows', 'GumpDesktop.Package', 'AppPackages'),
+    path.join(ROOT_DIR, 'windows', 'GumpDesktop', 'AppPackages'),
+  ];
+}
+
+function findLatestPackage(searchRoots) {
   const packages = [];
+  const packageExts = ['.msix', '.msixbundle', '.appx', '.appxbundle'];
 
   function walk(dir) {
+    if (!fs.existsSync(dir)) {
+      return;
+    }
+
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const entryPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -332,7 +354,8 @@ function findLatestPackage() {
         continue;
       }
 
-      if (entry.name.endsWith('.msix') || entry.name.endsWith('.msixbundle')) {
+      const lower = entry.name.toLowerCase();
+      if (packageExts.some(ext => lower.endsWith(ext))) {
         packages.push({
           path: entryPath,
           mtimeMs: fs.statSync(entryPath).mtimeMs,
@@ -341,7 +364,10 @@ function findLatestPackage() {
     }
   }
 
-  walk(WINDOWS_MSIX_DIR);
+  for (const root of searchRoots) {
+    walk(root);
+  }
+
   packages.sort((a, b) => a.mtimeMs - b.mtimeMs);
   return packages.at(-1)?.path ?? null;
 }
@@ -382,8 +408,16 @@ function buildMsix(archs) {
   const msbuildExe = resolveMsbuildExe(archs);
   const primaryArch = archs[0];
   const wasdkPlatform = getWasdkPlatform(primaryArch);
-  const bundlePlatforms = archs.join('|');
+  const bundlePlatforms = archs.map(getAppxBundlePlatform).join('|');
   const isMultiArch = archs.length > 1;
+  const appxPackageDir = `${path.join(DIST_DIR, 'windows', 'AppPackages')}${path.sep}`;
+  const packageProject = path.join(
+    'windows',
+    'GumpDesktop.Package',
+    'GumpDesktop.Package.wapproj',
+  );
+
+  ensureDir(appxPackageDir);
 
   log(
     isMultiArch
@@ -391,29 +425,32 @@ function buildMsix(archs) {
       : `Building Windows MSIX package (${primaryArch})...`,
   );
 
+  // GenerateAppxPackageOnBuild is required: without it MSBuild can exit 0
+  // after compiling natives but never emit an .msix/.msixbundle.
   const msbuildArgs = [
-    path.join('windows', 'GumpDesktop.sln'),
+    packageProject,
+    '/restore',
     '/p:Configuration=Release',
+    `/p:Platform=${getMsbuildPlatform(primaryArch)}`,
     `/p:_WindowsAppSDKFoundationPlatform=${wasdkPlatform}`,
     '/p:UseExperimentalNuget=true',
+    '/p:GenerateAppxPackageOnBuild=true',
     '/p:AppxBundle=Always',
-    '/p:UapAppxPackageBuildMode=StoreUpload',
+    `/p:AppxBundlePlatforms=${bundlePlatforms}`,
+    '/p:UapAppxPackageBuildMode=SideloadOnly',
+    `/p:AppxPackageDir=${appxPackageDir}`,
   ];
-
-  if (isMultiArch) {
-    // Multi-arch bundle: do not pin a single Platform; let the packaging
-    // project build each entry in AppxBundlePlatforms.
-    msbuildArgs.push(`/p:AppxBundlePlatforms=${bundlePlatforms}`);
-  } else {
-    msbuildArgs.push(`/p:Platform=${getMsbuildPlatform(primaryArch)}`);
-    msbuildArgs.push(`/p:AppxBundlePlatforms=${bundlePlatforms}`);
-  }
 
   run(msbuildExe, msbuildArgs);
 
-  const latestPackage = findLatestPackage();
+  const searchRoots = getPackageSearchRoots(appxPackageDir);
+  const latestPackage = findLatestPackage(searchRoots);
   if (!latestPackage) {
-    die(`MSIX package not found under ${WINDOWS_MSIX_DIR}`);
+    die(
+      `MSIX package not found after build.\n` +
+        `Searched:\n${searchRoots.map(root => `  - ${root}`).join('\n')}\n` +
+        `MSBuild likely compiled without packaging. Re-run and confirm the log mentions Appx/MSIX packaging.`,
+    );
   }
 
   copyArtifact(latestPackage, path.join(DIST_DIR, 'windows'));
