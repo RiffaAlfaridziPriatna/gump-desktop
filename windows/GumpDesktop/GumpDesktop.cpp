@@ -281,6 +281,38 @@ static bool EnsureReleaseBundlePresent(PCWSTR appDirectory) noexcept {
 struct WindowsAppSdkBootstrap {
   bool initialized{false};
 
+  static UINT32 ResolveReleaseMajorMinor() noexcept {
+#if defined(WINDOWSAPPSDK_RELEASE_MAJORMINOR)
+    return WINDOWSAPPSDK_RELEASE_MAJORMINOR;
+#elif defined(WINDOWSAPPSDK_RELEASE_VERSION_MAJORMINOR)
+    return WINDOWSAPPSDK_RELEASE_VERSION_MAJORMINOR;
+#elif defined(WINDOWSAPPSDK_RELEASE_MAJOR) && defined(WINDOWSAPPSDK_RELEASE_MINOR)
+    return (static_cast<UINT32>(WINDOWSAPPSDK_RELEASE_MAJOR) << 16) |
+           static_cast<UINT32>(WINDOWSAPPSDK_RELEASE_MINOR);
+#else
+    // Pinned project WinUI3Version: 1.7.250401001
+    return 0x00010007u;
+#endif
+  }
+
+  static PCWSTR ResolveReleaseVersionTag() noexcept {
+#if defined(WINDOWSAPPSDK_RELEASE_VERSION_TAG_W)
+    return WINDOWSAPPSDK_RELEASE_VERSION_TAG_W;
+#else
+    return L"";
+#endif
+  }
+
+  static PACKAGE_VERSION ResolveMinRuntimeVersion() noexcept {
+    PACKAGE_VERSION minVersion{};
+#if defined(WINDOWSAPPSDK_RUNTIME_VERSION_UINT64)
+    minVersion.Version = WINDOWSAPPSDK_RUNTIME_VERSION_UINT64;
+#else
+    minVersion.Version = 0;
+#endif
+    return minVersion;
+  }
+
   bool TryInitialize() {
     if (IsRunningAsPackagedApp()) {
       // MSIX already declares the Windows App SDK framework dependency.
@@ -289,12 +321,10 @@ struct WindowsAppSdkBootstrap {
 
     // Unpackaged/portable builds must bootstrap the runtime or WinUI/RN
     // Composition APIs fail immediately (often with no visible window).
-    PACKAGE_VERSION minVersion{};
-    minVersion.Version = WINDOWSAPPSDK_RUNTIME_VERSION_UINT64;
     const HRESULT hr = MddBootstrapInitialize2(
-        WINDOWSAPPSDK_RELEASE_VERSION_MAJORMINOR,
-        WINDOWSAPPSDK_RELEASE_VERSION_TAG_W,
-        minVersion,
+        ResolveReleaseMajorMinor(),
+        ResolveReleaseVersionTag(),
+        ResolveMinRuntimeVersion(),
         MddBootstrapInitializeOptions_None);
     if (FAILED(hr)) {
       wchar_t message[768];
@@ -302,7 +332,8 @@ struct WindowsAppSdkBootstrap {
           message,
           L"Failed to initialize Windows App SDK runtime (HRESULT=0x%08X).\n\n"
           L"Install \"Windows App Runtime\" 1.7 (matching this build), then retry.\n"
-          L"https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads\n\n"
+          L"Archive download:\n"
+          L"https://aka.ms/windowsappsdk/1.7/1.7.250401001/windowsappruntimeinstall-x64.exe\n\n"
           L"Packaged MSIX installs do not need this step.",
           static_cast<unsigned>(hr));
       ShowStartupError(L"GUMP Desktop", message);
