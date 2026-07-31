@@ -256,6 +256,55 @@ static bool IsRunningAsPackagedApp() noexcept {
   return GetCurrentPackageFullName(&length, nullptr) != APPMODEL_ERROR_NO_PACKAGE;
 }
 
+// AsyncStorage's Windows native module defaults to ApplicationData::Current(),
+// which only exists for packaged (MSIX) apps. For unpackaged/portable builds it
+// fails to open the DB and never invokes the JS callback — AuthProvider then
+// stays on isLoading forever. Point it at a real LocalAppData path instead.
+static void ConfigureUnpackagedAsyncStoragePath() noexcept {
+  if (IsRunningAsPackagedApp()) {
+    return;
+  }
+
+  try {
+    PWSTR localAppData = nullptr;
+    const HRESULT hr = SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppData);
+    if (FAILED(hr) || localAppData == nullptr) {
+      return;
+    }
+
+    const std::filesystem::path dbDir =
+        std::filesystem::path(localAppData) / L"GumpDesktop";
+    CoTaskMemFree(localAppData);
+
+    std::error_code ec;
+    std::filesystem::create_directories(dbDir, ec);
+    const std::wstring dbPath = (dbDir / L"AsyncStorage.db").wstring();
+
+    auto properties =
+        winrt::Windows::ApplicationModel::Core::CoreApplication::Properties();
+    const auto key = winrt::hstring{
+        L"React-Native-Community-Async-Storage-Database-Path"};
+    if (properties.HasKey(key)) {
+      properties.Remove(key);
+    }
+    properties.Insert(key, winrt::box_value(winrt::hstring{dbPath}));
+  } catch (...) {
+    // If this fails, AsyncStorage will still hang/error later; prefer continuing
+    // startup so other diagnostics can surface.
+  }
+}
+
+static std::wstring ToBundleRootFileUri(PCWSTR appDirectory) {
+  // Windows file URIs need file:///C:/path/ form, not file://C:\path\.
+  std::wstring path(appDirectory);
+  for (wchar_t &ch : path) {
+    if (ch == L'\\') {
+      ch = L'/';
+    }
+  }
+  return std::wstring(L"file:///") + path + L"/Bundle/";
+}
+
 static bool EnsureReleaseBundlePresent(PCWSTR appDirectory) noexcept {
 #if !BUNDLE
   return true;
@@ -382,6 +431,8 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
     return 1;
   }
 
+  ConfigureUnpackagedAsyncStoragePath();
+
   try {
     // Initialize WinRT
     winrt::init_apartment(winrt::apartment_type::single_threaded);
@@ -412,8 +463,7 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
 
 #if BUNDLE
     // Load the JS bundle from a file (not Metro):
-    // Set the path (on disk) where the .bundle file is located
-    settings.BundleRootPath(std::wstring(L"file://").append(appDirectory).append(L"\\Bundle\\").c_str());
+    settings.BundleRootPath(ToBundleRootFileUri(appDirectory).c_str());
     // Set the name of the bundle file (without the .bundle extension)
     settings.JavaScriptBundleFile(L"index.windows");
     // Disable hot reload
