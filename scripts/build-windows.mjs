@@ -432,13 +432,19 @@ function writePortableReadme(destDir, arch) {
     'How to run',
     '1. Unzip this folder anywhere.',
     '2. Double-click GumpDesktop.exe.',
-    '3. Keep all files in this folder together (DLL/assets required).',
+    '3. Keep all files in this folder together (DLL/assets/Bundle required).',
     '',
     'Requirements',
     '- Windows 10 version 1809+ (build 17763) or Windows 11',
-    '- Matching CPU architecture (x64 build will not run on ARM64 without emulation quality guarantees)',
-    '- Windows App SDK / Windows App Runtime may be required if not already installed.',
+    '- Matching CPU architecture (x64 zip needs an x64 Windows machine)',
+    '- Windows App Runtime 1.7 (required for unpackaged/portable builds)',
     '  Download: https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads',
+    '  Install the "Windows App Runtime" installer for your architecture.',
+    '',
+    'If double-click does nothing or shows a startup error',
+    '- Confirm Bundle\\index.windows.bundle exists next to the exe',
+    '- Confirm Microsoft.WindowsAppRuntime.Bootstrap.dll is next to the exe',
+    '- Install/repair Windows App Runtime 1.7, then retry',
     '',
     'Notes',
     '- This is an unpackaged portable build (not MSIX).',
@@ -447,6 +453,36 @@ function writePortableReadme(destDir, arch) {
     '',
   ].join('\r\n');
   fs.writeFileSync(readmePath, contents, 'utf8');
+}
+
+function ensureReleaseBundleInDir(targetDir) {
+  const bundleFileName = 'index.windows.bundle';
+  const destBundleDir = path.join(targetDir, 'Bundle');
+  const destBundleFile = path.join(destBundleDir, bundleFileName);
+  if (fs.existsSync(destBundleFile)) {
+    return;
+  }
+
+  const sourceCandidates = [
+    path.join(ROOT_DIR, 'windows', 'GumpDesktop', 'Bundle', bundleFileName),
+    path.join(targetDir, '..', 'Bundle', bundleFileName),
+  ];
+  const sourceBundle = sourceCandidates.find(candidate => fs.existsSync(candidate));
+  if (!sourceBundle) {
+    die(
+      `Release JS bundle missing (${bundleFileName}).\n` +
+        `Expected next to the exe under Bundle\\ or at windows\\GumpDesktop\\Bundle\\.\n` +
+        `The Release build may have skipped bundling. Rebuild with: npm run build:windows`,
+    );
+  }
+
+  ensureDir(destBundleDir);
+  const sourceDir = path.dirname(sourceBundle);
+  copyTreeFiltered(sourceDir, destBundleDir);
+  if (!fs.existsSync(destBundleFile)) {
+    die(`Failed to copy JS bundle into portable payload: ${destBundleFile}`);
+  }
+  log(`Copied Bundle\\${bundleFileName} into portable payload`);
 }
 
 function zipDirectory(sourceDir, zipPath) {
@@ -487,6 +523,7 @@ function packagePortableRelease(arch) {
 
   const releaseDir = path.dirname(releaseExe);
   ensureAutolinkedDllsInReleaseDir(releaseDir, arch);
+  ensureReleaseBundleInDir(releaseDir);
 
   const distWindowsDir = path.join(DIST_DIR, 'windows');
   const portableName = `GumpDesktop-windows-${arch}`;
@@ -496,6 +533,7 @@ function packagePortableRelease(arch) {
   rmrf(portableDir);
   ensureDir(distWindowsDir);
   copyTreeFiltered(releaseDir, portableDir);
+  ensureReleaseBundleInDir(portableDir);
   writePortableReadme(portableDir, arch);
   zipDirectory(portableDir, zipPath);
 

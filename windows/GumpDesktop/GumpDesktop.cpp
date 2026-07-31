@@ -10,6 +10,16 @@
 
 #include "NativeModules.h"
 
+#include <appmodel.h>
+
+#if __has_include(<MddBootstrap.h>) && __has_include(<WindowsAppSDK-VersionInfo.h>)
+#include <MddBootstrap.h>
+#include <WindowsAppSDK-VersionInfo.h>
+#define GUMP_HAS_WINDOWSAPPSDK_BOOTSTRAP 1
+#else
+#define GUMP_HAS_WINDOWSAPPSDK_BOOTSTRAP 0
+#endif
+
 namespace {
 // Keep original Win32 WndProc so we can delegate messages.
 static WNDPROC g_originalWndProc{nullptr};
@@ -236,6 +246,93 @@ static void RegisterCustomFonts(PCWSTR appDirectory) noexcept {
     AddFontResourceExW(fontPath.c_str(), 0, nullptr);
   }
 }
+
+static void ShowStartupError(PCWSTR title, PCWSTR message) noexcept {
+  MessageBoxW(nullptr, message, title, MB_OK | MB_ICONERROR);
+}
+
+static bool IsRunningAsPackagedApp() noexcept {
+  UINT32 length = 0;
+  return GetCurrentPackageFullName(&length, nullptr) != APPMODEL_ERROR_NO_PACKAGE;
+}
+
+static bool EnsureReleaseBundlePresent(PCWSTR appDirectory) noexcept {
+#if !BUNDLE
+  return true;
+#else
+  const std::filesystem::path bundlePath =
+      std::filesystem::path(appDirectory) / L"Bundle" / L"index.windows.bundle";
+  if (std::filesystem::exists(bundlePath)) {
+    return true;
+  }
+
+  ShowStartupError(
+      L"GUMP Desktop",
+      L"Release JS bundle is missing.\n\n"
+      L"Expected:\n"
+      L"  Bundle\\index.windows.bundle\n"
+      L"next to GumpDesktop.exe.\n\n"
+      L"Rebuild with: npm run build:windows");
+  return false;
+#endif
+}
+
+#if GUMP_HAS_WINDOWSAPPSDK_BOOTSTRAP
+struct WindowsAppSdkBootstrap {
+  bool initialized{false};
+
+  bool TryInitialize() {
+    if (IsRunningAsPackagedApp()) {
+      // MSIX already declares the Windows App SDK framework dependency.
+      return true;
+    }
+
+    // Unpackaged/portable builds must bootstrap the runtime or WinUI/RN
+    // Composition APIs fail immediately (often with no visible window).
+    PACKAGE_VERSION minVersion{};
+    minVersion.Version = WINDOWSAPPSDK_RUNTIME_VERSION_UINT64;
+    const HRESULT hr = MddBootstrapInitialize2(
+        WINDOWSAPPSDK_RELEASE_VERSION_MAJORMINOR,
+        WINDOWSAPPSDK_RELEASE_VERSION_TAG_W,
+        minVersion,
+        MddBootstrapInitializeOptions_None);
+    if (FAILED(hr)) {
+      wchar_t message[768];
+      swprintf_s(
+          message,
+          L"Failed to initialize Windows App SDK runtime (HRESULT=0x%08X).\n\n"
+          L"Install \"Windows App Runtime\" 1.7 (matching this build), then retry.\n"
+          L"https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads\n\n"
+          L"Packaged MSIX installs do not need this step.",
+          static_cast<unsigned>(hr));
+      ShowStartupError(L"GUMP Desktop", message);
+      return false;
+    }
+
+    initialized = true;
+    return true;
+  }
+
+  ~WindowsAppSdkBootstrap() {
+    if (initialized) {
+      MddBootstrapShutdown();
+    }
+  }
+};
+#else
+struct WindowsAppSdkBootstrap {
+  bool TryInitialize() {
+    if (IsRunningAsPackagedApp()) {
+      return true;
+    }
+    ShowStartupError(
+        L"GUMP Desktop",
+        L"This portable build was compiled without Windows App SDK bootstrap "
+        L"headers. Rebuild on a machine with Microsoft.WindowsAppSDK 1.7 restored.");
+    return false;
+  }
+};
+#endif
 } // namespace
 
 // A PackageProvider containing any turbo modules you define within this app project
@@ -249,73 +346,101 @@ struct CompReactPackageProvider
 
 // The entry point of the Win32 application
 _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR /* commandLine */, int showCmd) {
-  // Initialize WinRT
-  winrt::init_apartment(winrt::apartment_type::single_threaded);
-
-  // Enable per monitor DPI scaling
-  SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-
-  // Find the path hosting the app exe file
-  WCHAR appDirectory[MAX_PATH];
-  GetModuleFileNameW(NULL, appDirectory, MAX_PATH);
-  PathCchRemoveFileSpec(appDirectory, MAX_PATH);
-  RegisterCustomFonts(appDirectory);
-
-  // Create a ReactNativeWin32App with the ReactNativeAppBuilder
-  auto reactNativeWin32App{winrt::Microsoft::ReactNative::ReactNativeAppBuilder().Build()};
-
-  // Configure the initial InstanceSettings for the app's ReactNativeHost
-  auto settings{reactNativeWin32App.ReactNativeHost().InstanceSettings()};
-  // Ensure autolinked WinRT module DLLs are loaded before package registration.
-  PreloadAutolinkedModuleDlls(appDirectory);
-  // Register any autolinked native modules
-  RegisterAutolinkedNativeModulePackages(settings.PackageProviders());
-  // Register any native modules defined within this app project
-  settings.PackageProviders().Append(winrt::make<CompReactPackageProvider>());
-
-#if BUNDLE
-  // Load the JS bundle from a file (not Metro):
-  // Set the path (on disk) where the .bundle file is located
-  settings.BundleRootPath(std::wstring(L"file://").append(appDirectory).append(L"\\Bundle\\").c_str());
-  // Set the name of the bundle file (without the .bundle extension)
-  settings.JavaScriptBundleFile(L"index.windows");
-  // Disable hot reload
-  settings.UseFastRefresh(false);
-#else
-  // Load the JS bundle from Metro
-  settings.JavaScriptBundleFile(L"index");
-  settings.DebugBundlePath(L"index");
-  // Enable hot reload
-  settings.UseFastRefresh(true);
-#endif
-#if _DEBUG
-  // Direct debugger can crash new-arch RNW on ARM64; keep dev menu only.
-  settings.UseDirectDebugger(false);
-  // Enable the Developer Menu
-  settings.UseDeveloperSupport(true);
-#else
-  // For Release builds:
-  // Disable Direct Debugging of JS
-  settings.UseDirectDebugger(false);
-  // Disable the Developer Menu
-  settings.UseDeveloperSupport(false);
-#endif
-
-  // Get the AppWindow so we can configure its initial title and size
-  auto appWindow{reactNativeWin32App.AppWindow()};
-  appWindow.Title(L"GUMP - Cull Your Photos");
-  InstallMinSizeHook(appWindow);
-  if (const HWND hwnd = GetHwnd(appWindow)) {
-    ApplyWindowIcons(hwnd, instance);
-    ApplyInitialWindowPlacement(appWindow, hwnd);
-  } else {
-    appWindow.Resize({1000, 800});
+  WindowsAppSdkBootstrap windowsAppSdk;
+  if (!windowsAppSdk.TryInitialize()) {
+    return 1;
   }
 
-  // Get the ReactViewOptions so we can set the initial RN component to load
-  auto viewOptions{reactNativeWin32App.ReactViewOptions()};
-  viewOptions.ComponentName(L"GumpDesktop");
+  try {
+    // Initialize WinRT
+    winrt::init_apartment(winrt::apartment_type::single_threaded);
 
-  // Start the app
-  reactNativeWin32App.Start();
+    // Enable per monitor DPI scaling
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
+    // Find the path hosting the app exe file
+    WCHAR appDirectory[MAX_PATH];
+    GetModuleFileNameW(NULL, appDirectory, MAX_PATH);
+    PathCchRemoveFileSpec(appDirectory, MAX_PATH);
+    if (!EnsureReleaseBundlePresent(appDirectory)) {
+      return 1;
+    }
+    RegisterCustomFonts(appDirectory);
+
+    // Create a ReactNativeWin32App with the ReactNativeAppBuilder
+    auto reactNativeWin32App{winrt::Microsoft::ReactNative::ReactNativeAppBuilder().Build()};
+
+    // Configure the initial InstanceSettings for the app's ReactNativeHost
+    auto settings{reactNativeWin32App.ReactNativeHost().InstanceSettings()};
+    // Ensure autolinked WinRT module DLLs are loaded before package registration.
+    PreloadAutolinkedModuleDlls(appDirectory);
+    // Register any autolinked native modules
+    RegisterAutolinkedNativeModulePackages(settings.PackageProviders());
+    // Register any native modules defined within this app project
+    settings.PackageProviders().Append(winrt::make<CompReactPackageProvider>());
+
+#if BUNDLE
+    // Load the JS bundle from a file (not Metro):
+    // Set the path (on disk) where the .bundle file is located
+    settings.BundleRootPath(std::wstring(L"file://").append(appDirectory).append(L"\\Bundle\\").c_str());
+    // Set the name of the bundle file (without the .bundle extension)
+    settings.JavaScriptBundleFile(L"index.windows");
+    // Disable hot reload
+    settings.UseFastRefresh(false);
+#else
+    // Load the JS bundle from Metro
+    settings.JavaScriptBundleFile(L"index");
+    settings.DebugBundlePath(L"index");
+    // Enable hot reload
+    settings.UseFastRefresh(true);
+#endif
+#if _DEBUG
+    // Direct debugger can crash new-arch RNW on ARM64; keep dev menu only.
+    settings.UseDirectDebugger(false);
+    // Enable the Developer Menu
+    settings.UseDeveloperSupport(true);
+#else
+    // For Release builds:
+    // Disable Direct Debugging of JS
+    settings.UseDirectDebugger(false);
+    // Disable the Developer Menu
+    settings.UseDeveloperSupport(false);
+#endif
+
+    // Get the AppWindow so we can configure its initial title and size
+    auto appWindow{reactNativeWin32App.AppWindow()};
+    appWindow.Title(L"GUMP - Cull Your Photos");
+    InstallMinSizeHook(appWindow);
+    if (const HWND hwnd = GetHwnd(appWindow)) {
+      ApplyWindowIcons(hwnd, instance);
+      ApplyInitialWindowPlacement(appWindow, hwnd);
+    } else {
+      appWindow.Resize({1000, 800});
+    }
+
+    // Get the ReactViewOptions so we can set the initial RN component to load
+    auto viewOptions{reactNativeWin32App.ReactViewOptions()};
+    viewOptions.ComponentName(L"GumpDesktop");
+
+    // Start the app
+    reactNativeWin32App.Start();
+    return 0;
+  } catch (winrt::hresult_error const &ex) {
+    wchar_t message[1024];
+    swprintf_s(
+        message,
+        L"GUMP Desktop failed to start.\n\nHRESULT=0x%08X\n%s",
+        static_cast<unsigned>(ex.code()),
+        ex.message().c_str());
+    ShowStartupError(L"GUMP Desktop", message);
+    return 1;
+  } catch (std::exception const &ex) {
+    wchar_t message[1024];
+    swprintf_s(message, L"GUMP Desktop failed to start.\n\n%hs", ex.what());
+    ShowStartupError(L"GUMP Desktop", message);
+    return 1;
+  } catch (...) {
+    ShowStartupError(L"GUMP Desktop", L"GUMP Desktop failed to start (unknown error).");
+    return 1;
+  }
 }
