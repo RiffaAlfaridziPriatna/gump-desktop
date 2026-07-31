@@ -51,6 +51,8 @@ constexpr float kEyeClosedConfidenceThreshold = 88.0f;
 
 // Brightness is hard-coded on macOS; keep the same contract for TS.
 constexpr float kMacOsBrightnessPlaceholder = 60.0f;
+// MSVC does not define M_PI unless _USE_MATH_DEFINES is set before <cmath>.
+constexpr float kPi = 3.14159265358979323846f;
 
 struct NormalizedFaceBox {
   float left{0.0f};
@@ -83,8 +85,8 @@ float FaceCenterY(const FaceResult &face) {
 
 float AbsYawRadians(float yaw) {
   float value = std::abs(yaw);
-  if (value > static_cast<float>(M_PI) + 0.01f) {
-    return (value * static_cast<float>(M_PI)) / 180.0f;
+  if (value > kPi + 0.01f) {
+    return (value * kPi) / 180.0f;
   }
   return value;
 }
@@ -814,7 +816,7 @@ float EstimateYawRadians(float leftEyeX, float rightEyeX, float noseX) {
   const float eyeMidX = (leftEyeX + rightEyeX) * 0.5f;
   const float eyeDist = std::max(1.0f, std::abs(rightEyeX - leftEyeX));
   const float degrees = Clamp(((noseX - eyeMidX) / eyeDist) * 35.0f, -45.0f, 45.0f);
-  return degrees * static_cast<float>(M_PI) / 180.0f;
+  return degrees * kPi / 180.0f;
 }
 
 // Approximate pitch (radians) from eye/nose/mouth vertical layout for looking-down demotion.
