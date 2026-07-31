@@ -315,6 +315,193 @@ function copyArtifact(sourcePath, destinationDir) {
   const destinationPath = path.join(destinationDir, path.basename(sourcePath));
   fs.copyFileSync(sourcePath, destinationPath);
   log(`Artifact copied to ${destinationPath}`);
+  return destinationPath;
+}
+
+function rmrf(targetPath) {
+  fs.rmSync(targetPath, {recursive: true, force: true});
+}
+
+function shouldIncludeInPortable(name) {
+  const lower = name.toLowerCase();
+  return ![
+    '.pdb',
+    '.iobj',
+    '.ipdb',
+    '.ilk',
+    '.exp',
+    '.lib',
+    '.obj',
+    '.log',
+    '.tlog',
+    '.lastbuildstate',
+  ].some(ext => lower.endsWith(ext));
+}
+
+function copyTreeFiltered(sourceDir, destDir) {
+  ensureDir(destDir);
+  for (const entry of fs.readdirSync(sourceDir, {withFileTypes: true})) {
+    if (!shouldIncludeInPortable(entry.name)) {
+      continue;
+    }
+    const from = path.join(sourceDir, entry.name);
+    const to = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyTreeFiltered(from, to);
+      continue;
+    }
+    fs.copyFileSync(from, to);
+  }
+}
+
+function getAutolinkedDllCandidates(arch) {
+  const platformDir = getMsbuildPlatform(arch);
+  const solutionOut = path.join(ROOT_DIR, 'windows', platformDir, 'Release');
+  return [
+    {
+      name: 'RNSVG.dll',
+      candidates: [
+        path.join(solutionOut, 'RNSVG.dll'),
+        path.join(solutionOut, 'RNSVG', 'RNSVG.dll'),
+        path.join(
+          ROOT_DIR,
+          'node_modules/react-native-svg/windows/RNSVG',
+          platformDir,
+          'Release',
+          'RNSVG.dll',
+        ),
+      ],
+    },
+    {
+      name: 'ReactNativeAsyncStorage.dll',
+      candidates: [
+        path.join(solutionOut, 'ReactNativeAsyncStorage.dll'),
+        path.join(solutionOut, 'ReactNativeAsyncStorage', 'ReactNativeAsyncStorage.dll'),
+        path.join(
+          ROOT_DIR,
+          'node_modules/@react-native-async-storage/async-storage/windows/ReactNativeAsyncStorage',
+          platformDir,
+          'Release',
+          'ReactNativeAsyncStorage.dll',
+        ),
+      ],
+    },
+    {
+      name: 'ReactNativeTurboSqlite.dll',
+      candidates: [
+        path.join(solutionOut, 'ReactNativeTurboSqlite.dll'),
+        path.join(solutionOut, 'ReactNativeTurboSqlite', 'ReactNativeTurboSqlite.dll'),
+        path.join(
+          ROOT_DIR,
+          'node_modules/react-native-turbo-sqlite/windows/ReactNativeTurboSqlite',
+          platformDir,
+          'Release',
+          'ReactNativeTurboSqlite.dll',
+        ),
+      ],
+    },
+  ];
+}
+
+function ensureAutolinkedDllsInReleaseDir(releaseDir, arch) {
+  for (const {name, candidates} of getAutolinkedDllCandidates(arch)) {
+    const dest = path.join(releaseDir, name);
+    if (fs.existsSync(dest)) {
+      continue;
+    }
+    const source = candidates.find(candidate => fs.existsSync(candidate));
+    if (!source) {
+      die(
+        `Missing ${name} next to GumpDesktop.exe and no candidate found.\n` +
+          `Release dir: ${releaseDir}\n` +
+          `The Release build may have failed to produce autolinked native modules.`,
+      );
+    }
+    fs.copyFileSync(source, dest);
+    log(`Copied ${name} into portable payload`);
+  }
+}
+
+function writePortableReadme(destDir, arch) {
+  const readmePath = path.join(destDir, 'README.txt');
+  const contents = [
+    'GUMP Desktop — Windows portable build',
+    '',
+    `Architecture: ${arch}`,
+    '',
+    'How to run',
+    '1. Unzip this folder anywhere.',
+    '2. Double-click GumpDesktop.exe.',
+    '3. Keep all files in this folder together (DLL/assets required).',
+    '',
+    'Requirements',
+    '- Windows 10 version 1809+ (build 17763) or Windows 11',
+    '- Matching CPU architecture (x64 build will not run on ARM64 without emulation quality guarantees)',
+    '- Windows App SDK / Windows App Runtime may be required if not already installed.',
+    '  Download: https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads',
+    '',
+    'Notes',
+    '- This is an unpackaged portable build (not MSIX).',
+    '- Windows SmartScreen may warn because the binary is unsigned. Use "More info" → "Run anyway" for trusted internal builds.',
+    '- Do not redistribute GumpDesktop.exe alone.',
+    '',
+  ].join('\r\n');
+  fs.writeFileSync(readmePath, contents, 'utf8');
+}
+
+function zipDirectory(sourceDir, zipPath) {
+  if (fs.existsSync(zipPath)) {
+    fs.unlinkSync(zipPath);
+  }
+
+  const parentDir = path.dirname(sourceDir);
+  const folderName = path.basename(sourceDir);
+
+  // Windows 10+ ships bsdtar, which can create .zip via -a.
+  const result = spawnSync(
+    'tar',
+    ['-a', '-c', '-f', zipPath, '-C', parentDir, folderName],
+    {cwd: ROOT_DIR, stdio: 'inherit', shell: false},
+  );
+
+  if (result.error) {
+    die(`Failed to create zip: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    die(`tar failed while creating ${zipPath}`);
+  }
+  if (!fs.existsSync(zipPath)) {
+    die(`Zip was not created: ${zipPath}`);
+  }
+
+  log(`Portable zip created: ${zipPath}`);
+}
+
+function packagePortableRelease(arch) {
+  const releaseExe = findReleaseExe(arch);
+  if (!releaseExe) {
+    die(
+      `Windows executable not found under windows/${getMsbuildPlatform(arch)}/Release. Expected GumpDesktop.exe`,
+    );
+  }
+
+  const releaseDir = path.dirname(releaseExe);
+  ensureAutolinkedDllsInReleaseDir(releaseDir, arch);
+
+  const distWindowsDir = path.join(DIST_DIR, 'windows');
+  const portableName = `GumpDesktop-windows-${arch}`;
+  const portableDir = path.join(distWindowsDir, portableName);
+  const zipPath = path.join(distWindowsDir, `${portableName}.zip`);
+
+  rmrf(portableDir);
+  ensureDir(distWindowsDir);
+  copyTreeFiltered(releaseDir, portableDir);
+  writePortableReadme(portableDir, arch);
+  zipDirectory(portableDir, zipPath);
+
+  log(`Portable folder: ${portableDir}`);
+  log(`Share this file: ${zipPath}`);
+  return {portableDir, zipPath};
 }
 
 function getAppxBundlePlatform(arch) {
@@ -375,14 +562,14 @@ function findLatestPackage(searchRoots) {
 function buildExe(archs) {
   if (archs.length !== 1) {
     die(
-      'build:windows (exe) only supports one architecture. Use WINDOWS_ARCH=x64 (or omit it). For multi-arch installers use: npm run build:windows:msix',
+      'build:windows (portable zip) only supports one architecture. Use WINDOWS_ARCH=x64 (or omit it). For multi-arch packages use: npm run build:windows:msix',
     );
   }
 
   const windowsArch = archs[0];
   const wasdkPlatform = getWasdkPlatform(windowsArch);
 
-  log(`Building Windows release executable (${windowsArch})...`);
+  log(`Building Windows release portable package (${windowsArch})...`);
   runReactNativeWindows([
     '--release',
     '--arch',
@@ -394,14 +581,7 @@ function buildExe(archs) {
     `_WindowsAppSDKFoundationPlatform=${wasdkPlatform},UseExperimentalNuget=true`,
   ]);
 
-  const releaseExe = findReleaseExe(windowsArch);
-  if (!releaseExe) {
-    die(
-      `Windows executable not found under windows/${getMsbuildPlatform(windowsArch)}/Release. Expected GumpDesktop.exe`,
-    );
-  }
-
-  copyArtifact(releaseExe, path.join(DIST_DIR, 'windows'));
+  packagePortableRelease(windowsArch);
 }
 
 function buildMsix(archs) {
@@ -472,13 +652,15 @@ log(`Detected Windows target architecture(s): ${windowsArchs.join(', ')}`);
 
 switch (variant) {
   case 'exe':
+  case 'zip':
+  case 'portable':
     buildExe(windowsArchs);
     break;
   case 'msix':
     buildMsix(windowsArchs);
     break;
   default:
-    die(`Unknown Windows variant: ${variant}. Use: exe | msix`);
+    die(`Unknown Windows variant: ${variant}. Use: zip | msix`);
 }
 
 log(`Done. Output directory: ${path.join(DIST_DIR, 'windows')}/`);
