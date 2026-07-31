@@ -410,12 +410,9 @@ function buildMsix(archs) {
   const wasdkPlatform = getWasdkPlatform(primaryArch);
   const bundlePlatforms = archs.map(getAppxBundlePlatform).join('|');
   const isMultiArch = archs.length > 1;
+  const windowsDir = path.join(ROOT_DIR, 'windows');
+  const solutionDir = `${windowsDir}${path.sep}`;
   const appxPackageDir = `${path.join(DIST_DIR, 'windows', 'AppPackages')}${path.sep}`;
-  const packageProject = path.join(
-    'windows',
-    'GumpDesktop.Package',
-    'GumpDesktop.Package.wapproj',
-  );
 
   ensureDir(appxPackageDir);
 
@@ -425,15 +422,22 @@ function buildMsix(archs) {
       : `Building Windows MSIX package (${primaryArch})...`,
   );
 
-  // GenerateAppxPackageOnBuild is required: without it MSBuild can exit 0
-  // after compiling natives but never emit an .msix/.msixbundle.
+  // Build the .sln (not the .wapproj alone). Building the packaging project
+  // directly sets SolutionDir to GumpDesktop.Package\, which breaks RNSVG /
+  // autolink paths that expect windows\ExperimentalFeatures.props and
+  // windows\<Platform>\Release\*.dll.
+  //
+  // GenerateAppxPackageOnBuild is still required or MSBuild can exit 0
+  // without emitting an .msix/.msixbundle.
   const msbuildArgs = [
-    packageProject,
+    path.join('windows', 'GumpDesktop.sln'),
     '/restore',
     '/p:Configuration=Release',
     `/p:Platform=${getMsbuildPlatform(primaryArch)}`,
+    `/p:SolutionDir=${solutionDir}`,
     `/p:_WindowsAppSDKFoundationPlatform=${wasdkPlatform}`,
     '/p:UseExperimentalNuget=true',
+    '/p:RnwNewArch=true',
     '/p:GenerateAppxPackageOnBuild=true',
     '/p:AppxBundle=Always',
     `/p:AppxBundlePlatforms=${bundlePlatforms}`,
