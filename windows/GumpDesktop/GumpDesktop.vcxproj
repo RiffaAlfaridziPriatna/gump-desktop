@@ -173,14 +173,7 @@
       <Link>Assets\Models\face_detection_scrfd_2.5g_bnkps.onnx</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Models\face_detection_scrfd_10g_bnkps.onnx">
-      <Link>Assets\Models\face_detection_scrfd_10g_bnkps.onnx</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="Models\face_landmarks_2d106det.onnx">
-      <Link>Assets\Models\face_landmarks_2d106det.onnx</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <!-- Optional A/B models (scrfd_10g, 2d106det) are gitignored and not shipped. -->
     <None Include="Models\face_detection_scrfd.LICENSE">
       <Link>Assets\Models\face_detection_scrfd.LICENSE</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
