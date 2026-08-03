@@ -212,7 +212,7 @@ function CulledAlbumDetailSidebarComponent({
 
   const getKeyFaceRowLayout = useCallback(
     (_data: ArrayLike<KeyFaceRow> | null | undefined, index: number) => ({
-      length: KEY_FACE_ROW_HEIGHT,
+      length: KEY_FACE_SIZE,
       offset: KEY_FACE_ROW_HEIGHT * index,
       index,
     }),
@@ -299,6 +299,7 @@ function CulledAlbumDetailSidebarComponent({
               updateCellsBatchingPeriod={100}
               removeClippedSubviews={Platform.OS !== 'windows'}
               getItemLayout={getKeyFaceRowLayout}
+              ItemSeparatorComponent={KeyFaceRowSeparator}
             />
           )}
         </ScrollAwareTooltipContext.Provider>
@@ -311,6 +312,10 @@ function KeyFaceItemSeparator() {
   return <View style={styles.keyFaceItemSeparator} />;
 }
 
+function KeyFaceRowSeparator() {
+  return <View style={styles.keyFaceRowSeparator} />;
+}
+
 export const CulledAlbumDetailSidebar = memo(CulledAlbumDetailSidebarComponent);
 
 const styles = StyleSheet.create({
@@ -319,11 +324,13 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     gap: 20,
     minHeight: 0,
-    paddingVertical: 24,
+    paddingTop: 24,
+    paddingBottom: 0,
   },
   sidebarMobile: {
     width: '100%',
-    paddingVertical: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
     flex: undefined,
   },
   accordionContent: {
@@ -394,6 +401,7 @@ const styles = StyleSheet.create({
   },
   keyFaceGrid: {
     paddingRight: 20,
+    paddingBottom: 24,
   },
   keyFaceGridMobile: {
     paddingRight: 0,
@@ -401,7 +409,6 @@ const styles = StyleSheet.create({
   keyFaceRow: {
     flexDirection: 'row',
     gap: KEY_FACE_GAP,
-    marginBottom: KEY_FACE_GAP,
   },
   keyFaceFiller: {
     width: KEY_FACE_SIZE,
@@ -409,6 +416,9 @@ const styles = StyleSheet.create({
   },
   keyFaceItemSeparator: {
     width: KEY_FACE_GAP,
+  },
+  keyFaceRowSeparator: {
+    height: KEY_FACE_GAP,
   },
   cullFiltersAccordion: {
     zIndex: 2,
