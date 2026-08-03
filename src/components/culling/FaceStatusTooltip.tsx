@@ -83,6 +83,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 10,
     lineHeight: 14,
+    color: colors.text,
     flexShrink: 0,
   },
   tooltipPointerUp: {

@@ -23,8 +23,7 @@ import {resolveDetailDisplayUri} from '@lib/storage/localStorage';
 import {Pressable, TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
-  FlatList,
-  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -176,24 +175,9 @@ export default function CulledAlbumPhotoDetailScreen({
     setAnalysis(current => (current ? {...current, ...updated} : current));
   }
 
-  const renderKeyFaceItem = useCallback(
-    ({item: face, index}: {item: (typeof faces)[number]; index: number}) => (
-      <KeyFaceSidebarItem
-        uri={uri}
-        boundingBox={face.boundingBox}
-        eyeStatus={face.eyeStatus}
-        focusLevel={face.focusLevel}
-        width={KEY_FACE_ITEM_SIZE}
-        imageSize={imageSize}
-        selected={zoomFaceIndex === index}
-        onPress={() =>
-          setZoomFaceIndex(current => (current === index ? null : index))
-        }
-        onTooltipAnchorChange={handleTooltipChange}
-      />
-    ),
-    [handleTooltipChange, imageSize, uri, zoomFaceIndex],
-  );
+  const handleKeyFacePress = useCallback((index: number) => {
+    setZoomFaceIndex(current => (current === index ? null : index));
+  }, []);
 
   if (!photo || !analysis) {
     return (
@@ -319,16 +303,9 @@ export default function CulledAlbumPhotoDetailScreen({
                 ]}>
                 <Text style={styles.sidebarTitle}>Key Faces ({faces.length})</Text>
                 {mainImageReady && imageSize ? (
-                  <FlatList
+                  <ScrollView
                     {...keyFaceScrollHandlers}
-                    data={faces}
-                    keyExtractor={(_, index) => `face-${index}`}
-                    renderItem={renderKeyFaceItem}
                     horizontal={isMobileLayout}
-                    numColumns={isMobileLayout ? undefined : KEY_FACE_COLUMN_COUNT}
-                    columnWrapperStyle={
-                      isMobileLayout ? undefined : styles.keyFaceRow
-                    }
                     style={styles.keyFaceScroll}
                     contentContainerStyle={[
                       styles.keyFaceGrid,
@@ -336,15 +313,22 @@ export default function CulledAlbumPhotoDetailScreen({
                     ]}
                     showsVerticalScrollIndicator={!isMobileLayout}
                     showsHorizontalScrollIndicator={isMobileLayout}
-                    initialNumToRender={
-                      isMobileLayout ? 6 : KEY_FACE_COLUMN_COUNT * 3
-                    }
-                    maxToRenderPerBatch={
-                      isMobileLayout ? 6 : KEY_FACE_COLUMN_COUNT * 3
-                    }
-                    windowSize={3}
-                    removeClippedSubviews={Platform.OS !== 'windows'}
-                  />
+                  >
+                    {faces.map((face, index) => (
+                      <KeyFaceSidebarItem
+                        key={`face-${index}`}
+                        uri={uri}
+                        boundingBox={face.boundingBox}
+                        eyeStatus={face.eyeStatus}
+                        focusLevel={face.focusLevel}
+                        width={KEY_FACE_ITEM_SIZE}
+                        imageSize={imageSize}
+                        selected={zoomFaceIndex === index}
+                        onPress={() => handleKeyFacePress(index)}
+                        onTooltipAnchorChange={handleTooltipChange}
+                      />
+                    ))}
+                  </ScrollView>
                 ) : (
                   <View style={styles.keyFaceLoading}>
                     <ActivityIndicator size="small" color={colors.accent} />
@@ -512,11 +496,10 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   keyFaceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: KEY_FACE_GAP,
     overflow: 'visible',
-  },
-  keyFaceRow: {
-    gap: KEY_FACE_GAP,
   },
   keyFaceGridMobile: {
     flexWrap: 'nowrap',

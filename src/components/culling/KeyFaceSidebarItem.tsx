@@ -65,7 +65,8 @@ export const KeyFaceSidebarItem = memo(
       style={[styles.container, {width, height: width}]}
       onPress={onPress}
       onHoverIn={onHoverIn}
-      onHoverOut={onHoverOut}>
+      onHoverOut={onHoverOut}
+      enableFocusRing={false}>
       <View style={[styles.root, {width, height: width}]}>
         <View
           ref={avatarRef}

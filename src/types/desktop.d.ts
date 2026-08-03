@@ -6,6 +6,11 @@ declare module 'react-native' {
     userSelect?: 'none' | 'auto' | 'text' | 'all';
   }
 
+  interface ViewProps {
+    /** Windows-only: system keyboard/mouse focus rectangle. */
+    enableFocusRing?: boolean;
+  }
+
   interface TextInputProps {
     enableFocusRing?: boolean;
   }
