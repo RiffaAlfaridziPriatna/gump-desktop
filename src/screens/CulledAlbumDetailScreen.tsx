@@ -90,11 +90,13 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     screenRootRef,
     keyFaceTooltip,
     keyFaceTooltipWidth,
+    keyFaceTooltipHeight,
     screenOrigin,
     syncScreenOrigin,
     handleKeyFaceTooltipChange,
     dismissKeyFaceTooltip,
     setKeyFaceTooltipWidth,
+    setKeyFaceTooltipHeight,
   } = useKeyFaceTooltip();
 
   const gridPhotosCacheRef = useRef(new Map());
@@ -420,18 +422,36 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             style={[
               styles.keyFaceTooltipHost,
               {
-                top: keyFaceTooltip.bottomY - screenOrigin.y + 6,
+                top:
+                  keyFaceTooltip.placement === 'above'
+                    ? (keyFaceTooltip.topY ?? keyFaceTooltip.bottomY) -
+                      screenOrigin.y -
+                      6
+                    : keyFaceTooltip.bottomY - screenOrigin.y + 6,
                 left: keyFaceTooltip.centerX - screenOrigin.x,
-                transform: [{translateX: -keyFaceTooltipWidth / 2}],
-                opacity: keyFaceTooltipWidth > 0 ? 1 : 0,
+                transform:
+                  keyFaceTooltip.placement === 'above'
+                    ? [
+                        {translateX: -keyFaceTooltipWidth / 2},
+                        {translateY: -keyFaceTooltipHeight},
+                      ]
+                    : [{translateX: -keyFaceTooltipWidth / 2}],
+                opacity:
+                  keyFaceTooltipWidth > 0 &&
+                  (keyFaceTooltip.placement !== 'above' ||
+                    keyFaceTooltipHeight > 0)
+                    ? 1
+                    : 0,
               },
             ]}
-            onLayout={event =>
-              setKeyFaceTooltipWidth(event.nativeEvent.layout.width)
-            }>
+            onLayout={event => {
+              setKeyFaceTooltipWidth(event.nativeEvent.layout.width);
+              setKeyFaceTooltipHeight(event.nativeEvent.layout.height);
+            }}>
             <FaceStatusTooltip
               eyeMeta={keyFaceTooltip.eyeMeta}
               focusMeta={keyFaceTooltip.focusMeta}
+              placement={keyFaceTooltip.placement}
             />
           </View>
         )}

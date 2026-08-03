@@ -80,6 +80,7 @@ function buildKeyFaceRows(faces: KeyFaceWithSource[]): KeyFaceRow[] {
 
 type KeyFaceGridRowProps = {
   row: KeyFaceRow;
+  isLastRow: boolean;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
   onKeyFacePress?: (photoId: string, faceIndex?: number) => void;
 };
@@ -91,6 +92,7 @@ function resolveKeyFacePhotoId(face: KeyFaceWithSource): string | undefined {
 const KeyFaceGridRow = memo(
   function KeyFaceGridRow({
     row,
+    isLastRow,
     onTooltipAnchorChange,
     onKeyFacePress,
   }: KeyFaceGridRowProps) {
@@ -105,6 +107,7 @@ const KeyFaceGridRow = memo(
               eyeStatus={face.eyeStatus}
               focusLevel={face.focusLevel}
               width={KEY_FACE_SIZE}
+              tooltipPlacement={isLastRow ? 'above' : 'below'}
               onPress={
                 photoId && onKeyFacePress
                   ? () => onKeyFacePress(photoId, face.sourceFaceIndex)
@@ -126,7 +129,7 @@ const KeyFaceGridRow = memo(
       </View>
     );
   },
-  (prev, next) => prev.row === next.row,
+  (prev, next) => prev.row === next.row && prev.isLastRow === next.isLastRow,
 );
 
 function CulledAlbumDetailSidebarComponent({
@@ -162,6 +165,7 @@ function CulledAlbumDetailSidebarComponent({
     () => (isMobileLayout ? [] : buildKeyFaceRows(keyFaces)),
     [isMobileLayout, keyFaces],
   );
+  const lastKeyFaceRowIndex = keyFaceRows.length - 1;
 
   const handleSelectionFilterPress = useCallback(() => {
     onSelectionFilterChange(selectionFilter === 'selected' ? null : 'selected');
@@ -178,11 +182,12 @@ function CulledAlbumDetailSidebarComponent({
     ({item}: ListRenderItemInfo<KeyFaceRow>) => (
       <KeyFaceGridRow
         row={item}
+        isLastRow={item.rowIndex === lastKeyFaceRowIndex}
         onTooltipAnchorChange={onKeyFaceTooltipChangeRef.current}
         onKeyFacePress={handleKeyFacePress}
       />
     ),
-    [handleKeyFacePress],
+    [handleKeyFacePress, lastKeyFaceRowIndex],
   );
 
   const renderKeyFaceItem = useCallback(

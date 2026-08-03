@@ -1,6 +1,9 @@
 import {FaceCropAvatar} from '@components/culling/FaceCropAvatar';
 import {FaceStatusIconBadge} from '@components/culling/FaceStatusIconBadge';
-import {type KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
+import {
+  type FaceStatusTooltipPlacement,
+  type KeyFaceTooltipAnchor,
+} from '@components/culling/FaceStatusTooltip';
 import {CullingBoundingBox} from '@lib/culling/cullingFaceCrop';
 import {
   getEyeStatusMeta,
@@ -23,6 +26,7 @@ type KeyFaceSidebarItemProps = {
   width: number;
   imageSize?: ImageDimensions | null;
   selected?: boolean;
+  tooltipPlacement?: FaceStatusTooltipPlacement;
   onPress?: () => void;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
 };
@@ -37,6 +41,7 @@ export const KeyFaceSidebarItem = memo(
     width,
     imageSize,
     selected = false,
+    tooltipPlacement = 'below',
     onPress,
     onTooltipAnchorChange,
   }: KeyFaceSidebarItemProps) {
@@ -48,11 +53,13 @@ export const KeyFaceSidebarItem = memo(
   const buildAnchor = useCallback(
     (x: number, y: number, measuredWidth: number, measuredHeight: number) => ({
       centerX: x + measuredWidth / 2,
+      topY: y,
       bottomY: y + measuredHeight,
+      placement: tooltipPlacement,
       eyeMeta: getEyeStatusMeta(eyeStatus),
       focusMeta: getFocusStatusMeta(focusLevel),
     }),
-    [eyeStatus, focusLevel],
+    [eyeStatus, focusLevel, tooltipPlacement],
   );
 
   const {targetRef: avatarRef, onHoverIn, onHoverOut} = useMeasuredTooltipHover(
@@ -117,6 +124,7 @@ export const KeyFaceSidebarItem = memo(
     prev.focusLevel === next.focusLevel &&
     prev.width === next.width &&
     prev.selected === next.selected &&
+    prev.tooltipPlacement === next.tooltipPlacement &&
     prev.imageSize === next.imageSize,
 );
 
