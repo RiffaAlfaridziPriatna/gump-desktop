@@ -26,8 +26,11 @@ type KeyFaceSidebarItemProps = {
   width: number;
   imageSize?: ImageDimensions | null;
   selected?: boolean;
+  /** Stable identity for press handling when using onFacePress. */
+  faceIndex?: number;
   tooltipPlacement?: FaceStatusTooltipPlacement;
   onPress?: () => void;
+  onFacePress?: (faceIndex: number) => void;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
 };
 
@@ -41,8 +44,10 @@ export const KeyFaceSidebarItem = memo(
     width,
     imageSize,
     selected = false,
+    faceIndex,
     tooltipPlacement = 'below',
     onPress,
+    onFacePress,
     onTooltipAnchorChange,
   }: KeyFaceSidebarItemProps) {
   const eyeMeta = getEyeStatusMeta(eyeStatus);
@@ -67,12 +72,24 @@ export const KeyFaceSidebarItem = memo(
     buildAnchor,
   );
 
+  const handlePress = useCallback(() => {
+    if (onPress) {
+      onPress();
+      return;
+    }
+    if (typeof faceIndex === 'number') {
+      onFacePress?.(faceIndex);
+    }
+  }, [faceIndex, onFacePress, onPress]);
+
   return (
     <Pressable
       style={[styles.container, {width, height: width}]}
-      onPress={onPress}
+      onPress={handlePress}
       onHoverIn={onHoverIn}
       onHoverOut={onHoverOut}
+      // Windows draws a square system focus visual on Pressable; selection
+      // already uses the circular accent ring.
       enableFocusRing={false}>
       <View style={[styles.root, {width, height: width}]}>
         <View
@@ -124,8 +141,12 @@ export const KeyFaceSidebarItem = memo(
     prev.focusLevel === next.focusLevel &&
     prev.width === next.width &&
     prev.selected === next.selected &&
+    prev.faceIndex === next.faceIndex &&
     prev.tooltipPlacement === next.tooltipPlacement &&
-    prev.imageSize === next.imageSize,
+    prev.imageSize === next.imageSize &&
+    prev.onPress === next.onPress &&
+    prev.onFacePress === next.onFacePress &&
+    prev.onTooltipAnchorChange === next.onTooltipAnchorChange,
 );
 
 const styles = StyleSheet.create({

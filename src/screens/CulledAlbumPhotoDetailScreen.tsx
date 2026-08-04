@@ -15,7 +15,7 @@ import {
 } from '@lib/ui/scrollAwareTooltip';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
-import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import {memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {useLayout} from '@hooks/useLayout';
 import {useImageDimensions} from '@hooks/useImageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
@@ -23,7 +23,9 @@ import {resolveDetailDisplayUri} from '@lib/storage/localStorage';
 import {Pressable, TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
-  ScrollView,
+  FlatList,
+  ListRenderItemInfo,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -34,15 +36,100 @@ import IconCheckCircleOutlined from '../assets/images/icon_check_circle_outlined
 import IconClose from '../assets/images/icon_close.svg';
 import IconStar from '../assets/images/icon_star.svg';
 import IconStarOutlined from '../assets/images/icon_star_outlined.svg';
+import {APIResponse} from '@services/api';
+import {ImageDimensions} from '@lib/media/imageDimensions';
 
 type Props = StackScreenProps<MainStackParamList, 'CulledAlbumPhotoDetail'>;
+
+type CullingFace = APIResponse.CullingFace;
 
 const KEY_FACE_ITEM_SIZE = 64;
 const KEY_FACE_COLUMN_COUNT = 4;
 const KEY_FACE_GAP = 24;
+const KEY_FACE_ROW_HEIGHT = KEY_FACE_ITEM_SIZE + KEY_FACE_GAP;
 const KEY_FACE_SIDEBAR_WIDTH =
   KEY_FACE_COLUMN_COUNT * KEY_FACE_ITEM_SIZE +
   (KEY_FACE_COLUMN_COUNT - 1) * KEY_FACE_GAP;
+
+type KeyFaceRow = {
+  key: string;
+  rowIndex: number;
+  startIndex: number;
+  faces: CullingFace[];
+};
+
+function buildKeyFaceRows(faces: CullingFace[]): KeyFaceRow[] {
+  const rows: KeyFaceRow[] = [];
+  for (let index = 0; index < faces.length; index += KEY_FACE_COLUMN_COUNT) {
+    const rowIndex = index / KEY_FACE_COLUMN_COUNT;
+    rows.push({
+      key: `row-${rowIndex}`,
+      rowIndex,
+      startIndex: index,
+      faces: faces.slice(index, index + KEY_FACE_COLUMN_COUNT),
+    });
+  }
+  return rows;
+}
+
+type KeyFaceGridRowProps = {
+  row: KeyFaceRow;
+  uri: string;
+  imageSize?: ImageDimensions | null;
+  zoomFaceIndex: number | null;
+  onFacePress: (index: number) => void;
+  onTooltipAnchorChange: (anchor: KeyFaceTooltipAnchor | null) => void;
+};
+
+const KeyFaceGridRow = memo(function KeyFaceGridRow({
+  row,
+  uri,
+  imageSize,
+  zoomFaceIndex,
+  onFacePress,
+  onTooltipAnchorChange,
+}: KeyFaceGridRowProps) {
+  return (
+    <View style={styles.keyFaceRow}>
+      {row.faces.map((face, offset) => {
+        const faceIndex = row.startIndex + offset;
+        return (
+          <KeyFaceSidebarItem
+            key={`face-${faceIndex}`}
+            uri={uri}
+            boundingBox={face.boundingBox}
+            eyeStatus={face.eyeStatus}
+            focusLevel={face.focusLevel}
+            width={KEY_FACE_ITEM_SIZE}
+            imageSize={imageSize}
+            selected={zoomFaceIndex === faceIndex}
+            faceIndex={faceIndex}
+            onFacePress={onFacePress}
+            onTooltipAnchorChange={onTooltipAnchorChange}
+          />
+        );
+      })}
+      {row.faces.length < KEY_FACE_COLUMN_COUNT
+        ? Array.from({
+            length: KEY_FACE_COLUMN_COUNT - row.faces.length,
+          }).map((_, fillerIndex) => (
+            <View
+              key={`filler-${row.rowIndex}-${fillerIndex}`}
+              style={styles.keyFaceFiller}
+            />
+          ))
+        : null}
+    </View>
+  );
+});
+
+function KeyFaceRowSeparator() {
+  return <View style={styles.keyFaceRowSeparator} />;
+}
+
+function KeyFaceItemSeparator() {
+  return <View style={styles.keyFaceItemSeparator} />;
+}
 
 export default function CulledAlbumPhotoDetailScreen({
   navigation,
@@ -179,6 +266,62 @@ export default function CulledAlbumPhotoDetailScreen({
     setZoomFaceIndex(current => (current === index ? null : index));
   }, []);
 
+  const keyFaceRows = useMemo(
+    () => (isMobileLayout ? [] : buildKeyFaceRows(faces)),
+    [faces, isMobileLayout],
+  );
+
+  const renderKeyFaceRow = useCallback(
+    ({item}: ListRenderItemInfo<KeyFaceRow>) => (
+      <KeyFaceGridRow
+        row={item}
+        uri={uri}
+        imageSize={imageSize}
+        zoomFaceIndex={zoomFaceIndex}
+        onFacePress={handleKeyFacePress}
+        onTooltipAnchorChange={handleTooltipChange}
+      />
+    ),
+    [handleKeyFacePress, handleTooltipChange, imageSize, uri, zoomFaceIndex],
+  );
+
+  const renderKeyFaceItem = useCallback(
+    ({item: face, index}: ListRenderItemInfo<CullingFace>) => (
+      <KeyFaceSidebarItem
+        uri={uri}
+        boundingBox={face.boundingBox}
+        eyeStatus={face.eyeStatus}
+        focusLevel={face.focusLevel}
+        width={KEY_FACE_ITEM_SIZE}
+        imageSize={imageSize}
+        selected={zoomFaceIndex === index}
+        faceIndex={index}
+        onFacePress={handleKeyFacePress}
+        onTooltipAnchorChange={handleTooltipChange}
+      />
+    ),
+    [handleKeyFacePress, handleTooltipChange, imageSize, uri, zoomFaceIndex],
+  );
+
+  const keyFaceRowKeyExtractor = useCallback(
+    (row: KeyFaceRow) => row.key,
+    [],
+  );
+
+  const keyFaceItemKeyExtractor = useCallback(
+    (_: CullingFace, index: number) => `face-${index}`,
+    [],
+  );
+
+  const getKeyFaceRowLayout = useCallback(
+    (_data: ArrayLike<KeyFaceRow> | null | undefined, index: number) => ({
+      length: KEY_FACE_ROW_HEIGHT,
+      offset: KEY_FACE_ROW_HEIGHT * index,
+      index,
+    }),
+    [],
+  );
+
   if (!photo || !analysis) {
     return (
       <UploadAwareModalShell {...shellProps}>
@@ -303,32 +446,38 @@ export default function CulledAlbumPhotoDetailScreen({
                 ]}>
                 <Text style={styles.sidebarTitle}>Key Faces ({faces.length})</Text>
                 {mainImageReady && imageSize ? (
-                  <ScrollView
-                    {...keyFaceScrollHandlers}
-                    horizontal={isMobileLayout}
-                    style={styles.keyFaceScroll}
-                    contentContainerStyle={[
-                      styles.keyFaceGrid,
-                      isMobileLayout && styles.keyFaceGridMobile,
-                    ]}
-                    showsVerticalScrollIndicator={!isMobileLayout}
-                    showsHorizontalScrollIndicator={isMobileLayout}
-                  >
-                    {faces.map((face, index) => (
-                      <KeyFaceSidebarItem
-                        key={`face-${index}`}
-                        uri={uri}
-                        boundingBox={face.boundingBox}
-                        eyeStatus={face.eyeStatus}
-                        focusLevel={face.focusLevel}
-                        width={KEY_FACE_ITEM_SIZE}
-                        imageSize={imageSize}
-                        selected={zoomFaceIndex === index}
-                        onPress={() => handleKeyFacePress(index)}
-                        onTooltipAnchorChange={handleTooltipChange}
-                      />
-                    ))}
-                  </ScrollView>
+                  isMobileLayout ? (
+                    <FlatList
+                      {...keyFaceScrollHandlers}
+                      data={faces}
+                      keyExtractor={keyFaceItemKeyExtractor}
+                      renderItem={renderKeyFaceItem}
+                      horizontal
+                      style={styles.keyFaceScroll}
+                      contentContainerStyle={styles.keyFaceGridMobile}
+                      showsHorizontalScrollIndicator
+                      initialNumToRender={6}
+                      maxToRenderPerBatch={6}
+                      windowSize={3}
+                      ItemSeparatorComponent={KeyFaceItemSeparator}
+                    />
+                  ) : (
+                    <FlatList
+                      {...keyFaceScrollHandlers}
+                      data={keyFaceRows}
+                      keyExtractor={keyFaceRowKeyExtractor}
+                      renderItem={renderKeyFaceRow}
+                      style={styles.keyFaceScroll}
+                      contentContainerStyle={styles.keyFaceGrid}
+                      showsVerticalScrollIndicator
+                      initialNumToRender={KEY_FACE_COLUMN_COUNT}
+                      maxToRenderPerBatch={KEY_FACE_COLUMN_COUNT}
+                      windowSize={5}
+                      removeClippedSubviews={Platform.OS !== 'windows'}
+                      getItemLayout={getKeyFaceRowLayout}
+                      ItemSeparatorComponent={KeyFaceRowSeparator}
+                    />
+                  )
                 ) : (
                   <View style={styles.keyFaceLoading}>
                     <ActivityIndicator size="small" color={colors.accent} />
@@ -493,17 +642,26 @@ const styles = StyleSheet.create({
   },
   keyFaceScroll: {
     flex: 1,
-    overflow: 'visible',
   },
   keyFaceGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: KEY_FACE_GAP,
-    overflow: 'visible',
+    paddingBottom: 8,
   },
   keyFaceGridMobile: {
-    flexWrap: 'nowrap',
     paddingRight: 0,
+  },
+  keyFaceRow: {
+    flexDirection: 'row',
+    gap: KEY_FACE_GAP,
+  },
+  keyFaceFiller: {
+    width: KEY_FACE_ITEM_SIZE,
+    height: KEY_FACE_ITEM_SIZE,
+  },
+  keyFaceItemSeparator: {
+    width: KEY_FACE_GAP,
+  },
+  keyFaceRowSeparator: {
+    height: KEY_FACE_GAP,
   },
   keyFaceLoading: {
     flex: 1,
