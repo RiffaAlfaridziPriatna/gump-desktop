@@ -1,6 +1,6 @@
 import {Platform} from 'react-native';
 
-export const SCRFD_OCEC_ENGINE_VERSION = 'scrfd-ocec-14';
+export const SCRFD_OCEC_ENGINE_VERSION = 'scrfd-ocec-15';
 export const WINDOWS_YUNET_ENGINE_VERSION = 'windows-yunet-1';
 export const WINDOWS_YUNET_OCEC_ENGINE_VERSION = 'windows-yunet-ocec-2';
 export const MACOS_VISION_ENGINE_VERSION = 'macos-vision-1';

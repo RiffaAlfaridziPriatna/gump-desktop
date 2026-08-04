@@ -13,6 +13,11 @@ struct GumpLocalStorage {
       std::string uri,
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
 
+  REACT_METHOD(AnalyzePhotoForCulling, L"analyzePhotoForCulling");
+  void AnalyzePhotoForCulling(
+      std::string uri,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
   REACT_METHOD(CopyPhoto, L"copyPhoto");
   void CopyPhoto(
       std::string albumId,

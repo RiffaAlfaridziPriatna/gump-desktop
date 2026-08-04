@@ -39,6 +39,12 @@
     <ClInclude Include="..\..\cpp\face-detection\FaceDetectionPipeline.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\cpp\face-detection\DifferenceHash.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cpp\face-detection\ExifDateTime.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="GumpDesktop.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -66,6 +72,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\cpp\face-detection\FaceDetectionPipeline.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\face-detection\DifferenceHash.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\face-detection\ExifDateTime.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GumpDesktop.cpp">

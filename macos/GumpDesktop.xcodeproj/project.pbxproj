@@ -27,6 +27,8 @@
 		D1A2C3D40123456700000003 /* FaceDetectionPipeline.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000003 /* FaceDetectionPipeline.cpp */; };
 		D1A2C3D40123456700000004 /* Landmark106EarClassifier.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000007 /* Landmark106EarClassifier.cpp */; };
 		D1A2C3D40123456700000005 /* FaceLabeling.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000009 /* FaceLabeling.cpp */; };
+		D1A2C3D40123456700000006 /* DifferenceHash.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000014 /* DifferenceHash.cpp */; };
+		D1A2C3D40123456700000007 /* ExifDateTime.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000016 /* ExifDateTime.cpp */; };
 		D1A2C3D40123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx */; };
 		D1A2C3D40123456700000011 /* eye_state_ocec_s.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000011 /* eye_state_ocec_s.onnx */; };
 		D1A2C3D40123456700000012 /* face_landmarks_2d106det.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */; };
@@ -65,6 +67,10 @@
 		D1A2C3D41123456700000007 /* Landmark106EarClassifier.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Landmark106EarClassifier.cpp; path = "../cpp/face-detection/Landmark106EarClassifier.cpp"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000009 /* FaceLabeling.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = FaceLabeling.cpp; path = "../cpp/face-detection/FaceLabeling.cpp"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D4112345670000000A /* FaceLabeling.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FaceLabeling.h; path = "../cpp/face-detection/FaceLabeling.h"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000014 /* DifferenceHash.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = DifferenceHash.cpp; path = "../cpp/face-detection/DifferenceHash.cpp"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000015 /* DifferenceHash.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DifferenceHash.h; path = "../cpp/face-detection/DifferenceHash.h"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000016 /* ExifDateTime.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ExifDateTime.cpp; path = "../cpp/face-detection/ExifDateTime.cpp"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000017 /* ExifDateTime.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ExifDateTime.h; path = "../cpp/face-detection/ExifDateTime.h"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000004 /* ScrfdFaceDetector.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ScrfdFaceDetector.h; path = "../cpp/face-detection/ScrfdFaceDetector.h"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000005 /* OcecEyeStateClassifier.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OcecEyeStateClassifier.h; path = "../cpp/face-detection/OcecEyeStateClassifier.h"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000006 /* FaceDetectionPipeline.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FaceDetectionPipeline.h; path = "../cpp/face-detection/FaceDetectionPipeline.h"; sourceTree = SOURCE_ROOT; };
@@ -204,6 +210,10 @@
 				D1A2C3D41123456700000009 /* FaceLabeling.cpp */,
 				D1A2C3D41123456700000006 /* FaceDetectionPipeline.h */,
 				D1A2C3D41123456700000003 /* FaceDetectionPipeline.cpp */,
+				D1A2C3D41123456700000015 /* DifferenceHash.h */,
+				D1A2C3D41123456700000014 /* DifferenceHash.cpp */,
+				D1A2C3D41123456700000017 /* ExifDateTime.h */,
+				D1A2C3D41123456700000016 /* ExifDateTime.cpp */,
 			);
 			name = FaceDetection;
 			sourceTree = "<group>";
@@ -443,6 +453,8 @@
 				D1A2C3D40123456700000004 /* Landmark106EarClassifier.cpp in Sources */,
 				D1A2C3D40123456700000005 /* FaceLabeling.cpp in Sources */,
 				D1A2C3D40123456700000003 /* FaceDetectionPipeline.cpp in Sources */,
+				D1A2C3D40123456700000006 /* DifferenceHash.cpp in Sources */,
+				D1A2C3D40123456700000007 /* ExifDateTime.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

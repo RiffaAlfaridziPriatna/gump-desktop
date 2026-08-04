@@ -25,6 +25,7 @@ describe('analysisEngine', () => {
     expect(needsReanalysisForEngine('scrfd-ocec-5')).toBe(true);
     expect(needsReanalysisForEngine('scrfd-ocec-6')).toBe(true);
     expect(needsReanalysisForEngine('scrfd-ocec-7')).toBe(true);
+    expect(needsReanalysisForEngine('scrfd-ocec-14')).toBe(true);
     expect(needsReanalysisForEngine(SCRFD_OCEC_ENGINE_VERSION)).toBe(false);
   });
 });

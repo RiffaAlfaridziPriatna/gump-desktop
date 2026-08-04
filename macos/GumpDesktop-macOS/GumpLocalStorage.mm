@@ -5,13 +5,21 @@
 #import <ImageIO/ImageIO.h>
 #import <Vision/Vision.h>
 
+#include "DifferenceHash.h"
+#include "ExifDateTime.h"
+
+#include <string>
+
 @implementation GumpLocalStorage
 
 RCT_EXPORT_MODULE();
 
 static const NSUInteger THUMBNAIL_MAX_PIXEL_SIZE = 1920;
-static const NSUInteger kGumpAnalysisMaxPixelSize = 4096;
-static const NSUInteger kGumpScrfdAnalysisMaxPixelSize = 4096;
+// Keep in lockstep with FaceDetection::kAnalysisMaxPixelSize and Windows.
+static const NSUInteger kGumpAnalysisMaxPixelSize =
+    (NSUInteger)FaceDetection::kAnalysisMaxPixelSize;
+static const NSUInteger kGumpScrfdAnalysisMaxPixelSize =
+    (NSUInteger)FaceDetection::kAnalysisMaxPixelSize;
 static const CGFloat kFaceCropSidePadding = 0.3;
 static const CGFloat kFaceCropTopPadding = 0.3;
 static const CGFloat kFaceCropBottomPadding = 0.5;
@@ -1750,6 +1758,8 @@ static const CGFloat kGumpEyeConfidenceThreshold = 85.0f;
     return @[];
   }
 
+  // Opt-in only. Production parity with Windows requires SCRFD+OCEC — never
+  // silently fall back to Apple Vision when SCRFD fails to load.
   if ([self shouldUseVisionFaceEngine]) {
     NSLog(@"[GumpLocalStorage] face engine=vision (GUMP_FACE_ENGINE)");
     return [self facesFromCGImageUsingVision:cgImage];
@@ -1761,9 +1771,9 @@ static const CGFloat kGumpEyeConfidenceThreshold = 85.0f;
     return faces;
   }
 
-  NSLog(@"[GumpLocalStorage] SCRFD unavailable (%@) — falling back to Vision",
+  NSLog(@"[GumpLocalStorage] SCRFD unavailable (%@) — returning no faces (no Vision fallback)",
         [GumpSharedFaceDetection lastError]);
-  return [self facesFromCGImageUsingVision:cgImage];
+  return @[];
 }
 
 - (NSDictionary *)analyzePhotoPayloadFromPath:(NSString *)path
@@ -1774,13 +1784,25 @@ static const CGFloat kGumpEyeConfidenceThreshold = 85.0f;
     return nil;
   }
 
-  NSString *perceptualHash = [self differenceHashHexFromCGImage:cgImage];
   NSNumber *capturedAt = [self captureTimestampMillisFromPath:path];
-  NSArray *faces = [self facesFromCGImage:cgImage];
+  NSArray *faces = nil;
+  NSString *perceptualHash = nil;
+
+  if ([self shouldUseVisionFaceEngine]) {
+    // Debug escape hatch only — hash still uses shared C++ dHash for consistency.
+    faces = [self facesFromCGImageUsingVision:cgImage];
+    perceptualHash = [GumpSharedFaceDetection perceptualHashFromCGImage:cgImage];
+  } else {
+    NSDictionary *analyzed = [GumpSharedFaceDetection analyzeCGImage:cgImage];
+    faces = analyzed[@"faces"];
+    id hashValue = analyzed[@"perceptualHash"];
+    perceptualHash = [hashValue isKindOfClass:[NSString class]] ? hashValue : nil;
+    NSLog(@"[GumpLocalStorage] face engine=scrfd faces=%lu", (unsigned long)faces.count);
+  }
   CGImageRelease(cgImage);
 
   return @{
-    @"faces" : faces,
+    @"faces" : faces ?: @[],
     @"perceptualHash" : perceptualHash ?: [NSNull null],
     @"capturedAt" : capturedAt ?: [NSNull null],
   };
@@ -2655,54 +2677,25 @@ RCT_EXPORT_METHOD(deleteAlbum:(NSString *)albumId
     return nil;
   }
 
-  NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-  formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
-  formatter.timeZone = [NSTimeZone localTimeZone];
-  formatter.dateFormat = @"yyyy:MM:dd HH:mm:ss";
-  NSDate *date = [formatter dateFromString:dateString];
-  if (date == nil) {
+  // EXIF DateTime has no timezone — interpret as UTC on both platforms.
+  const auto millis = FaceDetection::parseExifDateTimeToUnixMillisUtc(
+      std::string(dateString.UTF8String));
+  if (!millis.has_value()) {
     return nil;
   }
-
-  return @((long long)([date timeIntervalSince1970] * 1000.0));
+  return @((long long)*millis);
 }
 
 - (NSString *)differenceHashHexFromCGImage:(CGImageRef)image
 {
-  if (image == NULL) {
-    return nil;
-  }
-
-  uint8_t pixels[72];
-  CGColorSpaceRef grayColorSpace = CGColorSpaceCreateDeviceGray();
-  CGContextRef context = CGBitmapContextCreate(pixels, 9, 8, 8, 9, grayColorSpace, kCGImageAlphaNone);
-  if (context == NULL) {
-    CGColorSpaceRelease(grayColorSpace);
-    return nil;
-  }
-  CGContextSetInterpolationQuality(context, kCGInterpolationLow);
-  CGContextTranslateCTM(context, 0, 8);
-  CGContextScaleCTM(context, 1.0, -1.0);
-  CGContextDrawImage(context, CGRectMake(0, 0, 9, 8), image);
-  CGContextRelease(context);
-  CGColorSpaceRelease(grayColorSpace);
-
-  uint64_t hash = 0;
-  int bit = 0;
-  for (int y = 0; y < 8; y++) {
-    for (int x = 0; x < 8; x++) {
-      if (pixels[y * 9 + x] > pixels[y * 9 + x + 1]) {
-        hash |= (1ULL << (63 - bit));
-      }
-      bit++;
-    }
-  }
-  return [NSString stringWithFormat:@"%016llx", hash];
+  return [GumpSharedFaceDetection perceptualHashFromCGImage:image];
 }
 
 - (NSString *)differenceHashHexFromPath:(NSString *)path
 {
-  CGImageRef image = [self orientedCGImageFromPath:path maxPixelSize:256];
+  // Same analysis max size as face detect / unified analyze (not 256 / thumbs).
+  CGImageRef image =
+      [self orientedCGImageFromPath:path maxPixelSize:kGumpScrfdAnalysisMaxPixelSize];
   if (image == NULL) {
     return nil;
   }

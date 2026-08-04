@@ -109,6 +109,8 @@
     <ClInclude Include="..\..\cpp\face-detection\Landmark106EarClassifier.h" />
     <ClInclude Include="..\..\cpp\face-detection\FaceDetectionPipeline.h" />
     <ClInclude Include="..\..\cpp\face-detection\FaceLabeling.h" />
+    <ClInclude Include="..\..\cpp\face-detection\DifferenceHash.h" />
+    <ClInclude Include="..\..\cpp\face-detection\ExifDateTime.h" />
     <ClInclude Include="GumpDesktop.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="AutolinkedNativeModules.g.h" />
@@ -132,6 +134,12 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\..\cpp\face-detection\FaceDetectionPipeline.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\face-detection\DifferenceHash.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\face-detection\ExifDateTime.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="AutolinkedNativeModules.g.cpp" />

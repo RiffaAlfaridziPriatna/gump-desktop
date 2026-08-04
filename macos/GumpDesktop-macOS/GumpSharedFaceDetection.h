@@ -19,6 +19,13 @@ NS_ASSUME_NONNULL_BEGIN
 /// Detect faces in an oriented CGImage (BGRA conversion happens internally).
 + (NSArray<NSDictionary *> *)facesFromCGImage:(CGImageRef)cgImage;
 
+/// Detect faces + perceptual hash from one BGRA conversion of the analysis image.
+/// Keys: `faces` (NSArray), `perceptualHash` (NSString or NSNull).
++ (NSDictionary *)analyzeCGImage:(CGImageRef)cgImage;
+
+/// Difference-hash hex from a CGImage via the shared C++ dHash (BGRA path).
++ (nullable NSString *)perceptualHashFromCGImage:(CGImageRef)cgImage;
+
 @end
 
 NS_ASSUME_NONNULL_END

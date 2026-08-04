@@ -1,5 +1,6 @@
 #import "GumpSharedFaceDetection.h"
 
+#include "DifferenceHash.h"
 #include "FaceDetectionPipeline.h"
 
 #include <mutex>
@@ -54,6 +55,9 @@ FaceDetection::FaceDetectionPipeline &SharedPipeline() {
   return pipeline;
 }
 
+/// Copy CGImage to BGRA without color-space conversion when possible.
+/// Uses the image's own color space so encoded channel values stay close to
+/// Windows `DoNotColorManage` decode (parity for SCRFD + dHash).
 bool CopyCGImageToBgra(
     CGImageRef image,
     std::vector<uint8_t> &outBgra,
@@ -75,7 +79,14 @@ bool CopyCGImageToBgra(
   outHeight = static_cast<int>(height);
   outStride = static_cast<int>(stride);
 
-  CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+  CGColorSpaceRef imageColorSpace = CGImageGetColorSpace(image);
+  bool releaseColorSpace = false;
+  CGColorSpaceRef colorSpace = imageColorSpace;
+  if (colorSpace == nullptr) {
+    colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    releaseColorSpace = true;
+  }
+
   CGContextRef context = CGBitmapContextCreate(
       outBgra.data(),
       width,
@@ -84,10 +95,14 @@ bool CopyCGImageToBgra(
       stride,
       colorSpace,
       kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
-  CGColorSpaceRelease(colorSpace);
+  if (releaseColorSpace) {
+    CGColorSpaceRelease(colorSpace);
+  }
   if (context == nullptr) {
     return false;
   }
+  // Disable interpolation so resize already done by ImageIO is preserved 1:1.
+  CGContextSetInterpolationQuality(context, kCGInterpolationNone);
   CGContextDrawImage(context, CGRectMake(0, 0, width, height), image);
   CGContextRelease(context);
   return true;
@@ -132,6 +147,16 @@ NSDictionary *FaceDictionaryFromResult(const FaceDetection::FaceResult &face) {
   };
 }
 
+NSString *HashHexFromBgra(const std::vector<uint8_t> &bgra, int width, int height, int stride) {
+  const auto hash =
+      FaceDetection::differenceHashFromBgra(bgra.data(), width, height, stride);
+  if (!hash.has_value()) {
+    return nil;
+  }
+  const std::string hex = FaceDetection::formatHashHex(*hash);
+  return [NSString stringWithUTF8String:hex.c_str()];
+}
+
 } // namespace
 
 @implementation GumpSharedFaceDetection
@@ -166,6 +191,50 @@ NSDictionary *FaceDictionaryFromResult(const FaceDetection::FaceResult &face) {
     [result addObject:FaceDictionaryFromResult(face)];
   }
   return result;
+}
+
++ (NSDictionary *)analyzeCGImage:(CGImageRef)cgImage {
+  std::vector<uint8_t> bgra;
+  int width = 0;
+  int height = 0;
+  int stride = 0;
+  if (!CopyCGImageToBgra(cgImage, bgra, width, height, stride)) {
+    return @{
+      @"faces" : @[],
+      @"perceptualHash" : [NSNull null],
+    };
+  }
+
+  NSString *perceptualHash = HashHexFromBgra(bgra, width, height, stride);
+  NSArray *faces = @[];
+  auto &pipeline = SharedPipeline();
+  if (pipeline.isReady()) {
+    const auto detected = pipeline.detectFaces(bgra.data(), width, height, stride);
+    NSMutableArray *mapped = [NSMutableArray arrayWithCapacity:detected.size()];
+    for (const auto &face : detected) {
+      [mapped addObject:FaceDictionaryFromResult(face)];
+    }
+    faces = mapped;
+  } else {
+    NSLog(@"[GumpSharedFaceDetection] analyze: SCRFD not ready (%s)",
+          pipeline.lastError().c_str());
+  }
+
+  return @{
+    @"faces" : faces,
+    @"perceptualHash" : perceptualHash ?: [NSNull null],
+  };
+}
+
++ (NSString *)perceptualHashFromCGImage:(CGImageRef)cgImage {
+  std::vector<uint8_t> bgra;
+  int width = 0;
+  int height = 0;
+  int stride = 0;
+  if (!CopyCGImageToBgra(cgImage, bgra, width, height, stride)) {
+    return nil;
+  }
+  return HashHexFromBgra(bgra, width, height, stride);
 }
 
 @end

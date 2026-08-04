@@ -1,5 +1,7 @@
 #include "pch.h"
 #include "GumpLocalStorage.h"
+#include "DifferenceHash.h"
+#include "ExifDateTime.h"
 #include "FaceDetectionPipeline.h"
 
 #include <ShlObj.h>
@@ -44,8 +46,9 @@ using ReactPromiseJS = winrtRN::ReactPromise<winrtRN::JSValue>;
 constexpr uint32_t kThumbnailMaxPixelSize = 768;
 constexpr float kThumbnailJpegQuality = 0.80f;
 constexpr int kThumbnailMaxConcurrent = 4;
-constexpr uint32_t kFaceDetectMaxPixelSize = 4096;
-constexpr uint32_t kPerceptualHashMaxPixelSize = 256;
+constexpr uint32_t kFaceDetectMaxPixelSize = FaceDetection::kAnalysisMaxPixelSize;
+// Standalone / unified hash uses the same analysis-sized buffer as face detect.
+constexpr uint32_t kPerceptualHashMaxPixelSize = FaceDetection::kAnalysisMaxPixelSize;
 constexpr uint32_t kFaceCropSourceMaxPixelSize = 1600;
 constexpr float kFaceCropSidePadding = 0.3f;
 constexpr float kFaceCropTopPadding = 0.3f;
@@ -359,18 +362,6 @@ bool IsReusableThumbnailFile(const std::filesystem::path &thumbPath) {
   }
 }
 
-std::optional<std::filesystem::path> SiblingThumbnailPath(const std::filesystem::path &photoPath) {
-  if (photoPath.empty()) {
-    return std::nullopt;
-  }
-  const auto thumbPath =
-      photoPath.parent_path() / L"thumbs" / (photoPath.stem().wstring() + L".w2.jpg");
-  if (!IsReusableThumbnailFile(thumbPath)) {
-    return std::nullopt;
-  }
-  return thumbPath;
-}
-
 std::optional<std::filesystem::path> GenerateThumbnailAtPath(
     const std::filesystem::path &sourcePath,
     std::string_view albumId,
@@ -484,14 +475,65 @@ int64_t ToUnixMillis(winrt::Windows::Foundation::DateTime const &value) {
   return (value.time_since_epoch().count() - 116444736000000000LL) / 10000LL;
 }
 
+std::optional<std::string> ReadExifDateTimeString(const BitmapDecoder &decoder) {
+  static constexpr wchar_t const *kCandidateKeys[] = {
+      L"/app1/ifd/exif/{ushort=36867}", // DateTimeOriginal
+      L"/app1/ifd/exif/{ushort=36868}", // DateTimeDigitized
+      L"/app1/ifd/{ushort=306}",        // DateTime
+  };
+
+  try {
+    auto keys = winrt::single_threaded_vector<winrt::hstring>();
+    for (const auto *key : kCandidateKeys) {
+      keys.Append(key);
+    }
+    const auto props =
+        decoder.BitmapProperties().GetPropertiesAsync(keys.GetView()).get();
+    for (const auto *key : kCandidateKeys) {
+      const winrt::hstring lookupKey{key};
+      if (!props.HasKey(lookupKey)) {
+        continue;
+      }
+      const BitmapTypedValue typed = props.Lookup(lookupKey);
+      if (typed.Type() != winrt::Windows::Foundation::PropertyType::String) {
+        continue;
+      }
+      const auto dateStr = winrt::unbox_value<winrt::hstring>(typed.Value());
+      if (!dateStr.empty()) {
+        return ToUtf8(dateStr);
+      }
+    }
+  } catch (...) {
+    // Fall through — some formats expose DateTaken only.
+  }
+  return std::nullopt;
+}
+
 std::optional<double> ReadCaptureTimestampMillis(const std::filesystem::path &path) {
-  const auto file = GetStorageFileFromPath(path);
-  const auto properties = file.Properties().GetImagePropertiesAsync().get();
-  const auto dateTaken = properties.DateTaken();
-  if (dateTaken == winrt::Windows::Foundation::DateTime{}) {
+  try {
+    const auto file = GetStorageFileFromPath(path);
+    const auto stream = file.OpenAsync(FileAccessMode::Read).get();
+    const auto decoder = BitmapDecoder::CreateAsync(stream).get();
+    if (const auto exif = ReadExifDateTimeString(decoder)) {
+      if (const auto millis = FaceDetection::parseExifDateTimeToUnixMillisUtc(*exif)) {
+        return static_cast<double>(*millis);
+      }
+    }
+  } catch (...) {
+    // Fall through to ImageProperties.DateTaken.
+  }
+
+  try {
+    const auto file = GetStorageFileFromPath(path);
+    const auto properties = file.Properties().GetImagePropertiesAsync().get();
+    const auto dateTaken = properties.DateTaken();
+    if (dateTaken == winrt::Windows::Foundation::DateTime{}) {
+      return std::nullopt;
+    }
+    return static_cast<double>(ToUnixMillis(dateTaken));
+  } catch (...) {
     return std::nullopt;
   }
-  return static_cast<double>(ToUnixMillis(dateTaken));
 }
 
 std::filesystem::path ModuleDirectory() {
@@ -632,46 +674,21 @@ BitmapPixels ReadBitmapPixels(const SoftwareBitmap &bitmap) {
   return result;
 }
 
+std::optional<uint64_t> ComputeDifferenceHashFromPixels(const BitmapPixels &pixels) {
+  return FaceDetection::differenceHashFromBgra(
+      pixels.bytes.data(), pixels.width, pixels.height, pixels.stride);
+}
+
 std::optional<uint64_t> ComputeDifferenceHash(const std::filesystem::path &path) {
-  const auto hashPath = SiblingThumbnailPath(path).value_or(path);
-  const auto bitmap = LoadSoftwareBitmapScaled(hashPath, kPerceptualHashMaxPixelSize);
+  // Hash the analysis-sized original — never the UI thumbnail — so Windows
+  // matches macOS unified analyze / standalone computePerceptualHash.
+  const auto bitmap = LoadSoftwareBitmapScaled(path, kPerceptualHashMaxPixelSize);
   const auto pixels = ReadBitmapPixels(bitmap);
-  const int srcWidth = pixels.width;
-  const int srcHeight = pixels.height;
-  if (srcWidth <= 0 || srcHeight <= 0) {
-    return std::nullopt;
-  }
-
-  uint8_t gray[72]{};
-  for (int y = 0; y < 8; ++y) {
-    for (int x = 0; x < 9; ++x) {
-      const double sourceX = (x + 0.5) * srcWidth / 9.0 - 0.5;
-      const double sourceY = (y + 0.5) * srcHeight / 8.0 - 0.5;
-      const int pixelX = std::clamp(static_cast<int>(std::round(sourceX)), 0, srcWidth - 1);
-      const int pixelY = std::clamp(static_cast<int>(std::round(sourceY)), 0, srcHeight - 1);
-      const int index = pixelY * pixels.stride + pixelX * 4;
-      gray[y * 9 + x] = static_cast<uint8_t>(
-          pixels.bytes[index] * 0.114 + pixels.bytes[index + 1] * 0.587 + pixels.bytes[index + 2] * 0.299);
-    }
-  }
-
-  uint64_t hash = 0;
-  int bit = 0;
-  for (int y = 0; y < 8; ++y) {
-    for (int x = 0; x < 8; ++x) {
-      if (gray[y * 9 + x] > gray[y * 9 + x + 1]) {
-        hash |= (1ULL << (63 - bit));
-      }
-      ++bit;
-    }
-  }
-  return hash;
+  return ComputeDifferenceHashFromPixels(pixels);
 }
 
 std::string FormatHashHex(uint64_t hash) {
-  char buffer[17]{};
-  std::snprintf(buffer, sizeof(buffer), "%016llx", static_cast<unsigned long long>(hash));
-  return buffer;
+  return FaceDetection::formatHashHex(hash);
 }
 
 SoftwareBitmap CropSoftwareBitmap(
@@ -795,60 +812,87 @@ winrtRN::JSValue GenerateFaceCropsAtPath(
   return winrtRN::JSValueObject{{"cropUris", std::move(cropUris)}};
 }
 
+winrtRN::JSValueObject FaceToJsObject(const FaceDetection::FaceResult &face) {
+  winrtRN::JSValueArray landmarks;
+  for (const auto &lm : face.landmarks) {
+    landmarks.push_back(winrtRN::JSValueObject{
+        {"type", lm.type},
+        {"x", static_cast<double>(lm.x)},
+        {"y", static_cast<double>(lm.y)},
+    });
+  }
+
+  return winrtRN::JSValueObject{
+      {"boundingBox",
+       winrtRN::JSValueObject{
+           {"left", static_cast<double>(face.left)},
+           {"top", static_cast<double>(face.top)},
+           {"width", static_cast<double>(face.width)},
+           {"height", static_cast<double>(face.height)},
+       }},
+      {"eyesOpen",
+       winrtRN::JSValueObject{
+           {"value", face.eyesOpen.value},
+           {"confidence", static_cast<double>(face.eyesOpen.confidence)},
+           {"leftProbability", static_cast<double>(face.eyesOpen.leftProbability)},
+           {"rightProbability", static_cast<double>(face.eyesOpen.rightProbability)},
+       }},
+      {"eyeStatus", face.eyeStatus},
+      {"focusLevel", face.focusLevel},
+      {"sharpness", static_cast<double>(face.sharpness)},
+      {"brightness", static_cast<double>(face.brightness)},
+      {"confidence", static_cast<double>(face.confidence)},
+      {"landmarks", std::move(landmarks)},
+      {"pose",
+       winrtRN::JSValueObject{
+           {"pitch", static_cast<double>(face.pose.pitch)},
+           {"roll", static_cast<double>(face.pose.roll)},
+           {"yaw", static_cast<double>(face.pose.yaw)},
+       }},
+      {"faceId", face.faceId},
+      {"engine", face.engine},
+  };
+}
+
+winrtRN::JSValueArray DetectFacesFromPixels(const BitmapPixels &pixels) {
+  auto &pipeline = SharedFacePipeline();
+  auto faces = pipeline.detectFaces(
+      pixels.bytes.data(), pixels.width, pixels.height, pixels.stride);
+
+  winrtRN::JSValueArray result;
+  result.reserve(faces.size());
+  for (const auto &face : faces) {
+    result.push_back(FaceToJsObject(face));
+  }
+  return result;
+}
+
 winrtRN::JSValueArray DetectFaces(const std::filesystem::path &path) {
   const auto bitmap = LoadSoftwareBitmapScaled(path, kFaceDetectMaxPixelSize);
   const auto pixels = ReadBitmapPixels(bitmap);
-  const int imageWidth = pixels.width;
-  const int imageHeight = pixels.height;
-  const int stride = pixels.stride;
-  const uint8_t *pixelData = pixels.bytes.data();
+  return DetectFacesFromPixels(pixels);
+}
 
-  auto &pipeline = SharedFacePipeline();
-  auto faces = pipeline.detectFaces(pixelData, imageWidth, imageHeight, stride);
+winrtRN::JSValueObject AnalyzePhotoPayload(const std::filesystem::path &path) {
+  const auto bitmap = LoadSoftwareBitmapScaled(path, kFaceDetectMaxPixelSize);
+  const auto pixels = ReadBitmapPixels(bitmap);
 
-  winrtRN::JSValueArray result;
-  for (const auto &face : faces) {
-    winrtRN::JSValueArray landmarks;
-    for (const auto &lm : face.landmarks) {
-      landmarks.push_back(winrtRN::JSValueObject{
-          {"type", lm.type},
-          {"x", static_cast<double>(lm.x)},
-          {"y", static_cast<double>(lm.y)},
-      });
-    }
-
-    result.push_back(winrtRN::JSValueObject{
-        {"boundingBox",
-         winrtRN::JSValueObject{
-             {"left", static_cast<double>(face.left)},
-             {"top", static_cast<double>(face.top)},
-             {"width", static_cast<double>(face.width)},
-             {"height", static_cast<double>(face.height)},
-         }},
-        {"eyesOpen",
-         winrtRN::JSValueObject{
-             {"value", face.eyesOpen.value},
-             {"confidence", static_cast<double>(face.eyesOpen.confidence)},
-             {"leftProbability", static_cast<double>(face.eyesOpen.leftProbability)},
-             {"rightProbability", static_cast<double>(face.eyesOpen.rightProbability)},
-         }},
-        {"eyeStatus", face.eyeStatus},
-        {"focusLevel", face.focusLevel},
-        {"sharpness", static_cast<double>(face.sharpness)},
-        {"brightness", static_cast<double>(face.brightness)},
-        {"confidence", static_cast<double>(face.confidence)},
-        {"landmarks", std::move(landmarks)},
-        {"pose",
-         winrtRN::JSValueObject{
-             {"pitch", static_cast<double>(face.pose.pitch)},
-             {"roll", static_cast<double>(face.pose.roll)},
-             {"yaw", static_cast<double>(face.pose.yaw)},
-         }},
-        {"faceId", face.faceId},
-        {"engine", face.engine},
-    });
+  auto faces = DetectFacesFromPixels(pixels);
+  winrtRN::JSValue perceptualHash = nullptr;
+  if (const auto hash = ComputeDifferenceHashFromPixels(pixels)) {
+    perceptualHash = FormatHashHex(*hash);
   }
-  return result;
+
+  winrtRN::JSValue capturedAt = nullptr;
+  if (const auto timestamp = ReadCaptureTimestampMillis(path)) {
+    capturedAt = *timestamp;
+  }
+
+  return winrtRN::JSValueObject{
+      {"faces", std::move(faces)},
+      {"perceptualHash", std::move(perceptualHash)},
+      {"capturedAt", std::move(capturedAt)},
+  };
 }
 
 template <typename Work>
@@ -896,6 +940,18 @@ void GumpLocalStorage::DetectFacesForCulling(std::string uri, ReactPromiseJS &&p
         }
         auto faces = DetectFaces(path);
         return winrtRN::JSValue(std::move(faces));
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::AnalyzePhotoForCulling(std::string uri, ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [uri = std::move(uri)]() {
+        const auto path = PathFromUri(uri);
+        if (path.empty() || !std::filesystem::exists(path)) {
+          throw std::runtime_error("Photo file not found");
+        }
+        return winrtRN::JSValue(AnalyzePhotoPayload(path));
       },
       std::move(promise));
 }
