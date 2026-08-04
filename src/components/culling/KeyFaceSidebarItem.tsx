@@ -26,11 +26,8 @@ type KeyFaceSidebarItemProps = {
   width: number;
   imageSize?: ImageDimensions | null;
   selected?: boolean;
-  /** Stable identity for press handling when using onFacePress. */
-  faceIndex?: number;
   tooltipPlacement?: FaceStatusTooltipPlacement;
   onPress?: () => void;
-  onFacePress?: (faceIndex: number) => void;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
 };
 
@@ -44,94 +41,80 @@ export const KeyFaceSidebarItem = memo(
     width,
     imageSize,
     selected = false,
-    faceIndex,
     tooltipPlacement = 'below',
     onPress,
-    onFacePress,
     onTooltipAnchorChange,
   }: KeyFaceSidebarItemProps) {
-  const eyeMeta = getEyeStatusMeta(eyeStatus);
-  const focusMeta = getFocusStatusMeta(focusLevel);
-  const hasCrop = Boolean(cropUri);
-  const hasTransformCrop = Boolean(uri && boundingBox);
+    const eyeMeta = getEyeStatusMeta(eyeStatus);
+    const focusMeta = getFocusStatusMeta(focusLevel);
+    const hasCrop = Boolean(cropUri);
+    const hasTransformCrop = Boolean(uri && boundingBox);
 
-  const buildAnchor = useCallback(
-    (x: number, y: number, measuredWidth: number, measuredHeight: number) => ({
-      centerX: x + measuredWidth / 2,
-      topY: y,
-      bottomY: y + measuredHeight,
-      placement: tooltipPlacement,
-      eyeMeta: getEyeStatusMeta(eyeStatus),
-      focusMeta: getFocusStatusMeta(focusLevel),
-    }),
-    [eyeStatus, focusLevel, tooltipPlacement],
-  );
+    const buildAnchor = useCallback(
+      (x: number, y: number, measuredWidth: number, measuredHeight: number) => ({
+        centerX: x + measuredWidth / 2,
+        topY: y,
+        bottomY: y + measuredHeight,
+        placement: tooltipPlacement,
+        eyeMeta: getEyeStatusMeta(eyeStatus),
+        focusMeta: getFocusStatusMeta(focusLevel),
+      }),
+      [eyeStatus, focusLevel, tooltipPlacement],
+    );
 
-  const {targetRef: avatarRef, onHoverIn, onHoverOut} = useMeasuredTooltipHover(
-    onTooltipAnchorChange,
-    buildAnchor,
-  );
+    const {targetRef: avatarRef, onHoverIn, onHoverOut} =
+      useMeasuredTooltipHover(onTooltipAnchorChange, buildAnchor);
 
-  const handlePress = useCallback(() => {
-    if (onPress) {
-      onPress();
-      return;
-    }
-    if (typeof faceIndex === 'number') {
-      onFacePress?.(faceIndex);
-    }
-  }, [faceIndex, onFacePress, onPress]);
-
-  return (
-    <Pressable
-      style={[styles.container, {width, height: width}]}
-      onPress={handlePress}
-      onHoverIn={onHoverIn}
-      onHoverOut={onHoverOut}
-      // Windows draws a square system focus visual on Pressable; selection
-      // already uses the circular accent ring.
-      enableFocusRing={false}>
-      <View style={[styles.root, {width, height: width}]}>
-        <View
-          ref={avatarRef}
-          style={[styles.avatarWrap, {width, height: width}]}>
-          {hasCrop ? (
-            <FaceCropAvatar cropUri={cropUri} size={width} />
-          ) : hasTransformCrop ? (
-            <FaceCropAvatar
-              uri={uri}
-              boundingBox={boundingBox}
-              size={width}
-              imageSize={imageSize}
-            />
-          ) : (
-            <View
-              style={[
-                styles.placeholder,
-                {width, height: width, borderRadius: width / 2},
-              ]}>
-              <ActivityIndicator size="small" color={colors.accent} />
-            </View>
-          )}
-        </View>
-
-        {selected ? (
+    return (
+      <Pressable
+        style={[styles.container, {width, height: width}]}
+        onPress={onPress}
+        onHoverIn={onHoverIn}
+        onHoverOut={onHoverOut}
+        // Windows draws a square system focus visual on Pressable; selection
+        // already uses the circular accent ring.
+        enableFocusRing={false}>
+        <View style={[styles.root, {width, height: width}]}>
           <View
-            pointerEvents="none"
-            style={[
-              styles.selectedRing,
-              {width, height: width, borderRadius: width / 2},
-            ]}
-          />
-        ) : null}
+            ref={avatarRef}
+            style={[styles.avatarWrap, {width, height: width}]}>
+            {hasCrop ? (
+              <FaceCropAvatar cropUri={cropUri} size={width} />
+            ) : hasTransformCrop ? (
+              <FaceCropAvatar
+                uri={uri}
+                boundingBox={boundingBox}
+                size={width}
+                imageSize={imageSize}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.placeholder,
+                  {width, height: width, borderRadius: width / 2},
+                ]}>
+                <ActivityIndicator size="small" color={colors.accent} />
+              </View>
+            )}
+          </View>
 
-        <View style={styles.statusBadges}>
-          <FaceStatusIconBadge meta={eyeMeta} />
-          <FaceStatusIconBadge meta={focusMeta} />
+          {selected ? (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.selectedRing,
+                {width, height: width, borderRadius: width / 2},
+              ]}
+            />
+          ) : null}
+
+          <View pointerEvents="none" style={styles.statusBadges}>
+            <FaceStatusIconBadge meta={eyeMeta} />
+            <FaceStatusIconBadge meta={focusMeta} />
+          </View>
         </View>
-      </View>
-    </Pressable>
-  );
+      </Pressable>
+    );
   },
   (prev, next) =>
     prev.cropUri === next.cropUri &&
@@ -141,12 +124,8 @@ export const KeyFaceSidebarItem = memo(
     prev.focusLevel === next.focusLevel &&
     prev.width === next.width &&
     prev.selected === next.selected &&
-    prev.faceIndex === next.faceIndex &&
     prev.tooltipPlacement === next.tooltipPlacement &&
-    prev.imageSize === next.imageSize &&
-    prev.onPress === next.onPress &&
-    prev.onFacePress === next.onFacePress &&
-    prev.onTooltipAnchorChange === next.onTooltipAnchorChange,
+    prev.imageSize === next.imageSize,
 );
 
 const styles = StyleSheet.create({

@@ -9,6 +9,11 @@ declare module 'react-native' {
   interface ViewProps {
     /** Windows-only: system keyboard/mouse focus rectangle. */
     enableFocusRing?: boolean;
+    /** Windows-only: receive keyboard/controller focus. */
+    focusable?: boolean;
+    onClick?: (event: unknown) => void;
+    onMouseEnter?: (event: unknown) => void;
+    onMouseLeave?: (event: unknown) => void;
   }
 
   interface TextInputProps {

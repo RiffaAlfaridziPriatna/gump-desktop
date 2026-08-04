@@ -106,6 +106,7 @@ const TransformFaceCropAvatar = React.memo(function TransformFaceCropAvatar({
 
   return (
     <View
+      pointerEvents="box-none"
       style={[
         styles.container,
         {
@@ -115,7 +116,12 @@ const TransformFaceCropAvatar = React.memo(function TransformFaceCropAvatar({
         },
       ]}>
       {cropStyle ? (
-        <Image source={{uri}} style={[styles.cropImage, cropStyle]} />
+        <View pointerEvents="none" style={[styles.cropImage, cropStyle]}>
+          <Image
+            source={{uri}}
+            style={StyleSheet.absoluteFillObject}
+          />
+        </View>
       ) : null}
     </View>
   );

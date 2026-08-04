@@ -78,50 +78,61 @@ type KeyFaceGridRowProps = {
   imageSize?: ImageDimensions | null;
   zoomFaceIndex: number | null;
   onFacePress: (index: number) => void;
-  onTooltipAnchorChange: (anchor: KeyFaceTooltipAnchor | null) => void;
+  onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
 };
 
-const KeyFaceGridRow = memo(function KeyFaceGridRow({
-  row,
-  uri,
-  imageSize,
-  zoomFaceIndex,
-  onFacePress,
-  onTooltipAnchorChange,
-}: KeyFaceGridRowProps) {
-  return (
-    <View style={styles.keyFaceRow}>
-      {row.faces.map((face, offset) => {
-        const faceIndex = row.startIndex + offset;
-        return (
-          <KeyFaceSidebarItem
-            key={`face-${faceIndex}`}
-            uri={uri}
-            boundingBox={face.boundingBox}
-            eyeStatus={face.eyeStatus}
-            focusLevel={face.focusLevel}
-            width={KEY_FACE_ITEM_SIZE}
-            imageSize={imageSize}
-            selected={zoomFaceIndex === faceIndex}
-            faceIndex={faceIndex}
-            onFacePress={onFacePress}
-            onTooltipAnchorChange={onTooltipAnchorChange}
-          />
-        );
-      })}
-      {row.faces.length < KEY_FACE_COLUMN_COUNT
-        ? Array.from({
-            length: KEY_FACE_COLUMN_COUNT - row.faces.length,
-          }).map((_, fillerIndex) => (
-            <View
-              key={`filler-${row.rowIndex}-${fillerIndex}`}
-              style={styles.keyFaceFiller}
+/**
+ * Same row pattern as CulledAlbumDetailSidebar. Prefer cropUri so Windows does
+ * not hit-test an oversized transform-cropped full image across siblings.
+ */
+const KeyFaceGridRow = memo(
+  function KeyFaceGridRow({
+    row,
+    uri,
+    imageSize,
+    zoomFaceIndex,
+    onFacePress,
+    onTooltipAnchorChange,
+  }: KeyFaceGridRowProps) {
+    return (
+      <View style={styles.keyFaceRow}>
+        {row.faces.map((face, offset) => {
+          const faceIndex = row.startIndex + offset;
+          return (
+            <KeyFaceSidebarItem
+              key={`face-${faceIndex}`}
+              cropUri={face.cropUri}
+              uri={face.cropUri ? undefined : uri}
+              boundingBox={face.cropUri ? undefined : face.boundingBox}
+              eyeStatus={face.eyeStatus}
+              focusLevel={face.focusLevel}
+              width={KEY_FACE_ITEM_SIZE}
+              imageSize={face.cropUri ? undefined : imageSize}
+              selected={zoomFaceIndex === faceIndex}
+              onPress={() => onFacePress(faceIndex)}
+              onTooltipAnchorChange={onTooltipAnchorChange}
             />
-          ))
-        : null}
-    </View>
-  );
-});
+          );
+        })}
+        {row.faces.length < KEY_FACE_COLUMN_COUNT
+          ? Array.from({
+              length: KEY_FACE_COLUMN_COUNT - row.faces.length,
+            }).map((_, fillerIndex) => (
+              <View
+                key={`filler-${row.rowIndex}-${fillerIndex}`}
+                style={styles.keyFaceFiller}
+              />
+            ))
+          : null}
+      </View>
+    );
+  },
+  (prev, next) =>
+    prev.row === next.row &&
+    prev.uri === next.uri &&
+    prev.imageSize === next.imageSize &&
+    prev.zoomFaceIndex === next.zoomFaceIndex,
+);
 
 function KeyFaceRowSeparator() {
   return <View style={styles.keyFaceRowSeparator} />;
@@ -190,9 +201,14 @@ export default function CulledAlbumPhotoDetailScreen({
   );
 
   const scrollStoreRef = useRef(createScrollAwareTooltipStore());
+  const handleTooltipChangeRef = useRef(handleTooltipChange);
+  handleTooltipChangeRef.current = handleTooltipChange;
+
+  // Match album sidebar: don't lock tooltips on Windows wheel noise.
   const keyFaceScrollHandlers = useScrollAwareTooltipHandlers(
     scrollStoreRef.current,
-    () => handleTooltipChange(null),
+    () => handleTooltipChangeRef.current(null),
+    {trackWheelScroll: false},
   );
 
   const faces = analysis?.faces ?? [];
@@ -266,6 +282,13 @@ export default function CulledAlbumPhotoDetailScreen({
     setZoomFaceIndex(current => (current === index ? null : index));
   }, []);
 
+  const handleKeyFacePressRef = useRef(handleKeyFacePress);
+  handleKeyFacePressRef.current = handleKeyFacePress;
+
+  const stableKeyFacePress = useCallback((index: number) => {
+    handleKeyFacePressRef.current(index);
+  }, []);
+
   const keyFaceRows = useMemo(
     () => (isMobileLayout ? [] : buildKeyFaceRows(faces)),
     [faces, isMobileLayout],
@@ -278,29 +301,29 @@ export default function CulledAlbumPhotoDetailScreen({
         uri={uri}
         imageSize={imageSize}
         zoomFaceIndex={zoomFaceIndex}
-        onFacePress={handleKeyFacePress}
-        onTooltipAnchorChange={handleTooltipChange}
+        onFacePress={stableKeyFacePress}
+        onTooltipAnchorChange={handleTooltipChangeRef.current}
       />
     ),
-    [handleKeyFacePress, handleTooltipChange, imageSize, uri, zoomFaceIndex],
+    [imageSize, stableKeyFacePress, uri, zoomFaceIndex],
   );
 
   const renderKeyFaceItem = useCallback(
     ({item: face, index}: ListRenderItemInfo<CullingFace>) => (
       <KeyFaceSidebarItem
-        uri={uri}
-        boundingBox={face.boundingBox}
+        cropUri={face.cropUri}
+        uri={face.cropUri ? undefined : uri}
+        boundingBox={face.cropUri ? undefined : face.boundingBox}
         eyeStatus={face.eyeStatus}
         focusLevel={face.focusLevel}
         width={KEY_FACE_ITEM_SIZE}
-        imageSize={imageSize}
+        imageSize={face.cropUri ? undefined : imageSize}
         selected={zoomFaceIndex === index}
-        faceIndex={index}
-        onFacePress={handleKeyFacePress}
-        onTooltipAnchorChange={handleTooltipChange}
+        onPress={() => stableKeyFacePress(index)}
+        onTooltipAnchorChange={handleTooltipChangeRef.current}
       />
     ),
-    [handleKeyFacePress, handleTooltipChange, imageSize, uri, zoomFaceIndex],
+    [imageSize, stableKeyFacePress, uri, zoomFaceIndex],
   );
 
   const keyFaceRowKeyExtractor = useCallback(
@@ -315,7 +338,7 @@ export default function CulledAlbumPhotoDetailScreen({
 
   const getKeyFaceRowLayout = useCallback(
     (_data: ArrayLike<KeyFaceRow> | null | undefined, index: number) => ({
-      length: KEY_FACE_ROW_HEIGHT,
+      length: KEY_FACE_ITEM_SIZE,
       offset: KEY_FACE_ROW_HEIGHT * index,
       index,
     }),
@@ -470,9 +493,10 @@ export default function CulledAlbumPhotoDetailScreen({
                       style={styles.keyFaceScroll}
                       contentContainerStyle={styles.keyFaceGrid}
                       showsVerticalScrollIndicator
-                      initialNumToRender={KEY_FACE_COLUMN_COUNT}
-                      maxToRenderPerBatch={KEY_FACE_COLUMN_COUNT}
+                      initialNumToRender={5}
+                      maxToRenderPerBatch={3}
                       windowSize={5}
+                      updateCellsBatchingPeriod={100}
                       removeClippedSubviews={Platform.OS !== 'windows'}
                       getItemLayout={getKeyFaceRowLayout}
                       ItemSeparatorComponent={KeyFaceRowSeparator}
@@ -618,6 +642,8 @@ const styles = StyleSheet.create({
   mainColumn: {
     flex: 1,
     minHeight: 0,
+    minWidth: 0,
+    overflow: 'hidden',
   },
   mainColumnMobile: {
     width: '100%',
@@ -627,6 +653,7 @@ const styles = StyleSheet.create({
     width: KEY_FACE_SIDEBAR_WIDTH,
     minHeight: 0,
     gap: KEY_FACE_GAP,
+    zIndex: 2,
   },
   sidebarMobile: {
     flex: undefined,
