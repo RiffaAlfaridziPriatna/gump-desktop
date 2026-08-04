@@ -36,6 +36,8 @@ const RELATIVE_TINY_FACE_MAX_RATIO = 0.5;
 const RELATIVE_TINY_DEFER_MEDIA_RATIO = 8;
 const DISPLAYED_MEDIA_MIN_AREA = 0.0035;
 const DISPLAYED_MEDIA_MAX_AREA = 0.16;
+/** Ungated (sharp) LED/slide rejects need a clearly billboard-sized box. */
+const DISPLAYED_MEDIA_BILLBOARD_MIN_AREA = 0.012;
 const DISPLAYED_MEDIA_MIN_PERSON_AREA = 0.0004;
 const DISPLAYED_MEDIA_SIDE_SIMILAR_MAX_FACES = 6;
 /** Soft/screen faces; sharp event subjects must not hit media rejects. */
@@ -229,10 +231,6 @@ export function rejectLikelyDisplayedMediaFaces<
   const reject = new Set<number>();
 
   for (const candidate of meta) {
-    if (!candidate.softMedia) {
-      continue;
-    }
-
     const smallerLowerPeople = meta.filter(
       other =>
         other.index !== candidate.index &&
@@ -240,14 +238,24 @@ export function rejectLikelyDisplayedMediaFaces<
         other.area < candidate.area &&
         other.centerY > candidate.centerY + 0.04,
     );
-    if (
+    const isOversizedAbove =
       candidate.area >= DISPLAYED_MEDIA_MIN_AREA &&
       candidate.area <= DISPLAYED_MEDIA_MAX_AREA &&
       smallerLowerPeople.some(
         other => candidate.area / Math.max(other.area, 1e-8) >= 3,
-      )
+      );
+    if (
+      isOversizedAbove &&
+      (candidate.softMedia ||
+        candidate.area >= DISPLAYED_MEDIA_BILLBOARD_MIN_AREA)
     ) {
       reject.add(candidate.index);
+      continue;
+    }
+
+    // Remaining heuristics stay softMedia-gated so sharp real subjects
+    // (profiles, side columns) are not treated as wall media.
+    if (!candidate.softMedia) {
       continue;
     }
 

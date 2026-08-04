@@ -398,6 +398,88 @@ describe('rejectLikelyDisplayedMediaFaces', () => {
     expect(kept[0]?.id).toBe('presenter');
   });
 
+  it('drops IMG_3835 SCRFD boxes even when the LED face is sharp/good focus', () => {
+    // Live harness (scrfd-ocec production thresholds): both faces focus=good and
+    // sharpness >> DISPLAYED_MEDIA_MAX_SHARPNESS — softMedia gate must not win.
+    const presenter = {
+      id: 'presenter',
+      boundingBox: {left: 0.423, top: 0.491, width: 0.024, height: 0.053},
+      pose: {yaw: -0.167, pitch: 0, roll: 0},
+      sharpness: 70.1,
+      focusLevel: 'good' as const,
+    };
+    const poster = {
+      id: 'poster',
+      boundingBox: {left: 0.503, top: 0.136, width: 0.101, height: 0.265},
+      pose: {yaw: 0.785, pitch: 0, roll: 0},
+      sharpness: 66.0,
+      focusLevel: 'good' as const,
+    };
+
+    const kept = rejectLikelyDisplayedMediaFaces([poster, presenter]);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]?.id).toBe('presenter');
+  });
+
+  it('keeps sharp mid-size foreground subjects when smaller people sit lower (IMG_3822)', () => {
+    // Close-up pair (~0.7–0.8% area) above softer midground faces — must NOT be
+    // treated as LED/billboard (regression from ungated oversizedAbove).
+    const foregroundLeft = {
+      id: 'fg-left',
+      boundingBox: {left: 0.21, top: 0.326, width: 0.059, height: 0.133},
+      pose: {yaw: 0.437, pitch: 0, roll: 0},
+      sharpness: 66.8,
+      focusLevel: 'good' as const,
+    };
+    const foregroundRight = {
+      id: 'fg-right',
+      boundingBox: {left: 0.437, top: 0.328, width: 0.059, height: 0.116},
+      pose: {yaw: -0.145, pitch: 0, roll: 0},
+      sharpness: 66.4,
+      focusLevel: 'good' as const,
+    };
+    const midground = {
+      id: 'midground',
+      boundingBox: {left: 0.608, top: 0.474, width: 0.027, height: 0.048},
+      pose: {yaw: 0.064, pitch: 0, roll: 0},
+      sharpness: 36.9,
+      focusLevel: 'blurred' as const,
+    };
+
+    const kept = rejectLikelyDisplayedMediaFaces([
+      foregroundLeft,
+      foregroundRight,
+      midground,
+    ]);
+    expect(kept.map(face => face.id).sort()).toEqual([
+      'fg-left',
+      'fg-right',
+      'midground',
+    ]);
+  });
+
+  it('keeps a sharp taller subject above a smaller soft person (not 3x LED)', () => {
+    // Guard: oversizedAbove needs >=3x area. Similar-tier people must survive
+    // even when the upper face is sharp and slightly larger.
+    const upper = {
+      id: 'upper',
+      boundingBox: {left: 0.35, top: 0.2, width: 0.14, height: 0.18},
+      pose: {yaw: 0.05, pitch: 0, roll: 0},
+      sharpness: 80,
+      focusLevel: 'good' as const,
+    };
+    const lower = {
+      id: 'lower',
+      boundingBox: {left: 0.4, top: 0.5, width: 0.12, height: 0.15},
+      pose: {yaw: 0.05, pitch: 0, roll: 0},
+      sharpness: 70,
+      focusLevel: 'good' as const,
+    };
+
+    const kept = rejectLikelyDisplayedMediaFaces([upper, lower]);
+    expect(kept.map(face => face.id).sort()).toEqual(['lower', 'upper']);
+  });
+
   it('drops side profile poster faces even when size is close to the presenter', () => {
     const poster = {
       id: 'poster',

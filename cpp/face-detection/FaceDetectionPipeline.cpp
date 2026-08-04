@@ -41,6 +41,7 @@ constexpr float kRelativeTinyFaceMaxRatio = 0.50f;
 constexpr float kRelativeTinyDeferMediaRatio = 8.0f;
 constexpr float kDisplayedMediaMinArea = 0.0035f;
 constexpr float kDisplayedMediaMaxArea = 0.16f;
+constexpr float kDisplayedMediaBillboardMinArea = 0.012f;
 constexpr float kDisplayedMediaMinPersonArea = 0.0004f;
 constexpr float kDisplayedMediaSideSimilarMaxFaces = 6;
 constexpr float kDisplayedMediaMaxSharpness = 48.0f;
@@ -948,16 +949,14 @@ std::vector<FaceResult> RejectLikelyDisplayedMediaFaces(std::vector<FaceResult> 
 
   std::vector<bool> reject(count, false);
   for (size_t candidate = 0; candidate < count; ++candidate) {
-    // Sharp real subjects (profiles included) are never treated as wall media.
-    if (faces[candidate].sharpness >= kDisplayedMediaMaxSharpness) {
-      continue;
-    }
-
     const float candidateArea = areas[candidate];
     const float candidateCenterY = centerYs[candidate];
     const float candidateCenterX = centerXs[candidate];
     const float candidateYaw = yaws[candidate];
 
+    // Sharp SCRFD LED faces skip the softMedia gate (IMG_3835), but require
+    // billboard-sized area so mid-size sharp foreground subjects (IMG_3822)
+    // are not wiped when smaller midground people sit lower in the frame.
     bool oversizedAbove = false;
     if (candidateArea >= kDisplayedMediaMinArea &&
         candidateArea <= kDisplayedMediaMaxArea) {
@@ -978,8 +977,16 @@ std::vector<FaceResult> RejectLikelyDisplayedMediaFaces(std::vector<FaceResult> 
         }
       }
     }
-    if (oversizedAbove) {
+    const bool softMedia =
+        faces[candidate].sharpness < kDisplayedMediaMaxSharpness;
+    if (oversizedAbove &&
+        (softMedia || candidateArea >= kDisplayedMediaBillboardMinArea)) {
       reject[candidate] = true;
+      continue;
+    }
+
+    // Remaining heuristics stay sharpness-gated so sharp real subjects are kept.
+    if (!softMedia) {
       continue;
     }
 
