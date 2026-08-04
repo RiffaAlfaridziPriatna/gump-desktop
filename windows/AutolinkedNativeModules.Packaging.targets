@@ -12,6 +12,15 @@
     <_AutolinkSolutionOutputDir>$([MSBuild]::NormalizePath('$(SolutionDir)$(_AutolinkNativePlatform)\$(Configuration)\'))</_AutolinkSolutionOutputDir>
     <_AutolinkAppxEntryName>GumpDesktop</_AutolinkAppxEntryName>
     <_AutolinkAppxEntryDir>$([MSBuild]::NormalizePath('$(OutDir)AppX\$(_AutolinkAppxEntryName)\'))</_AutolinkAppxEntryDir>
+    <!-- WASDK bootstrap must ship inside the MSIX; linker imports it at process start. -->
+    <_GumpWasdkArch Condition="'$(Platform)' == 'Win32' Or '$(Platform)' == 'x86'">x86</_GumpWasdkArch>
+    <_GumpWasdkArch Condition="'$(Platform)' == 'ARM64'">arm64</_GumpWasdkArch>
+    <_GumpWasdkArch Condition="'$(_GumpWasdkArch)' == ''">x64</_GumpWasdkArch>
+    <_GumpWasdkPackageVersion Condition="'$(WinUI3Version)' != ''">$(WinUI3Version)</_GumpWasdkPackageVersion>
+    <_GumpWasdkPackageVersion Condition="'$(_GumpWasdkPackageVersion)' == ''">1.7.250401001</_GumpWasdkPackageVersion>
+    <_GumpBootstrapDllName>Microsoft.WindowsAppRuntime.Bootstrap.dll</_GumpBootstrapDllName>
+    <_GumpNuGetPackageRoot Condition="'$(NuGetPackageRoot)' != ''">$(NuGetPackageRoot)</_GumpNuGetPackageRoot>
+    <_GumpNuGetPackageRoot Condition="'$(_GumpNuGetPackageRoot)' == ''">$(USERPROFILE)\.nuget\packages\</_GumpNuGetPackageRoot>
   </PropertyGroup>
 
   <ItemGroup>
@@ -49,23 +58,58 @@
     </ItemGroup>
   </Target>
 
+  <Target Name="CollectWasdkBootstrapDll">
+    <PropertyGroup>
+      <_GumpWasdkArch Condition="'$(Platform)' == 'Win32' Or '$(Platform)' == 'x86'">x86</_GumpWasdkArch>
+      <_GumpWasdkArch Condition="'$(Platform)' == 'ARM64'">arm64</_GumpWasdkArch>
+      <_GumpWasdkArch Condition="'$(_GumpWasdkArch)' == ''">x64</_GumpWasdkArch>
+      <_GumpBootstrapDllNuGet>$([MSBuild]::NormalizePath('$(_GumpNuGetPackageRoot)microsoft.windowsappsdk\$(_GumpWasdkPackageVersion)\runtimes\win10-$(_GumpWasdkArch)\native\$(_GumpBootstrapDllName)'))</_GumpBootstrapDllNuGet>
+    </PropertyGroup>
+    <ItemGroup>
+      <_GumpBootstrapDllCandidate Include="$(OutDir)$(_GumpBootstrapDllName)" />
+      <_GumpBootstrapDllCandidate Include="$(_AutolinkSolutionOutputDir)$(_GumpBootstrapDllName)" />
+      <_GumpBootstrapDllCandidate Include="$(_AutolinkSolutionOutputDir)$(_AutolinkAppxEntryName)\$(_GumpBootstrapDllName)" />
+      <_GumpBootstrapDllCandidate Include="$(_GumpBootstrapDllNuGet)" />
+    </ItemGroup>
+    <ItemGroup>
+      <_ResolvedWasdkBootstrapDll Include="@(_GumpBootstrapDllCandidate)" Condition="Exists('%(Identity)')" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_GumpBootstrapDllSource>@(_ResolvedWasdkBootstrapDll)</_GumpBootstrapDllSource>
+    </PropertyGroup>
+    <ItemGroup>
+      <!-- Keep a single path so AppX payload entries are not duplicated. -->
+      <_ResolvedWasdkBootstrapDll Remove="@(_ResolvedWasdkBootstrapDll)" />
+      <_ResolvedWasdkBootstrapDll Include="$(_GumpBootstrapDllSource)" Condition="'$(_GumpBootstrapDllSource)' != ''" />
+    </ItemGroup>
+  </Target>
+
   <Target Name="CopyAutolinkedNativeModuleDllsToAppOutput"
           AfterTargets="Build"
-          DependsOnTargets="CollectAutolinkedNativeModuleDlls"
+          DependsOnTargets="CollectAutolinkedNativeModuleDlls;CollectWasdkBootstrapDll"
           Condition="'$(MSBuildProjectName)' == 'GumpDesktop'">
     <Copy SourceFiles="@(_ResolvedAutolinkedModuleDll->Distinct())"
           DestinationFolder="$(OutDir)"
           SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ResolvedWasdkBootstrapDll->Distinct())"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="'@(_ResolvedWasdkBootstrapDll)' != ''" />
     <Error Condition="!Exists('$(OutDir)RNSVG.dll')"
            Text="RNSVG.dll was not copied to $(OutDir). The RNSVG project may have failed to build for $(_AutolinkNativePlatform)/$(Configuration)." />
+    <Error Condition="!Exists('$(OutDir)$(_GumpBootstrapDllName)')"
+           Text="$(_GumpBootstrapDllName) was not copied to $(OutDir). Expected NuGet file at $(_GumpBootstrapDllNuGet)." />
   </Target>
 
   <Target Name="AddAutolinkedDllsToAppxPayload"
           BeforeTargets="_GenerateAppxRecipeFile;GenerateAppxRecipeFile;CreateAppxPackage"
-          DependsOnTargets="CollectAutolinkedNativeModuleDlls"
+          DependsOnTargets="CollectAutolinkedNativeModuleDlls;CollectWasdkBootstrapDll"
           Condition="'$(MSBuildProjectExtension)' == '.wapproj'">
     <ItemGroup>
       <AppxPackagedFile Include="@(_ResolvedAutolinkedModuleDll->Distinct())">
+        <PackagePath>$(_AutolinkAppxEntryName)\%(Filename)%(Extension)</PackagePath>
+      </AppxPackagedFile>
+      <AppxPackagedFile Include="@(_ResolvedWasdkBootstrapDll->Distinct())">
         <PackagePath>$(_AutolinkAppxEntryName)\%(Filename)%(Extension)</PackagePath>
       </AppxPackagedFile>
     </ItemGroup>
@@ -73,10 +117,14 @@
 
   <Target Name="IncludeAutolinkedNativeModuleDllsInPackage"
           BeforeTargets="_ConvertItems"
-          DependsOnTargets="CollectAutolinkedNativeModuleDlls"
+          DependsOnTargets="CollectAutolinkedNativeModuleDlls;CollectWasdkBootstrapDll"
           Condition="'$(MSBuildProjectExtension)' == '.wapproj'">
     <ItemGroup>
       <Content Include="@(_ResolvedAutolinkedModuleDll->Distinct())">
+        <Link>$(_AutolinkAppxEntryName)\%(Filename)%(Extension)</Link>
+        <DeploymentContent>true</DeploymentContent>
+      </Content>
+      <Content Include="@(_ResolvedWasdkBootstrapDll->Distinct())">
         <Link>$(_AutolinkAppxEntryName)\%(Filename)%(Extension)</Link>
         <DeploymentContent>true</DeploymentContent>
       </Content>
@@ -85,13 +133,20 @@
 
   <Target Name="StageAutolinkedNativeModuleDllsInAppX"
           AfterTargets="Build"
-          DependsOnTargets="CollectAutolinkedNativeModuleDlls"
+          DependsOnTargets="CollectAutolinkedNativeModuleDlls;CollectWasdkBootstrapDll"
           Condition="'$(MSBuildProjectExtension)' == '.wapproj'">
     <MakeDir Directories="$(_AutolinkAppxEntryDir)" Condition="!Exists('$(_AutolinkAppxEntryDir)')" />
     <Copy SourceFiles="@(_ResolvedAutolinkedModuleDll->Distinct())"
           DestinationFolder="$(_AutolinkAppxEntryDir)"
           SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ResolvedWasdkBootstrapDll->Distinct())"
+          DestinationFolder="$(_AutolinkAppxEntryDir)"
+          SkipUnchangedFiles="true"
+          Condition="'@(_ResolvedWasdkBootstrapDll)' != ''" />
     <Error Condition="!Exists('$(_AutolinkAppxEntryDir)RNSVG.dll')"
            Text="RNSVG.dll was not staged to $(_AutolinkAppxEntryDir). Check that the RNSVG project builds for $(_AutolinkNativePlatform)/$(Configuration)." />
+    <Error Condition="!Exists('$(_AutolinkAppxEntryDir)$(_GumpBootstrapDllName)')"
+           Text="$(_GumpBootstrapDllName) was not staged to $(_AutolinkAppxEntryDir). Install/restore Microsoft.WindowsAppSDK $(_GumpWasdkPackageVersion) and rebuild." />
   </Target>
 </Project>
+

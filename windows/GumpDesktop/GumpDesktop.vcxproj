@@ -83,6 +83,8 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>shell32.lib;user32.lib;gdi32.lib;windowsapp.lib;Microsoft.WindowsAppRuntime.Bootstrap.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <!-- Delay-load so missing Bootstrap.dll fails inside WinMain (MessageBox) instead of a pre-main OS loader dialog. -->
+      <DelayLoadDLLs>Microsoft.WindowsAppRuntime.Bootstrap.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>

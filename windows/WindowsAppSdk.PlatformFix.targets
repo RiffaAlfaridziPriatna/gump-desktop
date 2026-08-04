@@ -5,13 +5,22 @@
     is empty during NuGet buildTransitive evaluation. Re-apply after those imports and again
     immediately before Link for native C++ projects.
     See https://github.com/microsoft/react-native-windows/issues/15562
+
+    Also force-copy Microsoft.WindowsAppRuntime.Bootstrap.dll next to the app exe.
+    WASDK's PostBuild xcopy often misses when the platform token is wrong, and the
+    process hard-fails at load time ("Bootstrap.dll was not found") before WinMain.
   -->
   <PropertyGroup>
-    <_GumpWasdkArch Condition="'$(Platform)' == 'Win32'">x86</_GumpWasdkArch>
+    <_GumpWasdkArch Condition="'$(Platform)' == 'Win32' Or '$(Platform)' == 'x86'">x86</_GumpWasdkArch>
     <_GumpWasdkArch Condition="'$(Platform)' == 'ARM64'">arm64</_GumpWasdkArch>
     <_GumpWasdkArch Condition="'$(_GumpWasdkArch)' == ''">x64</_GumpWasdkArch>
     <_WindowsAppSDKFoundationPlatform>$(_GumpWasdkArch)</_WindowsAppSDKFoundationPlatform>
     <_MrtCoreRuntimeIdentifier Condition="'$(_MrtCoreRuntimeIdentifier)' == ''">$(_GumpWasdkArch)</_MrtCoreRuntimeIdentifier>
+    <_GumpWasdkPackageVersion Condition="'$(WinUI3Version)' != ''">$(WinUI3Version)</_GumpWasdkPackageVersion>
+    <_GumpWasdkPackageVersion Condition="'$(_GumpWasdkPackageVersion)' == ''">1.7.250401001</_GumpWasdkPackageVersion>
+    <_GumpBootstrapDllName>Microsoft.WindowsAppRuntime.Bootstrap.dll</_GumpBootstrapDllName>
+    <_GumpNuGetPackageRoot Condition="'$(NuGetPackageRoot)' != ''">$(NuGetPackageRoot)</_GumpNuGetPackageRoot>
+    <_GumpNuGetPackageRoot Condition="'$(_GumpNuGetPackageRoot)' == ''">$(USERPROFILE)\.nuget\packages\</_GumpNuGetPackageRoot>
   </PropertyGroup>
 
   <Target
@@ -19,11 +28,45 @@
     BeforeTargets="Link"
     Condition="'$(MSBuildProjectExtension)' == '.vcxproj'">
     <PropertyGroup>
-      <_GumpWasdkArch Condition="'$(Platform)' == 'Win32'">x86</_GumpWasdkArch>
+      <_GumpWasdkArch Condition="'$(Platform)' == 'Win32' Or '$(Platform)' == 'x86'">x86</_GumpWasdkArch>
       <_GumpWasdkArch Condition="'$(Platform)' == 'ARM64'">arm64</_GumpWasdkArch>
       <_GumpWasdkArch Condition="'$(_GumpWasdkArch)' == ''">x64</_GumpWasdkArch>
       <_WindowsAppSDKFoundationPlatform>$(_GumpWasdkArch)</_WindowsAppSDKFoundationPlatform>
       <_MrtCoreRuntimeIdentifier Condition="'$(_MrtCoreRuntimeIdentifier)' == ''">$(_GumpWasdkArch)</_MrtCoreRuntimeIdentifier>
     </PropertyGroup>
+  </Target>
+
+  <Target
+    Name="GumpCopyWasdkBootstrapDll"
+    AfterTargets="Build"
+    Condition="'$(MSBuildProjectExtension)' == '.vcxproj' And '$(ConfigurationType)' == 'Application' And '$(ProjectName)' == 'GumpDesktop'">
+    <PropertyGroup>
+      <_GumpWasdkArch Condition="'$(Platform)' == 'Win32' Or '$(Platform)' == 'x86'">x86</_GumpWasdkArch>
+      <_GumpWasdkArch Condition="'$(Platform)' == 'ARM64'">arm64</_GumpWasdkArch>
+      <_GumpWasdkArch Condition="'$(_GumpWasdkArch)' == ''">x64</_GumpWasdkArch>
+      <_GumpBootstrapDllNuGet>$([MSBuild]::NormalizePath('$(_GumpNuGetPackageRoot)microsoft.windowsappsdk\$(_GumpWasdkPackageVersion)\runtimes\win10-$(_GumpWasdkArch)\native\$(_GumpBootstrapDllName)'))</_GumpBootstrapDllNuGet>
+    </PropertyGroup>
+    <ItemGroup>
+      <_GumpBootstrapDllCandidate Include="$(OutDir)$(_GumpBootstrapDllName)" />
+      <_GumpBootstrapDllCandidate Include="$(_GumpBootstrapDllNuGet)" />
+    </ItemGroup>
+    <ItemGroup>
+      <_GumpBootstrapDllResolved Include="@(_GumpBootstrapDllCandidate)" Condition="Exists('%(Identity)')" />
+    </ItemGroup>
+    <Error
+      Condition="'@(_GumpBootstrapDllResolved)' == ''"
+      Text="Missing $(_GumpBootstrapDllName). Expected NuGet restore at $(_GumpBootstrapDllNuGet). Run nuget restore for Microsoft.WindowsAppSDK $(_GumpWasdkPackageVersion), then rebuild." />
+    <PropertyGroup>
+      <_GumpBootstrapDllSource>@(_GumpBootstrapDllResolved)</_GumpBootstrapDllSource>
+    </PropertyGroup>
+    <!-- @(item) expands to first path when assigned to a property; avoid multi-source Copy collisions. -->
+    <Copy
+      SourceFiles="$(_GumpBootstrapDllSource)"
+      DestinationFiles="$(OutDir)$(_GumpBootstrapDllName)"
+      SkipUnchangedFiles="true"
+      Condition="!Exists('$(OutDir)$(_GumpBootstrapDllName)') Or '$(_GumpBootstrapDllSource)' != '$(OutDir)$(_GumpBootstrapDllName)'" />
+    <Message
+      Importance="high"
+      Text="Ensured $(_GumpBootstrapDllName) is in $(OutDir)" />
   </Target>
 </Project>

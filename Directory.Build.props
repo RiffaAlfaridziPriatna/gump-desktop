@@ -29,9 +29,11 @@
     Do not pin WinUI3Version below 1.7: RNW 0.81 new arch requires ChildSiteLink.
   -->
   <PropertyGroup Label="Windows App SDK">
-    <_WindowsAppSDKFoundationPlatform Condition="'$(Platform)' == 'Win32'">x86</_WindowsAppSDKFoundationPlatform>
-    <_WindowsAppSDKFoundationPlatform Condition="'$(Platform)' != 'Win32' AND '$(Platform)' != ''">$(Platform)</_WindowsAppSDKFoundationPlatform>
+    <!-- WASDK runtimes use win10-x86|x64|arm64 (not VS Platform names like ARM64). -->
+    <_WindowsAppSDKFoundationPlatform Condition="'$(Platform)' == 'Win32' Or '$(Platform)' == 'x86'">x86</_WindowsAppSDKFoundationPlatform>
+    <_WindowsAppSDKFoundationPlatform Condition="'$(Platform)' == 'ARM64'">arm64</_WindowsAppSDKFoundationPlatform>
+    <_WindowsAppSDKFoundationPlatform Condition="'$(Platform)' == 'x64'">x64</_WindowsAppSDKFoundationPlatform>
     <_WindowsAppSDKFoundationPlatform Condition="'$(_WindowsAppSDKFoundationPlatform)' == ''">x64</_WindowsAppSDKFoundationPlatform>
-    <ForceImportAfterCppTargets>$(MSBuildThisFileDirectory)windows\WindowsAppSdk.PlatformFix.targets</ForceImportAfterCppTargets>
+    <ForceImportAfterCppTargets>$(ForceImportAfterCppTargets);$(MSBuildThisFileDirectory)windows\WindowsAppSdk.PlatformFix.targets</ForceImportAfterCppTargets>
   </PropertyGroup>
 </Project>
