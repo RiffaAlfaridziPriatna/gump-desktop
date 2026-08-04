@@ -1,7 +1,7 @@
 import {syncPhotoFromStore} from '@/application/syncPhotoRepository';
 import {getPhotoById, updatePhoto} from '@lib/culledAlbum/store';
 import {CulledAlbumPhoto} from '@lib/culledAlbum/types';
-import {ensureThumbnail} from '@lib/storage/localStorage';
+import {ensurePreview, ensureThumbnail} from '@lib/storage/localStorage';
 import {attachFaceCropUris} from './faceCropThumbnails';
 import {Platform} from 'react-native';
 
@@ -37,25 +37,31 @@ async function backfillAnalyzedPhotoAssets(
     photo.faces.length > 0 &&
     (regenerateFaceCrops || photo.faces.some(face => !face.cropUri));
   const needsThumbnail = !photo.file.thumbnailUri;
+  const needsPreview =
+    Platform.OS === 'windows' && !photo.file.previewUri;
 
-  if (!needsFaceCrops && !needsThumbnail) {
+  if (!needsFaceCrops && !needsThumbnail && !needsPreview) {
     return;
   }
 
-  const [facesWithCrops, fileWithThumbnail] = await Promise.all([
-    needsFaceCrops
-      ? attachFaceCropUris(
-          albumId,
-          photo.photoId,
-          photo.file,
-          photo.faces,
-          {regenerate: regenerateFaceCrops},
-        )
-      : Promise.resolve(photo.faces),
-    needsThumbnail
-      ? ensureThumbnail(albumId, photo.file, photo.photoId)
-      : Promise.resolve(photo.file),
-  ]);
+  const [facesWithCrops, fileWithThumbnail, fileWithPreview] =
+    await Promise.all([
+      needsFaceCrops
+        ? attachFaceCropUris(
+            albumId,
+            photo.photoId,
+            photo.file,
+            photo.faces,
+            {regenerate: regenerateFaceCrops},
+          )
+        : Promise.resolve(photo.faces),
+      needsThumbnail
+        ? ensureThumbnail(albumId, photo.file, photo.photoId)
+        : Promise.resolve(photo.file),
+      needsPreview
+        ? ensurePreview(albumId, photo.file, photo.photoId)
+        : Promise.resolve(photo.file),
+    ]);
 
   updatePhoto(
     albumId,
@@ -64,10 +70,15 @@ async function backfillAnalyzedPhotoAssets(
       if (needsFaceCrops) {
         entry.faces = facesWithCrops;
       }
-      if (fileWithThumbnail.thumbnailUri) {
+      if (fileWithThumbnail.thumbnailUri || fileWithPreview.previewUri) {
         entry.file = {
           ...entry.file,
-          thumbnailUri: fileWithThumbnail.thumbnailUri,
+          ...(fileWithThumbnail.thumbnailUri
+            ? {thumbnailUri: fileWithThumbnail.thumbnailUri}
+            : {}),
+          ...(fileWithPreview.previewUri
+            ? {previewUri: fileWithPreview.previewUri}
+            : {}),
         };
       }
     },
@@ -166,7 +177,8 @@ export async function backfillMissingAnalyzedPhotoAssets(
       photo.analysisStatus === 'analyzed' &&
       (regenerateFaceCrops ||
         photo.faces.some(face => !face.cropUri) ||
-        !photo.file.thumbnailUri),
+        !photo.file.thumbnailUri ||
+        (Platform.OS === 'windows' && !photo.file.previewUri)),
   );
 
   for (let index = 0; index < pending.length; index += BACKFILL_CONCURRENCY) {

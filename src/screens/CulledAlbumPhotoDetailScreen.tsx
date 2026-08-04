@@ -19,7 +19,9 @@ import {memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState
 import {useLayout} from '@hooks/useLayout';
 import {useImageDimensions} from '@hooks/useImageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
-import {resolveDetailDisplayUri} from '@lib/storage/localStorage';
+import {resolveDetailDisplayUri, ensurePreview} from '@lib/storage/localStorage';
+import {updatePhoto} from '@lib/culledAlbum/store';
+import {syncPhotoFromStore} from '@/application/syncPhotoRepository';
 import {Pressable, TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
@@ -229,14 +231,69 @@ export default function CulledAlbumPhotoDetailScreen({
     photo ? resolveDetailDisplayUri(photo.file) : '',
   );
   const imageSize = useImageDimensions(uri);
+  const photoFileUri = photo?.file.uri;
+  const photoPreviewUri = photo?.file.previewUri;
+  const photoThumbnailUri = photo?.file.thumbnailUri;
 
   useEffect(() => {
-    if (!photo) {
+    if (!photoFileUri) {
       setUri('');
       return;
     }
-    setUri(resolveDetailDisplayUri(photo.file));
-  }, [photo]);
+
+    const displayFile = {
+      uri: photoFileUri,
+      name: photo?.file.name ?? '',
+      size: photo?.file.size ?? 0,
+      type: photo?.file.type ?? '',
+      thumbnailUri: photoThumbnailUri,
+      previewUri: photoPreviewUri,
+    };
+    setUri(resolveDetailDisplayUri(displayFile));
+
+    if (Platform.OS !== 'windows') {
+      return;
+    }
+
+    let cancelled = false;
+    ensurePreview(albumId, displayFile, photoId)
+      .then(nextFile => {
+        if (cancelled || !nextFile.previewUri) {
+          return;
+        }
+
+        if (nextFile.previewUri !== photoPreviewUri) {
+          updatePhoto(
+            albumId,
+            photoId,
+            entry => {
+              entry.file = {
+                ...entry.file,
+                previewUri: nextFile.previewUri,
+              };
+            },
+            {recomputeTotals: false},
+          );
+          syncPhotoFromStore(albumId, photoId);
+        }
+
+        setUri(resolveDetailDisplayUri(nextFile));
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    albumId,
+    photo?.file.name,
+    photo?.file.size,
+    photo?.file.type,
+    photoFileUri,
+    photoId,
+    photoPreviewUri,
+    photoThumbnailUri,
+  ]);
 
   useLayoutEffect(() => {
     setMainImageReady(false);

@@ -44,6 +44,8 @@ declare module 'react-native' {
         type: string;
         /** Required on macOS/Windows after local copy succeeds. */
         thumbnailUri: string;
+        /** Required on Windows after local copy succeeds (oriented detail). */
+        previewUri?: string;
       }>;
       getThumbnailUri: (
         albumId: string,
@@ -54,6 +56,15 @@ declare module 'react-native' {
         sourceUri: string,
         photoId: string,
       ) => Promise<{thumbnailUri: string | null}>;
+      getPreviewUri: (
+        albumId: string,
+        photoId: string,
+      ) => Promise<string | null>;
+      ensurePreview: (
+        albumId: string,
+        sourceUri: string,
+        photoId: string,
+      ) => Promise<{previewUri: string | null}>;
       deleteAlbum: (albumId: string) => Promise<boolean>;
       deletePhoto: (uri: string) => Promise<boolean>;
       readFileSlice: (
