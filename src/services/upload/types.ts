@@ -7,8 +7,8 @@ export type FileAsset = {
   type: string;
   capturedAt?: number | null;
   thumbnailUri?: string;
-  /** Oriented detail preview (Windows). Upright pixels; prefer over uri for detail. */
-  previewUri?: string;
+  /** Oriented 4096px detail derivative for the photo detail viewer. */
+  detailUri?: string;
 };
 
 type NativeLocalStorageReader = {

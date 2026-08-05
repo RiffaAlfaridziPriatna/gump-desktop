@@ -45,7 +45,7 @@ export function domainPhotoToLegacy(photo: CulledPhoto): CulledAlbumPhoto {
     file: {
       ...file,
       thumbnailUri: file.thumbnailUri ?? undefined,
-      previewUri: file.previewUri ?? undefined,
+      detailUri: file.detailUri ?? undefined,
     },
     uploadedAt: photo.uploadedAt,
     capturedAt: photo.capturedAt,

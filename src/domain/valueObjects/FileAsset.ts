@@ -5,7 +5,7 @@ export class FileAsset {
   readonly type: string;
   readonly capturedAt: number | null;
   readonly thumbnailUri: string | null;
-  readonly previewUri: string | null;
+  readonly detailUri: string | null;
 
   constructor(data: {
     uri: string;
@@ -14,7 +14,7 @@ export class FileAsset {
     type: string;
     capturedAt?: number | null;
     thumbnailUri?: string | null;
-    previewUri?: string | null;
+    detailUri?: string | null;
   }) {
     this.uri = data.uri;
     this.name = data.name;
@@ -22,7 +22,7 @@ export class FileAsset {
     this.type = data.type;
     this.capturedAt = data.capturedAt ?? null;
     this.thumbnailUri = data.thumbnailUri ?? null;
-    this.previewUri = data.previewUri ?? null;
+    this.detailUri = data.detailUri ?? null;
   }
 
   static fromPlain(data: {
@@ -32,7 +32,7 @@ export class FileAsset {
     type: string;
     capturedAt?: number | null;
     thumbnailUri?: string | null;
-    previewUri?: string | null;
+    detailUri?: string | null;
   }): FileAsset {
     return new FileAsset(data);
   }
@@ -44,7 +44,7 @@ export class FileAsset {
     type: string;
     capturedAt: number | null;
     thumbnailUri: string | null;
-    previewUri: string | null;
+    detailUri: string | null;
   } {
     return {
       uri: this.uri,
@@ -53,7 +53,7 @@ export class FileAsset {
       type: this.type,
       capturedAt: this.capturedAt,
       thumbnailUri: this.thumbnailUri,
-      previewUri: this.previewUri,
+      detailUri: this.detailUri,
     };
   }
 }

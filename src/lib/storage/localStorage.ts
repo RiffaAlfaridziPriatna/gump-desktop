@@ -24,6 +24,11 @@ type NativeLocalStorageModule = {
     sourceUri: string,
     photoId: string,
   ) => Promise<{thumbnailUri: string | null}>;
+  ensureDetail: (
+    albumId: string,
+    sourceUri: string,
+    photoId: string,
+  ) => Promise<{detailUri: string | null}>;
   getImageDimensions: (
     uri: string,
   ) => Promise<{width: number; height: number}>;
@@ -69,6 +74,17 @@ export function isUsableThumbnailUri(thumbnailUri: string | null | undefined): b
   return (
     normalized.includes('/thumbs/') &&
     normalized.endsWith('.v4.jpg')
+  );
+}
+
+export function isUsableDetailUri(detailUri: string | null | undefined): boolean {
+  if (!detailUri) {
+    return false;
+  }
+  const normalized = detailUri.replace(/\\/g, '/').split('?')[0] ?? '';
+  return (
+    normalized.includes('/details/') &&
+    normalized.endsWith('.d1.jpg')
   );
 }
 
@@ -183,12 +199,16 @@ export function resolveGridDisplayUri(file: FileAsset): string | null {
   return isUsableThumbnailUri(file.thumbnailUri) ? file.thumbnailUri! : null;
 }
 
-export function resolveOriginalUri(file: FileAsset): string {
-  return file.uri;
-}
-
+// Prefer the oriented 4096 detail derivative. Fall back to the 1920 thumb, then
+// the original. Never prefer the original on Windows: EXIF rotation is not
+// applied by the XAML Image renderer, so portrait originals stretch sideways.
 export function resolveDetailDisplayUri(file: FileAsset): string {
-  // Detail view: use original for max quality during zoom/culling inspection
+  if (isUsableDetailUri(file.detailUri)) {
+    return file.detailUri!;
+  }
+  if (isUsableThumbnailUri(file.thumbnailUri)) {
+    return file.thumbnailUri!;
+  }
   return file.uri;
 }
 
@@ -231,6 +251,29 @@ export async function ensureThumbnail(
         ? `${result.thumbnailUri}?v=${THUMBNAIL_CACHE_VERSION}`
         : result.thumbnailUri;
       return {...file, thumbnailUri};
+    }
+  }
+
+  return file;
+}
+
+export async function ensureDetail(
+  albumId: string,
+  file: FileAsset,
+  photoId: string,
+): Promise<FileAsset> {
+  if (isUsableDetailUri(file.detailUri)) {
+    return file;
+  }
+
+  if (hasNativeLocalStorage() && NativeLocalStorage?.ensureDetail) {
+    const result = await NativeLocalStorage.ensureDetail(
+      albumId,
+      file.uri,
+      photoId,
+    );
+    if (isUsableDetailUri(result.detailUri)) {
+      return {...file, detailUri: result.detailUri!};
     }
   }
 
