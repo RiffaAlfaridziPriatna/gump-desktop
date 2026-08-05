@@ -22,9 +22,6 @@ static const NSUInteger kGumpAnalysisMaxPixelSize =
     (NSUInteger)FaceDetection::kAnalysisMaxPixelSize;
 static const NSUInteger kGumpScrfdAnalysisMaxPixelSize =
     (NSUInteger)FaceDetection::kAnalysisMaxPixelSize;
-static const CGFloat kFaceCropSidePadding = MediaDerivatives::kFaceCropSidePadding;
-static const CGFloat kFaceCropTopPadding = MediaDerivatives::kFaceCropTopPadding;
-static const CGFloat kFaceCropBottomPadding = MediaDerivatives::kFaceCropBottomPadding;
 static const NSUInteger kFaceCropOutputPixelSize = MediaDerivatives::kFaceCropOutputPixelSize;
 
 - (NSString *)cullingAlbumDirectory:(NSString *)albumId
