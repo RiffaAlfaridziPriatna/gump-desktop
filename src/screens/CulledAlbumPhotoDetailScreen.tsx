@@ -19,7 +19,7 @@ import {memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState
 import {useLayout} from '@hooks/useLayout';
 import {useImageDimensions} from '@hooks/useImageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
-import {resolveDetailDisplayUri, ensurePreview} from '@lib/storage/localStorage';
+import {resolveDetailDisplayUri} from '@lib/storage/localStorage';
 import {updatePhoto} from '@lib/culledAlbum/store';
 import {syncPhotoFromStore} from '@/application/syncPhotoRepository';
 import {Pressable, TouchableOpacity} from '@components/ui';
@@ -250,40 +250,6 @@ export default function CulledAlbumPhotoDetailScreen({
       previewUri: photoPreviewUri,
     };
     setUri(resolveDetailDisplayUri(displayFile));
-
-    if (Platform.OS !== 'windows') {
-      return;
-    }
-
-    let cancelled = false;
-    ensurePreview(albumId, displayFile, photoId)
-      .then(nextFile => {
-        if (cancelled || !nextFile.previewUri) {
-          return;
-        }
-
-        if (nextFile.previewUri !== photoPreviewUri) {
-          updatePhoto(
-            albumId,
-            photoId,
-            entry => {
-              entry.file = {
-                ...entry.file,
-                previewUri: nextFile.previewUri,
-              };
-            },
-            {recomputeTotals: false},
-          );
-          syncPhotoFromStore(albumId, photoId);
-        }
-
-        setUri(resolveDetailDisplayUri(nextFile));
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
   }, [
     albumId,
     photo?.file.name,
@@ -550,7 +516,7 @@ export default function CulledAlbumPhotoDetailScreen({
                       style={styles.keyFaceScroll}
                       contentContainerStyle={styles.keyFaceGrid}
                       showsVerticalScrollIndicator
-                      initialNumToRender={5}
+                      initialNumToRender={Math.max(5, keyFaceRows.length)}
                       maxToRenderPerBatch={3}
                       windowSize={5}
                       updateCellsBatchingPeriod={100}

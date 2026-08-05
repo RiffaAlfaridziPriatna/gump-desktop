@@ -24,12 +24,6 @@ type NativeLocalStorageModule = {
     sourceUri: string,
     photoId: string,
   ) => Promise<{thumbnailUri: string | null}>;
-  getPreviewUri?: (albumId: string, photoId: string) => Promise<string | null>;
-  ensurePreview?: (
-    albumId: string,
-    sourceUri: string,
-    photoId: string,
-  ) => Promise<{previewUri: string | null}>;
   getImageDimensions: (
     uri: string,
   ) => Promise<{width: number; height: number}>;
@@ -58,8 +52,7 @@ const NativeLocalStorage = NativeModules.GumpLocalStorage as
   | undefined;
 
 const NATIVE_STORAGE_PLATFORMS = new Set(['macos', 'ios', 'android', 'windows']);
-const THUMBNAIL_CACHE_VERSION = '768';
-const PREVIEW_CACHE_VERSION = '2048';
+const THUMBNAIL_CACHE_VERSION = '1920-v4';
 
 function hasNativeLocalStorage(): boolean {
   return (
@@ -72,28 +65,11 @@ export function isUsableThumbnailUri(thumbnailUri: string | null | undefined): b
   if (!thumbnailUri) {
     return false;
   }
-  if (Platform.OS !== 'windows') {
-    return true;
-  }
+  // Unified rules for both macOS and Windows
   const normalized = thumbnailUri.replace(/\\/g, '/');
   return (
     normalized.includes('/thumbs/') &&
-    normalized.includes('.w2.jpg') &&
-    !normalized.includes('.o1.jpg')
-  );
-}
-
-export function isUsablePreviewUri(previewUri: string | null | undefined): boolean {
-  if (!previewUri) {
-    return false;
-  }
-  if (Platform.OS !== 'windows') {
-    return true;
-  }
-  const normalized = previewUri.replace(/\\/g, '/');
-  return (
-    normalized.includes('/previews/') &&
-    normalized.includes('.w2.jpg')
+    normalized.endsWith('.v4.jpg')
   );
 }
 
@@ -119,15 +95,6 @@ export async function copyPhotoToAlbum(
     ) {
       throw new Error(
         'Local photo copy did not produce a usable thumbnail',
-      );
-    }
-
-    if (
-      COPY_REQUIRES_PREVIEW.has(Platform.OS) &&
-      !isUsablePreviewUri(copied.previewUri)
-    ) {
-      throw new Error(
-        'Local photo copy did not produce a usable detail preview',
       );
     }
 
@@ -223,15 +190,7 @@ export function resolveOriginalUri(file: FileAsset): string {
 }
 
 export function resolveDetailDisplayUri(file: FileAsset): string {
-  if (Platform.OS === 'windows') {
-    if (isUsablePreviewUri(file.previewUri)) {
-      return file.previewUri!;
-    }
-    // Oriented thumb is better than raw original while preview backfills.
-    if (isUsableThumbnailUri(file.thumbnailUri)) {
-      return file.thumbnailUri!;
-    }
-  }
+  // Detail view: use original for max quality during zoom/culling inspection
   return file.uri;
 }
 
@@ -245,15 +204,7 @@ export async function getThumbnailUri(
   return null;
 }
 
-export async function getPreviewUri(
-  albumId: string,
-  photoId: string,
-): Promise<string | null> {
-  if (hasNativeLocalStorage() && NativeLocalStorage?.getPreviewUri) {
-    return NativeLocalStorage.getPreviewUri(albumId, photoId);
-  }
-  return null;
-}
+// getPreviewUri removed - thumbnails only
 
 export async function ensureThumbnail(
   albumId: string,
@@ -290,44 +241,7 @@ export async function ensureThumbnail(
   return file;
 }
 
-export async function ensurePreview(
-  albumId: string,
-  file: FileAsset,
-  photoId: string,
-  options?: {regenerate?: boolean},
-): Promise<FileAsset> {
-  if (Platform.OS !== 'windows') {
-    return file;
-  }
-
-  if (isUsablePreviewUri(file.previewUri) && !options?.regenerate) {
-    return file;
-  }
-
-  if (!options?.regenerate) {
-    const existing = await getPreviewUri(albumId, photoId);
-    if (isUsablePreviewUri(existing)) {
-      return {...file, previewUri: existing!};
-    }
-  }
-
-  if (hasNativeLocalStorage() && NativeLocalStorage?.ensurePreview) {
-    const result = await NativeLocalStorage.ensurePreview(
-      albumId,
-      file.uri,
-      photoId,
-    );
-
-    if (result.previewUri) {
-      const previewUri = options?.regenerate
-        ? `${result.previewUri}?v=${PREVIEW_CACHE_VERSION}`
-        : result.previewUri;
-      return {...file, previewUri};
-    }
-  }
-
-  return file;
-}
+// ensurePreview removed - thumbnails only
 
 export type FaceCropInput = {
   faceIndex: number;
