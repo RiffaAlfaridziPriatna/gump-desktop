@@ -74,6 +74,13 @@ struct GumpLocalStorage {
       std::string photoId,
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
 
+  REACT_METHOD(EnsureDetail, L"ensureDetail");
+  void EnsureDetail(
+      std::string albumId,
+      std::string sourceUri,
+      std::string photoId,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
   REACT_METHOD(EnsureFaceCrops, L"ensureFaceCrops");
   void EnsureFaceCrops(
       std::string albumId,

@@ -46,6 +46,8 @@ using ReactPromiseJS = winrtRN::ReactPromise<winrtRN::JSValue>;
 
 constexpr uint32_t kThumbnailMaxPixelSize = MediaDerivatives::kThumbnailMaxPixelSize;
 constexpr float kThumbnailJpegQuality = MediaDerivatives::kThumbnailJpegQuality;
+constexpr uint32_t kDetailMaxPixelSize = MediaDerivatives::kDetailMaxPixelSize;
+constexpr float kDetailJpegQuality = MediaDerivatives::kDetailJpegQuality;
 constexpr int kThumbnailMaxConcurrent = 4;
 constexpr uint32_t kFaceDetectMaxPixelSize = FaceDetection::kAnalysisMaxPixelSize;
 // Standalone / unified hash uses the same analysis-sized buffer as face detect.
@@ -111,6 +113,14 @@ std::filesystem::path ThumbnailDirectory(std::string_view albumId) {
 
 std::filesystem::path ThumbnailPathForAlbum(std::string_view albumId, std::string_view photoId) {
   return ThumbnailDirectory(albumId) / (ToWide(photoId) + L".v4.jpg");
+}
+
+std::filesystem::path DetailDirectory(std::string_view albumId) {
+  return CullingAlbumDirectory(albumId) / L"details";
+}
+
+std::filesystem::path DetailPathForAlbum(std::string_view albumId, std::string_view photoId) {
+  return DetailDirectory(albumId) / (ToWide(photoId) + L".d1.jpg");
 }
 
 std::filesystem::path FaceCropDirectory(std::string_view albumId) {
@@ -329,6 +339,10 @@ bool IsReusableThumbnailFile(const std::filesystem::path &thumbPath) {
   return IsReusableOrientedJpegFile(thumbPath, kThumbnailMaxPixelSize);
 }
 
+bool IsReusableDetailFile(const std::filesystem::path &detailPath) {
+  return IsReusableOrientedJpegFile(detailPath, kDetailMaxPixelSize);
+}
+
 SoftwareBitmap DecodeOrientedScaledBitmap(
     const std::filesystem::path &decodePath,
     uint32_t maxPixelSize) {
@@ -470,6 +484,28 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
       sourcePath, kThumbnailMaxPixelSize);
   return WriteOrientedJpegDerivative(
       bitmap, desiredThumbPath, kThumbnailJpegQuality, kThumbnailMaxPixelSize);
+}
+
+std::optional<std::filesystem::path> GenerateDetailAtPath(
+    const std::filesystem::path &sourcePath,
+    std::string_view albumId,
+    std::string_view photoId) {
+  ThumbnailConcurrencyGuard concurrencyGuard;
+
+  if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
+    return std::nullopt;
+  }
+
+  const auto desiredDetailPath = DetailPathForAlbum(albumId, photoId);
+  if (IsReusableDetailFile(desiredDetailPath)) {
+    return desiredDetailPath;
+  }
+
+  std::filesystem::create_directories(desiredDetailPath.parent_path());
+  const auto bitmap =
+      DecodeOrientedScaledBitmapWithFallback(sourcePath, kDetailMaxPixelSize);
+  return WriteOrientedJpegDerivative(
+      bitmap, desiredDetailPath, kDetailJpegQuality, kDetailMaxPixelSize);
 }
 
 struct OrientedDerivatives {
@@ -1082,7 +1118,8 @@ void GumpLocalStorage::ListPhotos(std::string albumId, ReactPromiseJS &&promise)
           if (!name.empty() && name[0] == '.') {
             continue;
           }
-          if (name == "thumbs" || name == "previews" || name == "face-thumbs") {
+          if (name == "thumbs" || name == "details" || name == "previews" ||
+              name == "face-thumbs") {
             continue;
           }
           files.push_back(winrtRN::JSValueObject{
@@ -1222,6 +1259,12 @@ void GumpLocalStorage::DeletePhoto(std::string uri, winrtRN::ReactPromise<bool> 
           std::filesystem::remove(legacyOrientedThumb);
         }
 
+        const auto detailPath =
+            albumDir / L"details" / (path.stem().wstring() + L".d1.jpg");
+        if (std::filesystem::exists(detailPath)) {
+          std::filesystem::remove(detailPath);
+        }
+
         const auto previewPath =
             albumDir / L"previews" / (path.stem().wstring() + L".w3.jpg");
         if (std::filesystem::exists(previewPath)) {
@@ -1303,6 +1346,30 @@ void GumpLocalStorage::EnsureThumbnail(
 
         return winrtRN::JSValue(winrtRN::JSValueObject{
             {"thumbnailUri", FileUri(*thumbPath)},
+        });
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::EnsureDetail(
+    std::string albumId,
+    std::string sourceUri,
+    std::string photoId,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [=]() {
+        const auto sourcePath = PathFromUri(sourceUri);
+        if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
+          return winrtRN::JSValue(winrtRN::JSValueObject{{"detailUri", nullptr}});
+        }
+
+        const auto detailPath = GenerateDetailAtPath(sourcePath, albumId, photoId);
+        if (!detailPath.has_value()) {
+          return winrtRN::JSValue(winrtRN::JSValueObject{{"detailUri", nullptr}});
+        }
+
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"detailUri", FileUri(*detailPath)},
         });
       },
       std::move(promise));
