@@ -27,6 +27,7 @@ import {
 
 type PhotoDetailImageViewerProps = {
   uri: string;
+  photoId: string;
   faces: APIResponse.CullingFace[];
   zoomFaceIndex: number | null;
   imageSize?: ImageDimensions | null;
@@ -124,6 +125,7 @@ function FaceStatusOverlay({
 
 export function PhotoDetailImageViewer({
   uri,
+  photoId,
   faces,
   zoomFaceIndex,
   imageSize: imageSizeProp,
@@ -137,14 +139,27 @@ export function PhotoDetailImageViewer({
   const [imageDecoded, setImageDecoded] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const imageReadyNotifiedRef = useRef(false);
+  const [renderedPhotoId, setRenderedPhotoId] = useState(photoId);
+
+  // Only a new photo may blank the viewer. A uri change with the same photoId
+  // is the detail derivative replacing the thumbnail, so the painted frame has
+  // to stay on screen instead of flashing the loading overlay.
+  if (renderedPhotoId !== photoId) {
+    setRenderedPhotoId(photoId);
+    setImageDecoded(false);
+    setLoadFailed(false);
+    setLoadedImageSize(getCachedImageDimensions(uri) ?? null);
+    imageReadyNotifiedRef.current = false;
+  }
+
   const imageSize = imageSizeProp ?? loadedImageSize;
   const isZoomed = zoomFaceIndex !== null;
 
   useEffect(() => {
-    setImageDecoded(false);
-    setLoadFailed(false);
-    imageReadyNotifiedRef.current = false;
-    setLoadedImageSize(getCachedImageDimensions(uri) ?? null);
+    const cached = getCachedImageDimensions(uri);
+    if (cached) {
+      setLoadedImageSize(cached);
+    }
   }, [uri]);
 
   useEffect(() => {

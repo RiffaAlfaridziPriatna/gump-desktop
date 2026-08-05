@@ -19,7 +19,13 @@ import {memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState
 import {useLayout} from '@hooks/useLayout';
 import {useImageDimensions} from '@hooks/useImageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
-import {resolveDetailDisplayUri} from '@lib/storage/localStorage';
+import {
+  ensureDetail,
+  isUsableDetailUri,
+  resolveDetailDisplayUri,
+} from '@lib/storage/localStorage';
+import {updatePhoto} from '@lib/culledAlbum/store';
+import {syncPhotoFromStore} from '@/application/syncPhotoRepository';
 import {Pressable, TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
@@ -231,6 +237,7 @@ export default function CulledAlbumPhotoDetailScreen({
   const imageSize = useImageDimensions(uri);
   const photoFileUri = photo?.file.uri;
   const photoThumbnailUri = photo?.file.thumbnailUri;
+  const photoDetailUri = photo?.file.detailUri;
 
   useEffect(() => {
     if (!photoFileUri) {
@@ -244,6 +251,7 @@ export default function CulledAlbumPhotoDetailScreen({
       size: photo?.file.size ?? 0,
       type: photo?.file.type ?? '',
       thumbnailUri: photoThumbnailUri,
+      detailUri: photoDetailUri,
     };
     setUri(resolveDetailDisplayUri(displayFile));
   }, [
@@ -251,6 +259,56 @@ export default function CulledAlbumPhotoDetailScreen({
     photo?.file.name,
     photo?.file.size,
     photo?.file.type,
+    photoDetailUri,
+    photoFileUri,
+    photoId,
+    photoThumbnailUri,
+  ]);
+
+  useEffect(() => {
+    if (!photoFileUri || isUsableDetailUri(photoDetailUri)) {
+      return;
+    }
+
+    let cancelled = false;
+    const sourceFile = {
+      uri: photoFileUri,
+      name: photo?.file.name ?? '',
+      size: photo?.file.size ?? 0,
+      type: photo?.file.type ?? '',
+      thumbnailUri: photoThumbnailUri,
+      detailUri: photoDetailUri,
+    };
+
+    ensureDetail(albumId, sourceFile, photoId)
+      .then(async nextFile => {
+        if (cancelled || !isUsableDetailUri(nextFile.detailUri)) {
+          return;
+        }
+        const detailUri = nextFile.detailUri!;
+        // Swap only once the upgrade is decodable, so the visible frame is
+        // replaced in one step instead of going through an empty load.
+        await preloadImage(detailUri);
+        if (cancelled) {
+          return;
+        }
+        updatePhoto(albumId, photoId, current => {
+          current.file = {...current.file, detailUri};
+        });
+        syncPhotoFromStore(albumId, photoId);
+        setUri(detailUri);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    albumId,
+    photo?.file.name,
+    photo?.file.size,
+    photo?.file.type,
+    photoDetailUri,
     photoFileUri,
     photoId,
     photoThumbnailUri,
@@ -258,6 +316,9 @@ export default function CulledAlbumPhotoDetailScreen({
 
   useLayoutEffect(() => {
     setMainImageReady(false);
+  }, [photoId]);
+
+  useLayoutEffect(() => {
     if (uri) {
       preloadImage(uri).catch(() => undefined);
     }
@@ -472,6 +533,7 @@ export default function CulledAlbumPhotoDetailScreen({
                 ]}>
                 <PhotoDetailImageViewer
                   uri={uri}
+                  photoId={photoId}
                   faces={faces}
                   zoomFaceIndex={zoomFaceIndex}
                   imageSize={imageSize}

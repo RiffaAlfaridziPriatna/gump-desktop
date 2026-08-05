@@ -23,8 +23,8 @@ import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {preloadImage, preloadImages} from '@lib/media/imagePreload';
 import {
+  resolveDetailDisplayUri,
   resolveGridDisplayUri,
-  resolveOriginalUri,
 } from '@lib/storage/localStorage';
 import {stabilizeGridPhotos} from '@lib/culledAlbum/stableGridPhotos';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
@@ -175,7 +175,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     (photoId: string, faceIndex?: number) => {
       const entry = gridPhotos.find(photo => photo.photoId === photoId);
       if (entry?.file) {
-        preloadImage(resolveOriginalUri(entry.file)).catch(() => undefined);
+        preloadImage(resolveDetailDisplayUri(entry.file)).catch(() => undefined);
       }
       navigation.navigate('CulledAlbumPhotoDetail', {
         albumId,
