@@ -20,7 +20,6 @@ import {
 } from 'react-native';
 
 const THUMBNAIL_ASPECT_RATIO = 3 / 2;
-const isWindows = Platform.OS === 'windows';
 
 type CulledAlbumPhotoThumbnailProps = {
   file: FileAsset;
@@ -67,7 +66,7 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
   }, [height, imageSize, width]);
 
   useEffect(() => {
-    if (!uri || isWindows) {
+    if (!uri) {
       return;
     }
 
@@ -123,15 +122,7 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
     <View style={[styles.container, {width, height}]} pointerEvents="box-none">
       {uri ? (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          {isWindows ? (
-            <Image
-              source={{uri}}
-              resizeMode="contain"
-              onLoad={handleLoad}
-              onError={handleError}
-              style={[styles.windowsImage, {opacity: isLoaded ? 1 : 0}]}
-            />
-          ) : imageLayout ? (
+          {imageLayout ? (
             <Image
               source={{uri}}
               onLoad={handleLoad}
@@ -168,9 +159,6 @@ const styles = StyleSheet.create({
   },
   containedImage: {
     position: 'absolute',
-  },
-  windowsImage: {
-    ...StyleSheet.absoluteFillObject,
   },
   imageHidden: {
     position: 'absolute',

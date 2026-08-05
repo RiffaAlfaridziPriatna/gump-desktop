@@ -43,8 +43,6 @@ const HORIZONTAL_PADDING = 48;
 const GAP = 8;
 const RESIZE_SETTLE_MS = 150;
 
-const isWindows = Platform.OS === 'windows';
-
 const PhotoGridCellImage = memo(
   function PhotoGridCellImage({
     uri,
@@ -79,7 +77,7 @@ const PhotoGridCellImage = memo(
     }, [height, imageSize, width]);
 
     useEffect(() => {
-      if (!uri || isWindows) {
+      if (!uri) {
         return;
       }
 
@@ -131,15 +129,7 @@ const PhotoGridCellImage = memo(
           {width, height, backgroundColor: colors.cardBackgroundSecondary},
         ]}>
         {uri ? (
-          isWindows ? (
-            <Image
-              source={{uri}}
-              resizeMode="contain"
-              onLoad={handleLoad}
-              onError={() => setIsLoaded(true)}
-              style={[styles.windowsImage, {opacity: isLoaded ? 1 : 0}]}
-            />
-          ) : imageLayout ? (
+          imageLayout ? (
             <Image
               source={{uri}}
               onLoad={handleLoad}
@@ -477,9 +467,6 @@ const styles = StyleSheet.create({
   },
   containedImage: {
     position: 'absolute',
-  },
-  windowsImage: {
-    ...StyleSheet.absoluteFillObject,
   },
   imageHidden: {
     position: 'absolute',

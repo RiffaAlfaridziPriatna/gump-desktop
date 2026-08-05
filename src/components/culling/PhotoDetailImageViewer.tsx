@@ -26,8 +26,6 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 
-const isWindows = Platform.OS === 'windows';
-
 type PhotoDetailImageViewerProps = {
   uri: string;
   faces: APIResponse.CullingFace[];
@@ -299,9 +297,7 @@ export function PhotoDetailImageViewer({
       }}
     >
       <View style={styles.imageFrame}>
-        {isWindows && !isZoomed ? (
-          fallbackImage
-        ) : imageLayout ? (
+        {imageLayout ? (
           <Image
             source={{uri}}
             resizeMode="contain"
