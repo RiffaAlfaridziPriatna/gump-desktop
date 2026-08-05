@@ -124,21 +124,6 @@ std::filesystem::path FaceCropPathForAlbum(
   return FaceCropDirectory(albumId) / (ToWide(photoId) + L"-" + std::to_wstring(faceIndex) + L".jpg");
 }
 
-// Use FaceCropRect from MediaDerivatives.h
-using FaceCropRect = MediaDerivatives::FaceCropRect;
-
-// Use shared implementation from MediaDerivatives
-MediaDerivatives::FaceCropRect ComputePaddedFaceCropRect(
-    int imageWidth,
-    int imageHeight,
-    float boxLeft,
-    float boxTop,
-    float boxWidth,
-    float boxHeight) {
-  return MediaDerivatives::ComputePaddedFaceCropRect(
-      imageWidth, imageHeight, boxLeft, boxTop, boxWidth, boxHeight);
-}
-
 StorageFile GetStorageFileFromPath(const std::filesystem::path &path) {
   std::filesystem::path nativePath = path.lexically_normal();
   nativePath.make_preferred();
@@ -344,8 +329,6 @@ bool IsReusableThumbnailFile(const std::filesystem::path &thumbPath) {
   return IsReusableOrientedJpegFile(thumbPath, kThumbnailMaxPixelSize);
 }
 
-// IsReusablePreviewFile removed - thumbnails only
-
 SoftwareBitmap DecodeOrientedScaledBitmap(
     const std::filesystem::path &decodePath,
     uint32_t maxPixelSize) {
@@ -488,8 +471,6 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
   return WriteOrientedJpegDerivative(
       bitmap, desiredThumbPath, kThumbnailJpegQuality, kThumbnailMaxPixelSize);
 }
-
-// GenerateDetailPreviewAtPath removed - thumbnails only
 
 struct OrientedDerivatives {
   std::optional<std::filesystem::path> thumbnailPath;
@@ -727,11 +708,6 @@ SoftwareBitmap LoadSoftwareBitmapScaled(
       .get();
 }
 
-// Use shared implementation from MediaDerivatives
-FaceCropRect MakeSquareCoverCrop(const FaceCropRect &rect) {
-  return MediaDerivatives::MakeSquareCoverCrop(rect);
-}
-
 struct BitmapPixels {
   std::vector<uint8_t> bytes;
   int width{0};
@@ -868,13 +844,14 @@ winrtRN::JSValue GenerateFaceCropsAtPath(
 
     const auto &boundingBox = boundingBoxValue.AsObject();
     const int faceIndex = static_cast<int>(faceIndexValue.AsInt32());
-    const auto cropRect = MakeSquareCoverCrop(ComputePaddedFaceCropRect(
-        imageWidth,
-        imageHeight,
-        static_cast<float>(boundingBox["left"].AsDouble()),
-        static_cast<float>(boundingBox["top"].AsDouble()),
-        static_cast<float>(boundingBox["width"].AsDouble()),
-        static_cast<float>(boundingBox["height"].AsDouble())));
+    const auto cropRect =
+        MediaDerivatives::MakeSquareCoverCrop(MediaDerivatives::ComputePaddedFaceCropRect(
+            imageWidth,
+            imageHeight,
+            static_cast<float>(boundingBox["left"].AsDouble()),
+            static_cast<float>(boundingBox["top"].AsDouble()),
+            static_cast<float>(boundingBox["width"].AsDouble()),
+            static_cast<float>(boundingBox["height"].AsDouble())));
 
     const auto cropped = CropSoftwareBitmap(
         bitmap,
@@ -1330,8 +1307,6 @@ void GumpLocalStorage::EnsureThumbnail(
       },
       std::move(promise));
 }
-
-// GetPreviewUri and EnsurePreview methods removed - thumbnails only per unified contract
 
 void GumpLocalStorage::EnsureFaceCrops(
     std::string albumId,

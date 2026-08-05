@@ -74,8 +74,6 @@ struct GumpLocalStorage {
       std::string photoId,
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
 
-  // GetPreviewUri and EnsurePreview removed - thumbnails only per unified contract
-
   REACT_METHOD(EnsureFaceCrops, L"ensureFaceCrops");
   void EnsureFaceCrops(
       std::string albumId,
