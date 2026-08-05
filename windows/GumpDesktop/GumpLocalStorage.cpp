@@ -51,6 +51,7 @@ constexpr uint32_t kFaceDetectMaxPixelSize = FaceDetection::kAnalysisMaxPixelSiz
 // Standalone / unified hash uses the same analysis-sized buffer as face detect.
 constexpr uint32_t kPerceptualHashMaxPixelSize = FaceDetection::kAnalysisMaxPixelSize;
 constexpr uint32_t kFaceCropSourceMaxPixelSize = FaceDetection::kAnalysisMaxPixelSize;
+constexpr uint32_t kFaceCropOutputPixelSize = MediaDerivatives::kFaceCropOutputPixelSize;
 constexpr float kFaceCropJpegQuality = 0.85f;
 
 std::wstring ToWide(std::string_view value) {
@@ -469,6 +470,13 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
   if (std::filesystem::exists(legacyW2ThumbPath)) {
     std::error_code ec;
     std::filesystem::remove(legacyW2ThumbPath, ec);
+  }
+
+  const auto legacyW3ThumbPath =
+      ThumbnailDirectory(albumId) / (ToWide(photoId) + L".w3.jpg");
+  if (std::filesystem::exists(legacyW3ThumbPath)) {
+    std::error_code ec;
+    std::filesystem::remove(legacyW3ThumbPath, ec);
   }
 
   if (IsReusableThumbnailFile(desiredThumbPath)) {
@@ -1213,9 +1221,14 @@ void GumpLocalStorage::DeletePhoto(std::string uri, winrtRN::ReactPromise<bool> 
         DeleteFaceCropsForPhoto(albumDir, photoId);
 
         const auto thumbsDir = albumDir / L"thumbs";
-        const auto thumbPath = thumbsDir / (path.stem().wstring() + L".w3.jpg");
+        const auto thumbPath = thumbsDir / (path.stem().wstring() + L".v4.jpg");
         if (std::filesystem::exists(thumbPath)) {
           std::filesystem::remove(thumbPath);
+        }
+        const auto legacyW3ThumbPath =
+            thumbsDir / (path.stem().wstring() + L".w3.jpg");
+        if (std::filesystem::exists(legacyW3ThumbPath)) {
+          std::filesystem::remove(legacyW3ThumbPath);
         }
         const auto legacyW2ThumbPath =
             thumbsDir / (path.stem().wstring() + L".w2.jpg");
