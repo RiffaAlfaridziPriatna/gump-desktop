@@ -8,6 +8,11 @@ namespace MediaDerivatives {
 constexpr uint32_t kThumbnailMaxPixelSize = 1920;
 constexpr float kThumbnailJpegQuality = 0.82f;
 
+// Detail derivative: generated on demand for the photo detail viewer, where
+// zooming into a face needs more pixels than the grid thumbnail carries.
+constexpr uint32_t kDetailMaxPixelSize = 4096;
+constexpr float kDetailJpegQuality = 0.90f;
+
 // Face crop padding and output
 constexpr float kFaceCropSidePadding = 0.3f;
 constexpr float kFaceCropTopPadding = 0.3f;
