@@ -7,6 +7,7 @@
 
 #include "DifferenceHash.h"
 #include "ExifDateTime.h"
+#include "MediaDerivatives.h"
 
 #include <string>
 
@@ -14,16 +15,17 @@
 
 RCT_EXPORT_MODULE();
 
-static const NSUInteger THUMBNAIL_MAX_PIXEL_SIZE = 1920;
+static const NSUInteger THUMBNAIL_MAX_PIXEL_SIZE = MediaDerivatives::kThumbnailMaxPixelSize;
+static const CGFloat THUMBNAIL_JPEG_QUALITY = MediaDerivatives::kThumbnailJpegQuality;
 // Keep in lockstep with FaceDetection::kAnalysisMaxPixelSize and Windows.
 static const NSUInteger kGumpAnalysisMaxPixelSize =
     (NSUInteger)FaceDetection::kAnalysisMaxPixelSize;
 static const NSUInteger kGumpScrfdAnalysisMaxPixelSize =
     (NSUInteger)FaceDetection::kAnalysisMaxPixelSize;
-static const CGFloat kFaceCropSidePadding = 0.3;
-static const CGFloat kFaceCropTopPadding = 0.3;
-static const CGFloat kFaceCropBottomPadding = 0.5;
-static const NSUInteger kFaceCropOutputPixelSize = 128;
+static const CGFloat kFaceCropSidePadding = MediaDerivatives::kFaceCropSidePadding;
+static const CGFloat kFaceCropTopPadding = MediaDerivatives::kFaceCropTopPadding;
+static const CGFloat kFaceCropBottomPadding = MediaDerivatives::kFaceCropBottomPadding;
+static const NSUInteger kFaceCropOutputPixelSize = MediaDerivatives::kFaceCropOutputPixelSize;
 
 - (NSString *)cullingAlbumDirectory:(NSString *)albumId
 {
@@ -1888,7 +1890,7 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
 - (NSString *)thumbnailPathForAlbum:(NSString *)albumId photoId:(NSString *)photoId
 {
   return [[self thumbnailDirectory:albumId]
-      stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.jpg", photoId]];
+      stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.v4.jpg", photoId]];
 }
 
 - (NSString *)generateThumbnailAtPath:(NSString *)sourcePath
@@ -1906,6 +1908,14 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
   }
 
   NSString *thumbPath = [self thumbnailPathForAlbum:albumId photoId:photoId];
+  
+  // Clean up legacy thumb files
+  NSString *legacyThumbPath = [[self thumbnailDirectory:albumId]
+      stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.jpg", photoId]];
+  if ([[NSFileManager defaultManager] fileExistsAtPath:legacyThumbPath]) {
+    [[NSFileManager defaultManager] removeItemAtPath:legacyThumbPath error:nil];
+  }
+  
   if ([[NSFileManager defaultManager] fileExistsAtPath:thumbPath]) {
     [[NSFileManager defaultManager] removeItemAtPath:thumbPath error:nil];
   }
@@ -1937,7 +1947,7 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
   }
 
   NSDictionary *properties = @{
-    (NSString *)kCGImageDestinationLossyCompressionQuality : @(0.82),
+    (NSString *)kCGImageDestinationLossyCompressionQuality : @(THUMBNAIL_JPEG_QUALITY),
   };
   CGImageDestinationAddImage(destination, thumbnail, (__bridge CFDictionaryRef)properties);
   BOOL saved = CGImageDestinationFinalize(destination);
@@ -1969,46 +1979,31 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
   CGFloat width = [box[@"width"] doubleValue];
   CGFloat height = [box[@"height"] doubleValue];
 
-  CGFloat cropX = left * imageWidth;
-  CGFloat cropY = top * imageHeight;
-  CGFloat cropW = MAX(width * imageWidth, 1.0);
-  CGFloat cropH = MAX(height * imageHeight, 1.0);
+  // Use shared implementation from MediaDerivatives
+  MediaDerivatives::FaceCropRect rect = MediaDerivatives::ComputePaddedFaceCropRect(
+      (int)imageWidth,
+      (int)imageHeight,
+      (float)left,
+      (float)top,
+      (float)width,
+      (float)height);
 
-  CGFloat viewLeft = cropX - kFaceCropSidePadding * cropW;
-  CGFloat viewTop = cropY - kFaceCropTopPadding * cropH;
-  CGFloat viewW = cropW * (1.0 + 2.0 * kFaceCropSidePadding);
-  CGFloat viewH = cropH * (1.0 + kFaceCropTopPadding + kFaceCropBottomPadding);
-
-  viewLeft = MAX(0.0, MIN(viewLeft, imageWidth - 1.0));
-  viewTop = MAX(0.0, MIN(viewTop, imageHeight - 1.0));
-  viewW = MAX(1.0, MIN(viewW, imageWidth - viewLeft));
-  viewH = MAX(1.0, MIN(viewH, imageHeight - viewTop));
-
-  return CGRectMake(viewLeft, viewTop, viewW, viewH);
+  return CGRectMake(rect.left, rect.top, rect.width, rect.height);
 }
 
 // Match Windows MakeSquareCoverCrop: keep aspect by center-cropping the
 // padded rect to a square before scaling into the output thumbnail.
 - (CGRect)squareCoverCropRect:(CGRect)rect
 {
-  if (rect.size.width <= 0.0 || rect.size.height <= 0.0) {
-    return rect;
-  }
-  if (rect.size.width == rect.size.height) {
-    return rect;
-  }
-  if (rect.size.width > rect.size.height) {
-    CGFloat side = rect.size.height;
-    return CGRectMake(rect.origin.x + (rect.size.width - side) / 2.0,
-                      rect.origin.y,
-                      side,
-                      side);
-  }
-  CGFloat side = rect.size.width;
-  return CGRectMake(rect.origin.x,
-                    rect.origin.y + (rect.size.height - side) / 2.0,
-                    side,
-                    side);
+  // Use shared implementation from MediaDerivatives
+  MediaDerivatives::FaceCropRect input{
+      (int)rect.origin.x,
+      (int)rect.origin.y,
+      (int)rect.size.width,
+      (int)rect.size.height,
+  };
+  MediaDerivatives::FaceCropRect result = MediaDerivatives::MakeSquareCoverCrop(input);
+  return CGRectMake(result.left, result.top, result.width, result.height);
 }
 
 - (BOOL)writeFaceCropImage:(CGImageRef)sourceImage
