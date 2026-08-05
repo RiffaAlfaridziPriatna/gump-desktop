@@ -3,6 +3,7 @@
 #include "DifferenceHash.h"
 #include "ExifDateTime.h"
 #include "FaceDetectionPipeline.h"
+#include "MediaDerivatives.h"
 
 #include <ShlObj.h>
 #include <combaseapi.h>
@@ -43,19 +44,13 @@ namespace {
 
 using ReactPromiseJS = winrtRN::ReactPromise<winrtRN::JSValue>;
 
-constexpr uint32_t kThumbnailMaxPixelSize = 768;
-constexpr float kThumbnailJpegQuality = 0.80f;
-constexpr uint32_t kDetailPreviewMaxPixelSize = 2048;
-constexpr float kDetailPreviewJpegQuality = 0.85f;
+constexpr uint32_t kThumbnailMaxPixelSize = MediaDerivatives::kThumbnailMaxPixelSize;
+constexpr float kThumbnailJpegQuality = MediaDerivatives::kThumbnailJpegQuality;
 constexpr int kThumbnailMaxConcurrent = 4;
 constexpr uint32_t kFaceDetectMaxPixelSize = FaceDetection::kAnalysisMaxPixelSize;
 // Standalone / unified hash uses the same analysis-sized buffer as face detect.
 constexpr uint32_t kPerceptualHashMaxPixelSize = FaceDetection::kAnalysisMaxPixelSize;
-constexpr uint32_t kFaceCropSourceMaxPixelSize = 1600;
-constexpr float kFaceCropSidePadding = 0.3f;
-constexpr float kFaceCropTopPadding = 0.3f;
-constexpr float kFaceCropBottomPadding = 0.5f;
-constexpr uint32_t kFaceCropOutputPixelSize = 128;
+constexpr uint32_t kFaceCropSourceMaxPixelSize = FaceDetection::kAnalysisMaxPixelSize;
 constexpr float kFaceCropJpegQuality = 0.85f;
 
 std::wstring ToWide(std::string_view value) {
@@ -114,15 +109,7 @@ std::filesystem::path ThumbnailDirectory(std::string_view albumId) {
 }
 
 std::filesystem::path ThumbnailPathForAlbum(std::string_view albumId, std::string_view photoId) {
-  return ThumbnailDirectory(albumId) / (ToWide(photoId) + L".w2.jpg");
-}
-
-std::filesystem::path PreviewDirectory(std::string_view albumId) {
-  return CullingAlbumDirectory(albumId) / L"previews";
-}
-
-std::filesystem::path PreviewPathForAlbum(std::string_view albumId, std::string_view photoId) {
-  return PreviewDirectory(albumId) / (ToWide(photoId) + L".w2.jpg");
+  return ThumbnailDirectory(albumId) / (ToWide(photoId) + L".v4.jpg");
 }
 
 std::filesystem::path FaceCropDirectory(std::string_view albumId) {
@@ -136,41 +123,19 @@ std::filesystem::path FaceCropPathForAlbum(
   return FaceCropDirectory(albumId) / (ToWide(photoId) + L"-" + std::to_wstring(faceIndex) + L".jpg");
 }
 
-struct FaceCropRect {
-  int left{0};
-  int top{0};
-  int width{0};
-  int height{0};
-};
+// Use FaceCropRect from MediaDerivatives.h
+using FaceCropRect = MediaDerivatives::FaceCropRect;
 
-FaceCropRect ComputePaddedFaceCropRect(
+// Use shared implementation from MediaDerivatives
+MediaDerivatives::FaceCropRect ComputePaddedFaceCropRect(
     int imageWidth,
     int imageHeight,
     float boxLeft,
     float boxTop,
     float boxWidth,
     float boxHeight) {
-  const float cropX = boxLeft * static_cast<float>(imageWidth);
-  const float cropY = boxTop * static_cast<float>(imageHeight);
-  const float cropW = std::max(boxWidth * static_cast<float>(imageWidth), 1.0f);
-  const float cropH = std::max(boxHeight * static_cast<float>(imageHeight), 1.0f);
-
-  float viewLeft = cropX - kFaceCropSidePadding * cropW;
-  float viewTop = cropY - kFaceCropTopPadding * cropH;
-  float viewW = cropW * (1.0f + 2.0f * kFaceCropSidePadding);
-  float viewH = cropH * (1.0f + kFaceCropTopPadding + kFaceCropBottomPadding);
-
-  viewLeft = std::max(0.0f, std::min(viewLeft, static_cast<float>(imageWidth - 1)));
-  viewTop = std::max(0.0f, std::min(viewTop, static_cast<float>(imageHeight - 1)));
-  viewW = std::max(1.0f, std::min(viewW, static_cast<float>(imageWidth) - viewLeft));
-  viewH = std::max(1.0f, std::min(viewH, static_cast<float>(imageHeight) - viewTop));
-
-  return FaceCropRect{
-      static_cast<int>(std::lround(viewLeft)),
-      static_cast<int>(std::lround(viewTop)),
-      static_cast<int>(std::lround(viewW)),
-      static_cast<int>(std::lround(viewH)),
-  };
+  return MediaDerivatives::ComputePaddedFaceCropRect(
+      imageWidth, imageHeight, boxLeft, boxTop, boxWidth, boxHeight);
 }
 
 StorageFile GetStorageFileFromPath(const std::filesystem::path &path) {
@@ -378,9 +343,7 @@ bool IsReusableThumbnailFile(const std::filesystem::path &thumbPath) {
   return IsReusableOrientedJpegFile(thumbPath, kThumbnailMaxPixelSize);
 }
 
-bool IsReusablePreviewFile(const std::filesystem::path &previewPath) {
-  return IsReusableOrientedJpegFile(previewPath, kDetailPreviewMaxPixelSize);
-}
+// IsReusablePreviewFile removed - thumbnails only
 
 SoftwareBitmap DecodeOrientedScaledBitmap(
     const std::filesystem::path &decodePath,
@@ -389,17 +352,18 @@ SoftwareBitmap DecodeOrientedScaledBitmap(
   const auto sourceStream = sourceFile.OpenAsync(FileAccessMode::Read).get();
   const auto decoder = BitmapDecoder::CreateAsync(sourceStream).get();
 
-  // ScaledWidth/Height are relative to oriented size when respecting EXIF.
-  const auto orientedWidth = decoder.OrientedPixelWidth();
-  const auto orientedHeight = decoder.OrientedPixelHeight();
+  // BitmapTransform scale runs in SOURCE pixel space, before EXIF flip/rotate.
+  // Use PixelWidth/Height here; RespectExifOrientation then orients the result.
+  const auto sourceWidth = decoder.PixelWidth();
+  const auto sourceHeight = decoder.PixelHeight();
   const auto targetSize =
-      ComputeThumbnailSize(orientedWidth, orientedHeight, maxPixelSize);
+      ComputeThumbnailSize(sourceWidth, sourceHeight, maxPixelSize);
   if (targetSize.width == 0 || targetSize.height == 0) {
     return nullptr;
   }
 
   BitmapTransform transform;
-  if (targetSize.width != orientedWidth || targetSize.height != orientedHeight) {
+  if (targetSize.width != sourceWidth || targetSize.height != sourceHeight) {
     transform.ScaledWidth(targetSize.width);
     transform.ScaledHeight(targetSize.height);
     transform.InterpolationMode(BitmapInterpolationMode::Linear);
@@ -500,6 +464,13 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
     std::filesystem::remove(legacyThumbPath, ec);
   }
 
+  const auto legacyW2ThumbPath =
+      ThumbnailDirectory(albumId) / (ToWide(photoId) + L".w2.jpg");
+  if (std::filesystem::exists(legacyW2ThumbPath)) {
+    std::error_code ec;
+    std::filesystem::remove(legacyW2ThumbPath, ec);
+  }
+
   if (IsReusableThumbnailFile(desiredThumbPath)) {
     return desiredThumbPath;
   }
@@ -510,33 +481,10 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
       bitmap, desiredThumbPath, kThumbnailJpegQuality, kThumbnailMaxPixelSize);
 }
 
-std::optional<std::filesystem::path> GenerateDetailPreviewAtPath(
-    const std::filesystem::path &sourcePath,
-    std::string_view albumId,
-    std::string_view photoId) {
-  ThumbnailConcurrencyGuard concurrencyGuard;
-
-  if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
-    return std::nullopt;
-  }
-
-  const auto desiredPreviewPath = PreviewPathForAlbum(albumId, photoId);
-  if (IsReusablePreviewFile(desiredPreviewPath)) {
-    return desiredPreviewPath;
-  }
-
-  const auto bitmap = DecodeOrientedScaledBitmapWithFallback(
-      sourcePath, kDetailPreviewMaxPixelSize);
-  return WriteOrientedJpegDerivative(
-      bitmap,
-      desiredPreviewPath,
-      kDetailPreviewJpegQuality,
-      kDetailPreviewMaxPixelSize);
-}
+// GenerateDetailPreviewAtPath removed - thumbnails only
 
 struct OrientedDerivatives {
   std::optional<std::filesystem::path> thumbnailPath;
-  std::optional<std::filesystem::path> previewPath;
 };
 
 OrientedDerivatives GenerateOrientedDerivativesAtPath(
@@ -551,10 +499,9 @@ OrientedDerivatives GenerateOrientedDerivativesAtPath(
   }
 
   const auto desiredThumbPath = ThumbnailPathForAlbum(albumId, photoId);
-  const auto desiredPreviewPath = PreviewPathForAlbum(albumId, photoId);
   std::filesystem::create_directories(desiredThumbPath.parent_path());
-  std::filesystem::create_directories(desiredPreviewPath.parent_path());
 
+  // Clean up legacy thumb files
   const auto legacyOrientedPath =
       ThumbnailDirectory(albumId) / (ToWide(photoId) + L".o1.jpg");
   if (std::filesystem::exists(legacyOrientedPath)) {
@@ -567,40 +514,37 @@ OrientedDerivatives GenerateOrientedDerivativesAtPath(
     std::error_code ec;
     std::filesystem::remove(legacyThumbPath, ec);
   }
+  const auto legacyW2ThumbPath =
+      ThumbnailDirectory(albumId) / (ToWide(photoId) + L".w2.jpg");
+  if (std::filesystem::exists(legacyW2ThumbPath)) {
+    std::error_code ec;
+    std::filesystem::remove(legacyW2ThumbPath, ec);
+  }
+  const auto legacyW3ThumbPath =
+      ThumbnailDirectory(albumId) / (ToWide(photoId) + L".w3.jpg");
+  if (std::filesystem::exists(legacyW3ThumbPath)) {
+    std::error_code ec;
+    std::filesystem::remove(legacyW3ThumbPath, ec);
+  }
 
   const bool reusableThumb = IsReusableThumbnailFile(desiredThumbPath);
-  const bool reusablePreview = IsReusablePreviewFile(desiredPreviewPath);
   if (reusableThumb) {
     result.thumbnailPath = desiredThumbPath;
-  }
-  if (reusablePreview) {
-    result.previewPath = desiredPreviewPath;
-  }
-  if (reusableThumb && reusablePreview) {
     return result;
   }
 
-  // One oriented decode at preview size, then derive thumb by encode-scale.
-  const auto previewBitmap = DecodeOrientedScaledBitmapWithFallback(
-      sourcePath, kDetailPreviewMaxPixelSize);
-  if (!previewBitmap) {
+  // Single oriented decode at thumbnail size (1920px)
+  const auto thumbBitmap = DecodeOrientedScaledBitmapWithFallback(
+      sourcePath, kThumbnailMaxPixelSize);
+  if (!thumbBitmap) {
     return result;
   }
 
-  if (!reusablePreview) {
-    result.previewPath = WriteOrientedJpegDerivative(
-        previewBitmap,
-        desiredPreviewPath,
-        kDetailPreviewJpegQuality,
-        kDetailPreviewMaxPixelSize);
-  }
-  if (!reusableThumb) {
-    result.thumbnailPath = WriteOrientedJpegDerivative(
-        previewBitmap,
-        desiredThumbPath,
-        kThumbnailJpegQuality,
-        kThumbnailMaxPixelSize);
-  }
+  result.thumbnailPath = WriteOrientedJpegDerivative(
+      thumbBitmap,
+      desiredThumbPath,
+      kThumbnailJpegQuality,
+      kThumbnailMaxPixelSize);
 
   return result;
 }
@@ -752,14 +696,14 @@ SoftwareBitmap LoadSoftwareBitmapScaled(
   const auto decoder = BitmapDecoder::CreateAsync(stream).get();
 
   const auto targetSize = ComputeThumbnailSize(
-      decoder.OrientedPixelWidth(), decoder.OrientedPixelHeight(), maxPixelSize);
+      decoder.PixelWidth(), decoder.PixelHeight(), maxPixelSize);
   if (targetSize.width == 0 || targetSize.height == 0) {
     throw std::runtime_error("Invalid image dimensions");
   }
 
   BitmapTransform transform;
-  if (targetSize.width != decoder.OrientedPixelWidth() ||
-      targetSize.height != decoder.OrientedPixelHeight()) {
+  if (targetSize.width != decoder.PixelWidth() ||
+      targetSize.height != decoder.PixelHeight()) {
     transform.ScaledWidth(targetSize.width);
     transform.ScaledHeight(targetSize.height);
     transform.InterpolationMode(BitmapInterpolationMode::Linear);
@@ -775,29 +719,9 @@ SoftwareBitmap LoadSoftwareBitmapScaled(
       .get();
 }
 
+// Use shared implementation from MediaDerivatives
 FaceCropRect MakeSquareCoverCrop(const FaceCropRect &rect) {
-  if (rect.width <= 0 || rect.height <= 0) {
-    return rect;
-  }
-  if (rect.width == rect.height) {
-    return rect;
-  }
-  if (rect.width > rect.height) {
-    const int side = rect.height;
-    return FaceCropRect{
-        rect.left + (rect.width - side) / 2,
-        rect.top,
-        side,
-        side,
-    };
-  }
-  const int side = rect.width;
-  return FaceCropRect{
-      rect.left,
-      rect.top + (rect.height - side) / 2,
-      side,
-      side,
-  };
+  return MediaDerivatives::MakeSquareCoverCrop(rect);
 }
 
 struct BitmapPixels {
@@ -1142,14 +1066,6 @@ void GumpLocalStorage::CopyPhoto(
           std::filesystem::remove(destPath, ec);
           throw std::runtime_error("Failed to generate thumbnail for local photo copy");
         }
-        if (!derivatives.previewPath) {
-          std::error_code ec;
-          std::filesystem::remove(destPath, ec);
-          if (derivatives.thumbnailPath) {
-            std::filesystem::remove(*derivatives.thumbnailPath, ec);
-          }
-          throw std::runtime_error("Failed to generate detail preview for local photo copy");
-        }
 
         winrtRN::JSValueObject result{
             {"uri", FileUri(destPath)},
@@ -1157,7 +1073,6 @@ void GumpLocalStorage::CopyPhoto(
             {"size", static_cast<double>(std::filesystem::file_size(destPath))},
             {"type", MimeTypeForPath(destPath)},
             {"thumbnailUri", FileUri(*derivatives.thumbnailPath)},
-            {"previewUri", FileUri(*derivatives.previewPath)},
         };
 
         return winrtRN::JSValue(std::move(result));
@@ -1298,9 +1213,14 @@ void GumpLocalStorage::DeletePhoto(std::string uri, winrtRN::ReactPromise<bool> 
         DeleteFaceCropsForPhoto(albumDir, photoId);
 
         const auto thumbsDir = albumDir / L"thumbs";
-        const auto thumbPath = thumbsDir / (path.stem().wstring() + L".w2.jpg");
+        const auto thumbPath = thumbsDir / (path.stem().wstring() + L".w3.jpg");
         if (std::filesystem::exists(thumbPath)) {
           std::filesystem::remove(thumbPath);
+        }
+        const auto legacyW2ThumbPath =
+            thumbsDir / (path.stem().wstring() + L".w2.jpg");
+        if (std::filesystem::exists(legacyW2ThumbPath)) {
+          std::filesystem::remove(legacyW2ThumbPath);
         }
         const auto legacyThumbPath = thumbsDir / (path.stem().wstring() + L".jpg");
         if (std::filesystem::exists(legacyThumbPath)) {
@@ -1313,9 +1233,14 @@ void GumpLocalStorage::DeletePhoto(std::string uri, winrtRN::ReactPromise<bool> 
         }
 
         const auto previewPath =
-            albumDir / L"previews" / (path.stem().wstring() + L".w2.jpg");
+            albumDir / L"previews" / (path.stem().wstring() + L".w3.jpg");
         if (std::filesystem::exists(previewPath)) {
           std::filesystem::remove(previewPath);
+        }
+        const auto legacyW2PreviewPath =
+            albumDir / L"previews" / (path.stem().wstring() + L".w2.jpg");
+        if (std::filesystem::exists(legacyW2PreviewPath)) {
+          std::filesystem::remove(legacyW2PreviewPath);
         }
 
         return true;
@@ -1393,45 +1318,7 @@ void GumpLocalStorage::EnsureThumbnail(
       std::move(promise));
 }
 
-void GumpLocalStorage::GetPreviewUri(
-    std::string albumId,
-    std::string photoId,
-    ReactPromiseJS &&promise) noexcept {
-  RunAsync(
-      [albumId = std::move(albumId), photoId = std::move(photoId)]() {
-        const auto previewPath = PreviewPathForAlbum(albumId, photoId);
-        if (IsReusablePreviewFile(previewPath)) {
-          return winrtRN::JSValue(FileUri(previewPath));
-        }
-        return winrtRN::JSValue(nullptr);
-      },
-      std::move(promise));
-}
-
-void GumpLocalStorage::EnsurePreview(
-    std::string albumId,
-    std::string sourceUri,
-    std::string photoId,
-    ReactPromiseJS &&promise) noexcept {
-  RunAsync(
-      [=]() {
-        const auto sourcePath = PathFromUri(sourceUri);
-        if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
-          return winrtRN::JSValue(winrtRN::JSValueObject{{"previewUri", nullptr}});
-        }
-
-        const auto previewPath =
-            GenerateDetailPreviewAtPath(sourcePath, albumId, photoId);
-        if (!previewPath.has_value()) {
-          return winrtRN::JSValue(winrtRN::JSValueObject{{"previewUri", nullptr}});
-        }
-
-        return winrtRN::JSValue(winrtRN::JSValueObject{
-            {"previewUri", FileUri(*previewPath)},
-        });
-      },
-      std::move(promise));
-}
+// GetPreviewUri and EnsurePreview methods removed - thumbnails only per unified contract
 
 void GumpLocalStorage::EnsureFaceCrops(
     std::string albumId,
