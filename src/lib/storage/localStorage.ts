@@ -65,7 +65,6 @@ export function isUsableThumbnailUri(thumbnailUri: string | null | undefined): b
   if (!thumbnailUri) {
     return false;
   }
-  // Unified rules for both macOS and Windows
   const normalized = thumbnailUri.replace(/\\/g, '/');
   return (
     normalized.includes('/thumbs/') &&
@@ -74,7 +73,6 @@ export function isUsableThumbnailUri(thumbnailUri: string | null | undefined): b
 }
 
 const COPY_REQUIRES_THUMBNAIL = new Set(['macos', 'windows']);
-const COPY_REQUIRES_PREVIEW = new Set(['windows']);
 
 export async function copyPhotoToAlbum(
   albumId: string,
@@ -204,8 +202,6 @@ export async function getThumbnailUri(
   return null;
 }
 
-// getPreviewUri removed - thumbnails only
-
 export async function ensureThumbnail(
   albumId: string,
   file: FileAsset,
@@ -240,8 +236,6 @@ export async function ensureThumbnail(
 
   return file;
 }
-
-// ensurePreview removed - thumbnails only
 
 export type FaceCropInput = {
   faceIndex: number;

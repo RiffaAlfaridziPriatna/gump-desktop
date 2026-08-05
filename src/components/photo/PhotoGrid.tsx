@@ -29,7 +29,6 @@ import {
   type ImageLoadEventData,
   type LayoutChangeEvent,
   ListRenderItemInfo,
-  Platform,
   StyleSheet,
   useWindowDimensions,
   View,

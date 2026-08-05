@@ -20,8 +20,6 @@ import {useLayout} from '@hooks/useLayout';
 import {useImageDimensions} from '@hooks/useImageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
 import {resolveDetailDisplayUri} from '@lib/storage/localStorage';
-import {updatePhoto} from '@lib/culledAlbum/store';
-import {syncPhotoFromStore} from '@/application/syncPhotoRepository';
 import {Pressable, TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
@@ -232,7 +230,6 @@ export default function CulledAlbumPhotoDetailScreen({
   );
   const imageSize = useImageDimensions(uri);
   const photoFileUri = photo?.file.uri;
-  const photoPreviewUri = photo?.file.previewUri;
   const photoThumbnailUri = photo?.file.thumbnailUri;
 
   useEffect(() => {
@@ -247,7 +244,6 @@ export default function CulledAlbumPhotoDetailScreen({
       size: photo?.file.size ?? 0,
       type: photo?.file.type ?? '',
       thumbnailUri: photoThumbnailUri,
-      previewUri: photoPreviewUri,
     };
     setUri(resolveDetailDisplayUri(displayFile));
   }, [
@@ -257,7 +253,6 @@ export default function CulledAlbumPhotoDetailScreen({
     photo?.file.type,
     photoFileUri,
     photoId,
-    photoPreviewUri,
     photoThumbnailUri,
   ]);
 

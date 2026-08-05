@@ -20,7 +20,6 @@ import {
   ActivityIndicator,
   Image,
   type ImageLoadEventData,
-  Platform,
   StyleSheet,
   View,
   type NativeSyntheticEvent,

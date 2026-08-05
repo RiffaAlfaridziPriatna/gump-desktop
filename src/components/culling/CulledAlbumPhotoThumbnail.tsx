@@ -13,7 +13,6 @@ import {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Image,
   type ImageLoadEventData,
-  Platform,
   StyleSheet,
   View,
   type NativeSyntheticEvent,

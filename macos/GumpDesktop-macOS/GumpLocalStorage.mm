@@ -1976,7 +1976,6 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
   CGFloat width = [box[@"width"] doubleValue];
   CGFloat height = [box[@"height"] doubleValue];
 
-  // Use shared implementation from MediaDerivatives
   MediaDerivatives::FaceCropRect rect = MediaDerivatives::ComputePaddedFaceCropRect(
       (int)imageWidth,
       (int)imageHeight,
@@ -1988,11 +1987,10 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
   return CGRectMake(rect.left, rect.top, rect.width, rect.height);
 }
 
-// Match Windows MakeSquareCoverCrop: keep aspect by center-cropping the
-// padded rect to a square before scaling into the output thumbnail.
+// Keep aspect by center-cropping the padded rect to a square before scaling
+// into the output thumbnail.
 - (CGRect)squareCoverCropRect:(CGRect)rect
 {
-  // Use shared implementation from MediaDerivatives
   MediaDerivatives::FaceCropRect input{
       (int)rect.origin.x,
       (int)rect.origin.y,
