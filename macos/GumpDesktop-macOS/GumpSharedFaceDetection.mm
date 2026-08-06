@@ -44,11 +44,13 @@ FaceDetection::FaceDetectionPipeline &SharedPipeline() {
     config.enableTinyAreaArtifactFilter = false;
     config.enableSharpnessArtifactFilter = false;
     config.enableNativeFpFilter = true;
+    config.pipelinePoolSize = 2;
 
     if (!pipeline.initialize(config)) {
       NSLog(@"[GumpSharedFaceDetection] init failed: %s", pipeline.lastError().c_str());
     } else {
-      NSLog(@"[GumpSharedFaceDetection] SCRFD+OCEC ready (scrfd=%s)",
+      NSLog(@"[GumpSharedFaceDetection] SCRFD+OCEC ready (workers=%d scrfd=%s)",
+            pipeline.workerCount(),
             config.scrfdModelPath.c_str());
     }
   });

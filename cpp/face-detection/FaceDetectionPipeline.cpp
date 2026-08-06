@@ -7,7 +7,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <condition_variable>
+#include <cstring>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace FaceDetection {
@@ -541,12 +546,26 @@ std::vector<uint8_t> CopyBgraTile(
     int tileTop,
     int tileWidth,
     int tileHeight) {
-  std::vector<uint8_t> tile(static_cast<size_t>(tileWidth * tileHeight * 4));
+  std::vector<uint8_t> tile(
+      static_cast<size_t>(tileWidth * tileHeight * 4), 0);
+  const int bytesPerRow = tileWidth * 4;
+  const bool fullyInsideHorizontally =
+      tileLeft >= 0 && tileLeft + tileWidth <= imageWidth;
+
   for (int y = 0; y < tileHeight; ++y) {
     const int sourceY = tileTop + y;
     if (sourceY < 0 || sourceY >= imageHeight) {
       continue;
     }
+
+    if (fullyInsideHorizontally) {
+      std::memcpy(
+          tile.data() + static_cast<size_t>(y * bytesPerRow),
+          bgra + sourceY * stride + tileLeft * 4,
+          static_cast<size_t>(bytesPerRow));
+      continue;
+    }
+
     for (int x = 0; x < tileWidth; ++x) {
       const int sourceX = tileLeft + x;
       if (sourceX < 0 || sourceX >= imageWidth) {
@@ -1207,13 +1226,59 @@ std::vector<FaceResult> PostProcessFaceResults(
 
 } // namespace
 
+namespace {
+
+int ResolvePipelinePoolSize(int configured) {
+  constexpr int kMinPool = 1;
+  constexpr int kMaxPool = 2;
+  if (configured > 0) {
+    return std::clamp(configured, kMinPool, kMaxPool);
+  }
+  unsigned hardwareThreads = std::thread::hardware_concurrency();
+  if (hardwareThreads == 0) {
+    hardwareThreads = 4;
+  }
+  return hardwareThreads >= 6 ? 2 : 1;
+}
+
+} // namespace
+
 struct FaceDetectionPipeline::Impl {
-  ScrfdFaceDetector scrfd;
-  OcecEyeStateClassifier ocec;
-  Landmark106EarClassifier landmark106;
+  struct Worker {
+    ScrfdFaceDetector scrfd;
+    OcecEyeStateClassifier ocec;
+    Landmark106EarClassifier landmark106;
+  };
+
   PipelineConfig config;
   bool ready{false};
   std::string lastError;
+  std::vector<std::unique_ptr<Worker>> workers;
+  mutable std::mutex poolMutex;
+  mutable std::condition_variable poolCv;
+  mutable std::vector<Worker *> available;
+
+  Worker *acquireWorker() const {
+    std::unique_lock<std::mutex> lock(poolMutex);
+    poolCv.wait(lock, [&]() { return !available.empty() || !ready; });
+    if (available.empty()) {
+      return nullptr;
+    }
+    Worker *worker = available.back();
+    available.pop_back();
+    return worker;
+  }
+
+  void releaseWorker(Worker *worker) const {
+    if (worker == nullptr) {
+      return;
+    }
+    {
+      std::lock_guard<std::mutex> lock(poolMutex);
+      available.push_back(worker);
+    }
+    poolCv.notify_one();
+  }
 };
 
 bool FaceDetectionPipeline::initialize(const PipelineConfig &config) {
@@ -1221,30 +1286,61 @@ bool FaceDetectionPipeline::initialize(const PipelineConfig &config) {
     impl_ = std::make_shared<Impl>();
   }
   impl_->config = config;
-
-  if (!impl_->scrfd.initialize(config.scrfdModelPath)) {
-    impl_->ready = false;
-    impl_->lastError = "SCRFD: " + impl_->scrfd.lastError();
-    return false;
+  impl_->ready = false;
+  impl_->lastError.clear();
+  impl_->workers.clear();
+  {
+    std::lock_guard<std::mutex> lock(impl_->poolMutex);
+    impl_->available.clear();
   }
 
-  // OCEC is optional — pipeline still works without eye state.
-  if (!config.ocecModelPath.empty()) {
-    if (!impl_->ocec.initialize(config.ocecModelPath)) {
-      impl_->lastError = "OCEC: " + impl_->ocec.lastError();
+  const int poolSize = ResolvePipelinePoolSize(config.pipelinePoolSize);
+  impl_->workers.reserve(static_cast<size_t>(poolSize));
+
+  for (int index = 0; index < poolSize; ++index) {
+    auto worker = std::make_unique<Impl::Worker>();
+    if (!worker->scrfd.initialize(config.scrfdModelPath)) {
+      impl_->ready = false;
+      impl_->lastError = "SCRFD: " + worker->scrfd.lastError();
+      impl_->workers.clear();
+      return false;
     }
-  }
 
-  if (!config.landmark106ModelPath.empty()) {
-    if (!impl_->landmark106.initialize(config.landmark106ModelPath)) {
-      if (!impl_->lastError.empty()) {
-        impl_->lastError += "; ";
+    // OCEC is optional — pipeline still works without eye state.
+    if (!config.ocecModelPath.empty()) {
+      if (!worker->ocec.initialize(config.ocecModelPath)) {
+        if (index == 0) {
+          impl_->lastError = "OCEC: " + worker->ocec.lastError();
+        }
       }
-      impl_->lastError += "Landmark106: " + impl_->landmark106.lastError();
+    }
+
+    if (!config.landmark106ModelPath.empty()) {
+      if (!worker->landmark106.initialize(config.landmark106ModelPath)) {
+        if (index == 0) {
+          if (!impl_->lastError.empty()) {
+            impl_->lastError += "; ";
+          }
+          impl_->lastError +=
+              "Landmark106: " + worker->landmark106.lastError();
+        }
+      }
+    }
+
+    impl_->workers.push_back(std::move(worker));
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(impl_->poolMutex);
+    impl_->available.clear();
+    impl_->available.reserve(impl_->workers.size());
+    for (auto &worker : impl_->workers) {
+      impl_->available.push_back(worker.get());
     }
   }
 
-  impl_->ready = impl_->scrfd.isReady();
+  impl_->ready =
+      !impl_->workers.empty() && impl_->workers.front()->scrfd.isReady();
   if (impl_->ready && impl_->lastError.empty()) {
     impl_->lastError.clear();
   }
@@ -1259,6 +1355,10 @@ std::string FaceDetectionPipeline::lastError() const {
   return impl_ ? impl_->lastError : "Pipeline not initialized";
 }
 
+int FaceDetectionPipeline::workerCount() const {
+  return impl_ ? static_cast<int>(impl_->workers.size()) : 0;
+}
+
 std::vector<FaceResult> FaceDetectionPipeline::detectFaces(
     const uint8_t *bgraPixels,
     int imageWidth,
@@ -1269,11 +1369,21 @@ std::vector<FaceResult> FaceDetectionPipeline::detectFaces(
     return {};
   }
 
+  Impl::Worker *worker = impl_->acquireWorker();
+  if (worker == nullptr) {
+    return {};
+  }
+  struct WorkerGuard {
+    const Impl *impl;
+    Impl::Worker *worker;
+    ~WorkerGuard() { impl->releaseWorker(worker); }
+  } guard{impl_.get(), worker};
+
   // Flow mirrors macOS:
   // collect rectangles (+ tiling) → accept frontal/profile → dedupe →
   // analyze (eyes/sharpness/pose) → postProcess.
   auto detections = CollectFaceRectangles(
-      impl_->scrfd,
+      worker->scrfd,
       bgraPixels,
       imageWidth,
       imageHeight,
@@ -1297,8 +1407,8 @@ std::vector<FaceResult> FaceDetectionPipeline::detectFaces(
   }
   accepted = DeduplicateFaces(std::move(accepted), imageWidth, imageHeight);
 
-  const bool ocecReady = impl_->ocec.isReady();
-  const bool earReady = impl_->landmark106.isReady();
+  const bool ocecReady = worker->ocec.isReady();
+  const bool earReady = worker->landmark106.isReady();
   std::vector<FaceResult> results;
   results.reserve(accepted.size());
 
@@ -1314,7 +1424,7 @@ std::vector<FaceResult> FaceDetectionPipeline::detectFaces(
     std::string eyeEngine = "none";
     // Phase 2: EAR on medium+ faces; OCEC for tiny crops where mesh is weak.
     if (earReady && faceArea >= impl_->config.earMinFaceArea) {
-      eyeState = impl_->landmark106.classifyBgraBox(
+      eyeState = worker->landmark106.classifyBgraBox(
           bgraPixels,
           imageWidth,
           imageHeight,
@@ -1328,7 +1438,7 @@ std::vector<FaceResult> FaceDetectionPipeline::detectFaces(
       }
     }
     if (eyeState.state == EyeState::Unknown && ocecReady) {
-      eyeState = impl_->ocec.classifyBgra(
+      eyeState = worker->ocec.classifyBgra(
           bgraPixels,
           imageWidth,
           imageHeight,

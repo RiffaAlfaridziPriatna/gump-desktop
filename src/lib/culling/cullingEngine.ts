@@ -442,7 +442,9 @@ export const cullingEngine = {
       throw new Error('Photo not found in album store');
     }
 
+    const nativeStartedAt = Date.now();
     const analyzed = await detector.analyzePhoto(file.uri, photoId);
+    const nativeMs = Date.now() - nativeStartedAt;
     const faces = analyzed.faces;
     const perceptualHash = existing.perceptualHash ?? analyzed.perceptualHash;
     const capturedAt = existing.capturedAt ?? analyzed.capturedAt;
@@ -474,6 +476,12 @@ export const cullingEngine = {
     assignFaceClusterIdsIncremental(albumId, photoId);
 
     scheduleAnalyzedPhotoAssetsForPhoto(albumId, photoId, file);
+
+    if (__DEV__) {
+      console.log(
+        `[CulledAlbum] analyze ${photoId} native=${nativeMs}ms faces=${faces.length}`,
+      );
+    }
 
     const updated = getPhotoById(albumId, photoId);
     if (!updated) {

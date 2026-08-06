@@ -63,6 +63,7 @@ struct PipelineConfig {
   bool enableTinyAreaArtifactFilter{false};
   bool enableSharpnessArtifactFilter{false};
   bool enableNativeFpFilter{true};
+  int pipelinePoolSize{0};
 };
 
 class FaceDetectionPipeline {
@@ -70,6 +71,7 @@ public:
   bool initialize(const PipelineConfig &config);
   bool isReady() const;
   std::string lastError() const;
+  int workerCount() const;
 
   std::vector<FaceResult> detectFaces(
       const uint8_t *bgraPixels,

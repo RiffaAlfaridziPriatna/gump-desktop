@@ -29,6 +29,7 @@
 #include <fstream>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -683,6 +684,7 @@ FaceDetection::FaceDetectionPipeline &SharedFacePipeline() {
     config.enableTinyAreaArtifactFilter = false;
     config.enableSharpnessArtifactFilter = false;
     config.enableNativeFpFilter = true;
+    config.pipelinePoolSize = 2;
     for (const auto &base : {moduleDir / L"Assets" / L"Models", moduleDir / L"Models"}) {
       const auto scrfd = base / L"face_detection_scrfd_2.5g_bnkps.onnx";
       const auto ocec = base / L"eye_state_ocec_s.onnx";
@@ -694,6 +696,12 @@ FaceDetection::FaceDetectionPipeline &SharedFacePipeline() {
       }
     }
     pipeline.initialize(config);
+    if (pipeline.isReady()) {
+      OutputDebugStringA(
+          ("[GumpLocalStorage] SCRFD+OCEC ready workers=" +
+           std::to_string(pipeline.workerCount()) + "\n")
+              .c_str());
+    }
   });
   return pipeline;
 }

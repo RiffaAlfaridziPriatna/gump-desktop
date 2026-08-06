@@ -70,6 +70,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
   const pendingPhotoPersistByAlbum = new Map<string, string[]>();
   const cancelGenerationByAlbum = new Map<string, number>();
   const cancelledAlbums = new Set<string>();
+  const batchStartedAtByAlbum = new Map<string, number>();
 
   function getCancelGeneration(albumId: string): number {
     return cancelGenerationByAlbum.get(albumId) ?? 0;
@@ -87,6 +88,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     settledPhotoIdsByAlbum.delete(albumId);
     pendingCursorByAlbum.delete(albumId);
     batchSignatureByAlbum.delete(albumId);
+    batchStartedAtByAlbum.set(albumId, Date.now());
   }
 
   function isCancelled(albumId: string, generation?: number): boolean {
@@ -293,6 +295,17 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
 
     markSynced(albumId);
     flushPhotoPersists(albumId);
+
+    const batchStartedAt = batchStartedAtByAlbum.get(albumId);
+    batchStartedAtByAlbum.delete(albumId);
+    if (__DEV__ && batchStartedAt != null && analyzedCount > 0) {
+      const elapsedMs = Math.max(1, Date.now() - batchStartedAt);
+      const photosPerSec = (analyzedCount * 1000) / elapsedMs;
+      console.log(
+        `[CulledAlbum] analysis batch done album=${albumId} analyzed=${analyzedCount} elapsedMs=${elapsedMs} photosPerSec=${photosPerSec.toFixed(2)} concurrency=${maxConcurrent}`,
+      );
+    }
+
     flushPersist(albumId)
       .then(() => onComplete(albumId))
       .catch(err => {

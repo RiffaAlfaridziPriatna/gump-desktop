@@ -1,17 +1,12 @@
 #include "Landmark106EarClassifier.h"
 
+#include "OrtSharedEnv.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <memory>
 #include <vector>
-
-#if __has_include(<onnxruntime_cxx_api.h>)
-#include <onnxruntime_cxx_api.h>
-#define FACE_DETECTION_HAS_ONNXRUNTIME 1
-#else
-#define FACE_DETECTION_HAS_ONNXRUNTIME 0
-#endif
 
 namespace FaceDetection {
 namespace {
@@ -29,7 +24,6 @@ float Clamp(float value, float minimum, float maximum) {
 #if FACE_DETECTION_HAS_ONNXRUNTIME
 
 struct OrtState {
-  Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "GumpLandmark106"};
   Ort::SessionOptions sessionOptions;
   std::unique_ptr<Ort::Session> session;
   std::mutex mutex;
@@ -119,15 +113,16 @@ bool Landmark106EarClassifier::initialize(const std::string &modelPath) {
 #else
   try {
     impl_->ort.sessionOptions.SetIntraOpNumThreads(1);
+    impl_->ort.sessionOptions.SetInterOpNumThreads(1);
     impl_->ort.sessionOptions.SetGraphOptimizationLevel(
         GraphOptimizationLevel::ORT_ENABLE_ALL);
 #if defined(__APPLE__)
     impl_->ort.session = std::make_unique<Ort::Session>(
-        impl_->ort.env, modelPath.c_str(), impl_->ort.sessionOptions);
+        SharedOrtEnv(), modelPath.c_str(), impl_->ort.sessionOptions);
 #else
     const std::wstring wpath(modelPath.begin(), modelPath.end());
     impl_->ort.session = std::make_unique<Ort::Session>(
-        impl_->ort.env, wpath.c_str(), impl_->ort.sessionOptions);
+        SharedOrtEnv(), wpath.c_str(), impl_->ort.sessionOptions);
 #endif
     Ort::AllocatorWithDefaultOptions allocator;
 #if ORT_API_VERSION >= 13

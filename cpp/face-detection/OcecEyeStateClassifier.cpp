@@ -1,17 +1,12 @@
 #include "OcecEyeStateClassifier.h"
 
+#include "OrtSharedEnv.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <memory>
 #include <vector>
-
-#if __has_include(<onnxruntime_cxx_api.h>)
-#include <onnxruntime_cxx_api.h>
-#define FACE_DETECTION_HAS_ONNXRUNTIME 1
-#else
-#define FACE_DETECTION_HAS_ONNXRUNTIME 0
-#endif
 
 namespace FaceDetection {
 namespace {
@@ -37,7 +32,6 @@ float Clamp(float value, float minimum, float maximum) {
 #if FACE_DETECTION_HAS_ONNXRUNTIME
 
 struct EyeOrtState {
-  Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "GumpOcec"};
   Ort::SessionOptions sessionOptions;
   std::unique_ptr<Ort::Session> session;
   std::mutex mutex;
@@ -137,16 +131,17 @@ bool OcecEyeStateClassifier::initialize(const std::string &modelPath) {
 
     std::lock_guard<std::mutex> ortLock(impl_->ort.mutex);
     impl_->ort.sessionOptions.SetIntraOpNumThreads(1);
+    impl_->ort.sessionOptions.SetInterOpNumThreads(1);
     impl_->ort.sessionOptions.SetGraphOptimizationLevel(
         GraphOptimizationLevel::ORT_ENABLE_ALL);
 
 #ifdef _WIN32
     const std::wstring wpath(modelPath.begin(), modelPath.end());
     impl_->ort.session = std::make_unique<Ort::Session>(
-        impl_->ort.env, wpath.c_str(), impl_->ort.sessionOptions);
+        SharedOrtEnv(), wpath.c_str(), impl_->ort.sessionOptions);
 #else
     impl_->ort.session = std::make_unique<Ort::Session>(
-        impl_->ort.env, modelPath.c_str(), impl_->ort.sessionOptions);
+        SharedOrtEnv(), modelPath.c_str(), impl_->ort.sessionOptions);
 #endif
 
     ready_ = true;
