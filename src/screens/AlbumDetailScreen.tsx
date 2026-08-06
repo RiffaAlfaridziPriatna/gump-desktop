@@ -403,7 +403,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 16,
     color: colors.text,
-    lineHeight: 16,
+    lineHeight: 16 * 1.2,
   },
   cullingButton: {
     minHeight: 48,
