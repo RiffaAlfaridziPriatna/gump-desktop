@@ -576,7 +576,53 @@ type VariantBucket = {
   boundingBox: CullingFace['boundingBox'];
   sourceCropUri?: string;
   representativeScore: number;
+  fingerprint: number[];
+  area: number;
 };
+
+export const KEY_FACE_IDENTITY_MERGE_THRESHOLD = 0.08;
+export const KEY_FACE_DUP_GROUP_MERGE_THRESHOLD = 0.18;
+export const KEY_FACE_IDENTITY_POSE_WEIGHT = 0.2;
+
+export type ComputeKeyFacesOptions = {
+  duplicatePhotoGroups?: Array<{photoIds: string[]}>;
+};
+
+export function keyFaceIdentityFingerprint(face: CullingFace): number[] {
+  const {boundingBox: box, landmarks, pose} = face;
+  const eyeLeft = landmarks.find(landmark => landmark.type === 'eyeLeft');
+  const eyeRight = landmarks.find(landmark => landmark.type === 'eyeRight');
+  const nose = landmarks.find(landmark => landmark.type === 'nose');
+  const mouth = landmarks.find(landmark => landmark.type === 'mouth');
+  const softYaw = (pose.yaw / 90) * KEY_FACE_IDENTITY_POSE_WEIGHT;
+  const softPitch = (pose.pitch / 90) * KEY_FACE_IDENTITY_POSE_WEIGHT;
+
+  if (eyeLeft && eyeRight) {
+    const eyeMidX = (eyeLeft.x + eyeRight.x) / 2;
+    const eyeMidY = (eyeLeft.y + eyeRight.y) / 2;
+    const eyeDist = Math.hypot(eyeRight.x - eyeLeft.x, eyeRight.y - eyeLeft.y);
+    const safeEyeDist = Math.max(eyeDist, 1e-6);
+    const aspect = box.width / Math.max(box.height, 1e-6);
+    const eyeSpan = eyeDist / Math.max(box.width, 1e-6);
+    const noseX = nose ? (nose.x - eyeMidX) / safeEyeDist : 0;
+    const noseY = nose ? (nose.y - eyeMidY) / safeEyeDist : 0;
+    const mouthX = mouth ? (mouth.x - eyeMidX) / safeEyeDist : 0;
+    const mouthY = mouth ? (mouth.y - eyeMidY) / safeEyeDist : 0;
+
+    return [
+      aspect,
+      eyeSpan,
+      noseX,
+      noseY,
+      mouthX,
+      mouthY,
+      softYaw,
+      softPitch,
+    ];
+  }
+
+  return [box.width / Math.max(box.height, 1e-6), softYaw, softPitch];
+}
 
 function createVariantBucket(
   variantId: string,
@@ -600,6 +646,8 @@ function createVariantBucket(
     boundingBox: face.boundingBox,
     sourceCropUri: face.cropUri,
     representativeScore,
+    fingerprint: keyFaceIdentityFingerprint(face),
+    area: faceBoxArea(face.boundingBox),
   };
 }
 
@@ -611,10 +659,270 @@ function addFaceToBucket(bucket: VariantBucket, photoId: string): void {
   }
 }
 
+function adoptVariantRepresentative(
+  bucket: VariantBucket,
+  face: CullingFace,
+  photoId: string,
+  faceIndex: number,
+  representativeScore: number,
+): void {
+  bucket.representativeScore = representativeScore;
+  bucket.sourcePhotoId = photoId;
+  bucket.sourceFaceIndex = faceIndex;
+  bucket.boundingBox = face.boundingBox;
+  bucket.sourceCropUri = face.cropUri;
+  bucket.fingerprint = keyFaceIdentityFingerprint(face);
+  bucket.area = faceBoxArea(face.boundingBox);
+}
+
+function compareVariantBucketOrder(a: VariantBucket, b: VariantBucket): number {
+  if (a.firstPhotoOrder !== b.firstPhotoOrder) {
+    return a.firstPhotoOrder - b.firstPhotoOrder;
+  }
+  if (a.firstSourceFaceIndex !== b.firstSourceFaceIndex) {
+    return a.firstSourceFaceIndex - b.firstSourceFaceIndex;
+  }
+  return a.faceId.localeCompare(b.faceId);
+}
+
+function mergeVariantBucketInto(
+  target: VariantBucket,
+  source: VariantBucket,
+): void {
+  target.occurrenceCount += source.occurrenceCount;
+  for (const photoId of source.photoIds) {
+    if (!target.photoIdSet.has(photoId)) {
+      target.photoIdSet.add(photoId);
+      target.photoIds.push(photoId);
+    }
+  }
+
+  if (source.representativeScore > target.representativeScore) {
+    target.representativeScore = source.representativeScore;
+    target.sourcePhotoId = source.sourcePhotoId;
+    target.sourceFaceIndex = source.sourceFaceIndex;
+    target.boundingBox = source.boundingBox;
+    target.sourceCropUri = source.sourceCropUri;
+    target.fingerprint = source.fingerprint;
+    target.area = source.area;
+  } else if (
+    target.fingerprint.length === source.fingerprint.length &&
+    target.fingerprint.length > 0
+  ) {
+    const blended = blendClusterRepresentatives(
+      {fingerprint: target.fingerprint, area: target.area},
+      {fingerprint: source.fingerprint, area: source.area},
+    );
+    target.fingerprint = blended.fingerprint;
+    target.area = blended.area;
+  }
+
+  if (compareVariantBucketOrder(source, target) < 0) {
+    target.faceId = source.faceId;
+    target.firstPhotoOrder = source.firstPhotoOrder;
+    target.firstSourceFaceIndex = source.firstSourceFaceIndex;
+  }
+}
+
+function buildDuplicatePhotoMembership(
+  groups: Array<{photoIds: string[]}> | undefined,
+): Map<string, number> {
+  const membership = new Map<string, number>();
+  if (!groups || groups.length === 0) {
+    return membership;
+  }
+  groups.forEach((group, groupIndex) => {
+    for (const photoId of group.photoIds) {
+      membership.set(photoId, groupIndex);
+    }
+  });
+  return membership;
+}
+
+function collectBucketDuplicateGroups(
+  bucket: VariantBucket,
+  membership: Map<string, number>,
+): Set<number> {
+  const groups = new Set<number>();
+  if (membership.size === 0) {
+    return groups;
+  }
+  for (const photoId of bucket.photoIdSet) {
+    const groupIndex = membership.get(photoId);
+    if (groupIndex !== undefined) {
+      groups.add(groupIndex);
+    }
+  }
+  return groups;
+}
+
+function keyFaceBucketsShareDuplicateGroup(
+  leftGroups: Set<number>,
+  rightGroups: Set<number>,
+): boolean {
+  if (leftGroups.size === 0 || rightGroups.size === 0) {
+    return false;
+  }
+  for (const groupIndex of leftGroups) {
+    if (rightGroups.has(groupIndex)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function keyFaceBucketsShareAnyPhoto(
+  left: VariantBucket,
+  right: VariantBucket,
+): boolean {
+  if (left.photoIdSet.size === 0 || right.photoIdSet.size === 0) {
+    return false;
+  }
+  const [smaller, larger] =
+    left.photoIdSet.size <= right.photoIdSet.size
+      ? [left.photoIdSet, right.photoIdSet]
+      : [right.photoIdSet, left.photoIdSet];
+  for (const photoId of smaller) {
+    if (larger.has(photoId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function keyFaceFramingsCompatible(
+  left: VariantBucket,
+  right: VariantBucket,
+): boolean {
+  const boxA = left.boundingBox;
+  const boxB = right.boundingBox;
+  const areaA = faceBoxArea(boxA);
+  const areaB = faceBoxArea(boxB);
+  const minArea = Math.min(areaA, areaB);
+  if (minArea <= 1e-8) {
+    return false;
+  }
+  if (Math.max(areaA, areaB) / minArea > FACE_FRAMING_MAX_AREA_RATIO) {
+    return false;
+  }
+
+  const aspectA = faceBoxAspect(boxA);
+  const aspectB = faceBoxAspect(boxB);
+  const minAspect = Math.min(aspectA, aspectB);
+  if (minAspect <= 1e-8) {
+    return false;
+  }
+  if (Math.max(aspectA, aspectB) / minAspect > FACE_FRAMING_MAX_ASPECT_RATIO) {
+    return false;
+  }
+
+  const centerDistance = Math.hypot(
+    boxA.left + boxA.width * 0.5 - (boxB.left + boxB.width * 0.5),
+    boxA.top + boxA.height * 0.5 - (boxB.top + boxB.height * 0.5),
+  );
+  const averageDiagonal =
+    (Math.hypot(boxA.width, boxA.height) + Math.hypot(boxB.width, boxB.height)) /
+    2;
+  return centerDistance < averageDiagonal * 0.55;
+}
+
+function keyFaceBucketsAreIdentityRedundant(
+  left: VariantBucket,
+  right: VariantBucket,
+  leftDupGroups: Set<number>,
+  rightDupGroups: Set<number>,
+): boolean {
+  if (
+    left.eyeStatus !== right.eyeStatus ||
+    left.focusLevel !== right.focusLevel
+  ) {
+    return false;
+  }
+
+  if (keyFaceBucketsShareAnyPhoto(left, right)) {
+    return false;
+  }
+
+  if (
+    left.sourceCropUri &&
+    right.sourceCropUri &&
+    left.sourceCropUri === right.sourceCropUri
+  ) {
+    return true;
+  }
+
+  if (
+    left.fingerprint.length === 0 ||
+    left.fingerprint.length !== right.fingerprint.length
+  ) {
+    return false;
+  }
+
+  const distance = fingerprintDistance(left.fingerprint, right.fingerprint);
+  if (distance < KEY_FACE_IDENTITY_MERGE_THRESHOLD) {
+    return true;
+  }
+
+  return (
+    distance < KEY_FACE_DUP_GROUP_MERGE_THRESHOLD &&
+    keyFaceBucketsShareDuplicateGroup(leftDupGroups, rightDupGroups) &&
+    keyFaceFramingsCompatible(left, right)
+  );
+}
+
+function mergeIdentityRedundantKeyFaceBuckets(
+  buckets: VariantBucket[],
+  duplicateMembership: Map<string, number>,
+): VariantBucket[] {
+  if (buckets.length <= 1) {
+    return buckets;
+  }
+
+  const ordered = [...buckets].sort(compareVariantBucketOrder);
+  const kept: VariantBucket[] = [];
+  const keptDupGroups: Set<number>[] = [];
+
+  for (const candidate of ordered) {
+    const candidateDupGroups = collectBucketDuplicateGroups(
+      candidate,
+      duplicateMembership,
+    );
+    let matchIndex = -1;
+    for (let index = 0; index < kept.length; index++) {
+      if (
+        keyFaceBucketsAreIdentityRedundant(
+          kept[index]!,
+          candidate,
+          keptDupGroups[index]!,
+          candidateDupGroups,
+        )
+      ) {
+        matchIndex = index;
+        break;
+      }
+    }
+    if (matchIndex >= 0) {
+      mergeVariantBucketInto(kept[matchIndex]!, candidate);
+      for (const groupIndex of candidateDupGroups) {
+        keptDupGroups[matchIndex]!.add(groupIndex);
+      }
+    } else {
+      kept.push(candidate);
+      keptDupGroups.push(candidateDupGroups);
+    }
+  }
+
+  return kept;
+}
+
 export function computeKeyFaces(
   photos: CullingPhoto[],
+  options?: ComputeKeyFacesOptions,
 ): APIResponse.CullingKeyFace[] {
   const variants = new Map<string, VariantBucket>();
+  const duplicateMembership = buildDuplicatePhotoMembership(
+    options?.duplicatePhotoGroups,
+  );
 
   photos.forEach((photo, photoOrder) => {
     const usedClusterIdsInPhoto = new Set<string>();
@@ -648,20 +956,24 @@ export function computeKeyFaces(
         addFaceToBucket(newBucket, photo.photoId);
       } else {
         addFaceToBucket(bucket, photo.photoId);
+        if (representativeScore > bucket.representativeScore) {
+          adoptVariantRepresentative(
+            bucket,
+            face,
+            photo.photoId,
+            faceIndex,
+            representativeScore,
+          );
+        }
       }
     });
   });
 
-  return [...variants.values()]
-    .sort((a, b) => {
-      if (a.firstPhotoOrder !== b.firstPhotoOrder) {
-        return a.firstPhotoOrder - b.firstPhotoOrder;
-      }
-      if (a.firstSourceFaceIndex !== b.firstSourceFaceIndex) {
-        return a.firstSourceFaceIndex - b.firstSourceFaceIndex;
-      }
-      return a.faceId.localeCompare(b.faceId);
-    })
+  return mergeIdentityRedundantKeyFaceBuckets(
+    [...variants.values()],
+    duplicateMembership,
+  )
+    .sort(compareVariantBucketOrder)
     .map(
       ({
         faceId,

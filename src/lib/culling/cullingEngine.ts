@@ -500,7 +500,12 @@ export const cullingEngine = {
 
   async getKeyFaces(albumId: string): Promise<APIResponse.CullingKeyFaceList> {
     await ensureAlbumLoaded(albumId);
-    return {results: computeKeyFaces(await getAnalyzedPhotos(albumId))};
+    const album = getAlbum(albumId);
+    return {
+      results: computeKeyFaces(await getAnalyzedPhotos(albumId), {
+        duplicatePhotoGroups: album?.cullingDuplicateGroups,
+      }),
+    };
   },
 
   async updateSelection(

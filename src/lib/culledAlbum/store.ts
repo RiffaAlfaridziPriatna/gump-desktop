@@ -496,6 +496,7 @@ export async function markCullingCompleted(albumId: string): Promise<void> {
 }
 
 export function updateCullingSummary(albumId: string): void {
+  const album = getAlbumFromState(albumId);
   const analyzed = orderCulledAlbumPhotosForCulling(
     albumId,
     getPhotosForAlbum(albumId).filter(
@@ -503,15 +504,20 @@ export function updateCullingSummary(albumId: string): void {
     ),
   ).map(toCullingPhoto);
   const stats = analyzed.length > 0 ? computeStats(analyzed) : undefined;
-  const keyFaces = analyzed.length > 0 ? computeKeyFaces(analyzed) : undefined;
+  const keyFaces =
+    analyzed.length > 0
+      ? computeKeyFaces(analyzed, {
+          duplicatePhotoGroups: album?.cullingDuplicateGroups,
+        })
+      : undefined;
 
   culledAlbumStore.setState(state => {
-    const album = state.albums[albumId];
-    if (!album) {
+    const entry = state.albums[albumId];
+    if (!entry) {
       return;
     }
-    album.cullingStats = stats;
-    album.cullingKeyFaces = keyFaces;
+    entry.cullingStats = stats;
+    entry.cullingKeyFaces = keyFaces;
   });
 }
 
