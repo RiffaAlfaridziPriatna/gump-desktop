@@ -11,7 +11,6 @@ type AlbumDetailFabStackProps = {
   onAddPhotos: () => void;
   addDisabled?: boolean;
   hideAdd?: boolean;
-  scrollDisabled?: boolean;
   rightOffset?: number;
   bottomOffset?: number;
 };
@@ -21,7 +20,6 @@ export function AlbumDetailFabStack({
   onAddPhotos,
   addDisabled = false,
   hideAdd = false,
-  scrollDisabled = false,
   rightOffset = 8,
   bottomOffset = 8,
 }: AlbumDetailFabStackProps) {
@@ -31,13 +29,8 @@ export function AlbumDetailFabStack({
       pointerEvents="box-none"
     >
       <TouchableOpacity
-        style={[
-          styles.fab,
-          styles.scrollFab,
-          scrollDisabled && styles.fabDisabled,
-        ]}
+        style={[styles.fab, styles.scrollFab]}
         onPress={onScrollToTop}
-        disabled={scrollDisabled}
         activeOpacity={0.8}
         accessibilityRole="button"
         accessibilityLabel="Scroll to top"

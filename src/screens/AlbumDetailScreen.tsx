@@ -293,8 +293,6 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     photoGridRef.current?.scrollToTop();
   }, []);
 
-  const canScrollGrid = !showImportSkeleton && hasGridContent;
-
   return (
     <UploadAwareModalShell {...shellProps}>
       <SafeAreaView style={styles.container}>
@@ -381,7 +379,6 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         onAddPhotos={handleAddPhotos}
         addDisabled={isUploading}
         hideAdd={isCullingInProgress || cullingActive}
-        scrollDisabled={!canScrollGrid}
       />
       <UploadToast mode="upload" albumId={albumId} />
       {isCullingInProgress ? (
