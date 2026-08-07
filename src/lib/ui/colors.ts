@@ -16,10 +16,10 @@ export const colors = {
   textDark: '#131415',
   textMuted: '#737373',
   textPlaceholder: '#666666',
-  textGray: "#B7B7B7",
+  textGray: '#B7B7B7',
 
   // Icon
-  iconMuted: "#88888A",
+  iconMuted: '#88888A',
 
   // Semantic
   link: '#5B8AF5',
@@ -29,6 +29,7 @@ export const colors = {
 
   // Divider
   divider: '#303030',
+  dividerLight: '#979797',
 
   // UI
   badge: '#FFFFFF99',
@@ -37,4 +38,3 @@ export const colors = {
 } as const;
 
 export type AppColor = (typeof colors)[keyof typeof colors];
-

@@ -5,6 +5,7 @@ import {
 } from '@components/culling/CulledAlbumDetailSidebar';
 import {CulledAlbumPhotoGrid} from '@components/culling/CulledAlbumPhotoGrid';
 import {CulledAlbumDetailHeader} from '@components/culling/CulledAlbumDetailHeader';
+import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
 import {DeletePhotoModal} from '@components/modals/DeletePhotoModal';
 import {UploadSelectedConfirmModal} from '@components/modals/UploadSelectedConfirmModal';
 import {UploadToast} from '@components/upload/UploadToast';
@@ -19,6 +20,7 @@ import {useCulledAlbumDetailData} from '@hooks/useCulledAlbumDetailData';
 import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
 import {usePreloadGridImages} from '@hooks/usePreloadGridImages';
 import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
+import {useProfileMenu} from '@hooks/useProfileMenu';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {preloadImage, preloadImages} from '@lib/media/imagePreload';
@@ -52,6 +54,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     {albumId},
   );
   const isFocused = useIsFocused();
+  const profileMenu = useProfileMenu();
   const {resumeInFlightWork, startSelectedUpload} = useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
   const {photos, loadError, loadingPhotos} = useCulledAlbumPhotos(albumId);
@@ -279,6 +282,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           onBackPressIn={handleBackPressIn}
           isMobileLayout={isMobileLayout}
           paddingHorizontal={screenPaddingHorizontal}
+          profileMenu={profileMenu}
         />
 
         {mainContentWidth === 0 && (
@@ -459,6 +463,10 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         )}
         </View>
       </View>
+      <ProfileMenuPopup
+        menu={profileMenu}
+        rightOffset={screenPaddingHorizontal}
+      />
     </SafeAreaView>
     </UploadAwareModalShell>
   );

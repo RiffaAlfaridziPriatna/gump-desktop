@@ -1,9 +1,14 @@
 import {AlbumCard, AlbumGrid} from '@components/album';
 import {DeleteAlbumModal} from '@components/modals/DeleteAlbumModal';
+import {
+  ProfileMenuAvatar,
+  ProfileMenuPopup,
+} from '@components/navigation/ProfileMenu';
 import {useAuthState} from '@context/auth';
 import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useDeleteCulledAlbum} from '@hooks/useDeleteCulledAlbum';
 import {useLayout} from '@hooks/useLayout';
+import {useProfileMenu} from '@hooks/useProfileMenu';
 import {toAlbumCardModel} from '@lib/culledAlbum/format';
 import {navigateToCulledAlbum} from '@lib/culledAlbum/navigateToCulledAlbum';
 import {CulledAlbumListItem} from '@lib/culledAlbum/types';
@@ -35,6 +40,7 @@ type Props = StackScreenProps<MainStackParamList, 'Home'>;
 
 export default function HomeScreen({navigation}: Props) {
   const user = useAuthState(state => state.user);
+  const profileMenu = useProfileMenu();
   const {loadingAlbums, albums, refresh, count} = useLocalCulledAlbumList();
   const deleteCulledAlbum = useDeleteCulledAlbum();
   const {
@@ -105,13 +111,20 @@ export default function HomeScreen({navigation}: Props) {
           isMobileLayout && styles.headerMobile,
         ]}
         onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}>
-        <GumpLogo width={112} height={40} />
-        {hasAlbums && (
-          <View style={styles.breadcrumbContainer}>
-            <Text style={styles.breadcrumbText}>Album</Text>
-            <View style={styles.breadcrumbUnderline} />
-          </View>
-        )}
+        <View
+          style={[
+            styles.headerLeft,
+            isMobileLayout && styles.headerLeftMobile,
+          ]}>
+          <GumpLogo width={112} height={40} />
+          {hasAlbums && (
+            <View style={styles.breadcrumbContainer}>
+              <Text style={styles.breadcrumbText}>Album</Text>
+              <View style={styles.breadcrumbUnderline} />
+            </View>
+          )}
+        </View>
+        <ProfileMenuAvatar menu={profileMenu} />
       </View>
 
       {loadingAlbums && !hasAlbums ? (
@@ -225,6 +238,10 @@ export default function HomeScreen({navigation}: Props) {
         onClose={() => setAlbumToDelete(null)}
         onDelete={handleDeleteAlbum}
       />
+      <ProfileMenuPopup
+        menu={profileMenu}
+        rightOffset={screenPaddingHorizontal}
+      />
     </SafeAreaView>
   );
 }
@@ -237,12 +254,19 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingTop: 40,
     paddingBottom: 24,
-    gap: 40,
   },
   headerMobile: {
     paddingTop: 16,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 40,
+  },
+  headerLeftMobile: {
     gap: 16,
   },
   breadcrumbContainer: {

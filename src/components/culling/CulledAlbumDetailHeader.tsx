@@ -1,4 +1,6 @@
+import {ProfileMenuAvatar} from '@components/navigation/ProfileMenu';
 import {TouchableOpacity} from '@components/ui';
+import {useProfileMenu} from '@hooks/useProfileMenu';
 import {colors} from '@lib/ui/colors';
 import {sansBoldStyle} from '@lib/ui/typography';
 import {StyleSheet, Text, View} from 'react-native';
@@ -10,6 +12,7 @@ type Props = {
   onBackPressIn?: () => void;
   isMobileLayout: boolean;
   paddingHorizontal: number;
+  profileMenu: ReturnType<typeof useProfileMenu>;
 };
 
 export function CulledAlbumDetailHeader({
@@ -17,6 +20,7 @@ export function CulledAlbumDetailHeader({
   onBackPressIn,
   isMobileLayout,
   paddingHorizontal,
+  profileMenu,
 }: Props) {
   return (
     <View
@@ -25,15 +29,18 @@ export function CulledAlbumDetailHeader({
         {paddingHorizontal},
         isMobileLayout && styles.headerMobile,
       ]}>
-      <GumpLogo width={112} height={40} />
-      <TouchableOpacity
-        style={styles.backButton}
-        onPressIn={onBackPressIn}
-        onPress={onBack}
-        activeOpacity={0.7}>
-        <IconChevronLeft width={24} height={24} color={colors.accent} />
-        <Text style={styles.backText}>Back</Text>
-      </TouchableOpacity>
+      <View style={[styles.headerLeft, isMobileLayout && styles.headerLeftMobile]}>
+        <GumpLogo width={112} height={40} />
+        <TouchableOpacity
+          style={styles.backButton}
+          onPressIn={onBackPressIn}
+          onPress={onBack}
+          activeOpacity={0.7}>
+          <IconChevronLeft width={24} height={24} color={colors.accent} />
+          <Text style={styles.backText}>Back</Text>
+        </TouchableOpacity>
+      </View>
+      <ProfileMenuAvatar menu={profileMenu} />
     </View>
   );
 }
@@ -42,12 +49,19 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingTop: 40,
     paddingBottom: 24,
-    gap: 24,
   },
   headerMobile: {
     paddingTop: 16,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 24,
+  },
+  headerLeftMobile: {
     gap: 16,
   },
   backButton: {

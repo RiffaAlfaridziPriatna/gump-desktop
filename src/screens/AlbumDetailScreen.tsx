@@ -1,5 +1,9 @@
 import {PhotoGrid} from '@components/photo/PhotoGrid';
 import {PhotoGridSkeleton} from '@components/photo/PhotoGridSkeleton';
+import {
+  ProfileMenuAvatar,
+  ProfileMenuPopup,
+} from '@components/navigation/ProfileMenu';
 import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {UploadToast} from '@components/upload/UploadToast';
 import {
@@ -11,6 +15,7 @@ import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
 import {scheduleResolveExistingThumbnails, scheduleThumbnailBackfill} from '@lib/culledAlbum/thumbnailBackfill';
 import {useAlbumDetailGridPhotos} from '@hooks/useAlbumDetailGridPhotos';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
+import {useProfileMenu} from '@hooks/useProfileMenu';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {useLayout} from '@hooks/useLayout';
 import {colors} from '@lib/ui/colors';
@@ -122,6 +127,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   const {isMobileLayout, screenPaddingHorizontal} = useLayout();
   const isFocused = useIsFocused();
   const {resumeInFlightWork, startAnalysis} = useCulledAlbumActions();
+  const profileMenu = useProfileMenu();
   const [cullingActive, setCullingActive] = useState(false);
 
   const localImportProgress = useCulledAlbumLocalImportProgress(albumId);
@@ -255,15 +261,18 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
           {paddingHorizontal: screenPaddingHorizontal},
           isMobileLayout && styles.headerMobile,
         ]}>
-        <GumpLogo width={112} height={40} />
-        <TouchableOpacity
-          style={styles.backButton}
-          onPressIn={handleBackPressIn}
-          onPress={handleBack}
-          activeOpacity={0.7}>
-          <IconChevronLeft width={24} height={24} color={colors.accent} />
-          <Text style={styles.backText}>Back</Text>
-        </TouchableOpacity>
+        <View style={[styles.headerLeft, isMobileLayout && styles.headerLeftMobile]}>
+          <GumpLogo width={112} height={40} />
+          <TouchableOpacity
+            style={styles.backButton}
+            onPressIn={handleBackPressIn}
+            onPress={handleBack}
+            activeOpacity={0.7}>
+            <IconChevronLeft width={24} height={24} color={colors.accent} />
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+        <ProfileMenuAvatar menu={profileMenu} />
       </View>
 
       <View
@@ -327,6 +336,10 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
       {isCullingInProgress ? (
         <UploadToast mode="analyze" albumId={albumId} />
       ) : null}
+      <ProfileMenuPopup
+        menu={profileMenu}
+        rightOffset={screenPaddingHorizontal}
+      />
     </SafeAreaView>
     </UploadAwareModalShell>
   );
@@ -343,12 +356,19 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingTop: 40,
     paddingBottom: 24,
-    gap: 40,
   },
   headerMobile: {
     paddingTop: 16,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 40,
+  },
+  headerLeftMobile: {
     gap: 16,
   },
   backButton: {
