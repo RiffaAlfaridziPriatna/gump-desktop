@@ -31,6 +31,9 @@ export const colors = {
   divider: '#303030',
   dividerLight: '#979797',
 
+  // FAB
+  fabBackground: '#4A4A4A',
+
   // UI
   badge: '#FFFFFF99',
   modalOverlay: 'rgba(0,0,0,0.7)',

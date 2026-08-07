@@ -1,5 +1,6 @@
-import {PhotoGrid} from '@components/photo/PhotoGrid';
+import {PhotoGrid, type PhotoGridHandle} from '@components/photo/PhotoGrid';
 import {PhotoGridSkeleton} from '@components/photo/PhotoGridSkeleton';
+import {AlbumDetailFabStack} from '@components/navigation/AlbumDetailFabStack';
 import {
   ProfileMenuAvatar,
   ProfileMenuPopup,
@@ -13,6 +14,7 @@ import {
 } from '@context/culledAlbum';
 import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
 import {scheduleResolveExistingThumbnails, scheduleThumbnailBackfill} from '@lib/culledAlbum/thumbnailBackfill';
+import {pickImages} from '@lib/media/filePicker';
 import {useAlbumDetailGridPhotos} from '@hooks/useAlbumDetailGridPhotos';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
 import {useProfileMenu} from '@hooks/useProfileMenu';
@@ -23,7 +25,14 @@ import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useIsFocused} from '@react-navigation/native';
-import {useEffect, useMemo, useState} from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
@@ -41,7 +50,8 @@ type Props = StackScreenProps<MainStackParamList, 'AlbumDetail'>;
 type AlbumDetailBodyProps = {
   albumId: string;
   screenPaddingHorizontal: number;
-  isLocalImportActive: boolean;
+  showImportSkeleton: boolean;
+  photoGridRef: RefObject<PhotoGridHandle | null>;
 };
 
 function AlbumDetailUploadingBody({
@@ -55,9 +65,11 @@ function AlbumDetailUploadingBody({
 function AlbumDetailGridBody({
   albumId,
   screenPaddingHorizontal,
+  photoGridRef,
 }: {
   albumId: string;
   screenPaddingHorizontal: number;
+  photoGridRef: RefObject<PhotoGridHandle | null>;
 }) {
   const gridPhotos = useAlbumDetailGridPhotos(albumId);
   const {loadingPhotos, loadError} = useCulledAlbumPhotos(albumId, {
@@ -92,6 +104,7 @@ function AlbumDetailGridBody({
 
   return (
     <PhotoGrid
+      ref={photoGridRef}
       items={gridPhotos}
       albumId={albumId}
       horizontalPadding={screenPaddingHorizontal}
@@ -102,9 +115,10 @@ function AlbumDetailGridBody({
 function AlbumDetailBody({
   albumId,
   screenPaddingHorizontal,
-  isLocalImportActive,
+  showImportSkeleton,
+  photoGridRef,
 }: AlbumDetailBodyProps) {
-  if (isLocalImportActive) {
+  if (showImportSkeleton) {
     return (
       <AlbumDetailUploadingBody
         screenPaddingHorizontal={screenPaddingHorizontal}
@@ -116,6 +130,7 @@ function AlbumDetailBody({
     <AlbumDetailGridBody
       albumId={albumId}
       screenPaddingHorizontal={screenPaddingHorizontal}
+      photoGridRef={photoGridRef}
     />
   );
 }
@@ -126,9 +141,10 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     useUploadAwareModalScreen(navigation, route.params.instant, {albumId});
   const {isMobileLayout, screenPaddingHorizontal} = useLayout();
   const isFocused = useIsFocused();
-  const {resumeInFlightWork, startAnalysis} = useCulledAlbumActions();
+  const {resumeInFlightWork, startAnalysis, addPhotos} = useCulledAlbumActions();
   const profileMenu = useProfileMenu();
   const [cullingActive, setCullingActive] = useState(false);
+  const photoGridRef = useRef<PhotoGridHandle | null>(null);
 
   const localImportProgress = useCulledAlbumLocalImportProgress(albumId);
   const totalPhotos = useCulledAlbumStore(
@@ -144,6 +160,11 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   const hasUploadedPhotos =
     (localImportProgress?.uploaded ?? 0) > 0 ||
     (!isUploading && totalPhotos > 0);
+
+  // Keep the grid visible when appending: existing photos outnumber the active batch.
+  const hasGridContent =
+    totalPhotos > batchTotal || (localImportProgress?.uploaded ?? 0) > 0;
+  const showImportSkeleton = isUploading && !hasGridContent;
 
   const displayTotalPhotos = isUploading
     ? Math.max(totalPhotos, batchTotal)
@@ -252,6 +273,28 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     startAnalysis(albumId);
   }
 
+  const handleAddPhotos = useCallback(async () => {
+    if (isUploading || isCullingInProgress) {
+      return;
+    }
+
+    try {
+      const files = await pickImages();
+      if (files.length === 0) {
+        return;
+      }
+      addPhotos(albumId, files);
+    } catch (error) {
+      console.error('[AlbumDetailScreen] Failed to pick images', error);
+    }
+  }, [addPhotos, albumId, isCullingInProgress, isUploading]);
+
+  const handleScrollToTop = useCallback(() => {
+    photoGridRef.current?.scrollToTop();
+  }, []);
+
+  const canScrollGrid = !showImportSkeleton && hasGridContent;
+
   return (
     <UploadAwareModalShell {...shellProps}>
       <SafeAreaView style={styles.container}>
@@ -329,9 +372,17 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         <AlbumDetailBody
           albumId={albumId}
           screenPaddingHorizontal={screenPaddingHorizontal}
-          isLocalImportActive={isUploading}
+          showImportSkeleton={showImportSkeleton}
+          photoGridRef={photoGridRef}
         />
       </View>
+      <AlbumDetailFabStack
+        onScrollToTop={handleScrollToTop}
+        onAddPhotos={handleAddPhotos}
+        addDisabled={isUploading}
+        hideAdd={isCullingInProgress || cullingActive}
+        scrollDisabled={!canScrollGrid}
+      />
       <UploadToast mode="upload" albumId={albumId} />
       {isCullingInProgress ? (
         <UploadToast mode="analyze" albumId={albumId} />

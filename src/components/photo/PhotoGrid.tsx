@@ -22,12 +22,22 @@ import {
   resolveGridDisplayUri,
 } from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
-import {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   FlatList,
   Image,
   type ImageLoadEventData,
   type LayoutChangeEvent,
+  type NativeScrollEvent,
   ListRenderItemInfo,
   StyleSheet,
   useWindowDimensions,
@@ -41,6 +51,11 @@ const ASPECT_RATIO = 3 / 2;
 const HORIZONTAL_PADDING = 48;
 const GAP = 8;
 const RESIZE_SETTLE_MS = 150;
+const SCROLL_TO_TOP_DURATION_MS = 450;
+
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
+}
 
 const PhotoGridCellImage = memo(
   function PhotoGridCellImage({
@@ -225,6 +240,10 @@ export type PhotoGridProps = {
   gap?: number;
 };
 
+export type PhotoGridHandle = {
+  scrollToTop: () => void;
+};
+
 function buildRows(items: AlbumGridFileItem[]): PhotoGridRow[] {
   const rows: PhotoGridRow[] = [];
 
@@ -254,16 +273,23 @@ const viewabilityConfig = {
   itemVisiblePercentThreshold: 20,
 };
 
-export function PhotoGrid({
-  items,
-  albumId,
-  horizontalPadding = HORIZONTAL_PADDING,
-  gap = GAP,
-}: PhotoGridProps) {
+export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
+  function PhotoGrid(
+    {
+      items,
+      albumId,
+      horizontalPadding = HORIZONTAL_PADDING,
+      gap = GAP,
+    },
+    ref,
+  ) {
   const {width: windowWidth} = useWindowDimensions();
   const [settledLayoutWidth, setSettledLayoutWidth] = useState(0);
   const settledLayoutWidthRef = useRef(0);
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listRef = useRef<FlatList<PhotoGridRow>>(null);
+  const scrollOffsetRef = useRef(0);
+  const scrollAnimationFrameRef = useRef<number | null>(null);
   const itemsRef = useRef(items);
   const albumIdRef = useRef(albumId);
   const lastPreloadRangeRef = useRef('');
@@ -273,14 +299,73 @@ export function PhotoGrid({
   itemsRef.current = items;
   albumIdRef.current = albumId;
 
+  const cancelScrollAnimation = useCallback(() => {
+    if (scrollAnimationFrameRef.current != null) {
+      cancelAnimationFrame(scrollAnimationFrameRef.current);
+      scrollAnimationFrameRef.current = null;
+    }
+  }, []);
+
+  const scrollToTopSmooth = useCallback(() => {
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+
+    cancelScrollAnimation();
+
+    const startOffset = scrollOffsetRef.current;
+    if (startOffset <= 0) {
+      return;
+    }
+
+    const startTime = Date.now();
+
+    const step = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(1, elapsed / SCROLL_TO_TOP_DURATION_MS);
+      const nextOffset = startOffset * (1 - easeOutCubic(progress));
+
+      list.scrollToOffset({offset: nextOffset, animated: false});
+      scrollOffsetRef.current = nextOffset;
+
+      if (progress < 1) {
+        scrollAnimationFrameRef.current = requestAnimationFrame(step);
+        return;
+      }
+
+      list.scrollToOffset({offset: 0, animated: false});
+      scrollOffsetRef.current = 0;
+      scrollAnimationFrameRef.current = null;
+    };
+
+    scrollAnimationFrameRef.current = requestAnimationFrame(step);
+  }, [cancelScrollAnimation]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToTop: scrollToTopSmooth,
+    }),
+    [scrollToTopSmooth],
+  );
+
   useEffect(() => {
     return () => {
       cancelScrollImagePreload();
+      cancelScrollAnimation();
       if (resizeTimerRef.current) {
         clearTimeout(resizeTimerRef.current);
       }
     };
-  }, []);
+  }, [cancelScrollAnimation]);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+    },
+    [],
+  );
 
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     const width = event.nativeEvent.layout.width;
@@ -429,6 +514,7 @@ export function PhotoGrid({
     <View style={styles.container} onLayout={handleContainerLayout}>
       {itemWidth > 0 ? (
         <FlatList
+          ref={listRef}
           data={rows}
           renderItem={renderRow}
           keyExtractor={keyExtractor}
@@ -440,6 +526,8 @@ export function PhotoGrid({
           maxToRenderPerBatch={2}
           updateCellsBatchingPeriod={150}
           showsVerticalScrollIndicator
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           contentContainerStyle={[
             styles.listContent,
             {paddingHorizontal: horizontalPadding},
@@ -449,7 +537,7 @@ export function PhotoGrid({
       ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
