@@ -6,6 +6,7 @@ export class CulledAlbumPhotoHoverStore {
   private hoveredPhotoId: string | null = null;
   private photoListeners = new Map<string, Set<Listener>>();
   private isScrolling = false;
+  private isEnabled = true;
 
   subscribePhoto = (photoId: string, listener: Listener): (() => void) => {
     let listeners = this.photoListeners.get(photoId);
@@ -23,7 +24,7 @@ export class CulledAlbumPhotoHoverStore {
     this.hoveredPhotoId === photoId;
 
   hoverIn = (photoId: string): void => {
-    if (this.isScrolling || this.hoveredPhotoId === photoId) {
+    if (!this.isEnabled || this.isScrolling || this.hoveredPhotoId === photoId) {
       return;
     }
     const previousPhotoId = this.hoveredPhotoId;
@@ -33,7 +34,7 @@ export class CulledAlbumPhotoHoverStore {
   };
 
   hoverOut = (photoId: string): void => {
-    if (this.isScrolling || this.hoveredPhotoId !== photoId) {
+    if (!this.isEnabled || this.isScrolling || this.hoveredPhotoId !== photoId) {
       return;
     }
     this.hoveredPhotoId = null;
@@ -46,10 +47,24 @@ export class CulledAlbumPhotoHoverStore {
     }
     this.isScrolling = scrolling;
     if (scrolling) {
-      const previousPhotoId = this.hoveredPhotoId;
-      this.hoveredPhotoId = null;
-      this.notifyPhoto(previousPhotoId);
+      this.clearHover();
     }
+  };
+
+  setEnabled = (enabled: boolean): void => {
+    if (this.isEnabled === enabled) {
+      return;
+    }
+    this.isEnabled = enabled;
+    if (!enabled) {
+      this.clearHover();
+    }
+  };
+
+  private clearHover = (): void => {
+    const previousPhotoId = this.hoveredPhotoId;
+    this.hoveredPhotoId = null;
+    this.notifyPhoto(previousPhotoId);
   };
 
   private notifyPhoto = (photoId: string | null): void => {
