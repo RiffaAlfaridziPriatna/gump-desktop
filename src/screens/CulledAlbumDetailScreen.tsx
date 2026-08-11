@@ -111,6 +111,15 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const [keyFacesExpanded, setKeyFacesExpanded] = useState(true);
   const [showUploadConfirm, setShowUploadConfirm] = useState(false);
   const [mainContentWidth, setMainContentWidth] = useState(0);
+  const isBlockingModalOpen =
+    photoToDelete !== null || showUploadConfirm || showExportModal;
+
+  useEffect(() => {
+    if (!isBlockingModalOpen) {
+      return;
+    }
+    dismissKeyFaceTooltip();
+  }, [dismissKeyFaceTooltip, isBlockingModalOpen]);
 
   useEffect(() => {
     setMainContentWidth(0);
@@ -277,6 +286,9 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           ref={screenRootRef}
           style={styles.screenRoot}
           onLayout={syncScreenOrigin}>
+        <View
+          style={styles.screenContent}
+          pointerEvents={isBlockingModalOpen ? 'none' : 'auto'}>
         <CulledAlbumDetailHeader
           onBack={handleBack}
           onBackPressIn={handleBackPressIn}
@@ -370,6 +382,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
                 containerWidth={layoutWidth}
                 isMobileLayout={isMobileLayout}
                 canDeletePhoto={canDeletePhoto}
+                hoverEnabled={!isBlockingModalOpen}
                 contentContainerStyle={[
                   styles.grid,
                   isMobileLayout && styles.gridMobile,
@@ -405,6 +418,9 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
         <UploadToast mode="analyze" albumId={albumId} />
       <UploadToast mode="upload" albumId={albumId} />
+          </>
+        )}
+        </View>
 
         <DeletePhotoModal
           visible={photoToDelete !== null}
@@ -459,8 +475,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             />
           </View>
         )}
-          </>
-        )}
         </View>
       </View>
       <ProfileMenuPopup
@@ -482,6 +496,9 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   screenRoot: {
+    flex: 1,
+  },
+  screenContent: {
     flex: 1,
   },
   mainLoading: {

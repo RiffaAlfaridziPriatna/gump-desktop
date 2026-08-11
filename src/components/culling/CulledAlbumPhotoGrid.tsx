@@ -42,6 +42,7 @@ type CulledAlbumPhotoGridProps = {
   containerWidth: number;
   isMobileLayout: boolean;
   canDeletePhoto: boolean;
+  hoverEnabled?: boolean;
   contentContainerStyle?: StyleProp<ViewStyle>;
   onOpenDetail: CulledAlbumPhotoCardProps['onOpenDetail'];
   onToggleSelection: CulledAlbumPhotoCardProps['onToggleSelection'];
@@ -146,6 +147,7 @@ export function CulledAlbumPhotoGrid({
   containerWidth,
   isMobileLayout,
   canDeletePhoto,
+  hoverEnabled = true,
   contentContainerStyle,
   onOpenDetail,
   onToggleSelection,
@@ -162,6 +164,10 @@ export function CulledAlbumPhotoGrid({
   const lastThumbnailRangeRef = useRef('');
 
   onScrollInteractionStartRef.current = onScrollInteractionStart;
+
+  useEffect(() => {
+    hoverStoreRef.current.setEnabled(hoverEnabled);
+  }, [hoverEnabled]);
 
   const gridWidth =
     containerWidth > 0

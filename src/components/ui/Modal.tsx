@@ -278,7 +278,7 @@ function DesktopModal(props: ModalProps) {
   }
 
   return (
-    <View style={styles.host} pointerEvents="box-none">
+    <View style={styles.host} pointerEvents="auto">
       <ModalBody
         onClose={onClose}
         cardProps={cardProps}
