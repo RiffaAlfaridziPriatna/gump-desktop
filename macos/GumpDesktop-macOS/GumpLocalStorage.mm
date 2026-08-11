@@ -8,8 +8,11 @@
 #include "DifferenceHash.h"
 #include "ExifDateTime.h"
 #include "MediaDerivatives.h"
+#include "ZipStore.h"
 
+#include <filesystem>
 #include <string>
+#include <vector>
 
 @implementation GumpLocalStorage
 
@@ -2902,6 +2905,325 @@ RCT_EXPORT_METHOD(getImageDimensions:(NSString *)uri
       dispatch_async(dispatch_get_main_queue(), ^{
         reject(@"EUNKNOWN", exception.reason, nil);
       });
+    }
+  });
+}
+
+- (NSString *)downloadsGumpDirectoryPath
+{
+  NSURL *downloads =
+      [[NSFileManager defaultManager] URLsForDirectory:NSDownloadsDirectory
+                                             inDomains:NSUserDomainMask]
+          .firstObject;
+  NSURL *dir = [downloads URLByAppendingPathComponent:@"Gump" isDirectory:YES];
+  return dir.path;
+}
+
+- (NSString *)displayPathForDirectory:(NSString *)path
+{
+  if (path.length == 0) {
+    return @"";
+  }
+
+  NSString *downloadsRoot =
+      [[NSFileManager defaultManager] URLsForDirectory:NSDownloadsDirectory
+                                             inDomains:NSUserDomainMask]
+          .firstObject.path;
+  if (downloadsRoot.length > 0 &&
+      ([path isEqualToString:downloadsRoot] ||
+       [path hasPrefix:[downloadsRoot stringByAppendingString:@"/"]])) {
+    NSString *relative =
+        [path substringFromIndex:MIN(path.length, downloadsRoot.length + 1)];
+    if (relative.length == 0) {
+      return @"Downloads";
+    }
+    return [@"Downloads / " stringByAppendingString:[relative stringByReplacingOccurrencesOfString:@"/" withString:@" / "]];
+  }
+
+  NSArray<NSString *> *parts = path.pathComponents;
+  if (parts.count >= 2) {
+    return [NSString stringWithFormat:@"%@ / %@", parts[parts.count - 2], parts.lastObject];
+  }
+  return parts.lastObject ?: path;
+}
+
+- (BOOL)ensureDirectoryAtPath:(NSString *)path error:(NSError **)error
+{
+  BOOL isDirectory = NO;
+  if ([[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDirectory]) {
+    return isDirectory;
+  }
+  return [[NSFileManager defaultManager] createDirectoryAtPath:path
+                                   withIntermediateDirectories:YES
+                                                    attributes:nil
+                                                         error:error];
+}
+
+RCT_EXPORT_METHOD(ensureDefaultExportDirectory:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      NSString *path = [self downloadsGumpDirectoryPath];
+      NSError *error = nil;
+      if (![self ensureDirectoryAtPath:path error:&error]) {
+        reject(@"EEXPORTDIR", error.localizedDescription ?: @"Unable to create export directory", error);
+        return;
+      }
+      resolve(@{
+        @"path" : path,
+        @"displayPath" : [self displayPathForDirectory:path],
+      });
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(pickExportDirectory:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    panel.canChooseFiles = NO;
+    panel.canChooseDirectories = YES;
+    panel.allowsMultipleSelection = NO;
+    panel.canCreateDirectories = YES;
+    panel.prompt = @"Choose";
+    panel.message = @"Choose a folder to save your export";
+
+    [panel beginWithCompletionHandler:^(NSInteger result) {
+      if (result != NSModalResponseOK || panel.URL.path.length == 0) {
+        resolve([NSNull null]);
+        return;
+      }
+
+      NSString *path = panel.URL.path;
+      NSError *error = nil;
+      if (![self ensureDirectoryAtPath:path error:&error]) {
+        reject(@"EEXPORTDIR", error.localizedDescription ?: @"Unable to access folder", error);
+        return;
+      }
+
+      resolve(@{
+        @"path" : path,
+        @"displayPath" : [self displayPathForDirectory:path],
+      });
+    }];
+  });
+}
+
+RCT_EXPORT_METHOD(resolveUniqueZipPath:(NSString *)directory
+                  fileName:(NSString *)fileName
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      if (directory.length == 0 || fileName.length == 0) {
+        reject(@"EINVAL", @"Directory and file name are required", nil);
+        return;
+      }
+
+      NSString *baseName = fileName.stringByDeletingPathExtension;
+      NSString *extension = fileName.pathExtension.length > 0 ? fileName.pathExtension : @"zip";
+      NSString *candidate = [directory stringByAppendingPathComponent:fileName];
+      NSInteger suffix = 1;
+      while ([[NSFileManager defaultManager] fileExistsAtPath:candidate]) {
+        NSString *nextName =
+            [NSString stringWithFormat:@"%@ (%ld).%@", baseName, (long)suffix, extension];
+        candidate = [directory stringByAppendingPathComponent:nextName];
+        suffix += 1;
+      }
+      resolve(candidate);
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(createZipFromEntries:(NSArray *)entries
+                  zipPath:(NSString *)zipPath
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      if (zipPath.length == 0) {
+        reject(@"EINVAL", @"Zip path is required", nil);
+        return;
+      }
+      if (![entries isKindOfClass:[NSArray class]] || entries.count == 0) {
+        reject(@"EINVAL", @"At least one zip entry is required", nil);
+        return;
+      }
+
+      NSString *parent = zipPath.stringByDeletingLastPathComponent;
+      NSError *dirError = nil;
+      if (![self ensureDirectoryAtPath:parent error:&dirError]) {
+        reject(@"EEXPORTDIR", dirError.localizedDescription ?: @"Unable to create zip directory", dirError);
+        return;
+      }
+
+      std::vector<ZipStore::Entry> zipEntries;
+      zipEntries.reserve(entries.count);
+      for (id rawEntry in entries) {
+        if (![rawEntry isKindOfClass:[NSDictionary class]]) {
+          reject(@"EINVAL", @"Invalid zip entry", nil);
+          return;
+        }
+        NSDictionary *entry = (NSDictionary *)rawEntry;
+        NSString *uri = [entry[@"uri"] isKindOfClass:[NSString class]] ? entry[@"uri"] : nil;
+        NSString *name = [entry[@"name"] isKindOfClass:[NSString class]] ? entry[@"name"] : nil;
+        if (uri.length == 0 || name.length == 0) {
+          reject(@"EINVAL", @"Zip entry requires uri and name", nil);
+          return;
+        }
+        NSString *sourcePath = [self pathFromUri:uri];
+        if (sourcePath.length == 0 ||
+            ![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
+          reject(@"ENOENT", @"Zip source file not found", nil);
+          return;
+        }
+        zipEntries.push_back(ZipStore::Entry{
+            std::filesystem::path([sourcePath UTF8String]),
+            std::string([name UTF8String]),
+        });
+      }
+
+      if ([[NSFileManager defaultManager] fileExistsAtPath:zipPath]) {
+        [[NSFileManager defaultManager] removeItemAtPath:zipPath error:nil];
+      }
+
+      try {
+        const auto result =
+            ZipStore::CreateZip(std::filesystem::path([zipPath UTF8String]), zipEntries);
+        NSString *fileName = zipPath.lastPathComponent;
+        resolve(@{
+          @"path" : zipPath,
+          @"uri" : [NSString stringWithFormat:@"file://%@", zipPath],
+          @"fileName" : fileName,
+          @"byteSize" : @(result.byteSize),
+        });
+      } catch (const std::exception &ex) {
+        reject(@"EZIP", [NSString stringWithUTF8String:ex.what()], nil);
+      }
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(openInFileManager:(NSString *)path
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    @try {
+      if (path.length == 0) {
+        reject(@"EINVAL", @"Path is required", nil);
+        return;
+      }
+
+      BOOL isDirectory = NO;
+      if (![[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDirectory]) {
+        reject(@"ENOENT", @"Path not found", nil);
+        return;
+      }
+
+      NSURL *url = [NSURL fileURLWithPath:path isDirectory:isDirectory];
+      if (isDirectory) {
+        BOOL opened = [[NSWorkspace sharedWorkspace] openURL:url];
+        resolve(@(opened));
+        return;
+      }
+
+      [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ url ]];
+      resolve(@YES);
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
+- (NSString *)exportsStagingDirectoryPath
+{
+  NSURL *appSupport =
+      [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory
+                                             inDomains:NSUserDomainMask]
+          .firstObject;
+  NSURL *dir = [appSupport URLByAppendingPathComponent:@"Gump/exports" isDirectory:YES];
+  return dir.path;
+}
+
+RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      NSString *path = [self exportsStagingDirectoryPath];
+      NSError *error = nil;
+      if (![self ensureDirectoryAtPath:path error:&error]) {
+        reject(@"EEXPORTDIR", error.localizedDescription ?: @"Unable to create staging directory", error);
+        return;
+      }
+      resolve(@{
+        @"path" : path,
+        @"displayPath" : @"Gump / exports",
+      });
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(copyFile:(NSString *)sourcePath
+                  destinationPath:(NSString *)destinationPath
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      if (sourcePath.length == 0 || destinationPath.length == 0) {
+        reject(@"EINVAL", @"Source and destination paths are required", nil);
+        return;
+      }
+      if (![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
+        reject(@"ENOENT", @"Source file not found", nil);
+        return;
+      }
+
+      NSString *parent = destinationPath.stringByDeletingLastPathComponent;
+      NSError *dirError = nil;
+      if (![self ensureDirectoryAtPath:parent error:&dirError]) {
+        reject(@"EEXPORTDIR", dirError.localizedDescription ?: @"Unable to create destination directory", dirError);
+        return;
+      }
+
+      if ([[NSFileManager defaultManager] fileExistsAtPath:destinationPath]) {
+        [[NSFileManager defaultManager] removeItemAtPath:destinationPath error:nil];
+      }
+
+      NSError *copyError = nil;
+      BOOL copied = [[NSFileManager defaultManager] copyItemAtPath:sourcePath
+                                                            toPath:destinationPath
+                                                             error:&copyError];
+      if (!copied) {
+        reject(@"ECOPY", copyError.localizedDescription ?: @"Unable to copy export file", copyError);
+        return;
+      }
+
+      NSDictionary *attributes =
+          [[NSFileManager defaultManager] attributesOfItemAtPath:destinationPath error:nil];
+      NSNumber *fileSize = attributes[NSFileSize] ?: @(0);
+      resolve(@{
+        @"path" : destinationPath,
+        @"uri" : [NSString stringWithFormat:@"file://%@", destinationPath],
+        @"fileName" : destinationPath.lastPathComponent,
+        @"byteSize" : fileSize,
+      });
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
     }
   });
 }

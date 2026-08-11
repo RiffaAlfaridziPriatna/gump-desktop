@@ -7,7 +7,6 @@ import {colors} from '@lib/ui/colors';
 import {sansBoldStyle} from '@lib/ui/typography';
 import {Pressable} from '@components/ui';
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +14,6 @@ import {
 } from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 import IconCheckCircleOutlined from '../../assets/images/icon_check_circle_outlined.svg';
-import IconUpload from '../../assets/images/icon_upload.svg';
 import IconStar from '../../assets/images/icon_star.svg';
 
 const STAR_RATINGS = [0, 1, 2, 3, 4, 5] as const;
@@ -25,10 +23,6 @@ type CulledAlbumFilterBarProps = {
   starRatingFilter: StarRatingFilter;
   onSelectionFilterChange: (filter: SelectionFilter) => void;
   onStarRatingFilterChange: (filter: StarRatingFilter) => void;
-  onUploadSelected: () => void;
-  selectedCount?: number;
-  uploaded?: boolean;
-  uploadDisabled?: boolean;
   isMobileLayout?: boolean;
 };
 
@@ -95,10 +89,6 @@ export function CulledAlbumFilterBar({
   starRatingFilter,
   onSelectionFilterChange,
   onStarRatingFilterChange,
-  onUploadSelected,
-  selectedCount = 0,
-  uploaded = false,
-  uploadDisabled = false,
   isMobileLayout = false,
 }: CulledAlbumFilterBarProps) {
   function toggleSelectionFilter(next: Exclude<SelectionFilter, null>) {
@@ -155,36 +145,6 @@ export function CulledAlbumFilterBar({
       ) : (
         filterControls
       )}
-
-      <Pressable
-        onPress={onUploadSelected}
-        disabled={uploaded || uploadDisabled}
-        style={[
-          styles.uploadButton,
-          uploaded && styles.uploadButtonUploaded,
-          uploadDisabled && styles.uploadButtonDisabled,
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Upload selected photos">
-        {uploaded ? (
-          <IconCheckCircle width={24} height={24} color={colors.accent} />
-        ) : (
-          <IconUpload width={24} height={24} color={colors.white} />
-        )}
-        <Text
-          style={[
-            styles.uploadButtonText,
-            uploaded && styles.uploadButtonTextUploaded,
-          ]}
-        >
-          {uploaded
-            ? 'Uploaded'
-            : selectedCount > 0
-              ? `Upload Selected (${selectedCount})`
-              : 'Upload Selected'}
-        </Text>
-   
-      </Pressable>
     </View>
   );
 }
@@ -253,31 +213,5 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     textAlign: 'center',
     marginTop: 3,
-  },
-  uploadButton: {
-    minHeight: 48,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
-    paddingLeft: 20,
-    paddingRight: 24,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  uploadButtonDisabled: {
-    opacity: 0.4,
-  },
-  uploadButtonUploaded: {
-    backgroundColor: colors.accent + '14',
-  },
-  uploadButtonText: {
-    ...sansBoldStyle,
-    fontSize: 16,
-    color: colors.white,
-  },
-  uploadButtonTextUploaded: {
-    color: colors.accent,
   },
 });

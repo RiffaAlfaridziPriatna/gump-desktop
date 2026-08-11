@@ -7,6 +7,7 @@ import {CulledAlbumPhotoGrid} from '@components/culling/CulledAlbumPhotoGrid';
 import {CulledAlbumDetailHeader} from '@components/culling/CulledAlbumDetailHeader';
 import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
 import {DeletePhotoModal} from '@components/modals/DeletePhotoModal';
+import {ExportPhotosModal} from '@components/modals/ExportPhotosModal';
 import {UploadSelectedConfirmModal} from '@components/modals/UploadSelectedConfirmModal';
 import {UploadToast} from '@components/upload/UploadToast';
 import {FaceStatusTooltip} from '@components/culling/FaceStatusTooltip';
@@ -57,7 +58,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const profileMenu = useProfileMenu();
   const {resumeInFlightWork, startSelectedUpload} = useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
-  const {photos, loadError, loadingPhotos} = useCulledAlbumPhotos(albumId);
+  const {loadError, loadingPhotos} = useCulledAlbumPhotos(albumId);
   const albumPhotos = useCulledAlbumPhotosState(albumId);
   const cullingCompleted = useCulledAlbumStore(
     state => state.albums[albumId]?.cullingCompleted ?? false,
@@ -110,6 +111,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const [cullFiltersExpanded, setCullFiltersExpanded] = useState(true);
   const [keyFacesExpanded, setKeyFacesExpanded] = useState(true);
   const [showUploadConfirm, setShowUploadConfirm] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [mainContentWidth, setMainContentWidth] = useState(0);
 
   useEffect(() => {
@@ -236,6 +238,12 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     }
   }, [albumId, albumLink, albumName, navigation, startSelectedUpload]);
 
+  const selectedPhotos = useMemo(
+    () => albumPhotos.filter(photo => photo.selected && photo.status === 'uploaded'),
+    [albumPhotos],
+  );
+  const exportPhotoCount = selectedPhotos.length;
+
   const handleCullFiltersToggle = useCallback(() => {
     setCullFiltersExpanded(current => !current);
   }, []);
@@ -243,6 +251,21 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const handleKeyFacesToggle = useCallback(() => {
     setKeyFacesExpanded(current => !current);
   }, []);
+
+  const handleOpenExport = useCallback(() => {
+    if (exportPhotoCount === 0) {
+      return;
+    }
+    setShowExportModal(true);
+  }, [exportPhotoCount]);
+
+  const sidebarActionProps = {
+    onUploadSelected: () => setShowUploadConfirm(true),
+    onExport: handleOpenExport,
+    uploaded: cullingHasUploads,
+    uploadDisabled: selectedCount === 0,
+    exportDisabled: exportPhotoCount === 0,
+  };
 
   useEffect(() => {
     syncScreenOrigin();
@@ -320,10 +343,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             starRatingFilter={starRatingFilter}
             onSelectionFilterChange={setSelectionFilter}
             onStarRatingFilterChange={setStarRatingFilter}
-            onUploadSelected={() => setShowUploadConfirm(true)}
-            selectedCount={selectedCount}
-            uploaded={cullingHasUploads}
-            uploadDisabled={selectedCount === 0}
             isMobileLayout={isMobileLayout}
           />
         </View>
@@ -351,6 +370,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               onKeyFacesToggle={handleKeyFacesToggle}
               onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
               onKeyFacePress={handleKeyFacePress}
+              {...sidebarActionProps}
             />
           )}
           <View
@@ -399,6 +419,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               onKeyFacesToggle={handleKeyFacesToggle}
               onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
               onKeyFacePress={handleKeyFacePress}
+              {...sidebarActionProps}
             />
           )}
         </View>
@@ -418,6 +439,15 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           albumName={albumName}
           onClose={() => setShowUploadConfirm(false)}
           onStartUpload={handleStartUpload}
+        />
+
+        <ExportPhotosModal
+          visible={showExportModal}
+          photoCount={exportPhotoCount}
+          albumId={albumId}
+          albumName={albumName}
+          selectedPhotos={selectedPhotos}
+          onClose={() => setShowExportModal(false)}
         />
 
         {keyFaceTooltip && (

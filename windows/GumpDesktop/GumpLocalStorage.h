@@ -98,6 +98,41 @@ struct GumpLocalStorage {
   void ComputePerceptualHash(
       std::string uri,
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(EnsureDefaultExportDirectory, L"ensureDefaultExportDirectory");
+  void EnsureDefaultExportDirectory(
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(PickExportDirectory, L"pickExportDirectory");
+  void PickExportDirectory(
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(ResolveUniqueZipPath, L"resolveUniqueZipPath");
+  void ResolveUniqueZipPath(
+      std::string directory,
+      std::string fileName,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(CreateZipFromEntries, L"createZipFromEntries");
+  void CreateZipFromEntries(
+      winrt::Microsoft::ReactNative::JSValueArray entries,
+      std::string zipPath,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(OpenInFileManager, L"openInFileManager");
+  void OpenInFileManager(
+      std::string path,
+      winrt::Microsoft::ReactNative::ReactPromise<bool> &&promise) noexcept;
+
+  REACT_METHOD(EnsureExportStagingDirectory, L"ensureExportStagingDirectory");
+  void EnsureExportStagingDirectory(
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(CopyFile, L"copyFile");
+  void CopyFile(
+      std::string sourcePath,
+      std::string destinationPath,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
 };
 
 } // namespace GumpDesktop

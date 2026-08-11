@@ -6,10 +6,12 @@ export const colors = {
   background: '#131415',
   cardBackground: '#FFFFFF',
   cardBackgroundSecondary: '#1E1E1E',
+  cardGrayLight: '#F8F8F8',
 
   // Borders
   border: '#2C2D2F',
   borderSubtle: '#222222',
+  borderLight: '#E4E4E4',
 
   // Text
   text: '#FFFFFF',
@@ -20,6 +22,8 @@ export const colors = {
 
   // Icon
   iconMuted: '#88888A',
+  iconLight: '#B9B9B9',
+  iconGreen: '#83D841',
 
   // Semantic
   link: '#5B8AF5',
@@ -38,6 +42,7 @@ export const colors = {
   badge: '#FFFFFF99',
   modalOverlay: 'rgba(0,0,0,0.7)',
   progressTrack: '#E0E0E0',
+  radioEmpty: '#AAAAAA',
 } as const;
 
 export type AppColor = (typeof colors)[keyof typeof colors];

@@ -1,18 +1,18 @@
-import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
-import {KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
-import {Accordion} from '@components/ui/Accordion';
-import {Checkbox, Pressable} from '@components/ui';
-import {KeyFaceWithSource} from '@lib/culling/cullingFaceCrop';
-import {SelectionFilter} from '@lib/culling/culledAlbumPhotoFilters';
-import {CullFilterKey} from '@lib/culling/cullingUtil';
-import {colors} from '@lib/ui/colors';
-import {fonts, sansBoldStyle} from '@lib/ui/typography';
+import { KeyFaceTooltipAnchor } from '@components/culling/FaceStatusTooltip';
+import { KeyFaceSidebarItem } from '@components/culling/KeyFaceSidebarItem';
+import { Checkbox, Pressable } from '@components/ui';
+import { Accordion } from '@components/ui/Accordion';
+import { SelectionFilter } from '@lib/culling/culledAlbumPhotoFilters';
+import { KeyFaceWithSource } from '@lib/culling/cullingFaceCrop';
+import { CullFilterKey } from '@lib/culling/cullingUtil';
+import { colors } from '@lib/ui/colors';
 import {
   ScrollAwareTooltipContext,
   createScrollAwareTooltipStore,
   useScrollAwareTooltipHandlers,
 } from '@lib/ui/scrollAwareTooltip';
-import {memo, useCallback, useMemo, useRef} from 'react';
+import { fonts, sansBoldStyle } from '@lib/ui/typography';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import {
   FlatList,
   ListRenderItemInfo,
@@ -23,6 +23,8 @@ import {
 } from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 import IconCheckCircleOutline from '../../assets/images/icon_check_circle_outlined.svg';
+import IconExport from '../../assets/images/icon_export.svg';
+import IconUpload from '../../assets/images/icon_upload.svg';
 
 const FILTER_LABELS: Record<CullFilterKey, string> = {
   aiSelected: 'AI Selected',
@@ -37,7 +39,7 @@ const KEY_FACE_GAP = 16;
 const KEY_FACE_COLUMNS = 3;
 const KEY_FACE_ROW_HEIGHT = KEY_FACE_SIZE + KEY_FACE_GAP;
 
-export type {KeyFaceWithSource};
+export type { KeyFaceWithSource };
 
 export type CulledAlbumDetailSidebarProps = {
   isMobileLayout: boolean;
@@ -55,6 +57,11 @@ export type CulledAlbumDetailSidebarProps = {
   onKeyFacesToggle: () => void;
   onKeyFaceTooltipChange: (anchor: KeyFaceTooltipAnchor | null) => void;
   onKeyFacePress?: (photoId: string, faceIndex?: number) => void;
+  onUploadSelected: () => void;
+  onExport: () => void;
+  uploaded?: boolean;
+  uploadDisabled?: boolean;
+  exportDisabled?: boolean;
 };
 
 type KeyFaceRow = {
@@ -148,6 +155,11 @@ function CulledAlbumDetailSidebarComponent({
   onKeyFacesToggle,
   onKeyFaceTooltipChange,
   onKeyFacePress,
+  onUploadSelected,
+  onExport,
+  uploaded = false,
+  uploadDisabled = false,
+  exportDisabled = false,
 }: CulledAlbumDetailSidebarProps) {
   const scrollStoreRef = useRef(createScrollAwareTooltipStore());
   const onKeyFaceTooltipChangeRef = useRef(onKeyFaceTooltipChange);
@@ -226,6 +238,49 @@ function CulledAlbumDetailSidebarComponent({
 
   return (
     <View style={[styles.sidebar, isMobileLayout && styles.sidebarMobile]}>
+      <View style={styles.actionStack}>
+        <Pressable
+          onPress={onUploadSelected}
+          disabled={uploaded || uploadDisabled}
+          style={[
+            styles.uploadButton,
+            uploaded && styles.uploadButtonUploaded,
+            uploadDisabled && styles.actionButtonDisabled,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Upload selected photos">
+          {uploaded ? (
+            <IconCheckCircle width={24} height={24} color={colors.accent} />
+          ) : (
+            <IconUpload width={24} height={24} color={colors.white} />
+          )}
+          <Text
+            style={[
+              styles.uploadButtonText,
+              uploaded && styles.uploadButtonTextUploaded,
+            ]}>
+            {uploaded
+              ? 'Uploaded'
+              : selectedCount > 0
+                ? `Upload Selected (${selectedCount})`
+                : 'Upload Selected'}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={onExport}
+          disabled={exportDisabled}
+          style={[
+            styles.exportButton,
+            exportDisabled && styles.actionButtonDisabled,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Export selected photos">
+          <IconExport width={24} height={24} color={colors.accent} />
+          <Text style={styles.exportButtonText}>Export</Text>
+        </Pressable>
+      </View>
+
       <Accordion
         title="Cull Filters"
         expanded={cullFiltersExpanded}
@@ -287,7 +342,7 @@ function CulledAlbumDetailSidebarComponent({
               maxToRenderPerBatch={8}
               windowSize={3}
               updateCellsBatchingPeriod={150}
-              ItemSeparatorComponent={KeyFaceItemSeparator}
+              ItemSeparatorComponent={KeyFaceSeparator}
             />
           ) : (
             <FlatList
@@ -304,7 +359,7 @@ function CulledAlbumDetailSidebarComponent({
               updateCellsBatchingPeriod={100}
               removeClippedSubviews={Platform.OS !== 'windows'}
               getItemLayout={getKeyFaceRowLayout}
-              ItemSeparatorComponent={KeyFaceRowSeparator}
+              ItemSeparatorComponent={KeyFaceSeparator}
             />
           )}
         </ScrollAwareTooltipContext.Provider>
@@ -313,12 +368,8 @@ function CulledAlbumDetailSidebarComponent({
   );
 }
 
-function KeyFaceItemSeparator() {
-  return <View style={styles.keyFaceItemSeparator} />;
-}
-
-function KeyFaceRowSeparator() {
-  return <View style={styles.keyFaceRowSeparator} />;
+function KeyFaceSeparator() {
+  return <View style={styles.keyFaceSeparator} />;
 }
 
 export const CulledAlbumDetailSidebar = memo(CulledAlbumDetailSidebarComponent);
@@ -337,6 +388,52 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 12,
     flex: undefined,
+  },
+  actionStack: {
+    gap: 16,
+  },
+  uploadButton: {
+    minHeight: 48,
+    borderRadius: 24,
+    backgroundColor: colors.accent,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  uploadButtonUploaded: {
+    backgroundColor: colors.accent + '14',
+  },
+  uploadButtonText: {
+    ...sansBoldStyle,
+    fontSize: 16,
+    color: colors.white,
+  },
+  uploadButtonTextUploaded: {
+    color: colors.accent,
+  },
+  exportButton: {
+    minHeight: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'transparent',
+  },
+  exportButtonText: {
+    ...sansBoldStyle,
+    fontSize: 16,
+    color: colors.accent,
+  },
+  actionButtonDisabled: {
+    opacity: 0.4,
   },
   accordionContent: {
     gap: 16,
@@ -419,10 +516,7 @@ const styles = StyleSheet.create({
     width: KEY_FACE_SIZE,
     height: KEY_FACE_SIZE,
   },
-  keyFaceItemSeparator: {
-    width: KEY_FACE_GAP,
-  },
-  keyFaceRowSeparator: {
+  keyFaceSeparator: {
     height: KEY_FACE_GAP,
   },
   cullFiltersAccordion: {

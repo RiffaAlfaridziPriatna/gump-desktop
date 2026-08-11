@@ -4,10 +4,13 @@
 #include "ExifDateTime.h"
 #include "FaceDetectionPipeline.h"
 #include "MediaDerivatives.h"
+#include "ZipStore.h"
 
 #include <ShlObj.h>
 #include <combaseapi.h>
 #include <MemoryBuffer.h>
+#include <Shellapi.h>
+#include <shobjidl.h>
 #include <cstdio>
 #include <stdexcept>
 
@@ -1432,6 +1435,318 @@ void GumpLocalStorage::ComputePerceptualHash(std::string uri, ReactPromiseJS &&p
         }
 
         return winrtRN::JSValue(FormatHashHex(*hash));
+      },
+      std::move(promise));
+}
+
+std::filesystem::path DownloadsGumpDirectory() {
+  PWSTR downloads = nullptr;
+  if (FAILED(SHGetKnownFolderPath(FOLDERID_Downloads, 0, nullptr, &downloads)) || downloads == nullptr) {
+    throw std::runtime_error("Unable to resolve Downloads folder");
+  }
+  std::filesystem::path base(downloads);
+  CoTaskMemFree(downloads);
+  return base / L"Gump";
+}
+
+std::string DisplayPathForDirectory(const std::filesystem::path &path) {
+  PWSTR downloads = nullptr;
+  std::filesystem::path downloadsRoot;
+  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Downloads, 0, nullptr, &downloads)) && downloads != nullptr) {
+    downloadsRoot = downloads;
+    CoTaskMemFree(downloads);
+  }
+
+  auto normalized = path;
+  normalized.make_preferred();
+  if (!downloadsRoot.empty()) {
+    downloadsRoot.make_preferred();
+    const auto downloadsText = downloadsRoot.wstring();
+    const auto pathText = normalized.wstring();
+    if (pathText == downloadsText) {
+      return "Downloads";
+    }
+    if (pathText.rfind(downloadsText + L"\\", 0) == 0) {
+      auto relative = pathText.substr(downloadsText.size() + 1);
+      std::string display = "Downloads";
+      size_t start = 0;
+      while (start <= relative.size()) {
+        const auto slash = relative.find(L'\\', start);
+        const auto part = relative.substr(start, slash == std::wstring::npos ? std::wstring::npos : slash - start);
+        if (!part.empty()) {
+          display += " / ";
+          display += ToUtf8(part);
+        }
+        if (slash == std::wstring::npos) {
+          break;
+        }
+        start = slash + 1;
+      }
+      return display;
+    }
+  }
+
+  const auto parent = normalized.parent_path().filename().wstring();
+  const auto leaf = normalized.filename().wstring();
+  if (!parent.empty()) {
+    return ToUtf8(parent) + " / " + ToUtf8(leaf);
+  }
+  return ToUtf8(leaf);
+}
+
+void EnsureDirectory(const std::filesystem::path &path) {
+  std::error_code error;
+  if (std::filesystem::exists(path, error)) {
+    if (!std::filesystem::is_directory(path, error)) {
+      throw std::runtime_error("Export path is not a directory");
+    }
+    return;
+  }
+  if (!std::filesystem::create_directories(path, error) && error) {
+    throw std::runtime_error("Unable to create export directory");
+  }
+}
+
+void GumpLocalStorage::EnsureDefaultExportDirectory(ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      []() {
+        const auto path = DownloadsGumpDirectory();
+        EnsureDirectory(path);
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"path", ToUtf8(path.wstring())},
+            {"displayPath", DisplayPathForDirectory(path)},
+        });
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::PickExportDirectory(ReactPromiseJS &&promise) noexcept {
+  try {
+    winrt::com_ptr<IFileOpenDialog> dialog;
+    HRESULT hr = CoCreateInstance(
+        CLSID_FileOpenDialog,
+        nullptr,
+        CLSCTX_INPROC_SERVER,
+        IID_PPV_ARGS(dialog.put()));
+    if (FAILED(hr) || !dialog) {
+      promise.Reject(winrtRN::ReactError{"Error", "Unable to open folder picker"});
+      return;
+    }
+
+    DWORD options = 0;
+    dialog->GetOptions(&options);
+    dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+    dialog->SetTitle(L"Choose a folder to save your export");
+
+    hr = dialog->Show(GetActiveWindow());
+    if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+      promise.Resolve(winrtRN::JSValue(nullptr));
+      return;
+    }
+    if (FAILED(hr)) {
+      promise.Reject(winrtRN::ReactError{"Error", "Folder picker failed"});
+      return;
+    }
+
+    winrt::com_ptr<IShellItem> item;
+    hr = dialog->GetResult(item.put());
+    if (FAILED(hr) || !item) {
+      promise.Resolve(winrtRN::JSValue(nullptr));
+      return;
+    }
+
+    PWSTR filePath = nullptr;
+    hr = item->GetDisplayName(SIGDN_FILESYSPATH, &filePath);
+    if (FAILED(hr) || filePath == nullptr) {
+      promise.Reject(winrtRN::ReactError{"Error", "Unable to read selected folder"});
+      return;
+    }
+
+    std::filesystem::path selected(filePath);
+    CoTaskMemFree(filePath);
+    EnsureDirectory(selected);
+
+    promise.Resolve(winrtRN::JSValue(winrtRN::JSValueObject{
+        {"path", ToUtf8(selected.wstring())},
+        {"displayPath", DisplayPathForDirectory(selected)},
+    }));
+  } catch (const std::exception &error) {
+    promise.Reject(winrtRN::ReactError{"Error", error.what()});
+  }
+}
+
+void GumpLocalStorage::ResolveUniqueZipPath(
+    std::string directory,
+    std::string fileName,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [directory = std::move(directory), fileName = std::move(fileName)]() {
+        if (directory.empty() || fileName.empty()) {
+          throw std::runtime_error("Directory and file name are required");
+        }
+
+        const auto dirPath = std::filesystem::path(ToWide(directory));
+        const auto requested = std::filesystem::path(ToWide(fileName));
+        const auto stem = requested.stem().wstring();
+        const auto extension = requested.has_extension() ? requested.extension().wstring() : L".zip";
+
+        auto candidate = dirPath / requested;
+        int suffix = 1;
+        while (std::filesystem::exists(candidate)) {
+          candidate = dirPath / (stem + L" (" + std::to_wstring(suffix) + L")" + extension);
+          suffix += 1;
+        }
+
+        return winrtRN::JSValue(ToUtf8(candidate.wstring()));
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::CreateZipFromEntries(
+    winrtRN::JSValueArray entries,
+    std::string zipPath,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [entries = std::move(entries), zipPath = std::move(zipPath)]() {
+        if (zipPath.empty()) {
+          throw std::runtime_error("Zip path is required");
+        }
+        if (entries.size() == 0) {
+          throw std::runtime_error("At least one zip entry is required");
+        }
+
+        const auto destination = std::filesystem::path(ToWide(zipPath));
+        EnsureDirectory(destination.parent_path());
+
+        std::vector<ZipStore::Entry> zipEntries;
+        zipEntries.reserve(entries.size());
+        for (const auto &rawEntry : entries) {
+          if (rawEntry.Type() != winrtRN::JSValueType::Object) {
+            throw std::runtime_error("Invalid zip entry");
+          }
+          const auto &object = rawEntry.AsObject();
+          const auto uri = object["uri"].AsString();
+          const auto name = object["name"].AsString();
+          if (uri.empty() || name.empty()) {
+            throw std::runtime_error("Zip entry requires uri and name");
+          }
+          const auto sourcePath = PathFromUri(uri);
+          if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
+            throw std::runtime_error("Zip source file not found");
+          }
+          zipEntries.push_back(ZipStore::Entry{sourcePath, name});
+        }
+
+        std::error_code removeError;
+        std::filesystem::remove(destination, removeError);
+
+        const auto result = ZipStore::CreateZip(destination, zipEntries);
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"path", ToUtf8(destination.wstring())},
+            {"uri", "file://" + ToUtf8(destination.wstring())},
+            {"fileName", ToUtf8(destination.filename().wstring())},
+            {"byteSize", static_cast<double>(result.byteSize)},
+        });
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::OpenInFileManager(std::string path, winrtRN::ReactPromise<bool> &&promise) noexcept {
+  RunAsyncBool(
+      [path = std::move(path)]() {
+        if (path.empty()) {
+          throw std::runtime_error("Path is required");
+        }
+
+        const auto target = std::filesystem::path(ToWide(path));
+        if (!std::filesystem::exists(target)) {
+          throw std::runtime_error("Path not found");
+        }
+
+        if (std::filesystem::is_directory(target)) {
+          const auto result = ShellExecuteW(
+              nullptr,
+              L"explore",
+              target.c_str(),
+              nullptr,
+              nullptr,
+              SW_SHOWNORMAL);
+          return reinterpret_cast<INT_PTR>(result) > 32;
+        }
+
+        std::wstring params = L"/select,\"" + target.wstring() + L"\"";
+        const auto result = ShellExecuteW(
+            nullptr,
+            L"open",
+            L"explorer.exe",
+            params.c_str(),
+            nullptr,
+            SW_SHOWNORMAL);
+        return reinterpret_cast<INT_PTR>(result) > 32;
+      },
+      std::move(promise));
+}
+
+std::filesystem::path ExportStagingDirectory() {
+  PWSTR localAppData = nullptr;
+  if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppData)) ||
+      localAppData == nullptr) {
+    throw std::runtime_error("Unable to resolve local app data");
+  }
+  std::filesystem::path base(localAppData);
+  CoTaskMemFree(localAppData);
+  return base / L"Gump" / L"exports";
+}
+
+void GumpLocalStorage::EnsureExportStagingDirectory(ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      []() {
+        const auto path = ExportStagingDirectory();
+        EnsureDirectory(path);
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"path", ToUtf8(path.wstring())},
+            {"displayPath", "Gump / exports"},
+        });
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::CopyFile(
+    std::string sourcePath,
+    std::string destinationPath,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [sourcePath = std::move(sourcePath), destinationPath = std::move(destinationPath)]() {
+        if (sourcePath.empty() || destinationPath.empty()) {
+          throw std::runtime_error("Source and destination paths are required");
+        }
+
+        const auto source = std::filesystem::path(ToWide(sourcePath));
+        const auto destination = std::filesystem::path(ToWide(destinationPath));
+        if (!std::filesystem::exists(source)) {
+          throw std::runtime_error("Source file not found");
+        }
+
+        EnsureDirectory(destination.parent_path());
+        std::error_code removeError;
+        std::filesystem::remove(destination, removeError);
+        std::error_code copyError;
+        std::filesystem::copy_file(
+            source,
+            destination,
+            std::filesystem::copy_options::overwrite_existing,
+            copyError);
+        if (copyError) {
+          throw std::runtime_error("Unable to copy export file");
+        }
+
+        const auto byteSize = static_cast<double>(std::filesystem::file_size(destination));
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"path", ToUtf8(destination.wstring())},
+            {"uri", "file://" + ToUtf8(destination.wstring())},
+            {"fileName", ToUtf8(destination.filename().wstring())},
+            {"byteSize", byteSize},
+        });
       },
       std::move(promise));
 }
