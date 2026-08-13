@@ -25,6 +25,7 @@ import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 import IconCheckCircleOutline from '../../assets/images/icon_check_circle_outlined.svg';
 import IconExport from '../../assets/images/icon_export.svg';
 import IconUpload from '../../assets/images/icon_upload.svg';
+import IconWand from '../../assets/images/icon_wand.svg';
 
 const FILTER_LABELS: Record<CullFilterKey, string> = {
   aiSelected: 'AI Selected',
@@ -59,9 +60,11 @@ export type CulledAlbumDetailSidebarProps = {
   onKeyFacePress?: (photoId: string, faceIndex?: number) => void;
   onUploadSelected: () => void;
   onExport: () => void;
+  onApplyLook: () => void;
   uploaded?: boolean;
   uploadDisabled?: boolean;
   exportDisabled?: boolean;
+  applyLookDisabled?: boolean;
 };
 
 type KeyFaceRow = {
@@ -157,9 +160,11 @@ function CulledAlbumDetailSidebarComponent({
   onKeyFacePress,
   onUploadSelected,
   onExport,
+  onApplyLook,
   uploaded = false,
   uploadDisabled = false,
   exportDisabled = false,
+  applyLookDisabled = false,
 }: CulledAlbumDetailSidebarProps) {
   const scrollStoreRef = useRef(createScrollAwareTooltipStore());
   const onKeyFaceTooltipChangeRef = useRef(onKeyFaceTooltipChange);
@@ -278,6 +283,19 @@ function CulledAlbumDetailSidebarComponent({
           accessibilityLabel="Export selected photos">
           <IconExport width={24} height={24} color={colors.accent} />
           <Text style={styles.exportButtonText}>Export</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={onApplyLook}
+          disabled={applyLookDisabled}
+          style={[
+            styles.exportButton,
+            applyLookDisabled && styles.actionButtonDisabled,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Apply look to selected photos">
+          <IconWand width={24} height={24} color={colors.accent} />
+          <Text style={styles.exportButtonText}>Apply Look</Text>
         </Pressable>
       </View>
 

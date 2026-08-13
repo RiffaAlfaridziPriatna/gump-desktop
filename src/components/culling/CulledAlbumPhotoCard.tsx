@@ -4,6 +4,7 @@ import {
   useCulledAlbumPhotoHovered,
   useCulledAlbumPhotoHoverStore,
 } from '@lib/culledAlbum/photoHover';
+import type {LookId} from '@lib/look/types';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
 import {APIResponse} from '@services/api';
@@ -20,6 +21,8 @@ export type CulledAlbumPhotoCardProps = {
   photoId: string;
   file: FileAsset;
   analysis?: APIResponse.CullingPhoto;
+  lookId?: LookId | null;
+  lookIntensity?: number | null;
   cardWidth: number;
   canDeletePhoto: boolean;
   disabled: boolean;
@@ -38,6 +41,8 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
   photoId,
   file,
   analysis,
+  lookId,
+  lookIntensity,
   cardWidth,
   canDeletePhoto,
   disabled,
@@ -77,7 +82,12 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
       onHoverOut={isMobileLayout ? undefined : handleHoverOut}
       onPress={handleOpenDetail}>
       <View style={styles.thumbnailWrapper}>
-        <CulledAlbumPhotoThumbnail file={file} width={cardWidth} />
+        <CulledAlbumPhotoThumbnail
+          file={file}
+          width={cardWidth}
+          lookId={lookId}
+          lookIntensity={lookIntensity}
+        />
         {showDeleteButton && (
           <Pressable
             style={styles.deletePhotoButton}

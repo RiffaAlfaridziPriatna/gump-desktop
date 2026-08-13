@@ -50,6 +50,13 @@ type NativeLocalStorageModule = {
       };
     }>,
   ) => Promise<{cropUris: Array<string | null>}>;
+  applyLook?: (
+    sourceUri: string,
+    destPath: string,
+    matrix: number[],
+    maxPixelSize: number,
+    jpegQuality: number,
+  ) => Promise<{uri: string | null; path?: string | null}>;
 };
 
 const NativeLocalStorage = NativeModules.GumpLocalStorage as
@@ -312,5 +319,37 @@ export async function ensureFaceCrops(
   );
 
   return result.cropUris.map(uri => uri ?? null);
+}
+
+export type ApplyLookNativeResult = {
+  uri: string | null;
+  path?: string | null;
+};
+
+export async function applyLookToJpeg(options: {
+  sourceUri: string;
+  destPath: string;
+  matrix: number[];
+  maxPixelSize: number;
+  jpegQuality: number;
+}): Promise<ApplyLookNativeResult> {
+  if (!hasNativeLocalStorage() || !NativeLocalStorage?.applyLook) {
+    throw new Error(
+      'Apply Look bake is not available. Build the app with GumpLocalStorage applyLook.',
+    );
+  }
+
+  const result = await NativeLocalStorage.applyLook(
+    options.sourceUri,
+    options.destPath,
+    options.matrix,
+    options.maxPixelSize,
+    options.jpegQuality,
+  );
+
+  return {
+    uri: result.uri ?? null,
+    path: result.path ?? null,
+  };
 }
 

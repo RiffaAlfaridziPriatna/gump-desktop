@@ -133,6 +133,15 @@ struct GumpLocalStorage {
       std::string sourcePath,
       std::string destinationPath,
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(ApplyLook, L"applyLook");
+  void ApplyLook(
+      std::string sourceUri,
+      std::string destPath,
+      winrt::Microsoft::ReactNative::JSValueArray matrix,
+      double maxPixelSize,
+      double jpegQuality,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
 };
 
 } // namespace GumpDesktop

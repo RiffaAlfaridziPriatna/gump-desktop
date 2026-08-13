@@ -1,4 +1,6 @@
+import {LookPreviewImage} from '@components/look/LookPreviewImage';
 import {getContainedImageLayout} from '@lib/culling/cullingFaceCrop';
+import type {LookId} from '@lib/look/types';
 import {
   getCachedImageDimensions,
   loadImageDimensions,
@@ -23,6 +25,8 @@ const THUMBNAIL_ASPECT_RATIO = 3 / 2;
 type CulledAlbumPhotoThumbnailProps = {
   file: FileAsset;
   width: number;
+  lookId?: LookId | null;
+  lookIntensity?: number | null;
 };
 
 function hasWarmThumbnail(uri: string): boolean {
@@ -32,6 +36,8 @@ function hasWarmThumbnail(uri: string): boolean {
 export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail({
   file,
   width,
+  lookId,
+  lookIntensity,
 }: CulledAlbumPhotoThumbnailProps) {
   const uri = resolveGridDisplayUri(file) ?? '';
   const height = width / THUMBNAIL_ASPECT_RATIO;
@@ -118,16 +124,20 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
   }
 
   return (
-    <View style={[styles.container, {width, height}]} pointerEvents="box-none">
+    <View
+      style={[styles.container, {width, height}]}
+      pointerEvents="box-none">
       {uri ? (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
           {imageLayout ? (
-            <Image
-              source={{uri}}
+            <LookPreviewImage
+              uri={uri}
+              lookId={lookId}
+              lookIntensity={lookIntensity}
               onLoad={handleLoad}
               onError={handleError}
               style={[
-                styles.containedImage,
+                styles.photoBounds,
                 {
                   width: imageLayout.width,
                   height: imageLayout.height,
@@ -156,8 +166,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.cardBackgroundSecondary,
   },
-  containedImage: {
+  photoBounds: {
     position: 'absolute',
+    overflow: 'hidden',
   },
   imageHidden: {
     position: 'absolute',

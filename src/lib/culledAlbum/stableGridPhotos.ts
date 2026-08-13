@@ -33,6 +33,8 @@ function gridPhotoEqual(
   return (
     cached.photoId === next.photoId &&
     cached.disabled === next.disabled &&
+    cached.lookId === next.lookId &&
+    cached.lookIntensity === next.lookIntensity &&
     cached.file.uri === next.file.uri &&
     cached.file.name === next.file.name &&
     cached.file.thumbnailUri === next.file.thumbnailUri &&

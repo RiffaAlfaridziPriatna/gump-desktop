@@ -17,9 +17,10 @@ import type {
   ExportQuality,
   ExportZipResult,
 } from '@lib/export/types';
+import { photoNeedsLookBake } from '@lib/look/bakeLook';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
@@ -179,10 +180,15 @@ export function ExportPhotosModal({
     setShowUpgradeHint(false);
   }, [isPaidPlan]);
 
+  const looksNeedBake = useMemo(
+    () => selectedPhotos.some(photoNeedsLookBake),
+    [selectedPhotos],
+  );
+
   const runPrepareExport = useCallback(async () => {
     const requestId = prepareRequestIdRef.current + 1;
     prepareRequestIdRef.current = requestId;
-    setStep('preparing');
+    setStep(looksNeedBake ? 'applyingLook' : 'preparing');
     setProgressPercent(0);
     setPreparedExport(null);
     setDownloadedExport(null);
@@ -197,6 +203,11 @@ export function ExportPhotosModal({
         onProgress: progress => {
           if (prepareRequestIdRef.current !== requestId) {
             return;
+          }
+          if (progress.phase === 'applyingLook') {
+            setStep('applyingLook');
+          } else if (progress.phase === 'preparing') {
+            setStep('preparing');
           }
           setProgressPercent(progress.percent);
         },
@@ -217,7 +228,7 @@ export function ExportPhotosModal({
       setFailureKind('prepare');
       setStep('failed');
     }
-  }, [albumId, albumName, isPaidPlan, quality, selectedPhotos]);
+  }, [albumId, albumName, isPaidPlan, looksNeedBake, quality, selectedPhotos]);
 
   const runDownload = useCallback(
     async (directory?: ExportDirectoryInfo | null) => {
@@ -383,6 +394,25 @@ export function ExportPhotosModal({
             activeOpacity={0.8}>
             <Text style={styles.primaryButtonText}>Prepare Export</Text>
           </TouchableOpacity>
+        </View>
+      )}
+
+      {step === 'applyingLook' && (
+        <View style={styles.centeredContent}>
+          <View style={styles.titleBlock}>
+            <Text style={styles.title}>Applying look...</Text>
+            <Text style={styles.subtitle}>
+              Baking looks onto {photoCount} selected photos
+            </Text>
+          </View>
+          <View style={styles.progressBlock}>
+            <ProgressBar
+              progress={progressPercent / 100}
+              height={8}
+              style={styles.progressBar}
+            />
+            <Text style={styles.progressLabel}>{progressPercent}%</Text>
+          </View>
         </View>
       )}
 

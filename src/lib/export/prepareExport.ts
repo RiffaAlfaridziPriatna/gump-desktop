@@ -1,5 +1,6 @@
 import {ensureDetail, isUsableDetailUri} from '@lib/storage/localStorage';
 import type {CulledAlbumPhoto} from '@lib/culledAlbum/types';
+import {bakeLooksForPhotos, photoNeedsLookBake} from '@lib/look/bakeLook';
 import {
   copyExportFile,
   createZipFromEntries,
@@ -67,7 +68,13 @@ async function resolveExportSourceUri(
   albumId: string,
   photo: CulledAlbumPhoto,
   quality: ExportQuality,
+  bakedUriByPhotoId?: Map<string, string>,
 ): Promise<string> {
+  const bakedUri = bakedUriByPhotoId?.get(photo.photoId);
+  if (bakedUri) {
+    return bakedUri;
+  }
+
   if (quality === 'original') {
     return photo.file.uri;
   }
@@ -88,6 +95,7 @@ export type PrepareExportProgress = {
   completed: number;
   total: number;
   percent: number;
+  phase?: 'applyingLook' | 'preparing';
 };
 
 export type PrepareExportOptions = {
@@ -114,9 +122,31 @@ export async function prepareSelectedPhotosExport(
   const total = photos.length;
   const rawEntries: ExportZipEntry[] = [];
 
+  let bakedUriByPhotoId = new Map<string, string>();
+  const looksToBake = photos.filter(photoNeedsLookBake);
+  if (looksToBake.length > 0) {
+    bakedUriByPhotoId = await bakeLooksForPhotos(
+      looksToBake,
+      quality,
+      progress => {
+        onProgress?.({
+          completed: progress.completed,
+          total: progress.total,
+          percent: Math.min(40, Math.round((progress.percent / 100) * 40)),
+          phase: 'applyingLook',
+        });
+      },
+    );
+  }
+
   for (let index = 0; index < photos.length; index++) {
     const photo = photos[index]!;
-    const uri = await resolveExportSourceUri(albumId, photo, quality);
+    const uri = await resolveExportSourceUri(
+      albumId,
+      photo,
+      quality,
+      bakedUriByPhotoId,
+    );
     rawEntries.push({
       uri,
       name: toJpegEntryName(photo.file.name, photo.photoId),
@@ -125,19 +155,20 @@ export async function prepareSelectedPhotosExport(
     onProgress?.({
       completed,
       total,
-      percent: Math.min(90, Math.round((completed / total) * 90)),
+      percent: 40 + Math.min(50, Math.round((completed / total) * 50)),
+      phase: 'preparing',
     });
   }
 
   const entries = uniquifyEntryNames(rawEntries);
-  onProgress?.({completed: total, total, percent: 92});
+  onProgress?.({completed: total, total, percent: 92, phase: 'preparing'});
 
   const zipPath = await resolveUniqueZipPath(
     stagingDirectory.path,
     sanitizeZipFileName(albumName),
   );
   const zip = await createZipFromEntries(entries, zipPath);
-  onProgress?.({completed: total, total, percent: 100});
+  onProgress?.({completed: total, total, percent: 100, phase: 'preparing'});
 
   return {
     ...zip,

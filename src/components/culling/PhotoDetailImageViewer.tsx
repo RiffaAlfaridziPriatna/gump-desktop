@@ -1,5 +1,6 @@
 import {FaceStatusIconBadge} from '@components/culling/FaceStatusIconBadge';
 import type {KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
+import {LookPreviewImage} from '@components/look/LookPreviewImage';
 import {
   boundingBoxToDisplayRect,
   DisplayRect,
@@ -11,6 +12,7 @@ import {
   getFocusStatusMeta,
 } from '@lib/culling/faceStatus';
 import {useMeasuredTooltipHover} from '@hooks/useMeasuredTooltipHover';
+import type {LookId} from '@lib/look/types';
 import {getCachedImageDimensions, ImageDimensions, putCachedImageDimensions} from '@lib/media/imageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
 import {colors} from '@lib/ui/colors';
@@ -30,6 +32,8 @@ type PhotoDetailImageViewerProps = {
   photoId: string;
   faces: APIResponse.CullingFace[];
   zoomFaceIndex: number | null;
+  lookId?: LookId | null;
+  lookIntensity?: number | null;
   imageSize?: ImageDimensions | null;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
   onImageReady?: () => void;
@@ -128,6 +132,8 @@ export function PhotoDetailImageViewer({
   photoId,
   faces,
   zoomFaceIndex,
+  lookId,
+  lookIntensity,
   imageSize: imageSizeProp,
   onTooltipAnchorChange,
   onImageReady,
@@ -312,18 +318,21 @@ export function PhotoDetailImageViewer({
     >
       <View style={styles.imageFrame}>
         {imageLayout ? (
-          <Image
-            source={{uri}}
-            resizeMode="contain"
-            style={{
-              position: 'absolute',
-              width: imageLayout.width,
-              height: imageLayout.height,
-              left: imageLayout.left,
-              top: imageLayout.top,
-            }}
+          <LookPreviewImage
+            uri={uri}
+            lookId={lookId}
+            lookIntensity={lookIntensity}
             onLoad={handleImageLoad}
             onError={handleImageError}
+            style={[
+              styles.photoBounds,
+              {
+                width: imageLayout.width,
+                height: imageLayout.height,
+                left: imageLayout.left,
+                top: imageLayout.top,
+              },
+            ]}
           />
         ) : (
           fallbackImage
@@ -381,6 +390,11 @@ const styles = StyleSheet.create({
     flex: 1,
     overflow: 'hidden',
     backgroundColor: colors.cardBackgroundSecondary,
+    position: 'relative',
+  },
+  photoBounds: {
+    position: 'absolute',
+    overflow: 'hidden',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,

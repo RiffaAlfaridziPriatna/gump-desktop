@@ -11,6 +11,7 @@ import {
   SCROLL_GRID_VISIBLE_PADDING,
 } from '@lib/media/scrollImagePreload';
 import {isUsableThumbnailUri} from '@lib/storage/localStorage';
+import type {LookId} from '@lib/look/types';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 import {
@@ -33,6 +34,8 @@ export type CulledAlbumGridPhoto = {
   photoId: string;
   file: FileAsset;
   analysis?: APIResponse.CullingPhoto;
+  lookId?: LookId | null;
+  lookIntensity?: number | null;
   disabled: boolean;
 };
 
@@ -98,6 +101,8 @@ const CulledAlbumPhotoRowView = memo(
             photoId={cell.photoId}
             file={cell.file}
             analysis={cell.analysis}
+            lookId={cell.lookId}
+            lookIntensity={cell.lookIntensity}
             cardWidth={cardWidth}
             canDeletePhoto={canDeletePhoto && !cell.disabled}
             disabled={cell.disabled}

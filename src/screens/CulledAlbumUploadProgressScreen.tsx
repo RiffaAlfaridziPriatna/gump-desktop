@@ -9,11 +9,15 @@ import {
   countServerUploadBatchItems,
   isServerUploadBatchFinished,
 } from '@lib/culledAlbum/serverUploadProgress';
+import {
+  getUploadLookBakeState,
+  subscribeUploadLookBake,
+} from '@lib/look/uploadLookBake';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
-import {useEffect, useState} from 'react';
+import {useEffect, useState, useSyncExternalStore} from 'react';
 import {useLayout} from '@hooks/useLayout';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {TouchableOpacity} from '@components/ui';
@@ -23,6 +27,14 @@ import IconClose from '../assets/images/icon_close.svg';
 import GumpLogo from '../assets/images/logo.svg';
 
 type Props = StackScreenProps<MainStackParamList, 'CulledAlbumUploadProgress'>;
+
+function useUploadLookBake(albumId: string) {
+  return useSyncExternalStore(
+    onStoreChange => subscribeUploadLookBake(albumId, onStoreChange),
+    () => getUploadLookBakeState(albumId),
+    () => getUploadLookBakeState(albumId),
+  );
+}
 
 export default function CulledAlbumUploadProgressScreen({
   navigation,
@@ -37,17 +49,26 @@ export default function CulledAlbumUploadProgressScreen({
   const {screenPaddingHorizontal, isMobileLayout} = useLayout();
   const {resumeInFlightWork} = useCulledAlbumActions();
   const {batchPhotoIds, photos} = useCulledAlbumServerUploadBatch(albumId);
+  const lookBake = useUploadLookBake(albumId);
+  const isApplyingLook = lookBake.status === 'baking';
 
-  const progress = computeServerUploadBatchProgress(photos, batchPhotoIds);
-  const finished = isServerUploadBatchFinished(photos, batchPhotoIds);
+  const uploadProgress = computeServerUploadBatchProgress(photos, batchPhotoIds);
+  const finished =
+    !isApplyingLook && isServerUploadBatchFinished(photos, batchPhotoIds);
   const counts = countServerUploadBatchItems(photos, batchPhotoIds);
   const remainingCount = counts.pending + counts.inProgress;
   const totalCount = batchPhotoIds.length || photoCount;
-  const title = finished
-    ? `Uploaded ${counts.completed} Photo${counts.completed === 1 ? '' : 's'}`
-    : `Uploading ${remainingCount || totalCount} Photo${
-        (remainingCount || totalCount) === 1 ? '' : 's'
-      }`;
+  const progress = isApplyingLook ? lookBake.percent / 100 : uploadProgress;
+  const title = isApplyingLook
+    ? 'Applying look...'
+    : finished
+      ? `Uploaded ${counts.completed} Photo${counts.completed === 1 ? '' : 's'}`
+      : `Uploading ${remainingCount || totalCount} Photo${
+          (remainingCount || totalCount) === 1 ? '' : 's'
+        }`;
+  const subtitle = isApplyingLook
+    ? 'Baking looks onto your selected photos before upload.\nPlease keep this window open.'
+    : 'Your photos are being uploaded to your Gump album.\nPlease keep this window open.';
 
   const [headerHeight, setHeaderHeight] = useState(0);
 
@@ -97,10 +118,7 @@ export default function CulledAlbumUploadProgressScreen({
           <View style={styles.content}>
             <View style={styles.infoContainer}>
               <Text style={styles.title}>{title}</Text>
-              <Text style={styles.subtitle}>
-                Your photos are being uploaded to your Gump album.{'\n'}
-                Please keep this window open.
-              </Text>
+              <Text style={styles.subtitle}>{subtitle}</Text>
             </View>
             <ProgressBar
               progress={progress}

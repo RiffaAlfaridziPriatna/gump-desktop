@@ -25,6 +25,7 @@
 #include <winrt/Windows.Web.Http.Headers.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <condition_variable>
 #include <cstring>
@@ -1746,6 +1747,132 @@ void GumpLocalStorage::CopyFile(
             {"uri", "file://" + ToUtf8(destination.wstring())},
             {"fileName", ToUtf8(destination.filename().wstring())},
             {"byteSize", byteSize},
+        });
+      },
+      std::move(promise));
+}
+
+namespace {
+
+uint8_t ClampToByte(float value) {
+  if (value <= 0.0f) {
+    return 0;
+  }
+  if (value >= 255.0f) {
+    return 255;
+  }
+  return static_cast<uint8_t>(value + 0.5f);
+}
+
+bool ParseColorMatrix(const winrtRN::JSValueArray &matrix, std::array<float, 20> &out) {
+  if (matrix.size() < 20) {
+    return false;
+  }
+  for (size_t index = 0; index < 20; ++index) {
+    out[index] = static_cast<float>(matrix[index].AsDouble());
+  }
+  return true;
+}
+
+std::optional<std::filesystem::path> ApplyLookMatrixToPath(
+    const std::filesystem::path &sourcePath,
+    const std::filesystem::path &destPath,
+    const std::array<float, 20> &matrix,
+    uint32_t maxPixelSize,
+    float jpegQuality) {
+  ThumbnailConcurrencyGuard concurrencyGuard;
+  const auto bitmap = DecodeOrientedScaledBitmapWithFallback(sourcePath, maxPixelSize);
+  if (!bitmap) {
+    return std::nullopt;
+  }
+  const auto pixels = ReadBitmapPixels(bitmap);
+
+  SoftwareBitmap output(
+      BitmapPixelFormat::Bgra8,
+      pixels.width,
+      pixels.height,
+      BitmapAlphaMode::Premultiplied);
+  BitmapBuffer destBuffer = output.LockBuffer(BitmapBufferAccessMode::Write);
+  const auto destPlane = destBuffer.GetPlaneDescription(0);
+  const auto destReference = destBuffer.CreateReference();
+  auto destAccess = destReference.as<::Windows::Foundation::IMemoryBufferByteAccess>();
+  uint8_t *destData = nullptr;
+  uint32_t capacity = 0;
+  winrt::check_hresult(destAccess->GetBuffer(&destData, &capacity));
+
+  for (int y = 0; y < pixels.height; ++y) {
+    const uint8_t *srcRow = pixels.bytes.data() + static_cast<size_t>(y) * pixels.stride;
+    uint8_t *destRow = destData + static_cast<size_t>(y) * destPlane.Stride;
+    for (int x = 0; x < pixels.width; ++x) {
+      const size_t offset = static_cast<size_t>(x) * 4U;
+      const float b = srcRow[offset + 0] / 255.0f;
+      const float g = srcRow[offset + 1] / 255.0f;
+      const float r = srcRow[offset + 2] / 255.0f;
+      const float a = srcRow[offset + 3] / 255.0f;
+
+      const float rOut =
+          matrix[0] * r + matrix[1] * g + matrix[2] * b + matrix[3] * a + matrix[4];
+      const float gOut =
+          matrix[5] * r + matrix[6] * g + matrix[7] * b + matrix[8] * a + matrix[9];
+      const float bOut =
+          matrix[10] * r + matrix[11] * g + matrix[12] * b + matrix[13] * a + matrix[14];
+      const float aOut =
+          matrix[15] * r + matrix[16] * g + matrix[17] * b + matrix[18] * a + matrix[19];
+
+      destRow[offset + 0] = ClampToByte(bOut * 255.0f);
+      destRow[offset + 1] = ClampToByte(gOut * 255.0f);
+      destRow[offset + 2] = ClampToByte(rOut * 255.0f);
+      destRow[offset + 3] = ClampToByte(aOut * 255.0f);
+    }
+  }
+
+  EnsureDirectory(destPath.parent_path());
+  std::error_code removeError;
+  std::filesystem::remove(destPath, removeError);
+  if (!WriteSoftwareBitmapJpeg(output, destPath, jpegQuality)) {
+    return std::nullopt;
+  }
+  return destPath;
+}
+
+} // namespace
+
+void GumpLocalStorage::ApplyLook(
+    std::string sourceUri,
+    std::string destPath,
+    winrtRN::JSValueArray matrix,
+    double maxPixelSize,
+    double jpegQuality,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [sourceUri = std::move(sourceUri),
+       destPath = std::move(destPath),
+       matrix = std::move(matrix),
+       maxPixelSize,
+       jpegQuality]() {
+        const auto sourcePath = PathFromUri(sourceUri);
+        if (sourcePath.empty() || !std::filesystem::exists(sourcePath) || destPath.empty()) {
+          return winrtRN::JSValue(winrtRN::JSValueObject{{"uri", nullptr}});
+        }
+
+        std::array<float, 20> colorMatrix{};
+        if (!ParseColorMatrix(matrix, colorMatrix)) {
+          return winrtRN::JSValue(winrtRN::JSValueObject{{"uri", nullptr}});
+        }
+
+        const auto outPath = ApplyLookMatrixToPath(
+            sourcePath,
+            std::filesystem::path(ToWide(destPath)),
+            colorMatrix,
+            maxPixelSize > 0 ? static_cast<uint32_t>(maxPixelSize) : kDetailMaxPixelSize,
+            jpegQuality > 0 ? static_cast<float>(jpegQuality) : kDetailJpegQuality);
+        if (!outPath.has_value()) {
+          return winrtRN::JSValue(winrtRN::JSValueObject{{"uri", nullptr}});
+        }
+
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"uri", FileUri(*outPath)},
+            {"path", ToUtf8(outPath->wstring())},
         });
       },
       std::move(promise));

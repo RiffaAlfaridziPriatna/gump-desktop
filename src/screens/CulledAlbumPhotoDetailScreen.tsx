@@ -536,6 +536,8 @@ export default function CulledAlbumPhotoDetailScreen({
                   photoId={photoId}
                   faces={faces}
                   zoomFaceIndex={zoomFaceIndex}
+                  lookId={photo?.lookId}
+                  lookIntensity={photo?.lookIntensity}
                   imageSize={imageSize}
                   onImageReady={handleMainImageReady}
                   onTooltipAnchorChange={handleTooltipChange}

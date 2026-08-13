@@ -1,4 +1,10 @@
 import {derivePhotoFlags} from '@lib/culling/cullingUtil';
+import {
+  DEFAULT_LOOK_INTENSITY,
+  isLookId,
+  normalizeLookIntensity,
+  type LookId,
+} from '@lib/look/types';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 
@@ -94,6 +100,10 @@ export type CulledAlbumPhoto = {
   faces: APIResponse.CullingFace[];
   selected: boolean;
   starRating: number | null;
+  /** Color look applied in-app; baked only on export/upload. */
+  lookId: LookId;
+  /** Look strength 0–100. Ignored when lookId is original. */
+  lookIntensity: number;
   aiSelected: boolean;
   maybe: boolean;
   blurred: boolean;
@@ -177,6 +187,8 @@ export function createCulledAlbumPhoto(
     faces: [],
     selected: false,
     starRating: null,
+    lookId: 'original',
+    lookIntensity: DEFAULT_LOOK_INTENSITY,
     aiSelected: false,
     maybe: false,
     blurred: false,
@@ -404,6 +416,12 @@ export function normalizePersistedPhoto(
     photo.serverUploadStatus = 'pending';
     photo.serverUploadProgress = 0;
   }
+  if (!isLookId(photo.lookId)) {
+    photo.lookId = 'original';
+  }
+  photo.lookIntensity = normalizeLookIntensity(
+    photo.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
+  );
   if (photo.analysisStatus === 'analyzed') {
     const flags = derivePhotoFlags(photo.faces);
     photo.aiSelected = flags.aiSelected;

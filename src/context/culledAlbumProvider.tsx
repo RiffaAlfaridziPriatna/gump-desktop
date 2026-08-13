@@ -29,6 +29,11 @@ import {
 import {createServerUploadQueue} from '@lib/culledAlbum/serverUploadQueue';
 import {uploadServerPhoto} from '@lib/culledAlbum/serverUpload';
 import {createUploadQueue} from '@lib/culledAlbum/uploadQueue';
+import {
+  bakeLooksForUploadBatch,
+  beginUploadLookBake,
+  whenUploadLookBakeReady,
+} from '@lib/look/uploadLookBake';
 import {onUploadNavigationCoopEnd} from '@lib/navigation/uploadAwareNavigation';
 import {
   beginLocalImportQueue,
@@ -181,7 +186,9 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
     if (hasInFlightServerUploads(album, photos)) {
       setQueueOperationStatus(albumId, 'serverUpload', 'active');
-      serverUploadQueueRef.current!.processPending(albumId);
+      whenUploadLookBakeReady(albumId, () => {
+        serverUploadQueueRef.current!.processPending(albumId);
+      });
     }
   }, []);
 
@@ -226,7 +233,20 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     serverUploadQueueRef.current!.resetActiveUploadCount(albumId);
     setQueueOperationStatus(albumId, 'serverUpload', 'active');
     persistAlbum(albumId).catch(() => undefined);
-    serverUploadQueueRef.current!.processPending(albumId);
+    beginUploadLookBake(albumId, photoIds.length);
+
+    void bakeLooksForUploadBatch(albumId, photoIds)
+      .then(() => {
+        serverUploadQueueRef.current!.processPending(albumId);
+      })
+      .catch(error => {
+        console.error(
+          '[CulledAlbumProvider] Failed to bake looks before upload',
+          error,
+        );
+        // Still attempt upload of originals if bake fails entirely.
+        serverUploadQueueRef.current!.processPending(albumId);
+      });
   }, []);
 
   const purgeAlbum = useCallback(async (albumId: string) => {

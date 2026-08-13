@@ -23,6 +23,7 @@ export type ExportZipResult = {
 
 export type ExportPhotosModalStep =
   | 'options'
+  | 'applyingLook'
   | 'preparing'
   | 'ready'
   | 'success'

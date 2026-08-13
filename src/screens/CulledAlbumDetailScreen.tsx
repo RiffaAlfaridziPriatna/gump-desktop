@@ -6,9 +6,11 @@ import {
 import {CulledAlbumPhotoGrid} from '@components/culling/CulledAlbumPhotoGrid';
 import {CulledAlbumDetailHeader} from '@components/culling/CulledAlbumDetailHeader';
 import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
+import {ApplyLookModal} from '@components/modals/ApplyLookModal';
 import {DeletePhotoModal} from '@components/modals/DeletePhotoModal';
 import {ExportPhotosModal} from '@components/modals/ExportPhotosModal';
 import {UploadSelectedConfirmModal} from '@components/modals/UploadSelectedConfirmModal';
+import type {LookId} from '@lib/look/types';
 import {UploadToast} from '@components/upload/UploadToast';
 import {FaceStatusTooltip} from '@components/culling/FaceStatusTooltip';
 import {
@@ -112,9 +114,13 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const [keyFacesExpanded, setKeyFacesExpanded] = useState(true);
   const [showUploadConfirm, setShowUploadConfirm] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showApplyLookModal, setShowApplyLookModal] = useState(false);
   const [mainContentWidth, setMainContentWidth] = useState(0);
   const isBlockingModalOpen =
-    photoToDelete !== null || showUploadConfirm || showExportModal;
+    photoToDelete !== null ||
+    showUploadConfirm ||
+    showExportModal ||
+    showApplyLookModal;
 
   useEffect(() => {
     if (!isBlockingModalOpen) {
@@ -158,6 +164,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       .map(photo => ({
         file: photo.file,
         photoId: photo.photoId,
+        lookId: photo.lookId,
+        lookIntensity: photo.lookIntensity,
         disabled: isCulledPhotoDisabled(photo, cullingHasUploads),
         analysis:
           photo.analysisStatus === 'analyzed'
@@ -268,12 +276,32 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     setShowExportModal(true);
   }, [exportPhotoCount]);
 
+  const handleOpenApplyLook = useCallback(() => {
+    if (exportPhotoCount === 0) {
+      return;
+    }
+    setShowApplyLookModal(true);
+  }, [exportPhotoCount]);
+
+  const handleApplyLook = useCallback(
+    async (lookId: LookId, lookIntensity: number) => {
+      const photoIds = selectedPhotos.map(photo => photo.photoId);
+      await cullingEngine.updateLook(albumId, photoIds, {
+        lookId,
+        lookIntensity,
+      });
+    },
+    [albumId, selectedPhotos],
+  );
+
   const sidebarActionProps = {
     onUploadSelected: () => setShowUploadConfirm(true),
     onExport: handleOpenExport,
+    onApplyLook: handleOpenApplyLook,
     uploaded: cullingHasUploads,
     uploadDisabled: selectedCount === 0,
     exportDisabled: exportPhotoCount === 0,
+    applyLookDisabled: exportPhotoCount === 0,
   };
 
   useEffect(() => {
@@ -464,6 +492,13 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           albumName={albumName}
           selectedPhotos={selectedPhotos}
           onClose={() => setShowExportModal(false)}
+        />
+
+        <ApplyLookModal
+          visible={showApplyLookModal}
+          selectedPhotos={selectedPhotos}
+          onClose={() => setShowApplyLookModal(false)}
+          onApply={handleApplyLook}
         />
 
         {keyFaceTooltip && (

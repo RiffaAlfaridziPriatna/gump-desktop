@@ -20,6 +20,12 @@ import {
   updatePhoto,
 } from '@lib/culledAlbum/store';
 import { CulledAlbumPhoto, isCulledPhotoDisabled, NativeDetectedFace, toCullingPhoto } from '@lib/culledAlbum/types';
+import {
+  DEFAULT_LOOK_INTENSITY,
+  isLookId,
+  normalizeLookIntensity,
+  type LookId,
+} from '@lib/look/types';
 import { readImageCaptureTime } from '@lib/media/imageCaptureTime';
 import { computeImagePerceptualHash } from '@lib/media/perceptualHash';
 import {
@@ -566,6 +572,41 @@ export const cullingEngine = {
     starRating: number,
   ): Promise<APIResponse.CullingPhoto> {
     return this.updateSelection(albumId, photoId, {starRating});
+  },
+
+  /**
+   * Batch-apply a look to photos. Looks stay editable after server upload so
+   * Export can still restyle local files; selection/delete remain locked.
+   */
+  async updateLook(
+    albumId: string,
+    photoIds: string[],
+    data: {lookId: LookId; lookIntensity?: number},
+  ): Promise<void> {
+    await ensureAlbumLoaded(albumId);
+    if (!isLookId(data.lookId)) {
+      throw new Error('Invalid look id');
+    }
+    const lookIntensity = normalizeLookIntensity(
+      data.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
+    );
+    const uniquePhotoIds = Array.from(new Set(photoIds));
+    for (const photoId of uniquePhotoIds) {
+      const existing = getPhotoById(albumId, photoId);
+      if (!existing) {
+        continue;
+      }
+      updatePhoto(
+        albumId,
+        photoId,
+        photo => {
+          photo.lookId = data.lookId;
+          photo.lookIntensity = lookIntensity;
+        },
+        {immediate: true},
+      );
+    }
+    await persistAlbum(albumId);
   },
 
   async deletePhoto(albumId: string, photoId: string): Promise<void> {

@@ -2,6 +2,7 @@
 #import "GumpSharedFaceDetection.h"
 
 #import <AppKit/AppKit.h>
+#import <CoreImage/CoreImage.h>
 #import <ImageIO/ImageIO.h>
 #import <Vision/Vision.h>
 
@@ -3173,6 +3174,154 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
       });
     } @catch (NSException *exception) {
       reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
+- (NSString *)applyLookMatrixFromPath:(NSString *)sourcePath
+                               toPath:(NSString *)destPath
+                               matrix:(NSArray *)matrix
+                         maxPixelSize:(NSUInteger)maxPixelSize
+                          jpegQuality:(CGFloat)jpegQuality
+{
+  if (sourcePath.length == 0 || destPath.length == 0 || matrix.count < 20) {
+    return nil;
+  }
+
+  NSError *dirError = nil;
+  [[NSFileManager defaultManager] createDirectoryAtPath:[destPath stringByDeletingLastPathComponent]
+                            withIntermediateDirectories:YES
+                                             attributes:nil
+                                                  error:&dirError];
+  if (dirError != nil) {
+    return nil;
+  }
+
+  NSURL *sourceURL = [NSURL fileURLWithPath:sourcePath isDirectory:NO];
+  CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)sourceURL, NULL);
+  if (source == NULL) {
+    return nil;
+  }
+
+  NSDictionary *options = @{
+    (NSString *)kCGImageSourceCreateThumbnailFromImageAlways : @YES,
+    (NSString *)kCGImageSourceThumbnailMaxPixelSize : @(maxPixelSize),
+    (NSString *)kCGImageSourceCreateThumbnailWithTransform : @YES,
+  };
+  CGImageRef oriented =
+      CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)options);
+  CFRelease(source);
+  if (oriented == NULL) {
+    return nil;
+  }
+
+  CIImage *input = [CIImage imageWithCGImage:oriented];
+  CGImageRelease(oriented);
+
+  CIFilter *filter = [CIFilter filterWithName:@"CIColorMatrix"];
+  if (filter == nil) {
+    return nil;
+  }
+  [filter setValue:input forKey:kCIInputImageKey];
+  [filter setValue:[CIVector vectorWithX:[matrix[0] doubleValue]
+                                       Y:[matrix[1] doubleValue]
+                                       Z:[matrix[2] doubleValue]
+                                       W:[matrix[3] doubleValue]]
+            forKey:@"inputRVector"];
+  [filter setValue:[CIVector vectorWithX:[matrix[5] doubleValue]
+                                       Y:[matrix[6] doubleValue]
+                                       Z:[matrix[7] doubleValue]
+                                       W:[matrix[8] doubleValue]]
+            forKey:@"inputGVector"];
+  [filter setValue:[CIVector vectorWithX:[matrix[10] doubleValue]
+                                       Y:[matrix[11] doubleValue]
+                                       Z:[matrix[12] doubleValue]
+                                       W:[matrix[13] doubleValue]]
+            forKey:@"inputBVector"];
+  [filter setValue:[CIVector vectorWithX:[matrix[15] doubleValue]
+                                       Y:[matrix[16] doubleValue]
+                                       Z:[matrix[17] doubleValue]
+                                       W:[matrix[18] doubleValue]]
+            forKey:@"inputAVector"];
+  [filter setValue:[CIVector vectorWithX:[matrix[4] doubleValue]
+                                       Y:[matrix[9] doubleValue]
+                                       Z:[matrix[14] doubleValue]
+                                       W:[matrix[19] doubleValue]]
+            forKey:@"inputBiasVector"];
+
+  CIImage *output = filter.outputImage;
+  if (output == nil) {
+    return nil;
+  }
+
+  CIContext *context = [CIContext contextWithOptions:nil];
+  CGImageRef outputImage = [context createCGImage:output fromRect:output.extent];
+  if (outputImage == NULL) {
+    return nil;
+  }
+
+  if ([[NSFileManager defaultManager] fileExistsAtPath:destPath]) {
+    [[NSFileManager defaultManager] removeItemAtPath:destPath error:nil];
+  }
+
+  NSURL *destURL = [NSURL fileURLWithPath:destPath isDirectory:NO];
+  CGImageDestinationRef destination =
+      CGImageDestinationCreateWithURL((__bridge CFURLRef)destURL, CFSTR("public.jpeg"), 1, NULL);
+  if (destination == NULL) {
+    CGImageRelease(outputImage);
+    return nil;
+  }
+
+  NSDictionary *properties = @{
+    (NSString *)kCGImageDestinationLossyCompressionQuality : @(jpegQuality),
+  };
+  CGImageDestinationAddImage(destination, outputImage, (__bridge CFDictionaryRef)properties);
+  BOOL saved = CGImageDestinationFinalize(destination);
+  CGImageRelease(outputImage);
+  CFRelease(destination);
+
+  return saved ? destPath : nil;
+}
+
+RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
+                  destPath:(NSString *)destPath
+                  matrix:(NSArray *)matrix
+                  maxPixelSize:(nonnull NSNumber *)maxPixelSize
+                  jpegQuality:(nonnull NSNumber *)jpegQuality
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      NSString *sourcePath = [self pathFromUri:sourceUri];
+      if (sourcePath.length == 0 ||
+          ![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          resolve(@{@"uri" : [NSNull null]});
+        });
+        return;
+      }
+
+      NSString *generatedPath =
+          [self applyLookMatrixFromPath:sourcePath
+                                 toPath:destPath
+                                 matrix:matrix
+                           maxPixelSize:maxPixelSize.unsignedIntegerValue
+                            jpegQuality:jpegQuality.doubleValue];
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (generatedPath.length > 0) {
+          resolve(@{
+            @"uri" : [NSString stringWithFormat:@"file://%@", generatedPath],
+            @"path" : generatedPath,
+          });
+        } else {
+          resolve(@{@"uri" : [NSNull null]});
+        }
+      });
+    } @catch (NSException *exception) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        reject(@"ELOOK", exception.reason ?: @"Apply look failed", nil);
+      });
     }
   });
 }
