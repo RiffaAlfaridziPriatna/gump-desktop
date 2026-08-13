@@ -41,13 +41,13 @@ export function ProfilePopup({
         </View>
         <View style={styles.divider} />
         <View style={styles.menu}>
-          <TouchableOpacity
+          {/* <TouchableOpacity
             onPress={onUpgrade}
             activeOpacity={0.7}
             hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
           >
             <Text style={styles.menuItem}>Upgrade My Plan</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
           <TouchableOpacity
             onPress={onLogout}
             activeOpacity={0.7}
