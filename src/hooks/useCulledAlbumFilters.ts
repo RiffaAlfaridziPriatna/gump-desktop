@@ -25,14 +25,13 @@ export function useCulledAlbumFilters(
   const [activeFilters, setActiveFilters] = useState<
     Record<FilterKey, boolean>
   >({
-    aiSelected: false,
-    maybe: false,
+    aiSelected: true,
+    maybe: true,
     blurred: false,
     closedEyes: false,
     duplicated: false,
   });
-  const [selectionFilter, setSelectionFilter] =
-    useState<SelectionFilter>('selected');
+  const [selectionFilter, setSelectionFilter] = useState<SelectionFilter>(null);
   const [starRatingFilter, setStarRatingFilter] = useState<StarRatingFilter>(
     [],
   );
