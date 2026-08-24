@@ -123,7 +123,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     photoToDelete !== null ||
     showUploadConfirm ||
     showExportModal ||
-    showApplyLookModal;
+    showApplyLookModal ||
+    planMenu.isOpen;
 
   useEffect(() => {
     if (!isBlockingModalOpen) {

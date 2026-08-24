@@ -168,7 +168,7 @@ export default function HomeScreen({navigation}: Props) {
               styles.scrollContent,
               {paddingHorizontal: screenPaddingHorizontal},
             ]}
-            scrollEnabled={!loadingAlbums}
+            scrollEnabled={!loadingAlbums && !planMenu.isOpen}
             refreshControl={
               <RefreshControl
                 refreshing={loadingAlbums}
@@ -201,6 +201,7 @@ export default function HomeScreen({navigation}: Props) {
             styles.emptyScrollContent,
             {paddingHorizontal: screenPaddingHorizontal},
           ]}
+          scrollEnabled={!planMenu.isOpen}
           refreshControl={
             <RefreshControl
               refreshing={loadingAlbums}

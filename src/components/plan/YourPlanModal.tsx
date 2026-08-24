@@ -10,8 +10,8 @@ import type {PhotoTopUpPackage, UserPlanSnapshot} from '@domain/plan';
 import {openPhotoTopUp, openUpgradePlan} from '@lib/plan/billingLinks';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
-import {useMemo} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import CircleBlue from '../../assets/images/upload/blue_circle.svg';
 import HalfCircle from '../../assets/images/upload/half_circle.svg';
 import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
@@ -81,6 +81,28 @@ export function YourPlanModal({
         ? 800
         : 740;
 
+  const [scrollEnabled, setScrollEnabled] = useState(false);
+  const viewportHeightRef = useRef(0);
+  const contentHeightRef = useRef(0);
+
+  const syncScrollEnabled = useCallback(() => {
+    const viewportH = viewportHeightRef.current;
+    const contentH = contentHeightRef.current;
+    if (viewportH <= 0 || contentH <= 0) {
+      setScrollEnabled(false);
+      return;
+    }
+    setScrollEnabled(contentH > viewportH + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!visible) {
+      viewportHeightRef.current = 0;
+      contentHeightRef.current = 0;
+      setScrollEnabled(false);
+    }
+  }, [visible]);
+
   async function handleUpgrade() {
     try {
       await openUpgradePlan();
@@ -116,9 +138,31 @@ export function YourPlanModal({
   }, [plan.apiName]);
 
   return (
-    <Modal visible={visible} onClose={onClose} width={720} height={modalHeight}>
+    <Modal
+      visible={visible}
+      onClose={onClose}
+      width={720}
+      height={modalHeight}
+      contentStyle={styles.modalContent}>
       <ModalDecor />
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        scrollEnabled={scrollEnabled}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        onLayout={event => {
+          viewportHeightRef.current = event.nativeEvent.layout.height;
+          syncScrollEnabled();
+        }}
+        onContentSizeChange={(_width, height) => {
+          contentHeightRef.current = height;
+          syncScrollEnabled();
+        }}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}>
         <Text style={styles.title}>Your Plan</Text>
 
         <View style={styles.body}>
@@ -160,7 +204,8 @@ export function YourPlanModal({
           </View>
 
           <View style={styles.statsRow}>
-            <View style={[styles.sectionCard, styles.statCard, styles.statCardLeft]}>
+            <View
+              style={[styles.sectionCard, styles.statCard, styles.statCardLeft]}>
               <UsageMeter
                 label="Storage"
                 valueLabel={storageValue}
@@ -193,17 +238,27 @@ export function YourPlanModal({
             </View>
           ) : null}
         </View>
-      </View>
+      </ScrollView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
+  modalContent: {
+    paddingTop: 0,
+    paddingBottom: 0,
+    paddingHorizontal: 0,
+    alignItems: 'stretch',
+  },
+  scroll: {
     flex: 1,
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  scrollContent: {
     alignItems: 'center',
-    paddingTop: 28,
-    paddingBottom: 32,
+    paddingTop: 64,
+    paddingBottom: 64,
     paddingHorizontal: 40,
   },
   title: {

@@ -369,7 +369,9 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         </View>
       </View>
 
-      <View style={styles.body}>
+      <View
+        style={styles.body}
+        pointerEvents={planMenu.isOpen ? 'none' : 'auto'}>
         <AlbumDetailBody
           albumId={albumId}
           screenPaddingHorizontal={screenPaddingHorizontal}
