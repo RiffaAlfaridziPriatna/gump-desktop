@@ -31,7 +31,8 @@ export function useCulledAlbumFilters(
     closedEyes: false,
     duplicated: false,
   });
-  const [selectionFilter, setSelectionFilter] = useState<SelectionFilter>(null);
+  const [selectionFilter, setSelectionFilter] =
+    useState<SelectionFilter>('selected');
   const [starRatingFilter, setStarRatingFilter] = useState<StarRatingFilter>(
     [],
   );
@@ -83,6 +84,8 @@ export function useCulledAlbumFilters(
     [gridPhotos, stats],
   );
 
+  const actionCount = filteredPhotos.length;
+
   const filterCounts = useMemo(() => {
     if (stats) {
       return {
@@ -121,8 +124,10 @@ export function useCulledAlbumFilters(
     selectionFilter,
     starRatingFilter,
     filteredPhotos,
+    actionPhotos: filteredPhotos,
     filterCounts,
     selectedCount,
+    actionCount,
     toggleFilter,
     setSelectionFilter,
     setStarRatingFilter,
