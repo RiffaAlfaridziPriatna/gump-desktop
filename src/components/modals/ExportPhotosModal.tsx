@@ -1,6 +1,6 @@
 import { Modal, Pressable, ProgressBar, TouchableOpacity } from '@components/ui';
 import type { CulledAlbumPhoto } from '@lib/culledAlbum/types';
-import { IS_PAID_PLAN } from '@lib/export/exportPlan';
+import { IS_PAID_PLAN, isPaidPlan as resolveIsPaidPlan } from '@lib/export/exportPlan';
 import { formatByteSize } from '@lib/export/formatByteSize';
 import {
   openInFileManager,
@@ -18,8 +18,10 @@ import type {
   ExportZipResult,
 } from '@lib/export/types';
 import { photoNeedsLookBake } from '@lib/look/bakeLook';
+import { openUpgradePlan } from '@lib/plan/billingLinks';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
+import { useAuthState } from '@hooks/useAuth';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
@@ -135,7 +137,9 @@ export function ExportPhotosModal({
   selectedPhotos,
   onClose,
 }: ExportPhotosModalProps) {
-  const isPaidPlan = IS_PAID_PLAN;
+  const user = useAuthState(state => state.user);
+  const isPaidPlan =
+    IS_PAID_PLAN !== null ? IS_PAID_PLAN : resolveIsPaidPlan(user);
   const [step, setStep] = useState<ExportPhotosModalStep>('options');
   const [quality, setQuality] = useState<ExportQuality>('compressed');
   const [showUpgradeHint, setShowUpgradeHint] = useState(false);
@@ -364,10 +368,14 @@ export function ExportPhotosModal({
                     <Text style={styles.upgradeText}>
                       Upgrade to export original-quality photos.
                     </Text>
-                    {/* TODO: Wire Upgrade Plan CTA to billing / paywall flow */}
                     <TouchableOpacity
                       onPress={() => {
-                        // TODO: Navigate to upgrade / pricing
+                        void openUpgradePlan().catch(error => {
+                          console.error(
+                            '[ExportPhotosModal] Failed to open upgrade',
+                            error,
+                          );
+                        });
                       }}
                       activeOpacity={0.8}
                       style={styles.upgradeCtaButton}>

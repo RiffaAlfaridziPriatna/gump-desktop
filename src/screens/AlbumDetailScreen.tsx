@@ -1,10 +1,11 @@
 import {PhotoGrid, type PhotoGridHandle} from '@components/photo/PhotoGrid';
 import {PhotoGridSkeleton} from '@components/photo/PhotoGridSkeleton';
 import {AlbumDetailFabStack} from '@components/navigation/AlbumDetailFabStack';
+import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
 import {
-  ProfileMenuAvatar,
-  ProfileMenuPopup,
-} from '@components/navigation/ProfileMenu';
+  HeaderAccountCluster,
+  HeaderPlanModal,
+} from '@components/plan';
 import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {UploadToast} from '@components/upload/UploadToast';
 import {
@@ -17,6 +18,7 @@ import {scheduleResolveExistingThumbnails, scheduleThumbnailBackfill} from '@lib
 import {pickImages} from '@lib/media/filePicker';
 import {useAlbumDetailGridPhotos} from '@hooks/useAlbumDetailGridPhotos';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
+import {usePlanMenu} from '@hooks/usePlanMenu';
 import {useProfileMenu} from '@hooks/useProfileMenu';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {useLayout} from '@hooks/useLayout';
@@ -143,6 +145,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   const isFocused = useIsFocused();
   const {resumeInFlightWork, startAnalysis, addPhotos} = useCulledAlbumActions();
   const profileMenu = useProfileMenu();
+  const planMenu = usePlanMenu();
   const [cullingActive, setCullingActive] = useState(false);
   const photoGridRef = useRef<PhotoGridHandle | null>(null);
 
@@ -313,7 +316,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
         </View>
-        <ProfileMenuAvatar menu={profileMenu} />
+        <HeaderAccountCluster profileMenu={profileMenu} planMenu={planMenu} />
       </View>
 
       <View
@@ -388,6 +391,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         menu={profileMenu}
         rightOffset={screenPaddingHorizontal}
       />
+      <HeaderPlanModal planMenu={planMenu} />
     </SafeAreaView>
     </UploadAwareModalShell>
   );

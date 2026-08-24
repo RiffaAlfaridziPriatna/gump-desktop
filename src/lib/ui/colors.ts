@@ -1,6 +1,9 @@
 export const colors = {
   // Brand
   accent: '#FF9632',
+  red: '#FF6E5A',
+  blue: '#4141FF',
+  yellow: '#FFD741',
 
   // Backgrounds — darkest to lightest
   background: '#131415',

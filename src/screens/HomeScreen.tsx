@@ -1,13 +1,15 @@
 import {AlbumCard, AlbumGrid} from '@components/album';
 import {DeleteAlbumModal} from '@components/modals/DeleteAlbumModal';
+import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
 import {
-  ProfileMenuAvatar,
-  ProfileMenuPopup,
-} from '@components/navigation/ProfileMenu';
+  HeaderAccountCluster,
+  HeaderPlanModal,
+} from '@components/plan';
 import {useAuthState} from '@context/auth';
 import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useDeleteCulledAlbum} from '@hooks/useDeleteCulledAlbum';
 import {useLayout} from '@hooks/useLayout';
+import {usePlanMenu} from '@hooks/usePlanMenu';
 import {useProfileMenu} from '@hooks/useProfileMenu';
 import {toAlbumCardModel} from '@lib/culledAlbum/format';
 import {navigateToCulledAlbum} from '@lib/culledAlbum/navigateToCulledAlbum';
@@ -41,6 +43,7 @@ type Props = StackScreenProps<MainStackParamList, 'Home'>;
 export default function HomeScreen({navigation}: Props) {
   const user = useAuthState(state => state.user);
   const profileMenu = useProfileMenu();
+  const planMenu = usePlanMenu();
   const {loadingAlbums, albums, refresh, count} = useLocalCulledAlbumList();
   const deleteCulledAlbum = useDeleteCulledAlbum();
   const {
@@ -124,7 +127,7 @@ export default function HomeScreen({navigation}: Props) {
             </View>
           )}
         </View>
-        <ProfileMenuAvatar menu={profileMenu} />
+        <HeaderAccountCluster profileMenu={profileMenu} planMenu={planMenu} />
       </View>
 
       {loadingAlbums && !hasAlbums ? (
@@ -242,6 +245,7 @@ export default function HomeScreen({navigation}: Props) {
         menu={profileMenu}
         rightOffset={screenPaddingHorizontal}
       />
+      <HeaderPlanModal planMenu={planMenu} />
     </SafeAreaView>
   );
 }

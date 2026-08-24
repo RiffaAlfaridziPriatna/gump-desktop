@@ -6,6 +6,7 @@ import {
 import {CulledAlbumPhotoGrid} from '@components/culling/CulledAlbumPhotoGrid';
 import {CulledAlbumDetailHeader} from '@components/culling/CulledAlbumDetailHeader';
 import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
+import {HeaderPlanModal} from '@components/plan';
 import {ApplyLookModal} from '@components/modals/ApplyLookModal';
 import {DeletePhotoModal} from '@components/modals/DeletePhotoModal';
 import {ExportPhotosModal} from '@components/modals/ExportPhotosModal';
@@ -23,6 +24,7 @@ import {useCulledAlbumDetailData} from '@hooks/useCulledAlbumDetailData';
 import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
 import {usePreloadGridImages} from '@hooks/usePreloadGridImages';
 import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
+import {usePlanMenu} from '@hooks/usePlanMenu';
 import {useProfileMenu} from '@hooks/useProfileMenu';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {cullingEngine} from '@lib/culling/cullingEngine';
@@ -58,6 +60,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   );
   const isFocused = useIsFocused();
   const profileMenu = useProfileMenu();
+  const planMenu = usePlanMenu();
   const {resumeInFlightWork, startSelectedUpload} = useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
   const {loadError, loadingPhotos} = useCulledAlbumPhotos(albumId);
@@ -346,6 +349,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           isMobileLayout={isMobileLayout}
           paddingHorizontal={screenPaddingHorizontal}
           profileMenu={profileMenu}
+          planMenu={planMenu}
         />
 
         {mainContentWidth === 0 && (
@@ -546,6 +550,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         menu={profileMenu}
         rightOffset={screenPaddingHorizontal}
       />
+      <HeaderPlanModal planMenu={planMenu} />
     </SafeAreaView>
     </UploadAwareModalShell>
   );

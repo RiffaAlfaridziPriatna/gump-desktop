@@ -1,4 +1,5 @@
 import {useAuthActions, useAuthState} from '@hooks/useAuth';
+import {openUpgradePlan} from '@lib/plan/billingLinks';
 import {APIResponse} from '@services/api';
 import {useCallback, useMemo, useState} from 'react';
 
@@ -35,8 +36,10 @@ export function useProfileMenu() {
   }, []);
 
   const handleUpgrade = useCallback(() => {
-    // TODO: upgrade plan
     setIsOpen(false);
+    void openUpgradePlan().catch(error => {
+      console.error('[useProfileMenu] Failed to open upgrade', error);
+    });
   }, []);
 
   const handleLogout = useCallback(async () => {

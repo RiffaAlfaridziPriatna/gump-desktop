@@ -1,5 +1,6 @@
-import {ProfileMenuAvatar} from '@components/navigation/ProfileMenu';
+import {HeaderAccountCluster} from '@components/plan';
 import {TouchableOpacity} from '@components/ui';
+import {usePlanMenu} from '@hooks/usePlanMenu';
 import {useProfileMenu} from '@hooks/useProfileMenu';
 import {colors} from '@lib/ui/colors';
 import {sansBoldStyle} from '@lib/ui/typography';
@@ -13,6 +14,7 @@ type Props = {
   isMobileLayout: boolean;
   paddingHorizontal: number;
   profileMenu: ReturnType<typeof useProfileMenu>;
+  planMenu: ReturnType<typeof usePlanMenu>;
 };
 
 export function CulledAlbumDetailHeader({
@@ -21,6 +23,7 @@ export function CulledAlbumDetailHeader({
   isMobileLayout,
   paddingHorizontal,
   profileMenu,
+  planMenu,
 }: Props) {
   return (
     <View
@@ -40,7 +43,7 @@ export function CulledAlbumDetailHeader({
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
       </View>
-      <ProfileMenuAvatar menu={profileMenu} />
+      <HeaderAccountCluster profileMenu={profileMenu} planMenu={planMenu} />
     </View>
   );
 }
