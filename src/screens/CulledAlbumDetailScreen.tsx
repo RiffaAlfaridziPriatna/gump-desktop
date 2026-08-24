@@ -190,8 +190,10 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     selectionFilter,
     starRatingFilter,
     filteredPhotos,
+    actionPhotos,
     filterCounts,
     selectedCount,
+    actionCount,
     toggleFilter,
     setSelectionFilter,
     setStarRatingFilter,
@@ -237,16 +239,16 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   }, [deletePhoto, photoToDelete]);
 
   const handleStartUpload = useCallback(async () => {
+    const photoIds = actionPhotos.map(photo => photo.photoId);
+    if (photoIds.length === 0) {
+      return;
+    }
     try {
-      const {selectedPhotoIds} = await cullingEngine.finalize(albumId);
-      if (selectedPhotoIds.length === 0) {
-        return;
-      }
-      startSelectedUpload(albumId, selectedPhotoIds);
+      startSelectedUpload(albumId, photoIds);
       setShowUploadConfirm(false);
       navigation.replace('CulledAlbumUploadProgress', {
         albumId,
-        photoCount: selectedPhotoIds.length,
+        photoCount: photoIds.length,
         albumName,
         albumLink,
       });
@@ -257,7 +259,14 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       );
       throw error;
     }
-  }, [albumId, albumLink, albumName, navigation, startSelectedUpload]);
+  }, [
+    actionPhotos,
+    albumId,
+    albumLink,
+    albumName,
+    navigation,
+    startSelectedUpload,
+  ]);
 
   const selectedPhotos = useMemo(
     () => albumPhotos.filter(photo => photo.selected && photo.status === 'uploaded'),
@@ -299,11 +308,16 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   );
 
   const sidebarActionProps = {
-    onUploadSelected: () => setShowUploadConfirm(true),
+    onUploadSelected: () => {
+      if (actionCount === 0) {
+        return;
+      }
+      setShowUploadConfirm(true);
+    },
     onExport: handleOpenExport,
     onApplyLook: handleOpenApplyLook,
     uploaded: cullingHasUploads,
-    uploadDisabled: selectedCount === 0,
+    uploadDisabled: actionCount === 0,
     exportDisabled: exportPhotoCount === 0,
     applyLookDisabled: exportPhotoCount === 0,
   };
@@ -402,7 +416,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             <CulledAlbumDetailSidebar
               isMobileLayout={isMobileLayout}
               totalPhotos={totalPhotos}
-              selectedCount={selectedCount}
+              mySelectionsCount={selectedCount}
+              actionCount={actionCount}
               selectionFilter={selectionFilter}
               onSelectionFilterChange={setSelectionFilter}
               activeFilters={activeFilters}
@@ -452,7 +467,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             <CulledAlbumDetailSidebar
               isMobileLayout={isMobileLayout}
               totalPhotos={totalPhotos}
-              selectedCount={selectedCount}
+              mySelectionsCount={selectedCount}
+              actionCount={actionCount}
               selectionFilter={selectionFilter}
               onSelectionFilterChange={setSelectionFilter}
               activeFilters={activeFilters}
@@ -484,7 +500,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
         <UploadSelectedConfirmModal
           visible={showUploadConfirm}
-          photoCount={selectedCount}
+          photoCount={actionCount}
           albumName={albumName}
           onClose={() => setShowUploadConfirm(false)}
           onStartUpload={handleStartUpload}

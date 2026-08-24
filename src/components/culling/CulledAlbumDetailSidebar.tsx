@@ -45,7 +45,8 @@ export type { KeyFaceWithSource };
 export type CulledAlbumDetailSidebarProps = {
   isMobileLayout: boolean;
   totalPhotos: number;
-  selectedCount: number;
+  mySelectionsCount: number;
+  actionCount: number;
   selectionFilter: SelectionFilter;
   onSelectionFilterChange: (filter: SelectionFilter) => void;
   activeFilters: Record<CullFilterKey, boolean>;
@@ -145,7 +146,8 @@ const KeyFaceGridRow = memo(
 function CulledAlbumDetailSidebarComponent({
   isMobileLayout,
   totalPhotos,
-  selectedCount,
+  mySelectionsCount,
+  actionCount,
   selectionFilter,
   onSelectionFilterChange,
   activeFilters,
@@ -266,8 +268,8 @@ function CulledAlbumDetailSidebarComponent({
             ]}>
             {uploaded
               ? 'Uploaded'
-              : selectedCount > 0
-                ? `Upload Selected (${selectedCount})`
+              : actionCount > 0
+                ? `Upload Selected (${actionCount})`
                 : 'Upload Selected'}
           </Text>
         </Pressable>
@@ -318,7 +320,7 @@ function CulledAlbumDetailSidebarComponent({
               <IconCheckCircleOutline width={20} height={20} color={colors.text} />
             )}
             <Text style={styles.mySelectionsLabel}>My Selections</Text>
-            <Text style={styles.mySelectionsCount}>{selectedCount}</Text>
+            <Text style={styles.mySelectionsCount}>{mySelectionsCount}</Text>
           </Pressable>
           <View style={styles.sidebarDivider} />
           <View style={styles.filterRowContainer}>
