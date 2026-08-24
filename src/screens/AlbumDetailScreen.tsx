@@ -374,12 +374,13 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
           photoGridRef={photoGridRef}
         />
       </View>
-      <AlbumDetailFabStack
-        onScrollToTop={handleScrollToTop}
-        onAddPhotos={handleAddPhotos}
-        addDisabled={isUploading}
-        hideAdd={isCullingInProgress || cullingActive}
-      />
+      {isUploading ? null : (
+        <AlbumDetailFabStack
+          onScrollToTop={handleScrollToTop}
+          onAddPhotos={handleAddPhotos}
+          hideAdd={isCullingInProgress || cullingActive}
+        />
+      )}
       <UploadToast mode="upload" albumId={albumId} />
       {isCullingInProgress ? (
         <UploadToast mode="analyze" albumId={albumId} />
