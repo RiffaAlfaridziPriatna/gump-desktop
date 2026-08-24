@@ -268,11 +268,16 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     startSelectedUpload,
   ]);
 
-  const selectedPhotos = useMemo(
-    () => albumPhotos.filter(photo => photo.selected && photo.status === 'uploaded'),
-    [albumPhotos],
-  );
-  const exportPhotoCount = selectedPhotos.length;
+  const actionAlbumPhotos = useMemo(() => {
+    const photosById = new Map(
+      albumPhotos.map(photo => [photo.photoId, photo] as const),
+    );
+    return actionPhotos.flatMap(photo => {
+      const albumPhoto = photosById.get(photo.photoId);
+      return albumPhoto && albumPhoto.status === 'uploaded' ? [albumPhoto] : [];
+    });
+  }, [actionPhotos, albumPhotos]);
+  const exportPhotoCount = actionAlbumPhotos.length;
 
   const handleCullFiltersToggle = useCallback(() => {
     setCullFiltersExpanded(current => !current);
@@ -298,13 +303,13 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
   const handleApplyLook = useCallback(
     async (lookId: LookId, lookIntensity: number) => {
-      const photoIds = selectedPhotos.map(photo => photo.photoId);
+      const photoIds = actionAlbumPhotos.map(photo => photo.photoId);
       await cullingEngine.updateLook(albumId, photoIds, {
         lookId,
         lookIntensity,
       });
     },
-    [albumId, selectedPhotos],
+    [albumId, actionAlbumPhotos],
   );
 
   const sidebarActionProps = {
@@ -511,13 +516,13 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           photoCount={exportPhotoCount}
           albumId={albumId}
           albumName={albumName}
-          selectedPhotos={selectedPhotos}
+          selectedPhotos={actionAlbumPhotos}
           onClose={() => setShowExportModal(false)}
         />
 
         <ApplyLookModal
           visible={showApplyLookModal}
-          selectedPhotos={selectedPhotos}
+          selectedPhotos={actionAlbumPhotos}
           onClose={() => setShowApplyLookModal(false)}
           onApply={handleApplyLook}
         />
