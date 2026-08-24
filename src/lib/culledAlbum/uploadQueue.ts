@@ -6,6 +6,7 @@ import {
   runOrDeferHeavyWorkForNavigation,
   shouldYieldUploadQueueForNavigation,
 } from '@lib/navigation/uploadAwareNavigation';
+import {Platform} from 'react-native';
 import {bumpPhotoGridRevision} from './photoStateStore';
 import {
   getAlbum,
@@ -15,9 +16,9 @@ import {
 import {FileAsset} from '@services/upload/types';
 import {CulledAlbumPhoto} from './types';
 
-const PERSIST_BATCH_SIZE = 40;
+const PERSIST_BATCH_SIZE = Platform.OS === 'windows' ? 20 : 40;
 const COPY_TIMEOUT_MS = 120_000;
-const QUEUE_YIELD_MS = 16;
+const QUEUE_YIELD_MS = Platform.OS === 'windows' ? 32 : 16;
 
 function withTimeout<T>(
   promise: Promise<T>,

@@ -6,6 +6,7 @@ import {
   shouldYieldUploadQueueForNavigation,
 } from '@lib/navigation/uploadAwareNavigation';
 import {FileAsset} from '@services/upload/types';
+import {Platform} from 'react-native';
 import {
   isAnalysisBatchFinished,
   isAnalysisBatchFinishedByCounts,
@@ -21,8 +22,8 @@ import {
 } from './types';
 
 const ANALYSIS_PERSIST_DEBOUNCE_MS = 3000;
-const QUEUE_YIELD_MS = 16;
-const PERSIST_BATCH_SIZE = 40;
+const QUEUE_YIELD_MS = Platform.OS === 'windows' ? 32 : 16;
+const PERSIST_BATCH_SIZE = Platform.OS === 'windows' ? 20 : 40;
 
 type AnalysisUpdatePhotoOptions = UpdatePhotoOptions;
 
@@ -168,7 +169,11 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         }
         const photo = getPhoto(albumId, photoId);
         if (!photo) {
-          settled.add(photoId);
+          console.warn(
+            '[analysisQueue] Photo not found in store, marking as failed',
+            {albumId, photoId},
+          );
+          failPhoto(albumId, photoId, 'Photo data not found');
           continue;
         }
         if (
@@ -319,8 +324,17 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
 
   function failPhoto(albumId: string, photoId: string, error?: string): void {
     const photo = getPhoto(albumId, photoId);
+    
+    getInFlightPhotoIds(albumId).delete(photoId);
+    getSettledPhotoIds(albumId).add(photoId);
+
+    if (!photo) {
+      // Photo not in store - still mark as failed via use case for tracking
+      analyzePhotoUseCase.markFailed(albumId, photoId, error ?? 'Photo data not found');
+      return;
+    }
+
     if (
-      !photo ||
       photo.analysisStatus === 'analyzed' ||
       photo.analysisStatus === 'failed'
     ) {
@@ -329,8 +343,6 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
 
     const fromStatus =
       photo.analysisStatus === 'analyzing' ? 'analyzing' : 'pending';
-    getInFlightPhotoIds(albumId).delete(photoId);
-    getSettledPhotoIds(albumId).add(photoId);
 
     updatePhoto(
       albumId,

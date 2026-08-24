@@ -1,12 +1,13 @@
 import {yieldToMain} from '@lib/async/yieldToMain';
 import {CullingDuplicateGroup} from '@lib/culledAlbum/types';
+import {Platform} from 'react-native';
 import {
   arePhotosNearDuplicates,
   DUPLICATE_TEMPORAL_WINDOW_MS,
   DuplicateDetectionPhoto,
 } from './cullingUtil';
 
-const YIELD_EVERY_N_PHOTOS = 25;
+const YIELD_EVERY_N_PHOTOS = Platform.OS === 'windows' ? 10 : 25;
 
 export function photoQualityTier(
   photo: Pick<DuplicateDetectionPhoto, 'blurred' | 'closedEyes'>,

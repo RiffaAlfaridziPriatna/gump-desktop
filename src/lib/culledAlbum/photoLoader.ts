@@ -58,11 +58,21 @@ export function hydratePhotos(
 
   if (missingIds.length > 0) {
     const loaded: CulledAlbumPhoto[] = [];
+    const failedIds: string[] = [];
     for (const photoId of missingIds) {
       const photo = photoRepo.findById(albumId, photoId);
       if (photo) {
         loaded.push(domainPhotoToLegacy(photo));
+      } else {
+        failedIds.push(photoId);
       }
+    }
+
+    if (failedIds.length > 0) {
+      console.warn(
+        `[photoLoader] Failed to hydrate ${failedIds.length} photo(s) from DB`,
+        {albumId, failedIds: failedIds.slice(0, 10)},
+      );
     }
 
     if (loaded.length > 0) {
