@@ -161,10 +161,10 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     (localImportProgress?.uploaded ?? 0) > 0 ||
     (!isUploading && totalPhotos > 0);
 
-  // Keep the grid visible when appending: existing photos outnumber the active batch.
-  const hasGridContent =
-    totalPhotos > batchTotal || (localImportProgress?.uploaded ?? 0) > 0;
-  const showImportSkeleton = isUploading && !hasGridContent;
+  // Show skeleton during entire upload to avoid grid rendering overhead while importing.
+  // For append scenarios (adding to existing album), keep the grid visible.
+  const isAppendingToExistingAlbum = totalPhotos > batchTotal && batchTotal > 0;
+  const showImportSkeleton = isUploading && !isAppendingToExistingAlbum;
 
   const displayTotalPhotos = isUploading
     ? Math.max(totalPhotos, batchTotal)

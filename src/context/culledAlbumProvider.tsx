@@ -58,8 +58,13 @@ import {
   CulledAlbumUiState,
 } from './culledAlbumContext';
 
-const MAX_CONCURRENT_UPLOADS = 12;
-const MAX_CONCURRENT_SERVER_UPLOADS = 8;
+function maxConcurrentUploadsForPlatform(): number {
+  return Platform.OS === 'windows' ? 4 : 12;
+}
+
+function maxConcurrentServerUploadsForPlatform(): number {
+  return Platform.OS === 'windows' ? 3 : 8;
+}
 
 function maxConcurrentAnalysisForPlatform(): number {
   switch (Platform.OS) {
@@ -67,7 +72,7 @@ function maxConcurrentAnalysisForPlatform(): number {
     case 'ios':
       return 8;
     case 'windows':
-      return 4;
+      return 2;
     default:
       return 6;
   }
@@ -99,7 +104,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
   if (!uploadQueueRef.current) {
     uploadQueueRef.current = createUploadQueue({
-      maxConcurrent: MAX_CONCURRENT_UPLOADS,
+      maxConcurrent: maxConcurrentUploadsForPlatform(),
       importPhotosUseCase: getUseCases().importPhotos,
       getPhotos: getPhotosForAlbum,
       getPhoto: getPhotoById,
@@ -110,7 +115,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
   if (!serverUploadQueueRef.current) {
     serverUploadQueueRef.current = createServerUploadQueue({
-      maxConcurrent: MAX_CONCURRENT_SERVER_UPLOADS,
+      maxConcurrent: maxConcurrentServerUploadsForPlatform(),
       uploadSelectedPhotosUseCase: getUseCases().uploadSelectedPhotos,
       getPhoto: getPhotoById,
       updatePhoto,

@@ -91,6 +91,18 @@ export function isServerUploadBatchFinished(
     return false;
   }
 
+  // Check if all photos in the batch are accounted for
+  if (batchPhotos.length < batchPhotoIds.length) {
+    const foundIds = new Set(batchPhotos.map(p => p.photoId));
+    const missingIds = batchPhotoIds.filter(id => !foundIds.has(id));
+    console.warn(
+      `[serverUploadProgress] ${missingIds.length} photo(s) missing from batch`,
+      {expected: batchPhotoIds.length, found: batchPhotos.length, missingIds: missingIds.slice(0, 10)},
+    );
+    // Still consider batch "finished" if all found photos are done
+    // The missing photos should have been marked as failed elsewhere
+  }
+
   return batchPhotos.every(
     photo =>
       photo.serverUploadStatus === 'uploaded' ||

@@ -3,6 +3,7 @@ import {
   runOrDeferHeavyWorkForNavigation,
   shouldYieldUploadQueueForNavigation,
 } from '@lib/navigation/uploadAwareNavigation';
+import {Platform} from 'react-native';
 import {
   checkServerUploadBatchComplete,
   getAlbum,
@@ -11,9 +12,9 @@ import {
 import {formatUploadError} from './formatUploadError';
 import {CulledAlbumPhoto} from './types';
 
-const QUEUE_YIELD_MS = 16;
+const QUEUE_YIELD_MS = Platform.OS === 'windows' ? 32 : 16;
 const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
-const PERSIST_BATCH_SIZE = 20;
+const PERSIST_BATCH_SIZE = Platform.OS === 'windows' ? 10 : 20;
 
 function withTimeout<T>(
   promise: Promise<T>,
@@ -141,7 +142,11 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
         }
         const photo = getPhoto(albumId, photoId);
         if (!photo) {
-          settled.add(photoId);
+          console.warn(
+            '[serverUploadQueue] Photo not found in store, marking as failed',
+            {albumId, photoId},
+          );
+          failPhoto(albumId, photoId, 'Photo data not found');
           continue;
         }
         if (
@@ -182,12 +187,24 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
 
   function failPhoto(albumId: string, photoId: string, error?: string): void {
     const photo = getPhoto(albumId, photoId);
-    if (!photo || photo.serverUploadStatus === 'uploaded') {
+    
+    getInFlightPhotoIds(albumId).delete(photoId);
+    getSettledPhotoIds(albumId).add(photoId);
+
+    if (!photo) {
+      // Photo not in store - still mark as failed via use case for tracking
+      uploadSelectedPhotosUseCase.markFailed(
+        albumId,
+        photoId,
+        error ?? 'Photo data not found',
+      );
       return;
     }
 
-    getInFlightPhotoIds(albumId).delete(photoId);
-    getSettledPhotoIds(albumId).add(photoId);
+    if (photo.serverUploadStatus === 'uploaded') {
+      return;
+    }
+
     updatePhoto(
       albumId,
       photoId,

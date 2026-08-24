@@ -1,4 +1,5 @@
 import {shouldDeferHeavyWorkForNavigation} from '@lib/navigation/uploadAwareNavigation';
+import {Platform} from 'react-native';
 import type {
   AnalysisCountKey,
   CulledAlbumPhoto,
@@ -26,8 +27,8 @@ export type PendingPhotoUpdate = {
   options?: PhotoUpdateOptions;
 };
 
-const MIN_FLUSH_INTERVAL_MS = 120;
-const DEFERRED_FLUSH_MS = 50;
+const MIN_FLUSH_INTERVAL_MS = Platform.OS === 'windows' ? 250 : 120;
+const DEFERRED_FLUSH_MS = Platform.OS === 'windows' ? 80 : 50;
 
 let pending: PendingPhotoUpdate[] = [];
 let flushScheduled = false;
