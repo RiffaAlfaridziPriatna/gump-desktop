@@ -59,7 +59,9 @@ import {
 } from './culledAlbumContext';
 
 function maxConcurrentUploadsForPlatform(): number {
-  return Platform.OS === 'windows' ? 4 : 12;
+  // Each slot copies a full original and encodes a JPEG thumb. 12-way on
+  // macOS mostly fights disk / ImageIO rather than finishing sooner.
+  return Platform.OS === 'windows' ? 4 : 6;
 }
 
 function maxConcurrentServerUploadsForPlatform(): number {

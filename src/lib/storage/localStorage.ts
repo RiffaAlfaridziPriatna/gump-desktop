@@ -23,7 +23,11 @@ type NativeLocalStorageModule = {
     albumId: string,
     sourceUri: string,
     photoId: string,
-  ) => Promise<{thumbnailUri: string | null}>;
+  ) => Promise<{
+    thumbnailUri: string | null;
+    thumbnailWidth?: number | null;
+    thumbnailHeight?: number | null;
+  }>;
   ensureDetail: (
     albumId: string,
     sourceUri: string,
@@ -66,7 +70,9 @@ function hasNativeLocalStorage(): boolean {
   );
 }
 
-export function isUsableThumbnailUri(thumbnailUri: string | null | undefined): boolean {
+export function isUsableThumbnailUri(
+  thumbnailUri: string | null | undefined,
+): thumbnailUri is string {
   if (!thumbnailUri) {
     return false;
   }
@@ -90,6 +96,18 @@ export function isUsableDetailUri(detailUri: string | null | undefined): boolean
 
 const COPY_REQUIRES_THUMBNAIL = new Set(['macos', 'windows']);
 
+function thumbnailDimensionsFromNative(result: {
+  thumbnailWidth?: number | null;
+  thumbnailHeight?: number | null;
+}): {thumbnailWidth?: number; thumbnailHeight?: number} {
+  const width = result.thumbnailWidth ?? 0;
+  const height = result.thumbnailHeight ?? 0;
+  if (width <= 0 || height <= 0) {
+    return {};
+  }
+  return {thumbnailWidth: width, thumbnailHeight: height};
+}
+
 export async function copyPhotoToAlbum(
   albumId: string,
   file: FileAsset,
@@ -112,7 +130,10 @@ export async function copyPhotoToAlbum(
       );
     }
 
-    return copied;
+    return {
+      ...copied,
+      ...thumbnailDimensionsFromNative(copied),
+    };
   }
 
   throw new Error(
@@ -250,7 +271,11 @@ export async function ensureThumbnail(
       const thumbnailUri = options?.regenerate
         ? `${result.thumbnailUri}?v=${THUMBNAIL_CACHE_VERSION}`
         : result.thumbnailUri;
-      return {...file, thumbnailUri};
+      return {
+        ...file,
+        thumbnailUri,
+        ...thumbnailDimensionsFromNative(result),
+      };
     }
   }
 

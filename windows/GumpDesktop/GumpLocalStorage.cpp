@@ -45,7 +45,11 @@ namespace {
 
 using ReactPromiseJS = winrtRN::ReactPromise<winrtRN::JSValue>;
 
-constexpr uint32_t kThumbnailMaxPixelSize = MediaDerivatives::kThumbnailMaxPixelSize;
+// New Windows thumbs are 1280. Existing 1920 .v4.jpg files stay reusable so
+// opening a current album does not regenerate thousands of JPEGs.
+constexpr uint32_t kThumbnailGenerateMaxPixelSize = 1280;
+constexpr uint32_t kThumbnailReusableMaxPixelSize =
+    MediaDerivatives::kThumbnailMaxPixelSize;
 constexpr float kThumbnailJpegQuality = MediaDerivatives::kThumbnailJpegQuality;
 constexpr uint32_t kDetailMaxPixelSize = MediaDerivatives::kDetailMaxPixelSize;
 constexpr float kDetailJpegQuality = MediaDerivatives::kDetailJpegQuality;
@@ -336,9 +340,34 @@ bool IsReusableOrientedJpegFile(
   }
 }
 
-bool IsReusableThumbnailFile(const std::filesystem::path &thumbPath) {
-  return IsReusableOrientedJpegFile(thumbPath, kThumbnailMaxPixelSize);
+struct PixelSize {
+  uint32_t width{0};
+  uint32_t height{0};
+};
+
+PixelSize ReadOrientedJpegSize(const std::filesystem::path &jpegPath) {
+  try {
+    const auto file = GetStorageFileFromPath(jpegPath);
+    const auto stream = file.OpenAsync(FileAccessMode::Read).get();
+    const auto decoder = BitmapDecoder::CreateAsync(stream).get();
+    return {
+        decoder.OrientedPixelWidth(),
+        decoder.OrientedPixelHeight(),
+    };
+  } catch (...) {
+    return {};
+  }
 }
+
+bool IsReusableThumbnailFile(const std::filesystem::path &thumbPath) {
+  return IsReusableOrientedJpegFile(thumbPath, kThumbnailReusableMaxPixelSize);
+}
+
+struct ThumbnailResult {
+  std::optional<std::filesystem::path> path;
+  uint32_t width{0};
+  uint32_t height{0};
+};
 
 bool IsReusableDetailFile(const std::filesystem::path &detailPath) {
   return IsReusableOrientedJpegFile(detailPath, kDetailMaxPixelSize);
@@ -436,14 +465,15 @@ std::optional<std::filesystem::path> WriteOrientedJpegDerivative(
   return outPath;
 }
 
-std::optional<std::filesystem::path> GenerateThumbnailAtPath(
+ThumbnailResult GenerateThumbnailAtPath(
     const std::filesystem::path &sourcePath,
     std::string_view albumId,
     std::string_view photoId) {
   ThumbnailConcurrencyGuard concurrencyGuard;
+  ThumbnailResult result;
 
   if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
-    return std::nullopt;
+    return result;
   }
 
   const auto desiredThumbPath = ThumbnailPathForAlbum(albumId, photoId);
@@ -478,13 +508,34 @@ std::optional<std::filesystem::path> GenerateThumbnailAtPath(
   }
 
   if (IsReusableThumbnailFile(desiredThumbPath)) {
-    return desiredThumbPath;
+    const auto size = ReadOrientedJpegSize(desiredThumbPath);
+    result.path = desiredThumbPath;
+    result.width = size.width;
+    result.height = size.height;
+    return result;
   }
 
   const auto bitmap = DecodeOrientedScaledBitmapWithFallback(
-      sourcePath, kThumbnailMaxPixelSize);
-  return WriteOrientedJpegDerivative(
-      bitmap, desiredThumbPath, kThumbnailJpegQuality, kThumbnailMaxPixelSize);
+      sourcePath, kThumbnailGenerateMaxPixelSize);
+  const auto written = WriteOrientedJpegDerivative(
+      bitmap,
+      desiredThumbPath,
+      kThumbnailJpegQuality,
+      kThumbnailGenerateMaxPixelSize);
+  if (!written) {
+    return result;
+  }
+
+  result.path = written;
+  if (bitmap) {
+    const auto targetSize = ComputeThumbnailSize(
+        bitmap.PixelWidth(),
+        bitmap.PixelHeight(),
+        kThumbnailGenerateMaxPixelSize);
+    result.width = targetSize.width;
+    result.height = targetSize.height;
+  }
+  return result;
 }
 
 std::optional<std::filesystem::path> GenerateDetailAtPath(
@@ -511,6 +562,8 @@ std::optional<std::filesystem::path> GenerateDetailAtPath(
 
 struct OrientedDerivatives {
   std::optional<std::filesystem::path> thumbnailPath;
+  uint32_t thumbnailWidth{0};
+  uint32_t thumbnailHeight{0};
 };
 
 OrientedDerivatives GenerateOrientedDerivativesAtPath(
@@ -555,13 +608,15 @@ OrientedDerivatives GenerateOrientedDerivativesAtPath(
 
   const bool reusableThumb = IsReusableThumbnailFile(desiredThumbPath);
   if (reusableThumb) {
+    const auto size = ReadOrientedJpegSize(desiredThumbPath);
     result.thumbnailPath = desiredThumbPath;
+    result.thumbnailWidth = size.width;
+    result.thumbnailHeight = size.height;
     return result;
   }
 
-  // Single oriented decode at thumbnail size (1920px)
   const auto thumbBitmap = DecodeOrientedScaledBitmapWithFallback(
-      sourcePath, kThumbnailMaxPixelSize);
+      sourcePath, kThumbnailGenerateMaxPixelSize);
   if (!thumbBitmap) {
     return result;
   }
@@ -570,7 +625,15 @@ OrientedDerivatives GenerateOrientedDerivativesAtPath(
       thumbBitmap,
       desiredThumbPath,
       kThumbnailJpegQuality,
-      kThumbnailMaxPixelSize);
+      kThumbnailGenerateMaxPixelSize);
+  if (result.thumbnailPath) {
+    const auto targetSize = ComputeThumbnailSize(
+        thumbBitmap.PixelWidth(),
+        thumbBitmap.PixelHeight(),
+        kThumbnailGenerateMaxPixelSize);
+    result.thumbnailWidth = targetSize.width;
+    result.thumbnailHeight = targetSize.height;
+  }
 
   return result;
 }
@@ -583,6 +646,19 @@ std::string FileUri(const std::filesystem::path &path) {
     }
   }
   return "file:///" + utf8;
+}
+
+winrtRN::JSValueObject ThumbnailJsObject(const ThumbnailResult &thumb) {
+  if (!thumb.path) {
+    return winrtRN::JSValueObject{{"thumbnailUri", nullptr}};
+  }
+
+  winrtRN::JSValueObject result{{"thumbnailUri", FileUri(*thumb.path)}};
+  if (thumb.width > 0 && thumb.height > 0) {
+    result["thumbnailWidth"] = static_cast<double>(thumb.width);
+    result["thumbnailHeight"] = static_cast<double>(thumb.height);
+  }
+  return result;
 }
 
 std::string MimeTypeForPath(const std::filesystem::path &path) {
@@ -1103,6 +1179,12 @@ void GumpLocalStorage::CopyPhoto(
             {"type", MimeTypeForPath(destPath)},
             {"thumbnailUri", FileUri(*derivatives.thumbnailPath)},
         };
+        if (derivatives.thumbnailWidth > 0 && derivatives.thumbnailHeight > 0) {
+          result["thumbnailWidth"] =
+              static_cast<double>(derivatives.thumbnailWidth);
+          result["thumbnailHeight"] =
+              static_cast<double>(derivatives.thumbnailHeight);
+        }
 
         return winrtRN::JSValue(std::move(result));
       },
@@ -1347,14 +1429,8 @@ void GumpLocalStorage::EnsureThumbnail(
           return winrtRN::JSValue(winrtRN::JSValueObject{{"thumbnailUri", nullptr}});
         }
 
-        const auto thumbPath = GenerateThumbnailAtPath(sourcePath, albumId, photoId);
-        if (!thumbPath.has_value()) {
-          return winrtRN::JSValue(winrtRN::JSValueObject{{"thumbnailUri", nullptr}});
-        }
-
-        return winrtRN::JSValue(winrtRN::JSValueObject{
-            {"thumbnailUri", FileUri(*thumbPath)},
-        });
+        const auto thumb = GenerateThumbnailAtPath(sourcePath, albumId, photoId);
+        return winrtRN::JSValue(ThumbnailJsObject(thumb));
       },
       std::move(promise));
 }
@@ -1435,5 +1511,3 @@ void GumpLocalStorage::ComputePerceptualHash(std::string uri, ReactPromiseJS &&p
       },
       std::move(promise));
 }
-
-} // namespace GumpDesktop

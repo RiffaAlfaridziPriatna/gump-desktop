@@ -10,12 +10,38 @@
 #include "MediaDerivatives.h"
 
 #include <string>
+#include <sys/clonefile.h>
+
+// Same-volume APFS clone is effectively instant. Other volumes / filesystems
+// fail with EXDEV (or similar) and we fall back to a real copy.
+static BOOL CopyOrCloneRegularFile(NSString *sourcePath, NSString *destPath, NSError **outError) {
+  if (sourcePath.length == 0 || destPath.length == 0) {
+    if (outError != nil) {
+      *outError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                      code:EINVAL
+                                  userInfo:nil];
+    }
+    return NO;
+  }
+
+  if (clonefile(sourcePath.fileSystemRepresentation, destPath.fileSystemRepresentation, 0) == 0) {
+    return YES;
+  }
+
+  return [[NSFileManager defaultManager] copyItemAtPath:sourcePath
+                                                 toPath:destPath
+                                                  error:outError];
+}
 
 @implementation GumpLocalStorage
 
 RCT_EXPORT_MODULE();
 
-static const NSUInteger THUMBNAIL_MAX_PIXEL_SIZE = MediaDerivatives::kThumbnailMaxPixelSize;
+// New thumbs are 1280. Existing 1920 .v4.jpg files stay reusable so
+// opening a current album does not regenerate thousands of JPEGs.
+static const NSUInteger THUMBNAIL_GENERATE_MAX_PIXEL_SIZE = 1280;
+static const NSUInteger THUMBNAIL_REUSABLE_MAX_PIXEL_SIZE =
+    MediaDerivatives::kThumbnailMaxPixelSize;
 static const CGFloat THUMBNAIL_JPEG_QUALITY = MediaDerivatives::kThumbnailJpegQuality;
 static const NSUInteger DETAIL_MAX_PIXEL_SIZE = MediaDerivatives::kDetailMaxPixelSize;
 static const CGFloat DETAIL_JPEG_QUALITY = MediaDerivatives::kDetailJpegQuality;
@@ -1945,9 +1971,16 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
   return saved ? destPath : nil;
 }
 
-- (BOOL)isReusableOrientedJpegAtPath:(NSString *)jpegPath
-                        maxPixelSize:(NSUInteger)maxPixelSize
+- (BOOL)jpegPixelSizeAtPath:(NSString *)jpegPath
+                      width:(NSUInteger *)outWidth
+                     height:(NSUInteger *)outHeight
 {
+  if (outWidth) {
+    *outWidth = 0;
+  }
+  if (outHeight) {
+    *outHeight = 0;
+  }
   if (jpegPath.length == 0 ||
       ![[NSFileManager defaultManager] fileExistsAtPath:jpegPath]) {
     return NO;
@@ -1967,7 +2000,46 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
       [properties[(NSString *)kCGImagePropertyPixelWidth] unsignedIntegerValue];
   NSUInteger height =
       [properties[(NSString *)kCGImagePropertyPixelHeight] unsignedIntegerValue];
-  return width > 0 && height > 0 && width <= maxPixelSize && height <= maxPixelSize;
+  if (width == 0 || height == 0) {
+    return NO;
+  }
+  if (outWidth) {
+    *outWidth = width;
+  }
+  if (outHeight) {
+    *outHeight = height;
+  }
+  return YES;
+}
+
+- (NSDictionary *)thumbnailPayloadForPath:(NSString *)thumbPath
+{
+  if (thumbPath.length == 0) {
+    return @{@"thumbnailUri" : [NSNull null]};
+  }
+
+  NSUInteger width = 0;
+  NSUInteger height = 0;
+  [self jpegPixelSizeAtPath:thumbPath width:&width height:&height];
+  NSMutableDictionary *payload = [@{
+    @"thumbnailUri" : [NSString stringWithFormat:@"file://%@", thumbPath],
+  } mutableCopy];
+  if (width > 0 && height > 0) {
+    payload[@"thumbnailWidth"] = @(width);
+    payload[@"thumbnailHeight"] = @(height);
+  }
+  return payload;
+}
+
+- (BOOL)isReusableOrientedJpegAtPath:(NSString *)jpegPath
+                        maxPixelSize:(NSUInteger)maxPixelSize
+{
+  NSUInteger width = 0;
+  NSUInteger height = 0;
+  if (![self jpegPixelSizeAtPath:jpegPath width:&width height:&height]) {
+    return NO;
+  }
+  return width <= maxPixelSize && height <= maxPixelSize;
 }
 
 - (NSString *)generateThumbnailAtPath:(NSString *)sourcePath
@@ -1982,13 +2054,18 @@ RCT_EXPORT_METHOD(analyzePhotoForCulling:(NSString *)uri
     [[NSFileManager defaultManager] removeItemAtPath:legacyThumbPath error:nil];
   }
 
+  if ([self isReusableOrientedJpegAtPath:thumbPath
+                            maxPixelSize:THUMBNAIL_REUSABLE_MAX_PIXEL_SIZE]) {
+    return thumbPath;
+  }
+
   if ([[NSFileManager defaultManager] fileExistsAtPath:thumbPath]) {
     [[NSFileManager defaultManager] removeItemAtPath:thumbPath error:nil];
   }
 
   return [self writeOrientedJpegFromPath:sourcePath
                                   toPath:thumbPath
-                            maxPixelSize:THUMBNAIL_MAX_PIXEL_SIZE
+                            maxPixelSize:THUMBNAIL_GENERATE_MAX_PIXEL_SIZE
                              jpegQuality:THUMBNAIL_JPEG_QUALITY];
 }
 
@@ -2265,10 +2342,7 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
                          : destId;
       NSString *destPath = [albumDir stringByAppendingPathComponent:destName];
       NSError *copyError = nil;
-      [[NSFileManager defaultManager] copyItemAtPath:sourcePath
-                                              toPath:destPath
-                                               error:&copyError];
-      if (copyError != nil) {
+      if (!CopyOrCloneRegularFile(sourcePath, destPath, &copyError)) {
         dispatch_async(dispatch_get_main_queue(), ^{
           reject(@"ECOPY", copyError.localizedDescription, copyError);
         });
@@ -2297,11 +2371,12 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
         @"name" : destName,
         @"size" : fileSize ?: @(0),
         @"type" : type,
-        @"thumbnailUri" : [NSString stringWithFormat:@"file://%@", thumbPath],
       };
+      NSMutableDictionary *payload = [result mutableCopy];
+      [payload addEntriesFromDictionary:[self thumbnailPayloadForPath:thumbPath]];
 
       dispatch_async(dispatch_get_main_queue(), ^{
-        resolve(result);
+        resolve(payload);
       });
     } @catch (NSException *exception) {
       dispatch_async(dispatch_get_main_queue(), ^{
@@ -2331,14 +2406,7 @@ RCT_EXPORT_METHOD(ensureThumbnail:(NSString *)albumId
       NSString *generatedPath =
           [self generateThumbnailAtPath:sourcePath albumId:albumId photoId:photoId];
       dispatch_async(dispatch_get_main_queue(), ^{
-        if (generatedPath.length > 0) {
-          resolve(@{
-            @"thumbnailUri" :
-                [NSString stringWithFormat:@"file://%@", generatedPath],
-          });
-        } else {
-          resolve(@{@"thumbnailUri" : [NSNull null]});
-        }
+        resolve([self thumbnailPayloadForPath:generatedPath]);
       });
     } @catch (NSException *exception) {
       dispatch_async(dispatch_get_main_queue(), ^{
