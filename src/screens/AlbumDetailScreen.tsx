@@ -13,7 +13,8 @@ import {
   useCulledAlbumStore,
 } from '@context/culledAlbum';
 import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
-import {scheduleResolveExistingThumbnails, scheduleThumbnailBackfill} from '@lib/culledAlbum/thumbnailBackfill';
+import {scheduleResolveExistingThumbnails} from '@lib/culledAlbum/thumbnailBackfill';
+import {isUsableThumbnailUri} from '@lib/storage/localStorage';
 import {pickImages} from '@lib/media/filePicker';
 import {useAlbumDetailGridPhotos} from '@hooks/useAlbumDetailGridPhotos';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
@@ -26,6 +27,7 @@ import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useIsFocused} from '@react-navigation/native';
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -62,7 +64,7 @@ function AlbumDetailUploadingBody({
   return <PhotoGridSkeleton horizontalPadding={screenPaddingHorizontal} />;
 }
 
-function AlbumDetailGridBody({
+const AlbumDetailGridBody = memo(function AlbumDetailGridBody({
   albumId,
   screenPaddingHorizontal,
   photoGridRef,
@@ -81,9 +83,13 @@ function AlbumDetailGridBody({
       return;
     }
 
-    const firstPaintIds = gridPhotos.slice(0, 24).map(item => item.photoId);
-    scheduleResolveExistingThumbnails(albumId, firstPaintIds);
-    scheduleThumbnailBackfill(albumId);
+    const firstPaintIds = gridPhotos
+      .slice(0, 24)
+      .filter(item => !isUsableThumbnailUri(item.file.thumbnailUri))
+      .map(item => item.photoId);
+    if (firstPaintIds.length > 0) {
+      scheduleResolveExistingThumbnails(albumId, firstPaintIds);
+    }
   }, [albumId, gridPhotos.length]);
 
   if (loadingPhotos && gridPhotos.length === 0) {
@@ -110,9 +116,9 @@ function AlbumDetailGridBody({
       horizontalPadding={screenPaddingHorizontal}
     />
   );
-}
+});
 
-function AlbumDetailBody({
+const AlbumDetailBody = memo(function AlbumDetailBody({
   albumId,
   screenPaddingHorizontal,
   showImportSkeleton,
@@ -133,7 +139,7 @@ function AlbumDetailBody({
       photoGridRef={photoGridRef}
     />
   );
-}
+});
 
 export default function AlbumDetailScreen({navigation, route}: Props) {
   const {albumId, albumName, ownerName, skipResumeImport} = route.params;

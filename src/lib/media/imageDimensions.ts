@@ -73,7 +73,18 @@ export async function loadImageDimensions(
   });
 }
 
-export const CULLED_ALBUM_THUMBNAIL_ASPECT_RATIO = 4 / 3;
+export function getFileThumbnailDimensions(
+  file: {thumbnailWidth?: number | null; thumbnailHeight?: number | null},
+): ImageDimensions | null {
+  const width = file.thumbnailWidth ?? 0;
+  const height = file.thumbnailHeight ?? 0;
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+  return {width, height};
+}
+
+export const CULLED_ALBUM_THUMBNAIL_ASPECT_RATIO = 3 / 2;
 
 export function getCoverImageLayout(
   containerWidth: number,
@@ -98,25 +109,20 @@ export function getCoverImageLayout(
 
 export function getCulledAlbumThumbnailLayout(
   containerWidth: number,
+  containerHeight: number,
   imageWidth: number,
   imageHeight: number,
 ): {width: number; height: number; left: number; top: number} {
-  const containerHeight = containerWidth / CULLED_ALBUM_THUMBNAIL_ASPECT_RATIO;
+  // Landscape and square cover the 3:2 cell. Portrait contains (letterbox).
   const isPortrait = imageHeight > imageWidth;
 
   if (!isPortrait) {
-    const scale = Math.max(
-      containerWidth / imageWidth,
-      containerHeight / imageHeight,
+    return getCoverImageLayout(
+      containerWidth,
+      containerHeight,
+      imageWidth,
+      imageHeight,
     );
-    const width = imageWidth * scale;
-    const height = imageHeight * scale;
-    return {
-      width,
-      height,
-      left: (containerWidth - width) / 2,
-      top: (containerHeight - height) / 2,
-    };
   }
 
   const scale = Math.min(

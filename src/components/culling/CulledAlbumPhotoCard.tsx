@@ -1,13 +1,13 @@
 import {CulledAlbumPhotoThumbnail} from '@components/culling/CulledAlbumPhotoThumbnail';
 import {Pressable} from '@components/ui';
+import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {
   useCulledAlbumPhotoHovered,
   useCulledAlbumPhotoHoverStore,
 } from '@lib/culledAlbum/photoHover';
+import {isCulledPhotoDisabled, toCullingPhoto} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
-import {APIResponse} from '@services/api';
-import {FileAsset} from '@services/upload/types';
 import {memo, useCallback} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
@@ -17,12 +17,11 @@ import IconStarOutlined from '../../assets/images/icon_star_outlined.svg';
 import IconTrash from '../../assets/images/icon_trash.svg';
 
 export type CulledAlbumPhotoCardProps = {
+  albumId: string;
   photoId: string;
-  file: FileAsset;
-  analysis?: APIResponse.CullingPhoto;
   cardWidth: number;
   canDeletePhoto: boolean;
-  disabled: boolean;
+  cullingHasUploads: boolean;
   isMobileLayout: boolean;
   onOpenDetail: (photoId: string) => void;
   onToggleSelection: (photoId: string, selected: boolean) => void;
@@ -35,22 +34,28 @@ export type CulledAlbumPhotoCardProps = {
 };
 
 export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
+  albumId,
   photoId,
-  file,
-  analysis,
   cardWidth,
   canDeletePhoto,
-  disabled,
+  cullingHasUploads,
   isMobileLayout,
   onOpenDetail,
   onToggleSelection,
   onDeletePress,
   onStarPress,
 }: CulledAlbumPhotoCardProps) {
+  const photo = useCulledAlbumPhoto(albumId, photoId);
   const hoverStore = useCulledAlbumPhotoHoverStore();
   const isHovered = useCulledAlbumPhotoHovered(photoId);
+  const file = photo?.file;
+  const analysis =
+    photo?.analysisStatus === 'analyzed' ? toCullingPhoto(photo) : undefined;
+  const disabled = photo ? isCulledPhotoDisabled(photo, cullingHasUploads) : true;
   const isSelected = analysis?.selected ?? false;
-  const showDeleteButton = canDeletePhoto && (isMobileLayout || isHovered);
+  const showDeleteButton =
+    canDeletePhoto && !disabled && (isMobileLayout || isHovered);
+  const fileName = file?.name ?? '';
 
   const handleOpenDetail = useCallback(
     () => onOpenDetail(photoId),
@@ -70,6 +75,10 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
     hoverStore.hoverOut(photoId);
   }, [hoverStore, photoId]);
 
+  if (!photo || !file) {
+    return <View style={[styles.photoCard, {width: cardWidth}]} />;
+  }
+
   return (
     <Pressable
       style={[styles.photoCard, {width: cardWidth}]}
@@ -77,23 +86,27 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
       onHoverOut={isMobileLayout ? undefined : handleHoverOut}
       onPress={handleOpenDetail}>
       <View style={styles.thumbnailWrapper}>
-        <CulledAlbumPhotoThumbnail file={file} width={cardWidth} />
+        <CulledAlbumPhotoThumbnail
+          albumId={albumId}
+          photoId={photoId}
+          width={cardWidth}
+        />
         {showDeleteButton && (
           <Pressable
             style={styles.deletePhotoButton}
             onPress={event => {
               event.stopPropagation();
-              onDeletePress(photoId, file.name);
+              onDeletePress(photoId, fileName);
             }}
             accessibilityRole="button"
-            accessibilityLabel={`Delete ${file.name}`}>
+            accessibilityLabel={`Delete ${fileName}`}>
             <IconTrash width={24} height={24} color={colors.text} />
           </Pressable>
         )}
       </View>
       <View style={styles.photoInfoContainer}>
         <Text style={styles.fileName} numberOfLines={1}>
-          {file.name}
+          {fileName}
         </Text>
 
         <View style={styles.otherInfoContainer}>

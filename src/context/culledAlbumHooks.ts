@@ -158,6 +158,18 @@ export function useCulledAlbumStore<R>(
   return useStateStore(culledAlbumStore, selector);
 }
 
+export function useCulledAlbumPhoto(
+  albumId: string | undefined,
+  photoId: string,
+): CulledAlbumPhoto | undefined {
+  return useStateStore(photoStateStore, state => {
+    if (!albumId || !photoId) {
+      return undefined;
+    }
+    return state.photoState[photoKey(albumId, photoId)];
+  });
+}
+
 export function useCulledAlbumPhotosState(albumId: string): CulledAlbumPhoto[] {
   const photoOrder = useStateStore(
     photoStateStore,

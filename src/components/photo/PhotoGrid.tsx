@@ -1,12 +1,15 @@
 import {scheduleHydrateVisiblePhotos} from '@hooks/useVisiblePhotos';
+import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import type {AlbumGridFileItem} from '@lib/culledAlbum/stableAlbumGridFiles';
+import {persistThumbnailDimensions} from '@lib/culledAlbum/persistThumbnailDimensions';
 import {
   scheduleResolveExistingThumbnails,
   scheduleThumbnailBackfillForPhotos,
 } from '@lib/culledAlbum/thumbnailBackfill';
-import {getContainedImageLayout} from '@lib/culling/cullingFaceCrop';
 import {
   getCachedImageDimensions,
+  getCulledAlbumThumbnailLayout,
+  getFileThumbnailDimensions,
   loadImageDimensions,
   putCachedImageDimensions,
   type ImageDimensions,
@@ -23,14 +26,17 @@ import {
 } from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
 import {
+  createContext,
   forwardRef,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import {
   FlatList,
@@ -39,6 +45,7 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   ListRenderItemInfo,
+  Platform,
   StyleSheet,
   useWindowDimensions,
   View,
@@ -52,37 +59,121 @@ const HORIZONTAL_PADDING = 48;
 const GAP = 8;
 const RESIZE_SETTLE_MS = 150;
 const SCROLL_TO_TOP_DURATION_MS = 450;
+const PLACEHOLDER_INITIAL_ROWS = 8;
+const GRAY_FILL_BATCH_PERIOD_MS = 50;
+const EMPTY_IMAGE_LOAD_IDS = new Set<string>();
+
+type ImageLoadStore = {
+  subscribe: (listener: () => void) => () => void;
+  getIds: () => Set<string>;
+  setIds: (nextIds: Set<string>) => void;
+};
+
+const PhotoGridImageLoadContext = createContext<ImageLoadStore | null>(null);
+
+function setsEqual(left: Set<string>, right: Set<string>): boolean {
+  if (left.size !== right.size) {
+    return false;
+  }
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function createImageLoadStore(): ImageLoadStore {
+  let ids = EMPTY_IMAGE_LOAD_IDS;
+  const listeners = new Set<() => void>();
+
+  return {
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    getIds() {
+      return ids;
+    },
+    setIds(nextIds) {
+      if (setsEqual(ids, nextIds)) {
+        return;
+      }
+      ids = nextIds;
+      for (const listener of listeners) {
+        listener();
+      }
+    },
+  };
+}
+
+function useShouldLoadGridImage(photoId: string): boolean {
+  const store = useContext(PhotoGridImageLoadContext);
+  return useSyncExternalStore(
+    store?.subscribe ?? subscribeNoop,
+    () => store?.getIds().has(photoId) ?? true,
+  );
+}
+
+function subscribeNoop(): () => void {
+  return () => undefined;
+}
 
 function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
 }
 
+function resolveThumbnailSize(
+  file: {thumbnailWidth?: number | null; thumbnailHeight?: number | null} | undefined,
+  uri: string,
+): ImageDimensions | null {
+  const stored = file ? getFileThumbnailDimensions(file) : null;
+  if (stored) {
+    putCachedImageDimensions(uri, stored);
+    return stored;
+  }
+  return uri ? getCachedImageDimensions(uri) ?? null : null;
+}
+
 const PhotoGridCellImage = memo(
   function PhotoGridCellImage({
-    uri,
+    albumId,
+    photoId,
     width,
     height,
   }: {
-    uri: string;
+    albumId?: string;
+    photoId: string;
     width: number;
     height: number;
   }) {
+    const shouldLoadImage = useShouldLoadGridImage(photoId);
+    const photo = useCulledAlbumPhoto(albumId, photoId);
+    const file = photo?.file;
+    const uri = file ? resolveGridDisplayUri(file) ?? '' : '';
     const [isLoaded, setIsLoaded] = useState(false);
-    const [imageSize, setImageSize] = useState<ImageDimensions | null>(
-      () => (uri ? getCachedImageDimensions(uri) ?? null : null),
+    const [imageSize, setImageSize] = useState<ImageDimensions | null>(() =>
+      resolveThumbnailSize(file, uri),
     );
+    const displayedUriRef = useRef(uri);
 
     useEffect(() => {
+      if (displayedUriRef.current === uri) {
+        return;
+      }
+      displayedUriRef.current = uri;
       setIsLoaded(false);
-      setImageSize(uri ? getCachedImageDimensions(uri) ?? null : null);
-    }, [uri]);
+      setImageSize(resolveThumbnailSize(file, uri));
+    }, [file, uri]);
 
     const imageLayout = useMemo(() => {
       if (!imageSize) {
         return null;
       }
 
-      return getContainedImageLayout(
+      return getCulledAlbumThumbnailLayout(
         width,
         height,
         imageSize.width,
@@ -91,28 +182,44 @@ const PhotoGridCellImage = memo(
     }, [height, imageSize, width]);
 
     useEffect(() => {
-      if (!uri) {
+      const stored = file ? getFileThumbnailDimensions(file) : null;
+      if (stored) {
+        if (uri) {
+          putCachedImageDimensions(uri, stored);
+        }
+        setImageSize(stored);
+        return;
+      }
+
+      if (!shouldLoadImage || !uri) {
         return;
       }
 
       const cached = getCachedImageDimensions(uri);
       if (cached) {
         setImageSize(cached);
+        if (albumId) {
+          persistThumbnailDimensions(albumId, photoId, cached);
+        }
         return;
       }
 
       let cancelled = false;
 
       loadImageDimensions(uri).then(dimensions => {
-        if (!cancelled && dimensions) {
-          setImageSize(dimensions);
+        if (cancelled || !dimensions) {
+          return;
+        }
+        setImageSize(dimensions);
+        if (albumId) {
+          persistThumbnailDimensions(albumId, photoId, dimensions);
         }
       });
 
       return () => {
         cancelled = true;
       };
-    }, [uri]);
+    }, [albumId, file, photoId, shouldLoadImage, uri]);
 
     const handleLoad = useCallback(
       (event: NativeSyntheticEvent<ImageLoadEventData>) => {
@@ -130,10 +237,13 @@ const PhotoGridCellImage = memo(
           }
           const dimensions = {width: loadedWidth, height: loadedHeight};
           putCachedImageDimensions(uri, dimensions);
+          if (albumId) {
+            persistThumbnailDimensions(albumId, photoId, dimensions);
+          }
           return dimensions;
         });
       },
-      [uri],
+      [albumId, photoId, uri],
     );
 
     return (
@@ -142,44 +252,35 @@ const PhotoGridCellImage = memo(
           styles.itemContainer,
           {width, height, backgroundColor: colors.cardBackgroundSecondary},
         ]}>
-        {uri ? (
-          imageLayout ? (
-            <Image
-              source={{uri}}
-              onLoad={handleLoad}
-              onError={() => setIsLoaded(true)}
-              style={[
-                styles.containedImage,
-                {
-                  width: imageLayout.width,
-                  height: imageLayout.height,
-                  left: imageLayout.left,
-                  top: imageLayout.top,
-                  opacity: isLoaded ? 1 : 0,
-                },
-              ]}
-            />
-          ) : (
-            <Image
-              source={{uri}}
-              onLoad={handleLoad}
-              onError={() => setIsLoaded(true)}
-              style={styles.imageHidden}
-            />
-          )
+        {shouldLoadImage && uri && imageLayout ? (
+          <Image
+            source={{uri}}
+            onLoad={handleLoad}
+            onError={() => setIsLoaded(true)}
+            style={[
+              styles.containedImage,
+              {
+                width: imageLayout.width,
+                height: imageLayout.height,
+                left: imageLayout.left,
+                top: imageLayout.top,
+                opacity: isLoaded ? 1 : 0,
+              },
+            ]}
+          />
         ) : null}
       </View>
     );
   },
   (prev, next) =>
-    prev.uri === next.uri &&
+    prev.albumId === next.albumId &&
+    prev.photoId === next.photoId &&
     prev.width === next.width &&
     prev.height === next.height,
 );
 
 type PhotoGridCell = {
   key: string;
-  uri: string;
   photoId: string;
   index: number;
 };
@@ -192,6 +293,7 @@ type PhotoGridRow = {
 
 type PhotoGridRowViewProps = {
   row: PhotoGridRow;
+  albumId?: string;
   itemWidth: number;
   itemHeight: number;
   gap: number;
@@ -200,6 +302,7 @@ type PhotoGridRowViewProps = {
 const PhotoGridRowView = memo(
   function PhotoGridRowView({
     row,
+    albumId,
     itemWidth,
     itemHeight,
     gap,
@@ -209,7 +312,8 @@ const PhotoGridRowView = memo(
         {row.cells.map(cell => (
           <PhotoGridCellImage
             key={cell.key}
-            uri={cell.uri}
+            albumId={albumId}
+            photoId={cell.photoId}
             width={itemWidth}
             height={itemHeight}
           />
@@ -219,7 +323,11 @@ const PhotoGridRowView = memo(
             (_, fillerIndex) => (
               <View
                 key={`filler-${row.rowIndex}-${fillerIndex}`}
-                style={{width: itemWidth, height: itemHeight}}
+                style={{
+                  width: itemWidth,
+                  height: itemHeight,
+                  backgroundColor: colors.cardBackgroundSecondary,
+                }}
               />
             ),
           )}
@@ -228,6 +336,7 @@ const PhotoGridRowView = memo(
   },
   (prev, next) =>
     prev.row === next.row &&
+    prev.albumId === next.albumId &&
     prev.itemWidth === next.itemWidth &&
     prev.itemHeight === next.itemHeight &&
     prev.gap === next.gap,
@@ -244,25 +353,20 @@ export type PhotoGridHandle = {
   scrollToTop: () => void;
 };
 
-function buildRows(items: AlbumGridFileItem[]): PhotoGridRow[] {
+function buildRows(photoIds: string[]): PhotoGridRow[] {
   const rows: PhotoGridRow[] = [];
 
-  for (let index = 0; index < items.length; index += COLUMNS) {
-    const rowItems = items.slice(index, index + COLUMNS);
+  for (let index = 0; index < photoIds.length; index += COLUMNS) {
+    const rowPhotoIds = photoIds.slice(index, index + COLUMNS);
     const rowIndex = index / COLUMNS;
     rows.push({
-      key: `row-${rowIndex}`,
+      key: `row-${rowIndex}:${rowPhotoIds.join(',')}`,
       rowIndex,
-      cells: rowItems.map((item, columnIndex) => {
-        const cellIndex = index + columnIndex;
-        const uri = resolveGridDisplayUri(item.file) ?? '';
-        return {
-          key: `${item.photoId}:${uri}`,
-          uri,
-          photoId: item.photoId,
-          index: cellIndex,
-        };
-      }),
+      cells: rowPhotoIds.map((photoId, columnIndex) => ({
+        key: photoId,
+        photoId,
+        index: index + columnIndex,
+      })),
     });
   }
 
@@ -295,6 +399,11 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
   const lastPreloadRangeRef = useRef('');
   const lastHydrateRangeRef = useRef('');
   const lastThumbnailRangeRef = useRef('');
+  const imageLoadStoreRef = useRef<ImageLoadStore | null>(null);
+  if (imageLoadStoreRef.current == null) {
+    imageLoadStoreRef.current = createImageLoadStore();
+  }
+  const imageLoadStore = imageLoadStoreRef.current;
 
   itemsRef.current = items;
   albumIdRef.current = albumId;
@@ -402,7 +511,20 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
   const rowHeight = itemHeight + gap;
   const settledItemWidth = Math.round(itemWidth);
 
-  const rows = useMemo(() => buildRows(items), [items]);
+  const photoIdsKey = items.map(item => item.photoId).join('\0');
+  const rows = useMemo(
+    () => buildRows(photoIdsKey ? photoIdsKey.split('\0') : []),
+    [photoIdsKey],
+  );
+
+  useEffect(() => {
+    const initialIds = new Set(
+      itemsRef.current
+        .slice(0, COLUMNS * PLACEHOLDER_INITIAL_ROWS)
+        .map(item => item.photoId),
+    );
+    imageLoadStore.setIds(initialIds);
+  }, [imageLoadStore, photoIdsKey]);
 
   const handleViewableItemsChanged = useCallback(
     ({viewableItems}: {viewableItems: ViewToken<PhotoGridRow>[]}) => {
@@ -459,16 +581,17 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
         }
       }
 
+      const rangeItems = currentItems.slice(start, end);
+      imageLoadStore.setIds(new Set(rangeItems.map(item => item.photoId)));
+
       const preloadKey = `${start}:${end}`;
       if (lastPreloadRangeRef.current === preloadKey) {
         return;
       }
       lastPreloadRangeRef.current = preloadKey;
-
-      const files = currentItems.slice(start, end).map(item => item.file);
-      scheduleScrollImagePreload(files);
+      scheduleScrollImagePreload(rangeItems.map(item => item.file));
     },
-    [],
+    [imageLoadStore],
   );
 
   const onViewableItemsChangedRef = useRef(handleViewableItemsChanged);
@@ -487,12 +610,13 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     ({item: row}: ListRenderItemInfo<PhotoGridRow>) => (
       <PhotoGridRowView
         row={row}
+        albumId={albumId}
         itemWidth={itemWidth}
         itemHeight={itemHeight}
         gap={gap}
       />
     ),
-    [gap, itemHeight, itemWidth],
+    [albumId, gap, itemHeight, itemWidth],
   );
 
   const keyExtractor = useCallback((row: PhotoGridRow) => row.key, []);
@@ -513,27 +637,29 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
   return (
     <View style={styles.container} onLayout={handleContainerLayout}>
       {itemWidth > 0 ? (
-        <FlatList
-          ref={listRef}
-          data={rows}
-          renderItem={renderRow}
-          keyExtractor={keyExtractor}
-          getItemLayout={getItemLayout}
-          extraData={settledItemWidth}
-          windowSize={3}
-          removeClippedSubviews
-          initialNumToRender={4}
-          maxToRenderPerBatch={2}
-          updateCellsBatchingPeriod={150}
-          showsVerticalScrollIndicator
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          contentContainerStyle={[
-            styles.listContent,
-            {paddingHorizontal: horizontalPadding},
-          ]}
-          viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
-        />
+        <PhotoGridImageLoadContext.Provider value={imageLoadStore}>
+          <FlatList
+            ref={listRef}
+            data={rows}
+            renderItem={renderRow}
+            keyExtractor={keyExtractor}
+            getItemLayout={getItemLayout}
+            extraData={settledItemWidth}
+            windowSize={Platform.OS === 'windows' ? 3 : 7}
+            removeClippedSubviews={false}
+            initialNumToRender={PLACEHOLDER_INITIAL_ROWS}
+            maxToRenderPerBatch={6}
+            updateCellsBatchingPeriod={GRAY_FILL_BATCH_PERIOD_MS}
+            showsVerticalScrollIndicator
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            contentContainerStyle={[
+              styles.listContent,
+              {paddingHorizontal: horizontalPadding},
+            ]}
+            viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
+          />
+        </PhotoGridImageLoadContext.Provider>
       ) : null}
     </View>
   );
@@ -554,11 +680,5 @@ const styles = StyleSheet.create({
   },
   containedImage: {
     position: 'absolute',
-  },
-  imageHidden: {
-    position: 'absolute',
-    width: 0,
-    height: 0,
-    opacity: 0,
   },
 });

@@ -1,6 +1,9 @@
-import {getContainedImageLayout} from '@lib/culling/cullingFaceCrop';
+import {useCulledAlbumPhoto} from '@context/culledAlbum';
+import {persistThumbnailDimensions} from '@lib/culledAlbum/persistThumbnailDimensions';
 import {
   getCachedImageDimensions,
+  getCulledAlbumThumbnailLayout,
+  getFileThumbnailDimensions,
   loadImageDimensions,
   putCachedImageDimensions,
   type ImageDimensions,
@@ -8,7 +11,6 @@ import {
 import {isImagePrefetched} from '@lib/media/imagePreload';
 import {resolveGridDisplayUri} from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
-import {FileAsset} from '@services/upload/types';
 import {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Image,
@@ -21,22 +23,38 @@ import {
 const THUMBNAIL_ASPECT_RATIO = 3 / 2;
 
 type CulledAlbumPhotoThumbnailProps = {
-  file: FileAsset;
+  albumId: string;
+  photoId: string;
   width: number;
 };
+
+function resolveThumbnailSize(
+  file: {thumbnailWidth?: number | null; thumbnailHeight?: number | null} | undefined,
+  uri: string,
+): ImageDimensions | null {
+  const stored = file ? getFileThumbnailDimensions(file) : null;
+  if (stored) {
+    putCachedImageDimensions(uri, stored);
+    return stored;
+  }
+  return uri ? getCachedImageDimensions(uri) ?? null : null;
+}
 
 function hasWarmThumbnail(uri: string): boolean {
   return Boolean(uri) && (isImagePrefetched(uri) || Boolean(getCachedImageDimensions(uri)));
 }
 
 export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail({
-  file,
+  albumId,
+  photoId,
   width,
 }: CulledAlbumPhotoThumbnailProps) {
-  const uri = resolveGridDisplayUri(file) ?? '';
+  const photo = useCulledAlbumPhoto(albumId, photoId);
+  const file = photo?.file;
+  const uri = file ? resolveGridDisplayUri(file) ?? '' : '';
   const height = width / THUMBNAIL_ASPECT_RATIO;
-  const [imageSize, setImageSize] = useState<ImageDimensions | null>(
-    () => (uri ? getCachedImageDimensions(uri) ?? null : null),
+  const [imageSize, setImageSize] = useState<ImageDimensions | null>(() =>
+    resolveThumbnailSize(file, uri),
   );
   const [isLoaded, setIsLoaded] = useState(() => hasWarmThumbnail(uri));
   const displayedUriRef = useRef(uri);
@@ -46,17 +64,16 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
       return;
     }
     displayedUriRef.current = uri;
-    const cached = uri ? getCachedImageDimensions(uri) ?? null : null;
-    setImageSize(cached);
+    setImageSize(resolveThumbnailSize(file, uri));
     setIsLoaded(hasWarmThumbnail(uri));
-  }, [uri]);
+  }, [file, uri]);
 
   const imageLayout = useMemo(() => {
     if (!imageSize) {
       return null;
     }
 
-    return getContainedImageLayout(
+    return getCulledAlbumThumbnailLayout(
       width,
       height,
       imageSize.width,
@@ -65,6 +82,15 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
   }, [height, imageSize, width]);
 
   useEffect(() => {
+    const stored = file ? getFileThumbnailDimensions(file) : null;
+    if (stored) {
+      if (uri) {
+        putCachedImageDimensions(uri, stored);
+      }
+      setImageSize(stored);
+      return;
+    }
+
     if (!uri) {
       return;
     }
@@ -72,21 +98,24 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
     const cached = getCachedImageDimensions(uri);
     if (cached) {
       setImageSize(cached);
+      persistThumbnailDimensions(albumId, photoId, cached);
       return;
     }
 
     let cancelled = false;
 
     loadImageDimensions(uri).then(dimensions => {
-      if (!cancelled && dimensions) {
-        setImageSize(dimensions);
+      if (cancelled || !dimensions) {
+        return;
       }
+      setImageSize(dimensions);
+      persistThumbnailDimensions(albumId, photoId, dimensions);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [uri]);
+  }, [albumId, file, photoId, uri]);
 
   const handleLoad = useCallback(
     (event: NativeSyntheticEvent<ImageLoadEventData>) => {
@@ -103,10 +132,11 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
         }
         const dimensions = {width: loadedWidth, height: loadedHeight};
         putCachedImageDimensions(uri, dimensions);
+        persistThumbnailDimensions(albumId, photoId, dimensions);
         return dimensions;
       });
     },
-    [uri],
+    [albumId, photoId, uri],
   );
 
   const handleError = useCallback(() => {
@@ -119,32 +149,23 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
 
   return (
     <View style={[styles.container, {width, height}]} pointerEvents="box-none">
-      {uri ? (
+      {uri && imageLayout ? (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          {imageLayout ? (
-            <Image
-              source={{uri}}
-              onLoad={handleLoad}
-              onError={handleError}
-              style={[
-                styles.containedImage,
-                {
-                  width: imageLayout.width,
-                  height: imageLayout.height,
-                  left: imageLayout.left,
-                  top: imageLayout.top,
-                  opacity: isLoaded ? 1 : 0,
-                },
-              ]}
-            />
-          ) : (
-            <Image
-              source={{uri}}
-              onLoad={handleLoad}
-              onError={handleError}
-              style={styles.imageHidden}
-            />
-          )}
+          <Image
+            source={{uri}}
+            onLoad={handleLoad}
+            onError={handleError}
+            style={[
+              styles.containedImage,
+              {
+                width: imageLayout.width,
+                height: imageLayout.height,
+                left: imageLayout.left,
+                top: imageLayout.top,
+                opacity: isLoaded ? 1 : 0,
+              },
+            ]}
+          />
         </View>
       ) : null}
     </View>
@@ -158,11 +179,5 @@ const styles = StyleSheet.create({
   },
   containedImage: {
     position: 'absolute',
-  },
-  imageHidden: {
-    position: 'absolute',
-    width: 0,
-    height: 0,
-    opacity: 0,
   },
 });

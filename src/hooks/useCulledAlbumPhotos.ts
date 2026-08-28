@@ -5,15 +5,11 @@ import {
   hydratePhotos,
 } from '@lib/culledAlbum/photoLoader';
 import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
-import {
-  scheduleResolveExistingThumbnails,
-} from '@lib/culledAlbum/thumbnailBackfill';
 import {useCulledAlbumPhotosState} from '@context/culledAlbum';
 import {FileAsset} from '@services/upload/types';
 import {useCallback, useEffect, useMemo, useState} from 'react';
 
 const HYDRATE_BATCH_SIZE = 48;
-const FIRST_PAINT_THUMBNAIL_COUNT = 12;
 
 type Options = {
   skipInitialLoad?: boolean;
@@ -49,20 +45,9 @@ export function useCulledAlbumPhotos(albumId: string, options?: Options) {
       await ensureAlbumLoaded(albumId);
       const photoIds = alignPhotoOrderByFilename(albumId);
 
-      const firstPaintIds = photoIds.slice(0, FIRST_PAINT_THUMBNAIL_COUNT);
-      if (firstPaintIds.length > 0) {
-        hydratePhotos(albumId, firstPaintIds);
-        scheduleResolveExistingThumbnails(albumId, firstPaintIds);
-      }
-
       for (let index = 0; index < photoIds.length; index += HYDRATE_BATCH_SIZE) {
         const batchIds = photoIds.slice(index, index + HYDRATE_BATCH_SIZE);
         hydratePhotos(albumId, batchIds);
-        const remainingForThumbs =
-          index === 0 ? batchIds.slice(firstPaintIds.length) : batchIds;
-        if (remainingForThumbs.length > 0) {
-          scheduleResolveExistingThumbnails(albumId, remainingForThumbs);
-        }
         if (index + HYDRATE_BATCH_SIZE < photoIds.length) {
           await yieldToMain();
         }

@@ -53,7 +53,6 @@ import {
 } from './types';
 import {computeKeyFaces, computeStats, orderCulledAlbumPhotosForCulling} from '@lib/culling/cullingUtil';
 import {APIResponse} from '@services/api';
-import {scheduleThumbnailBackfill} from './thumbnailBackfill';
 import {photoKey, photoStateStore} from './photoStateStore';
 import {
   flushPendingPhotoUpdates as flushBatchedPhotoUpdates,
@@ -521,6 +520,29 @@ export function updateCullingSummary(albumId: string): void {
   });
 }
 
+const CULLING_SUMMARY_DEBOUNCE_MS = 1500;
+const cullingSummaryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export function scheduleUpdateCullingSummary(albumId: string): void {
+  if (cullingSummaryTimers.has(albumId)) {
+    return;
+  }
+  const timer = setTimeout(() => {
+    cullingSummaryTimers.delete(albumId);
+    updateCullingSummary(albumId);
+  }, CULLING_SUMMARY_DEBOUNCE_MS);
+  cullingSummaryTimers.set(albumId, timer);
+}
+
+export function flushUpdateCullingSummary(albumId: string): void {
+  const timer = cullingSummaryTimers.get(albumId);
+  if (timer) {
+    clearTimeout(timer);
+    cullingSummaryTimers.delete(albumId);
+  }
+  updateCullingSummary(albumId);
+}
+
 export function getCullingSummary(albumId: string): {
   stats: APIResponse.CullingStats | null;
   keyFaces: APIResponse.CullingKeyFace[];
@@ -697,9 +719,6 @@ export async function checkLocalImportBatchComplete(
     uploadedCount: finalCounts.uploaded,
     failedCount: finalCounts.failed,
   });
-  if (hasUploaded) {
-    scheduleThumbnailBackfill(albumId);
-  }
 
   await syncPhotosFromStoreAwait(albumId, [...batchPhotoIds]);
   await persistAlbum(albumId);

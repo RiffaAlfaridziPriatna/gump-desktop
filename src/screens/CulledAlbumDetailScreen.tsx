@@ -23,6 +23,7 @@ import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
 import {useProfileMenu} from '@hooks/useProfileMenu';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {cullingEngine} from '@lib/culling/cullingEngine';
+import {getPhotoById} from '@lib/culledAlbum/store';
 import {preloadImage, preloadImages} from '@lib/media/imagePreload';
 import {
   resolveDetailDisplayUri,
@@ -57,7 +58,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const profileMenu = useProfileMenu();
   const {resumeInFlightWork, startSelectedUpload} = useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
-  const {photos, loadError, loadingPhotos} = useCulledAlbumPhotos(albumId);
+  const {loadError, loadingPhotos} = useCulledAlbumPhotos(albumId);
   const albumPhotos = useCulledAlbumPhotosState(albumId);
   const cullingCompleted = useCulledAlbumStore(
     state => state.albums[albumId]?.cullingCompleted ?? false,
@@ -103,6 +104,9 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   } = useKeyFaceTooltip();
 
   const gridPhotosCacheRef = useRef(new Map());
+  const previousGridPhotosRef = useRef<
+    ReturnType<typeof stabilizeGridPhotos>
+  >([]);
   const [photoToDelete, setPhotoToDelete] = useState<{
     photoId: string;
     fileName: string;
@@ -153,7 +157,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     return albumPhotos
       .filter(photo => photo.status === 'uploaded')
       .map(photo => ({
-        file: photo.file,
         photoId: photo.photoId,
         disabled: isCulledPhotoDisabled(photo, cullingHasUploads),
         analysis:
@@ -163,10 +166,15 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       }));
   }, [albumPhotos, cullingHasUploads, photoMap]);
 
-  const gridPhotos = useMemo(
-    () => stabilizeGridPhotos(gridPhotosCacheRef.current, rawGridPhotos),
-    [rawGridPhotos],
-  );
+  const gridPhotos = useMemo(() => {
+    const stablePhotos = stabilizeGridPhotos(
+      gridPhotosCacheRef.current,
+      rawGridPhotos,
+      previousGridPhotosRef.current,
+    );
+    previousGridPhotosRef.current = stablePhotos;
+    return stablePhotos;
+  }, [rawGridPhotos]);
 
   const totalPhotos = gridPhotos.length;
 
@@ -186,9 +194,9 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
   const handleOpenPhotoDetail = useCallback(
     (photoId: string, faceIndex?: number) => {
-      const entry = gridPhotos.find(photo => photo.photoId === photoId);
-      if (entry?.file) {
-        preloadImage(resolveDetailDisplayUri(entry.file)).catch(() => undefined);
+      const file = getPhotoById(albumId, photoId)?.file;
+      if (file) {
+        preloadImage(resolveDetailDisplayUri(file)).catch(() => undefined);
       }
       navigation.navigate('CulledAlbumPhotoDetail', {
         albumId,
@@ -196,7 +204,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         ...(typeof faceIndex === 'number' ? {faceIndex} : {}),
       });
     },
-    [albumId, gridPhotos, navigation],
+    [albumId, navigation],
   );
 
   const handleKeyFacePress = useCallback(
@@ -391,6 +399,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
                 containerWidth={layoutWidth}
                 isMobileLayout={isMobileLayout}
                 canDeletePhoto={canDeletePhoto}
+                cullingHasUploads={cullingHasUploads}
                 hoverEnabled={!isBlockingModalOpen}
                 contentContainerStyle={[
                   styles.grid,

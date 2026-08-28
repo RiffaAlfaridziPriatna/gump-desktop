@@ -12,7 +12,6 @@ function gridFileEqual(
   return (
     cached.photoId === next.photoId &&
     cached.file.uri === next.file.uri &&
-    cached.file.thumbnailUri === next.file.thumbnailUri &&
     cached.file.name === next.file.name
   );
 }
