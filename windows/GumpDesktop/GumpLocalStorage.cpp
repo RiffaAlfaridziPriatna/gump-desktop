@@ -5,6 +5,12 @@
 #include "FaceDetectionPipeline.h"
 #include "MediaDerivatives.h"
 
+// Analysis session includes
+#include "../../cpp/analysis/AnalysisSession.h"
+#include "../../cpp/analysis/PhotoFlags.h"
+#include "../../cpp/analysis/FaceCluster.h"
+#include "../../cpp/analysis/DuplicateDetection.h"
+
 #include <ShlObj.h>
 #include <combaseapi.h>
 #include <MemoryBuffer.h>
@@ -27,6 +33,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -1511,3 +1518,319 @@ void GumpLocalStorage::ComputePerceptualHash(std::string uri, ReactPromiseJS &&p
       },
       std::move(promise));
 }
+
+// ============================================================================
+// Windows Platform Decoder for Analysis Session
+// ============================================================================
+
+class WindowsPlatformDecoder : public Analysis::PlatformDecoder {
+public:
+  explicit WindowsPlatformDecoder(winrtRN::ReactContext reactContext)
+      : m_reactContext(std::move(reactContext)) {}
+
+  Analysis::DecodedImage DecodeImageToBgra(const std::string &uri, int maxPixelSize) override {
+    Analysis::DecodedImage result;
+    try {
+      const auto path = PathFromUri(uri);
+      const auto bitmap = LoadSoftwareBitmapScaled(path, static_cast<uint32_t>(maxPixelSize));
+      auto pixels = std::make_shared<BitmapPixels>(ReadBitmapPixels(bitmap));
+      result.width = pixels->width;
+      result.height = pixels->height;
+      result.stride = pixels->stride;
+      result.bgraPixels = pixels->bytes.data();
+      result.platformHandle = std::move(pixels);
+      result.success = true;
+    } catch (const std::exception &e) {
+      result.error = e.what();
+    }
+    return result;
+  }
+
+  int64_t ReadCapturedAtMillis(const std::string &uri) override {
+    try {
+      const auto path = PathFromUri(uri);
+      const auto timestamp = ReadCaptureTimestampMillis(path);
+      return timestamp.value_or(0);
+    } catch (...) {
+      return 0;
+    }
+  }
+
+  std::string GetDatabasePath() const override {
+    PWSTR localAppData = nullptr;
+    SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppData);
+    std::filesystem::path path(localAppData);
+    CoTaskMemFree(localAppData);
+    path /= L"Gump";
+    std::filesystem::create_directories(path);
+    return (path / L"gump.db").string();
+  }
+
+private:
+  winrtRN::ReactContext m_reactContext;
+};
+
+// ============================================================================
+// Analysis Session Management
+// ============================================================================
+
+namespace {
+std::unique_ptr<WindowsPlatformDecoder> g_decoder;
+std::unique_ptr<Analysis::AnalysisSession> g_analysisSession;
+std::mutex g_sessionMutex;
+winrtRN::ReactContext g_sessionReactContext{nullptr};
+
+void EmitAnalysisProgress(const Analysis::ProgressUpdate &progress) {
+  if (!g_sessionReactContext) {
+    return;
+  }
+
+  winrtRN::JSValueObject event;
+  event["done"] = progress.done;
+  event["failed"] = progress.failed;
+  event["total"] = progress.total;
+
+  g_sessionReactContext.EmitJSEvent(
+      L"RCTDeviceEventEmitter",
+      L"analysisProgress",
+      event);
+}
+
+void EmitAnalysisComplete(const Analysis::CompletionSummary &summary) {
+  if (!g_sessionReactContext) {
+    return;
+  }
+
+  winrtRN::JSValueArray resultsArray;
+  for (const auto &result : summary.results) {
+    winrtRN::JSValueArray facesArray;
+    for (const auto &face : result.faces) {
+      facesArray.push_back(FaceToJsObject(face));
+    }
+
+    winrtRN::JSValueObject photoObj;
+    photoObj["photoId"] = result.photoId;
+    photoObj["success"] = result.success;
+    photoObj["error"] = result.error;
+    photoObj["faces"] = std::move(facesArray);
+    if (result.perceptualHash.empty()) {
+      photoObj["perceptualHash"] = nullptr;
+    } else {
+      photoObj["perceptualHash"] = result.perceptualHash;
+    }
+    if (result.capturedAt == 0) {
+      photoObj["capturedAt"] = nullptr;
+    } else {
+      photoObj["capturedAt"] = static_cast<double>(result.capturedAt);
+    }
+    resultsArray.push_back(std::move(photoObj));
+  }
+
+  winrtRN::JSValueObject event;
+  event["done"] = summary.done;
+  event["total"] = summary.total;
+  event["failed"] = summary.failed;
+  event["results"] = std::move(resultsArray);
+
+  g_sessionReactContext.EmitJSEvent(
+      L"RCTDeviceEventEmitter",
+      L"analysisComplete",
+      event);
+}
+
+} // anonymous namespace
+
+// ============================================================================
+// React Native Bridge Methods
+// ============================================================================
+
+void GumpLocalStorage::Initialize(winrt::Microsoft::ReactNative::ReactContext const &reactContext) noexcept {
+  m_reactContext = reactContext;
+  std::lock_guard<std::mutex> lock(g_sessionMutex);
+  g_sessionReactContext = reactContext;
+}
+
+void GumpLocalStorage::StartAnalysis(
+    std::string albumId,
+    winrtRN::JSValueArray photos,
+    winrtRN::JSValue config,
+    ReactPromiseJS &&promise) noexcept {
+  try {
+    std::lock_guard<std::mutex> lock(g_sessionMutex);
+
+    // Check if session already running
+    if (g_analysisSession && g_analysisSession->IsRunning()) {
+      promise.Reject("ALREADY_RUNNING", "Analysis session is already running");
+      return;
+    }
+
+    g_decoder = std::make_unique<WindowsPlatformDecoder>(m_reactContext);
+    g_analysisSession = std::make_unique<Analysis::AnalysisSession>();
+
+    Analysis::SessionConfig sessionConfig;
+    sessionConfig.albumId = albumId;
+    sessionConfig.decoder = g_decoder.get();
+    sessionConfig.maxConcurrency = 2;
+    sessionConfig.pipelinePoolSize = 2;
+    sessionConfig.progressIntervalMs = 500;
+
+    if (config.Type() == winrtRN::JSValueType::Object) {
+      auto configObj = config.AsObject();
+      if (configObj.count("maxConcurrency") &&
+          configObj["maxConcurrency"].Type() == winrtRN::JSValueType::Int64) {
+        sessionConfig.maxConcurrency =
+            static_cast<int>(configObj["maxConcurrency"].AsInt64());
+      }
+    }
+
+    FaceDetection::PipelineConfig pipelineConfig;
+    pipelineConfig.scoreThreshold = 0.50f;
+    pipelineConfig.acceptScoreThreshold = 0.65f;
+    pipelineConfig.nmsThreshold = 0.40f;
+    pipelineConfig.enableTiling = true;
+    pipelineConfig.requireLandmarkPlausibility = true;
+    pipelineConfig.enableNativeFpFilter = true;
+    pipelineConfig.pipelinePoolSize = 2;
+    const auto moduleDir = ModuleDirectory();
+    for (const auto &base : {moduleDir / L"Assets" / L"Models", moduleDir / L"Models"}) {
+      const auto scrfd = base / L"face_detection_scrfd_2.5g_bnkps.onnx";
+      const auto ocec = base / L"eye_state_ocec_s.onnx";
+      if (std::filesystem::exists(scrfd) && std::filesystem::exists(ocec)) {
+        pipelineConfig.scrfdModelPath = scrfd.string();
+        pipelineConfig.ocecModelPath = ocec.string();
+        break;
+      }
+    }
+    sessionConfig.pipelineConfig = pipelineConfig;
+
+    for (size_t i = 0; i < photos.size(); ++i) {
+      const auto &photo = photos[i];
+      if (photo.Type() != winrtRN::JSValueType::Object) {
+        continue;
+      }
+
+      const auto photoObj = photo.AsObject();
+      Analysis::PhotoInput input;
+
+      if (photoObj.count("photoId") && photoObj["photoId"].Type() == winrtRN::JSValueType::String) {
+        input.photoId = photoObj["photoId"].AsString();
+      }
+      if (photoObj.count("uri") && photoObj["uri"].Type() == winrtRN::JSValueType::String) {
+        input.uri = photoObj["uri"].AsString();
+      }
+      if (photoObj.count("fileName") && photoObj["fileName"].Type() == winrtRN::JSValueType::String) {
+        input.fileName = photoObj["fileName"].AsString();
+      }
+      if (photoObj.count("capturedAt") &&
+          (photoObj["capturedAt"].Type() == winrtRN::JSValueType::Int64 ||
+           photoObj["capturedAt"].Type() == winrtRN::JSValueType::Double)) {
+        input.existingCapturedAt = static_cast<int64_t>(photoObj["capturedAt"].AsDouble());
+      }
+      if (photoObj.count("perceptualHash") &&
+          photoObj["perceptualHash"].Type() == winrtRN::JSValueType::String) {
+        input.existingHash = photoObj["perceptualHash"].AsString();
+      }
+
+      if (!input.photoId.empty() && !input.uri.empty()) {
+        sessionConfig.photos.push_back(input);
+      }
+    }
+
+    sessionConfig.onProgress = EmitAnalysisProgress;
+    sessionConfig.onComplete = EmitAnalysisComplete;
+
+    const bool started = g_analysisSession->Start(sessionConfig);
+    if (!started) {
+      g_analysisSession.reset();
+      g_decoder.reset();
+      promise.Reject("START_FAILED", "Failed to start analysis session");
+      return;
+    }
+
+    auto result = winrtRN::JSValueObject();
+    result["success"] = true;
+    promise.Resolve(result);
+
+  } catch (const std::exception &e) {
+    promise.Reject("ERROR", e.what());
+  } catch (...) {
+    promise.Reject("ERROR", "Unknown error starting analysis");
+  }
+}
+
+void GumpLocalStorage::CancelAnalysis(ReactPromiseJS &&promise) noexcept {
+  try {
+    std::lock_guard<std::mutex> lock(g_sessionMutex);
+
+    if (!g_analysisSession) {
+      promise.Reject("NO_SESSION", "No analysis session exists");
+      return;
+    }
+
+    g_analysisSession->Cancel();
+
+    auto result = winrtRN::JSValueObject();
+    result["cancelled"] = true;
+    promise.Resolve(result);
+
+  } catch (const std::exception &e) {
+    promise.Reject("ERROR", e.what());
+  }
+}
+
+void GumpLocalStorage::PauseAnalysis(ReactPromiseJS &&promise) noexcept {
+  try {
+    std::lock_guard<std::mutex> lock(g_sessionMutex);
+
+    if (!g_analysisSession) {
+      promise.Reject("NO_SESSION", "No analysis session exists");
+      return;
+    }
+
+    g_analysisSession->Pause();
+
+    auto result = winrtRN::JSValueObject();
+    result["paused"] = true;
+    promise.Resolve(result);
+
+  } catch (const std::exception &e) {
+    promise.Reject("ERROR", e.what());
+  }
+}
+
+void GumpLocalStorage::ResumeAnalysis(ReactPromiseJS &&promise) noexcept {
+  try {
+    std::lock_guard<std::mutex> lock(g_sessionMutex);
+
+    if (!g_analysisSession) {
+      promise.Reject("NO_SESSION", "No analysis session exists");
+      return;
+    }
+
+    g_analysisSession->Resume();
+
+    auto result = winrtRN::JSValueObject();
+    result["resumed"] = true;
+    promise.Resolve(result);
+
+  } catch (const std::exception &e) {
+    promise.Reject("ERROR", e.what());
+  }
+}
+
+void GumpLocalStorage::IsAnalysisRunning(ReactPromiseJS &&promise) noexcept {
+  try {
+    std::lock_guard<std::mutex> lock(g_sessionMutex);
+
+    const bool running = g_analysisSession && g_analysisSession->IsRunning();
+
+    auto result = winrtRN::JSValueObject();
+    result["running"] = running;
+    promise.Resolve(result);
+
+  } catch (const std::exception &e) {
+    promise.Reject("ERROR", e.what());
+  }
+}
+
+} // namespace GumpDesktop

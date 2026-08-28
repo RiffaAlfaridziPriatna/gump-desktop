@@ -41,6 +41,7 @@ import {
   createCulledAlbumPhoto,
   CulledAlbum,
   CulledAlbumPhoto,
+  AnalysisBatchCounts,
   AnalysisCountKey,
   hasInFlightAnalysis,
   hasInFlightServerUploads,
@@ -1159,6 +1160,19 @@ export function clearAnalysisBatch(albumId: string): void {
       album.analysisBatchPhotoIds = [];
       album.analysisBatchCounts = undefined;
     }
+  });
+}
+
+export function setAnalysisBatchCounts(
+  albumId: string,
+  counts: AnalysisBatchCounts,
+): void {
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (!album) {
+      return;
+    }
+    album.analysisBatchCounts = counts;
   });
 }
 

@@ -98,6 +98,35 @@ struct GumpLocalStorage {
   void ComputePerceptualHash(
       std::string uri,
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(StartAnalysis, L"startAnalysis");
+  void StartAnalysis(
+      std::string albumId,
+      winrt::Microsoft::ReactNative::JSValueArray photos,
+      winrt::Microsoft::ReactNative::JSValue config,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(CancelAnalysis, L"cancelAnalysis");
+  void CancelAnalysis(
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(PauseAnalysis, L"pauseAnalysis");
+  void PauseAnalysis(
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(ResumeAnalysis, L"resumeAnalysis");
+  void ResumeAnalysis(
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(IsAnalysisRunning, L"isRunning");
+  void IsAnalysisRunning(
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_INIT(Initialize);
+  void Initialize(winrt::Microsoft::ReactNative::ReactContext const &reactContext) noexcept;
+
+private:
+  winrt::Microsoft::ReactNative::ReactContext m_reactContext{nullptr};
 };
 
 } // namespace GumpDesktop

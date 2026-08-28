@@ -16,6 +16,7 @@ import {
   getPhotosForAlbum,
   persistAlbum,
   removePhotoFromAlbum,
+  flushUpdateCullingSummary,
   updateCullingSummary,
   updatePhoto,
 } from '@lib/culledAlbum/store';
@@ -108,7 +109,11 @@ function mapNativeFace(
 
 interface PlatformDetector {
   detectFaces(uri: string, photoId: string): Promise<CullingFace[]>;
-  analyzePhoto(uri: string, photoId: string): Promise<AnalyzedNativePhoto>;
+  analyzePhoto(
+    uri: string,
+    photoId: string,
+    options?: {skipCaptureTime?: boolean},
+  ): Promise<AnalyzedNativePhoto>;
 }
 
 function normalizePerceptualHash(value: unknown): string | null {
@@ -148,20 +153,23 @@ class NativeDetector implements PlatformDetector {
   async analyzePhoto(
     uri: string,
     photoId: string,
+    options?: {skipCaptureTime?: boolean},
   ): Promise<AnalyzedNativePhoto> {
     const unified = await analyzePhotoForCulling(uri);
     if (unified) {
       return {
         faces: mapDetectedFaces(unified.faces ?? [], photoId),
         perceptualHash: normalizePerceptualHash(unified.perceptualHash),
-        capturedAt: normalizeCapturedAt(unified.capturedAt),
+        capturedAt: options?.skipCaptureTime
+          ? null
+          : normalizeCapturedAt(unified.capturedAt),
       };
     }
 
     const [faces, perceptualHash, capturedAt] = await Promise.all([
       this.detectFaces(uri, photoId),
       computeImagePerceptualHash(uri),
-      readImageCaptureTime(uri),
+      options?.skipCaptureTime ? Promise.resolve(null) : readImageCaptureTime(uri),
     ]);
     return {faces, perceptualHash, capturedAt};
   }
@@ -187,11 +195,12 @@ class FallbackDetector implements PlatformDetector {
   async analyzePhoto(
     uri: string,
     photoId: string,
+    options?: {skipCaptureTime?: boolean},
   ): Promise<AnalyzedNativePhoto> {
     const [faces, perceptualHash, capturedAt] = await Promise.all([
       this.detectFaces(uri, photoId),
       computeImagePerceptualHash(uri),
-      readImageCaptureTime(uri),
+      options?.skipCaptureTime ? Promise.resolve(null) : readImageCaptureTime(uri),
     ]);
     return {faces, perceptualHash, capturedAt};
   }
@@ -429,6 +438,106 @@ function assignFaceClusterIdsIncremental(
   syncPhotoFromStore(albumId, photoId);
 }
 
+function ingestNativeAnalyzedPhoto(
+  albumId: string,
+  photoId: string,
+  analyzed: AnalyzedNativePhoto,
+): void {
+  const existing = getPhotoById(albumId, photoId);
+  if (!existing) {
+    return;
+  }
+
+  const faces = analyzed.faces;
+  const perceptualHash = existing.perceptualHash ?? analyzed.perceptualHash;
+  const capturedAt = existing.capturedAt ?? analyzed.capturedAt;
+  const flags = derivePhotoFlags(faces);
+  const isFirstAnalysis = existing.faces.length === 0;
+  const initialStarRating = existing.starRating ?? deriveStarRating(faces);
+  const fromStatus =
+    existing.analysisStatus === 'analyzing' ? 'analyzing' : 'pending';
+
+  updatePhoto(
+    albumId,
+    photoId,
+    photo => {
+      photo.faces = faces;
+      photo.perceptualHash = perceptualHash;
+      if (capturedAt != null) {
+        photo.capturedAt = capturedAt;
+      }
+      photo.analysisEngineVersion = currentAnalysisEngineVersion();
+      photo.aiSelected = flags.aiSelected;
+      photo.maybe = flags.maybe;
+      photo.blurred = flags.blurred;
+      photo.closedEyes = flags.closedEyes;
+      photo.duplicated = existing.duplicated ?? false;
+      photo.starRating = initialStarRating;
+      photo.selected = isFirstAnalysis ? flags.selected : existing.selected;
+      photo.analysisProgress = 100;
+      photo.analysisStatus = 'analyzed';
+      photo.analysisError = undefined;
+    },
+    {
+      recomputeTotals: false,
+      analysisCountShift: {from: fromStatus, to: 'analyzed'},
+    },
+  );
+}
+
+export type NativeSessionPhotoResult = {
+  photoId: string;
+  success: boolean;
+  error?: string;
+  faces?: NativeDetectedFace[];
+  perceptualHash?: string | null;
+  capturedAt?: number | null;
+};
+
+function ingestNativeSessionResults(
+  albumId: string,
+  results: NativeSessionPhotoResult[],
+): {analyzed: number; failed: number} {
+  let analyzed = 0;
+  let failed = 0;
+
+  for (const result of results) {
+    if (!result.success) {
+      const existing = getPhotoById(albumId, result.photoId);
+      const fromStatus =
+        existing?.analysisStatus === 'analyzing' ? 'analyzing' : 'pending';
+      updatePhoto(
+        albumId,
+        result.photoId,
+        photo => {
+          if (photo.analysisStatus === 'analyzed') {
+            return;
+          }
+          photo.analysisStatus = 'failed';
+          photo.analysisError = result.error || 'Analysis failed';
+          photo.analysisProgress = 0;
+        },
+        {
+          recomputeTotals: false,
+          analysisCountShift: {from: fromStatus, to: 'failed'},
+        },
+      );
+      failed += 1;
+      continue;
+    }
+
+    ingestNativeAnalyzedPhoto(albumId, result.photoId, {
+      faces: mapDetectedFaces(result.faces ?? [], result.photoId),
+      perceptualHash: normalizePerceptualHash(result.perceptualHash),
+      capturedAt: normalizeCapturedAt(result.capturedAt),
+    });
+    analyzed += 1;
+  }
+
+  flushPendingPhotoUpdates();
+  return {analyzed, failed};
+}
+
 export const cullingEngine = {
   async analyzePhoto(
     albumId: string,
@@ -443,7 +552,9 @@ export const cullingEngine = {
     }
 
     const nativeStartedAt = Date.now();
-    const analyzed = await detector.analyzePhoto(file.uri, photoId);
+    const analyzed = await detector.analyzePhoto(file.uri, photoId, {
+      skipCaptureTime: existing.capturedAt != null,
+    });
     const nativeMs = Date.now() - nativeStartedAt;
     const faces = analyzed.faces;
     const perceptualHash = existing.perceptualHash ?? analyzed.perceptualHash;
@@ -489,6 +600,8 @@ export const cullingEngine = {
     }
     return toCullingPhoto(updated);
   },
+
+  ingestNativeSessionResults,
 
   async getPhotos(albumId: string): Promise<APIResponse.CullingPhotoList> {
     return {results: await getAnalyzedPhotos(albumId)};
@@ -664,7 +777,7 @@ export const cullingEngine = {
     });
     flushPendingPhotoUpdates();
     await applyDuplicateFlags(albumId);
-    updateCullingSummary(albumId);
+    flushUpdateCullingSummary(albumId);
     await persistAlbum(albumId);
   },
 

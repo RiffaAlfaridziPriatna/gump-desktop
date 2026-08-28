@@ -12,9 +12,19 @@ import {
   isAnalysisBatchFinishedByCounts,
 } from './analysisProgress';
 import {
+  cancelNativeAnalysis,
+  isNativeAnalysisSupported,
+  startNativeAnalysis,
+  subscribeToNativeAnalysis,
+  unsubscribeFromNativeAnalysis,
+  type AnalysisCompleteEvent,
+} from './nativeAnalysisSession';
+import {
   getAlbum,
   flushPendingPhotoUpdates,
-  updateCullingSummary,
+  reconcileAnalysisBatchCounts,
+  scheduleUpdateCullingSummary,
+  setAnalysisBatchCounts,
   type UpdatePhotoOptions,
 } from './store';
 import {
@@ -72,6 +82,8 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
   const cancelGenerationByAlbum = new Map<string, number>();
   const cancelledAlbums = new Set<string>();
   const batchStartedAtByAlbum = new Map<string, number>();
+  const nativeSessionAlbums = new Set<string>();
+  const nativeStartInFlight = new Set<string>();
 
   function getCancelGeneration(albumId: string): number {
     return cancelGenerationByAlbum.get(albumId) ?? 0;
@@ -89,6 +101,8 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     settledPhotoIdsByAlbum.delete(albumId);
     pendingCursorByAlbum.delete(albumId);
     batchSignatureByAlbum.delete(albumId);
+    nativeSessionAlbums.delete(albumId);
+    nativeStartInFlight.delete(albumId);
     batchStartedAtByAlbum.set(albumId, Date.now());
   }
 
@@ -416,7 +430,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
             immediate: true,
           },
         );
-        updateCullingSummary(albumId);
+        scheduleUpdateCullingSummary(albumId);
         runOrDeferHeavyWorkForNavigation(() => {
           queuePhotoPersist(albumId, photoId);
           schedulePersist(albumId);
@@ -459,6 +473,16 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     bumpCancelGeneration(albumId);
     cancelledAlbums.add(albumId);
     clearScheduledAnalyzedPhotoAssets(albumId);
+    if (nativeSessionAlbums.has(albumId) || nativeStartInFlight.has(albumId)) {
+      nativeSessionAlbums.delete(albumId);
+      nativeStartInFlight.delete(albumId);
+      unsubscribeFromNativeAnalysis();
+      void cancelNativeAnalysis();
+      const active = getActiveAnalysisCount(albumId);
+      if (active > 0) {
+        trackActiveAnalysis(albumId, -active);
+      }
+    }
   }
 
   async function failQueuedAnalysis(
@@ -507,7 +531,114 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     schedulePersist(albumId);
   }
 
-  function processPending(albumId: string): void {
+  function finishNativeSession(
+    albumId: string,
+    generation: number,
+    event: AnalysisCompleteEvent,
+  ): void {
+    unsubscribeFromNativeAnalysis();
+    nativeSessionAlbums.delete(albumId);
+    nativeStartInFlight.delete(albumId);
+    const active = getActiveAnalysisCount(albumId);
+    if (active > 0) {
+      trackActiveAnalysis(albumId, -active);
+    }
+
+    if (isCancelled(albumId, generation)) {
+      return;
+    }
+
+    const results = event.results ?? [];
+    cullingEngine.ingestNativeSessionResults(albumId, results);
+
+    const resultIds = new Set(results.map(result => result.photoId));
+    for (const result of results) {
+      getSettledPhotoIds(albumId).add(result.photoId);
+      if (result.success) {
+        queuePhotoPersist(albumId, result.photoId);
+      }
+    }
+
+    for (const photoId of getPendingPhotoIds(albumId)) {
+      if (resultIds.has(photoId)) {
+        continue;
+      }
+      const photo = getPhoto(albumId, photoId);
+      if (
+        photo &&
+        photo.analysisStatus !== 'analyzed' &&
+        photo.analysisStatus !== 'failed'
+      ) {
+        failPhoto(albumId, photoId, 'Native analysis did not return a result');
+      }
+    }
+
+    reconcileAnalysisBatchCounts(albumId);
+    tryCompleteAlbum(albumId);
+  }
+
+  async function startNativeSession(albumId: string): Promise<boolean> {
+    if (!isNativeAnalysisSupported()) {
+      return false;
+    }
+
+    const pendingPhotoIds = getPendingPhotoIds(albumId);
+    const photos = pendingPhotoIds
+      .map(photoId => getPhoto(albumId, photoId))
+      .filter((photo): photo is CulledAlbumPhoto => {
+        if (!photo) {
+          return false;
+        }
+        return (
+          photo.analysisStatus === 'pending' || photo.analysisStatus === 'failed'
+        );
+      });
+
+    if (photos.length === 0) {
+      return false;
+    }
+
+    const generation = getCancelGeneration(albumId);
+    nativeSessionAlbums.add(albumId);
+    trackActiveAnalysis(albumId, 1);
+
+    subscribeToNativeAnalysis(
+      progress => {
+        if (isCancelled(albumId, generation)) {
+          return;
+        }
+        setAnalysisBatchCounts(albumId, {
+          total: progress.total,
+          pending: Math.max(0, progress.total - progress.done - progress.failed),
+          analyzing: 0,
+          analyzed: progress.done,
+          failed: progress.failed,
+        });
+      },
+      event => {
+        finishNativeSession(albumId, generation, event);
+      },
+    );
+
+    try {
+      await startNativeAnalysis(albumId, photos, {maxConcurrency});
+      return true;
+    } catch (error) {
+      unsubscribeFromNativeAnalysis();
+      nativeSessionAlbums.delete(albumId);
+      const active = getActiveAnalysisCount(albumId);
+      if (active > 0) {
+        trackActiveAnalysis(albumId, -active);
+      }
+      console.warn(
+        '[CulledAlbum] Native analysis failed, falling back to JS queue',
+        error,
+      );
+      return false;
+    }
+  }
+
+  function processPendingJs(albumId: string): void {
     if (isCancelled(albumId)) {
       return;
     }
@@ -579,6 +710,29 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       pendingCursorByAlbum.set(albumId, retryIndex);
       setTimeout(() => processPending(albumId), QUEUE_YIELD_MS);
     }
+  }
+
+  function processPending(albumId: string): void {
+    if (isCancelled(albumId)) {
+      return;
+    }
+    if (nativeSessionAlbums.has(albumId) || nativeStartInFlight.has(albumId)) {
+      return;
+    }
+
+    if (!isNativeAnalysisSupported()) {
+      processPendingJs(albumId);
+      return;
+    }
+
+    nativeStartInFlight.add(albumId);
+    void startNativeSession(albumId).then(started => {
+      nativeStartInFlight.delete(albumId);
+      if (started || isCancelled(albumId)) {
+        return;
+      }
+      processPendingJs(albumId);
+    });
   }
 
   return {beginBatch, requestCancel, cancel, processPending, tryCompleteAlbum};

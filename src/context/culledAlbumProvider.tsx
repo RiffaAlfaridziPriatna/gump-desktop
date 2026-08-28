@@ -69,14 +69,17 @@ function maxConcurrentServerUploadsForPlatform(): number {
 }
 
 function maxConcurrentAnalysisForPlatform(): number {
+  // SCRFD/OCEC pool is capped at 2. Extra JS slots only decode 4096px
+  // bitmaps that then wait — heat and RAM, not throughput. Keep one extra
+  // slot so decode can overlap the two ONNX workers.
   switch (Platform.OS) {
     case 'macos':
     case 'ios':
-      return 8;
+      return 3;
     case 'windows':
       return 2;
     default:
-      return 6;
+      return 3;
   }
 }
 

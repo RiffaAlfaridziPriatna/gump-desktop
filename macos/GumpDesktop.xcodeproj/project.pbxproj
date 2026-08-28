@@ -30,6 +30,11 @@
 		D1A2C3D40123456700000006 /* DifferenceHash.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000014 /* DifferenceHash.cpp */; };
 		D1A2C3D40123456700000007 /* ExifDateTime.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000016 /* ExifDateTime.cpp */; };
 		D1A2C3D40123456700000008 /* MediaDerivatives.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000018 /* MediaDerivatives.cpp */; };
+		E2B3C4D50123456700000001 /* GumpAnalysisSession.mm in Sources */ = {isa = PBXBuildFile; fileRef = E2B3C4D51123456700000001 /* GumpAnalysisSession.mm */; };
+		E3A4B5C60123456700000001 /* AnalysisSession.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000001 /* AnalysisSession.cpp */; };
+		E3A4B5C60123456700000002 /* PhotoFlags.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000003 /* PhotoFlags.cpp */; };
+		E3A4B5C60123456700000003 /* FaceCluster.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000005 /* FaceCluster.cpp */; };
+		E3A4B5C60123456700000004 /* DuplicateDetection.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000007 /* DuplicateDetection.cpp */; };
 		D1A2C3D40123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx */; };
 		D1A2C3D40123456700000011 /* eye_state_ocec_s.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000011 /* eye_state_ocec_s.onnx */; };
 		D1A2C3D40123456700000012 /* face_landmarks_2d106det.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */; };
@@ -62,6 +67,17 @@
 		C3D4E5F61123456700000002 /* GumpLocalStorage.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpLocalStorage.h; sourceTree = "<group>"; };
 		C4E5F6170123456700000001 /* GumpSharedFaceDetection.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpSharedFaceDetection.mm; sourceTree = "<group>"; };
 		C4E5F6170123456700000002 /* GumpSharedFaceDetection.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpSharedFaceDetection.h; sourceTree = "<group>"; };
+		E2B3C4D51123456700000001 /* GumpAnalysisSession.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpAnalysisSession.mm; sourceTree = "<group>"; };
+		E2B3C4D51123456700000002 /* GumpAnalysisSession.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpAnalysisSession.h; sourceTree = "<group>"; };
+		E3A4B5C61123456700000001 /* AnalysisSession.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = AnalysisSession.cpp; path = "../cpp/analysis/AnalysisSession.cpp"; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000002 /* AnalysisSession.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = AnalysisSession.h; path = "../cpp/analysis/AnalysisSession.h"; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000003 /* PhotoFlags.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PhotoFlags.cpp; path = "../cpp/analysis/PhotoFlags.cpp"; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000004 /* PhotoFlags.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PhotoFlags.h; path = "../cpp/analysis/PhotoFlags.h"; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000005 /* FaceCluster.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = FaceCluster.cpp; path = "../cpp/analysis/FaceCluster.cpp"; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000006 /* FaceCluster.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FaceCluster.h; path = "../cpp/analysis/FaceCluster.h"; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000007 /* DuplicateDetection.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = DuplicateDetection.cpp; path = "../cpp/analysis/DuplicateDetection.cpp"; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000008 /* DuplicateDetection.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DuplicateDetection.h; path = "../cpp/analysis/DuplicateDetection.h"; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000009 /* PlatformDecoder.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PlatformDecoder.h; path = "../cpp/analysis/PlatformDecoder.h"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000001 /* ScrfdFaceDetector.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ScrfdFaceDetector.cpp; path = "../cpp/face-detection/ScrfdFaceDetector.cpp"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000002 /* OcecEyeStateClassifier.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OcecEyeStateClassifier.cpp; path = "../cpp/face-detection/OcecEyeStateClassifier.cpp"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000003 /* FaceDetectionPipeline.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = FaceDetectionPipeline.cpp; path = "../cpp/face-detection/FaceDetectionPipeline.cpp"; sourceTree = SOURCE_ROOT; };
@@ -135,6 +151,8 @@
 				C3D4E5F61123456700000001 /* GumpLocalStorage.mm */,
 				C4E5F6170123456700000002 /* GumpSharedFaceDetection.h */,
 				C4E5F6170123456700000001 /* GumpSharedFaceDetection.mm */,
+				E2B3C4D51123456700000002 /* GumpAnalysisSession.h */,
+				E2B3C4D51123456700000001 /* GumpAnalysisSession.mm */,
 				514201512437B4B40078DB4F /* Assets.xcassets */,
 				B1A2C3D42123456700000001 /* Fonts */,
 				D1A2C3D42123456700000001 /* Models */,
@@ -158,6 +176,7 @@
 			children = (
 				5142014A2437B4B30078DB4F /* GumpDesktop-macOS */,
 				D1A2C3D42123456700000002 /* FaceDetection */,
+				E3A4B5C62123456700000001 /* Analysis */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
@@ -221,6 +240,22 @@
 				D1A2C3D41123456700000018 /* MediaDerivatives.cpp */,
 			);
 			name = FaceDetection;
+			sourceTree = "<group>";
+		};
+		E3A4B5C62123456700000001 /* Analysis */ = {
+			isa = PBXGroup;
+			children = (
+				E3A4B5C61123456700000002 /* AnalysisSession.h */,
+				E3A4B5C61123456700000001 /* AnalysisSession.cpp */,
+				E3A4B5C61123456700000004 /* PhotoFlags.h */,
+				E3A4B5C61123456700000003 /* PhotoFlags.cpp */,
+				E3A4B5C61123456700000006 /* FaceCluster.h */,
+				E3A4B5C61123456700000005 /* FaceCluster.cpp */,
+				E3A4B5C61123456700000008 /* DuplicateDetection.h */,
+				E3A4B5C61123456700000007 /* DuplicateDetection.cpp */,
+				E3A4B5C61123456700000009 /* PlatformDecoder.h */,
+			);
+			name = Analysis;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -453,6 +488,11 @@
 				C2B3C4D50123456700000001 /* GumpVisualEffectView.mm in Sources */,
 				C3D4E5F60123456700000001 /* GumpLocalStorage.mm in Sources */,
 				C4E5F6070123456700000001 /* GumpSharedFaceDetection.mm in Sources */,
+				E2B3C4D50123456700000001 /* GumpAnalysisSession.mm in Sources */,
+				E3A4B5C60123456700000001 /* AnalysisSession.cpp in Sources */,
+				E3A4B5C60123456700000002 /* PhotoFlags.cpp in Sources */,
+				E3A4B5C60123456700000003 /* FaceCluster.cpp in Sources */,
+				E3A4B5C60123456700000004 /* DuplicateDetection.cpp in Sources */,
 				D1A2C3D40123456700000001 /* ScrfdFaceDetector.cpp in Sources */,
 				D1A2C3D40123456700000002 /* OcecEyeStateClassifier.cpp in Sources */,
 				D1A2C3D40123456700000004 /* Landmark106EarClassifier.cpp in Sources */,
@@ -536,6 +576,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(SRCROOT)/../cpp/face-detection",
+					"$(SRCROOT)/../cpp/analysis",
 				);
 				INFOPLIST_FILE = "GumpDesktop-macos/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -571,6 +612,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(SRCROOT)/../cpp/face-detection",
+					"$(SRCROOT)/../cpp/analysis",
 				);
 				INFOPLIST_FILE = "GumpDesktop-macos/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
