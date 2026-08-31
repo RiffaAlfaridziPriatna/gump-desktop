@@ -1660,7 +1660,8 @@ void GumpLocalStorage::StartAnalysis(
 
     // Check if session already running
     if (g_analysisSession && g_analysisSession->IsRunning()) {
-      promise.Reject("ALREADY_RUNNING", "Analysis session is already running");
+      promise.Reject(winrtRN::ReactError{
+          "ALREADY_RUNNING", "Analysis session is already running"});
       return;
     }
 
@@ -1743,7 +1744,8 @@ void GumpLocalStorage::StartAnalysis(
     if (!started) {
       g_analysisSession.reset();
       g_decoder.reset();
-      promise.Reject("START_FAILED", "Failed to start analysis session");
+      promise.Reject(winrtRN::ReactError{
+          "START_FAILED", "Failed to start analysis session"});
       return;
     }
 
@@ -1752,9 +1754,9 @@ void GumpLocalStorage::StartAnalysis(
     promise.Resolve(result);
 
   } catch (const std::exception &e) {
-    promise.Reject("ERROR", e.what());
+    promise.Reject(winrtRN::ReactError{"ERROR", e.what()});
   } catch (...) {
-    promise.Reject("ERROR", "Unknown error starting analysis");
+    promise.Reject(winrtRN::ReactError{"ERROR", "Unknown error starting analysis"});
   }
 }
 
@@ -1763,7 +1765,8 @@ void GumpLocalStorage::CancelAnalysis(ReactPromiseJS &&promise) noexcept {
     std::lock_guard<std::mutex> lock(g_sessionMutex);
 
     if (!g_analysisSession) {
-      promise.Reject("NO_SESSION", "No analysis session exists");
+      promise.Reject(winrtRN::ReactError{
+          "NO_SESSION", "No analysis session exists"});
       return;
     }
 
@@ -1774,7 +1777,7 @@ void GumpLocalStorage::CancelAnalysis(ReactPromiseJS &&promise) noexcept {
     promise.Resolve(result);
 
   } catch (const std::exception &e) {
-    promise.Reject("ERROR", e.what());
+    promise.Reject(winrtRN::ReactError{"ERROR", e.what()});
   }
 }
 
@@ -1783,7 +1786,8 @@ void GumpLocalStorage::PauseAnalysis(ReactPromiseJS &&promise) noexcept {
     std::lock_guard<std::mutex> lock(g_sessionMutex);
 
     if (!g_analysisSession) {
-      promise.Reject("NO_SESSION", "No analysis session exists");
+      promise.Reject(winrtRN::ReactError{
+          "NO_SESSION", "No analysis session exists"});
       return;
     }
 
@@ -1794,7 +1798,7 @@ void GumpLocalStorage::PauseAnalysis(ReactPromiseJS &&promise) noexcept {
     promise.Resolve(result);
 
   } catch (const std::exception &e) {
-    promise.Reject("ERROR", e.what());
+    promise.Reject(winrtRN::ReactError{"ERROR", e.what()});
   }
 }
 
@@ -1803,7 +1807,8 @@ void GumpLocalStorage::ResumeAnalysis(ReactPromiseJS &&promise) noexcept {
     std::lock_guard<std::mutex> lock(g_sessionMutex);
 
     if (!g_analysisSession) {
-      promise.Reject("NO_SESSION", "No analysis session exists");
+      promise.Reject(winrtRN::ReactError{
+          "NO_SESSION", "No analysis session exists"});
       return;
     }
 
@@ -1814,7 +1819,7 @@ void GumpLocalStorage::ResumeAnalysis(ReactPromiseJS &&promise) noexcept {
     promise.Resolve(result);
 
   } catch (const std::exception &e) {
-    promise.Reject("ERROR", e.what());
+    promise.Reject(winrtRN::ReactError{"ERROR", e.what()});
   }
 }
 
@@ -1829,7 +1834,7 @@ void GumpLocalStorage::IsAnalysisRunning(ReactPromiseJS &&promise) noexcept {
     promise.Resolve(result);
 
   } catch (const std::exception &e) {
-    promise.Reject("ERROR", e.what());
+    promise.Reject(winrtRN::ReactError{"ERROR", e.what()});
   }
 }
 
