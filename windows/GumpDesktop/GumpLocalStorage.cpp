@@ -1585,15 +1585,14 @@ void EmitAnalysisProgress(const Analysis::ProgressUpdate &progress) {
     return;
   }
 
-  winrtRN::JSValueObject event;
-  event["done"] = progress.done;
-  event["failed"] = progress.failed;
-  event["total"] = progress.total;
-
   g_sessionReactContext.EmitJSEvent(
       L"RCTDeviceEventEmitter",
       L"analysisProgress",
-      event);
+      winrtRN::JSValue(winrtRN::JSValueObject{
+          {"done", progress.done},
+          {"failed", progress.failed},
+          {"total", progress.total},
+      }));
 }
 
 void EmitAnalysisComplete(const Analysis::CompletionSummary &summary) {
@@ -1605,37 +1604,37 @@ void EmitAnalysisComplete(const Analysis::CompletionSummary &summary) {
   for (const auto &result : summary.results) {
     winrtRN::JSValueArray facesArray;
     for (const auto &face : result.faces) {
-      facesArray.push_back(FaceToJsObject(face));
+      facesArray.push_back(winrtRN::JSValue(FaceToJsObject(face)));
     }
 
-    winrtRN::JSValueObject photoObj;
-    photoObj["photoId"] = result.photoId;
-    photoObj["success"] = result.success;
-    photoObj["error"] = result.error;
-    photoObj["faces"] = std::move(facesArray);
-    if (result.perceptualHash.empty()) {
-      photoObj["perceptualHash"] = nullptr;
-    } else {
-      photoObj["perceptualHash"] = result.perceptualHash;
+    winrtRN::JSValue perceptualHash = nullptr;
+    if (!result.perceptualHash.empty()) {
+      perceptualHash = result.perceptualHash;
     }
-    if (result.capturedAt == 0) {
-      photoObj["capturedAt"] = nullptr;
-    } else {
-      photoObj["capturedAt"] = static_cast<double>(result.capturedAt);
+    winrtRN::JSValue capturedAt = nullptr;
+    if (result.capturedAt != 0) {
+      capturedAt = static_cast<double>(result.capturedAt);
     }
-    resultsArray.push_back(std::move(photoObj));
+
+    resultsArray.push_back(winrtRN::JSValue(winrtRN::JSValueObject{
+        {"photoId", result.photoId},
+        {"success", result.success},
+        {"error", result.error},
+        {"faces", std::move(facesArray)},
+        {"perceptualHash", std::move(perceptualHash)},
+        {"capturedAt", std::move(capturedAt)},
+    }));
   }
-
-  winrtRN::JSValueObject event;
-  event["done"] = summary.done;
-  event["total"] = summary.total;
-  event["failed"] = summary.failed;
-  event["results"] = std::move(resultsArray);
 
   g_sessionReactContext.EmitJSEvent(
       L"RCTDeviceEventEmitter",
       L"analysisComplete",
-      event);
+      winrtRN::JSValue(winrtRN::JSValueObject{
+          {"done", summary.done},
+          {"total", summary.total},
+          {"failed", summary.failed},
+          {"results", winrtRN::JSValue(std::move(resultsArray))},
+      }));
 }
 
 } // anonymous namespace
@@ -1676,7 +1675,7 @@ void GumpLocalStorage::StartAnalysis(
     sessionConfig.progressIntervalMs = 500;
 
     if (config.Type() == winrtRN::JSValueType::Object) {
-      auto configObj = config.AsObject();
+      const auto &configObj = config.AsObject();
       if (configObj.count("maxConcurrency") &&
           configObj["maxConcurrency"].Type() == winrtRN::JSValueType::Int64) {
         sessionConfig.maxConcurrency =
@@ -1710,7 +1709,7 @@ void GumpLocalStorage::StartAnalysis(
         continue;
       }
 
-      const auto photoObj = photo.AsObject();
+      const auto &photoObj = photo.AsObject();
       Analysis::PhotoInput input;
 
       if (photoObj.count("photoId") && photoObj["photoId"].Type() == winrtRN::JSValueType::String) {
@@ -1749,9 +1748,7 @@ void GumpLocalStorage::StartAnalysis(
       return;
     }
 
-    auto result = winrtRN::JSValueObject();
-    result["success"] = true;
-    promise.Resolve(result);
+    promise.Resolve(winrtRN::JSValue(winrtRN::JSValueObject{{"success", true}}));
 
   } catch (const std::exception &e) {
     promise.Reject(winrtRN::ReactError{"ERROR", e.what()});
@@ -1772,9 +1769,8 @@ void GumpLocalStorage::CancelAnalysis(ReactPromiseJS &&promise) noexcept {
 
     g_analysisSession->Cancel();
 
-    auto result = winrtRN::JSValueObject();
-    result["cancelled"] = true;
-    promise.Resolve(result);
+    promise.Resolve(
+        winrtRN::JSValue(winrtRN::JSValueObject{{"cancelled", true}}));
 
   } catch (const std::exception &e) {
     promise.Reject(winrtRN::ReactError{"ERROR", e.what()});
@@ -1793,9 +1789,8 @@ void GumpLocalStorage::PauseAnalysis(ReactPromiseJS &&promise) noexcept {
 
     g_analysisSession->Pause();
 
-    auto result = winrtRN::JSValueObject();
-    result["paused"] = true;
-    promise.Resolve(result);
+    promise.Resolve(
+        winrtRN::JSValue(winrtRN::JSValueObject{{"paused", true}}));
 
   } catch (const std::exception &e) {
     promise.Reject(winrtRN::ReactError{"ERROR", e.what()});
@@ -1814,9 +1809,8 @@ void GumpLocalStorage::ResumeAnalysis(ReactPromiseJS &&promise) noexcept {
 
     g_analysisSession->Resume();
 
-    auto result = winrtRN::JSValueObject();
-    result["resumed"] = true;
-    promise.Resolve(result);
+    promise.Resolve(
+        winrtRN::JSValue(winrtRN::JSValueObject{{"resumed", true}}));
 
   } catch (const std::exception &e) {
     promise.Reject(winrtRN::ReactError{"ERROR", e.what()});
@@ -1829,9 +1823,8 @@ void GumpLocalStorage::IsAnalysisRunning(ReactPromiseJS &&promise) noexcept {
 
     const bool running = g_analysisSession && g_analysisSession->IsRunning();
 
-    auto result = winrtRN::JSValueObject();
-    result["running"] = running;
-    promise.Resolve(result);
+    promise.Resolve(
+        winrtRN::JSValue(winrtRN::JSValueObject{{"running", running}}));
 
   } catch (const std::exception &e) {
     promise.Reject(winrtRN::ReactError{"ERROR", e.what()});

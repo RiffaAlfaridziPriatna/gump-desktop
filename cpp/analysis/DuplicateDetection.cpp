@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <climits>
 #include <cmath>
+#include <cstdint>
 #include <regex>
 
 namespace Analysis {

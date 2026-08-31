@@ -29,13 +29,13 @@ PhotoFlags DerivePhotoFlags(const std::vector<FaceDetection::FaceResult> &faces)
   bool aiSelected = !closedEyes && !blurred && !hasPartial && !hasSoft;
   bool maybe = !closedEyes && !blurred && (hasPartial || hasSoft);
 
-  return PhotoFlags{
-      .aiSelected = aiSelected,
-      .maybe = maybe,
-      .blurred = blurred,
-      .closedEyes = closedEyes,
-      .selected = aiSelected || maybe
-  };
+  PhotoFlags flags;
+  flags.aiSelected = aiSelected;
+  flags.maybe = maybe;
+  flags.blurred = blurred;
+  flags.closedEyes = closedEyes;
+  flags.selected = aiSelected || maybe;
+  return flags;
 }
 
 FaceTier ComputeFaceTier(const FaceDetection::FaceResult &face) {
