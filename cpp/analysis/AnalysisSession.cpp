@@ -440,7 +440,23 @@ struct AnalysisSession::Impl {
     running.store(false);
   }
 
+  void JoinFinishedThreads() {
+    for (auto &thread : workerThreads) {
+      if (thread.joinable()) {
+        thread.join();
+      }
+    }
+    workerThreads.clear();
+    if (orchestratorThread.joinable()) {
+      orchestratorThread.join();
+    }
+  }
+
   void Start() {
+    // A finished session still owns a joinable orchestrator thread. Assigning a
+    // new std::thread over it (or destroying joinable threads) calls terminate.
+    JoinFinishedThreads();
+
     {
       std::lock_guard<std::mutex> queueLock(queueMutex);
       while (!jobQueue.empty()) {
@@ -457,7 +473,6 @@ struct AnalysisSession::Impl {
     completedCount.store(0);
     failedCount.store(0);
     dynamicDelayMs.store(std::max(config.interJobDelayMs, 0));
-    workerThreads.clear();
 
     EnqueueJobs();
 
@@ -476,27 +491,15 @@ struct AnalysisSession::Impl {
   void Stop() {
     running.store(false);
     queueCondition.notify_all();
-
-    for (auto &thread : workerThreads) {
-      if (thread.joinable()) {
-        thread.join();
-      }
-    }
-
-    if (orchestratorThread.joinable()) {
-      orchestratorThread.join();
-    }
-
-    workerThreads.clear();
+    JoinFinishedThreads();
   }
 };
 
 AnalysisSession::AnalysisSession() : impl_(std::make_unique<Impl>()) {}
 
 AnalysisSession::~AnalysisSession() {
-  if (impl_->running.load()) {
-    Cancel();
-  }
+  impl_->cancelled.store(true);
+  impl_->Stop();
 }
 
 bool AnalysisSession::Start(const SessionConfig &config) {
