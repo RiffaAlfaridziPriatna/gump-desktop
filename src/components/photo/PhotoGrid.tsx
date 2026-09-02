@@ -2,10 +2,7 @@ import {scheduleHydrateVisiblePhotos} from '@hooks/useVisiblePhotos';
 import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import type {AlbumGridFileItem} from '@lib/culledAlbum/stableAlbumGridFiles';
 import {persistThumbnailDimensions} from '@lib/culledAlbum/persistThumbnailDimensions';
-import {
-  scheduleResolveExistingThumbnails,
-  scheduleThumbnailBackfillForPhotos,
-} from '@lib/culledAlbum/thumbnailBackfill';
+import {scheduleThumbnailBackfillForPhotos} from '@lib/culledAlbum/thumbnailBackfill';
 import {
   getCachedImageDimensions,
   getCulledAlbumThumbnailLayout,
@@ -58,9 +55,10 @@ const ASPECT_RATIO = 3 / 2;
 const HORIZONTAL_PADDING = 48;
 const GAP = 8;
 const RESIZE_SETTLE_MS = 150;
-const SCROLL_TO_TOP_DURATION_MS = 450;
 const PLACEHOLDER_INITIAL_ROWS = 8;
 const GRAY_FILL_BATCH_PERIOD_MS = 50;
+const SCROLL_SETTLE_MS = 120;
+const SCROLL_TO_TOP_DURATION_MS = 450;
 const EMPTY_IMAGE_LOAD_IDS = new Set<string>();
 
 type ImageLoadStore = {
@@ -143,11 +141,13 @@ const PhotoGridCellImage = memo(
     photoId,
     width,
     height,
+    deferHeavyMediaWork,
   }: {
     albumId?: string;
     photoId: string;
     width: number;
     height: number;
+    deferHeavyMediaWork: boolean;
   }) {
     const shouldLoadImage = useShouldLoadGridImage(photoId);
     const photo = useCulledAlbumPhoto(albumId, photoId);
@@ -187,7 +187,13 @@ const PhotoGridCellImage = memo(
         if (uri) {
           putCachedImageDimensions(uri, stored);
         }
-        setImageSize(stored);
+        setImageSize(current =>
+          current &&
+          current.width === stored.width &&
+          current.height === stored.height
+            ? current
+            : stored,
+        );
         return;
       }
 
@@ -195,9 +201,19 @@ const PhotoGridCellImage = memo(
         return;
       }
 
+      if (deferHeavyMediaWork) {
+        return;
+      }
+
       const cached = getCachedImageDimensions(uri);
       if (cached) {
-        setImageSize(cached);
+        setImageSize(current =>
+          current &&
+          current.width === cached.width &&
+          current.height === cached.height
+            ? current
+            : cached,
+        );
         if (albumId) {
           persistThumbnailDimensions(albumId, photoId, cached);
         }
@@ -210,7 +226,13 @@ const PhotoGridCellImage = memo(
         if (cancelled || !dimensions) {
           return;
         }
-        setImageSize(dimensions);
+        setImageSize(current =>
+          current &&
+          current.width === dimensions.width &&
+          current.height === dimensions.height
+            ? current
+            : dimensions,
+        );
         if (albumId) {
           persistThumbnailDimensions(albumId, photoId, dimensions);
         }
@@ -219,7 +241,7 @@ const PhotoGridCellImage = memo(
       return () => {
         cancelled = true;
       };
-    }, [albumId, file, photoId, shouldLoadImage, uri]);
+    }, [albumId, deferHeavyMediaWork, file, photoId, shouldLoadImage, uri]);
 
     const handleLoad = useCallback(
       (event: NativeSyntheticEvent<ImageLoadEventData>) => {
@@ -252,20 +274,28 @@ const PhotoGridCellImage = memo(
           styles.itemContainer,
           {width, height, backgroundColor: colors.cardBackgroundSecondary},
         ]}>
-        {shouldLoadImage && uri && imageLayout ? (
+        {uri && (shouldLoadImage || isLoaded) ? (
           <Image
             source={{uri}}
             onLoad={handleLoad}
             onError={() => setIsLoaded(true)}
             style={[
               styles.containedImage,
-              {
-                width: imageLayout.width,
-                height: imageLayout.height,
-                left: imageLayout.left,
-                top: imageLayout.top,
-                opacity: isLoaded ? 1 : 0,
-              },
+              imageLayout
+                ? {
+                    width: imageLayout.width,
+                    height: imageLayout.height,
+                    left: imageLayout.left,
+                    top: imageLayout.top,
+                    opacity: isLoaded ? 1 : 0,
+                  }
+                : {
+                    width,
+                    height,
+                    left: 0,
+                    top: 0,
+                    opacity: isLoaded ? 1 : 0,
+                  },
             ]}
           />
         ) : null}
@@ -276,7 +306,8 @@ const PhotoGridCellImage = memo(
     prev.albumId === next.albumId &&
     prev.photoId === next.photoId &&
     prev.width === next.width &&
-    prev.height === next.height,
+    prev.height === next.height &&
+    prev.deferHeavyMediaWork === next.deferHeavyMediaWork,
 );
 
 type PhotoGridCell = {
@@ -297,6 +328,7 @@ type PhotoGridRowViewProps = {
   itemWidth: number;
   itemHeight: number;
   gap: number;
+  deferHeavyMediaWork: boolean;
 };
 
 const PhotoGridRowView = memo(
@@ -306,6 +338,7 @@ const PhotoGridRowView = memo(
     itemWidth,
     itemHeight,
     gap,
+    deferHeavyMediaWork,
   }: PhotoGridRowViewProps) {
     return (
       <View style={[styles.row, {marginBottom: gap, gap}]}>
@@ -316,6 +349,7 @@ const PhotoGridRowView = memo(
             photoId={cell.photoId}
             width={itemWidth}
             height={itemHeight}
+            deferHeavyMediaWork={deferHeavyMediaWork}
           />
         ))}
         {row.cells.length < COLUMNS &&
@@ -339,7 +373,8 @@ const PhotoGridRowView = memo(
     prev.albumId === next.albumId &&
     prev.itemWidth === next.itemWidth &&
     prev.itemHeight === next.itemHeight &&
-    prev.gap === next.gap,
+    prev.gap === next.gap &&
+    prev.deferHeavyMediaWork === next.deferHeavyMediaWork,
 );
 
 export type PhotoGridProps = {
@@ -347,6 +382,7 @@ export type PhotoGridProps = {
   albumId?: string;
   horizontalPadding?: number;
   gap?: number;
+  deferHeavyMediaWork?: boolean;
 };
 
 export type PhotoGridHandle = {
@@ -384,6 +420,7 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       albumId,
       horizontalPadding = HORIZONTAL_PADDING,
       gap = GAP,
+      deferHeavyMediaWork = false,
     },
     ref,
   ) {
@@ -396,9 +433,20 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
   const scrollAnimationFrameRef = useRef<number | null>(null);
   const itemsRef = useRef(items);
   const albumIdRef = useRef(albumId);
+  const deferHeavyMediaWorkRef = useRef(deferHeavyMediaWork);
   const lastPreloadRangeRef = useRef('');
   const lastHydrateRangeRef = useRef('');
   const lastThumbnailRangeRef = useRef('');
+  const pendingViewableRef = useRef<{
+    start: number;
+    end: number;
+    indices: number[];
+  } | null>(null);
+  const scrollSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const isScrollingRef = useRef(false);
+  const isProgrammaticScrollRef = useRef(false);
   const imageLoadStoreRef = useRef<ImageLoadStore | null>(null);
   if (imageLoadStoreRef.current == null) {
     imageLoadStoreRef.current = createImageLoadStore();
@@ -407,30 +455,57 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
 
   itemsRef.current = items;
   albumIdRef.current = albumId;
+  deferHeavyMediaWorkRef.current = deferHeavyMediaWork;
+
+  const ignoreViewabilityUntilRef = useRef(0);
 
   const cancelScrollAnimation = useCallback(() => {
     if (scrollAnimationFrameRef.current != null) {
       cancelAnimationFrame(scrollAnimationFrameRef.current);
       scrollAnimationFrameRef.current = null;
     }
+    isProgrammaticScrollRef.current = false;
   }, []);
 
-  const scrollToTopSmooth = useCallback(() => {
+  const scrollToTop = useCallback(() => {
     const list = listRef.current;
     if (!list) {
       return;
     }
 
-    cancelScrollAnimation();
+    if (scrollAnimationFrameRef.current != null) {
+      cancelAnimationFrame(scrollAnimationFrameRef.current);
+      scrollAnimationFrameRef.current = null;
+    }
 
     const startOffset = scrollOffsetRef.current;
     if (startOffset <= 0) {
       return;
     }
 
+    isProgrammaticScrollRef.current = true;
+    isScrollingRef.current = true;
+    // Programmatic flight would otherwise hydrate/load every window we pass.
+    ignoreViewabilityUntilRef.current =
+      Date.now() + SCROLL_TO_TOP_DURATION_MS + SCROLL_SETTLE_MS;
+
     const startTime = Date.now();
 
+    const finish = () => {
+      list.scrollToOffset({offset: 0, animated: false});
+      scrollOffsetRef.current = 0;
+      scrollAnimationFrameRef.current = null;
+      isProgrammaticScrollRef.current = false;
+      ignoreViewabilityUntilRef.current = 0;
+      isScrollingRef.current = false;
+    };
+
     const step = () => {
+      if (!isProgrammaticScrollRef.current) {
+        scrollAnimationFrameRef.current = null;
+        return;
+      }
+
       const elapsed = Date.now() - startTime;
       const progress = Math.min(1, elapsed / SCROLL_TO_TOP_DURATION_MS);
       const nextOffset = startOffset * (1 - easeOutCubic(progress));
@@ -443,20 +518,18 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
         return;
       }
 
-      list.scrollToOffset({offset: 0, animated: false});
-      scrollOffsetRef.current = 0;
-      scrollAnimationFrameRef.current = null;
+      finish();
     };
 
     scrollAnimationFrameRef.current = requestAnimationFrame(step);
-  }, [cancelScrollAnimation]);
+  }, []);
 
   useImperativeHandle(
     ref,
     () => ({
-      scrollToTop: scrollToTopSmooth,
+      scrollToTop,
     }),
-    [scrollToTopSmooth],
+    [scrollToTop],
   );
 
   useEffect(() => {
@@ -466,15 +539,119 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       if (resizeTimerRef.current) {
         clearTimeout(resizeTimerRef.current);
       }
+      if (scrollSettleTimerRef.current) {
+        clearTimeout(scrollSettleTimerRef.current);
+      }
     };
   }, [cancelScrollAnimation]);
 
+  const applyVisibleRange = useCallback(
+    (start: number, end: number, indices: number[]) => {
+      const currentItems = itemsRef.current;
+      const currentAlbumId = albumIdRef.current;
+
+      if (currentAlbumId) {
+        const hydrateKey = `${start}:${end}`;
+        if (lastHydrateRangeRef.current !== hydrateKey) {
+          lastHydrateRangeRef.current = hydrateKey;
+          scheduleHydrateVisiblePhotos(
+            currentAlbumId,
+            indices,
+            SCROLL_GRID_VISIBLE_PADDING,
+          );
+        }
+
+        const thumbnailKey = `${start}:${end}`;
+        if (
+          !deferHeavyMediaWorkRef.current &&
+          lastThumbnailRangeRef.current !== thumbnailKey
+        ) {
+          lastThumbnailRangeRef.current = thumbnailKey;
+          const photoIdsNeedingThumbnail = currentItems
+            .slice(start, end)
+            .filter(item => !isUsableThumbnailUri(item.file.thumbnailUri))
+            .map(item => item.photoId);
+          if (photoIdsNeedingThumbnail.length > 0) {
+            scheduleThumbnailBackfillForPhotos(
+              currentAlbumId,
+              photoIdsNeedingThumbnail,
+            );
+          }
+        }
+      }
+
+      const rangeItems = currentItems.slice(start, end);
+      const nextLoadIds = new Set(imageLoadStore.getIds());
+      for (const item of rangeItems) {
+        nextLoadIds.add(item.photoId);
+      }
+      imageLoadStore.setIds(nextLoadIds);
+
+      if (deferHeavyMediaWorkRef.current) {
+        return;
+      }
+
+      const preloadKey = `${start}:${end}`;
+      if (lastPreloadRangeRef.current === preloadKey) {
+        return;
+      }
+      lastPreloadRangeRef.current = preloadKey;
+      scheduleScrollImagePreload(rangeItems.map(item => item.file));
+    },
+    [imageLoadStore],
+  );
+
+  const flushPendingVisibleRange = useCallback(() => {
+    const pending = pendingViewableRef.current;
+    if (!pending) {
+      return;
+    }
+    pendingViewableRef.current = null;
+    applyVisibleRange(pending.start, pending.end, pending.indices);
+  }, [applyVisibleRange]);
+
+  const markScrollIdle = useCallback(() => {
+    scrollSettleTimerRef.current = null;
+    isScrollingRef.current = false;
+    flushPendingVisibleRange();
+  }, [flushPendingVisibleRange]);
+
+  useEffect(() => {
+    if (deferHeavyMediaWork) {
+      return;
+    }
+    flushPendingVisibleRange();
+  }, [deferHeavyMediaWork, flushPendingVisibleRange]);
+
+  const markScrolling = useCallback(() => {
+    cancelScrollAnimation();
+    isScrollingRef.current = true;
+    if (scrollSettleTimerRef.current) {
+      clearTimeout(scrollSettleTimerRef.current);
+    }
+    scrollSettleTimerRef.current = setTimeout(markScrollIdle, SCROLL_SETTLE_MS);
+  }, [cancelScrollAnimation, markScrollIdle]);
+
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+      const nextOffset = event.nativeEvent.contentOffset.y;
+      const delta = Math.abs(nextOffset - scrollOffsetRef.current);
+      scrollOffsetRef.current = nextOffset;
+      if (isProgrammaticScrollRef.current) {
+        return;
+      }
+      if (delta < 1 && !isScrollingRef.current) {
+        return;
+      }
+      markScrolling();
     },
-    [],
+    [markScrolling],
   );
+
+  const handleScrollBeginDrag = useCallback(() => {
+    ignoreViewabilityUntilRef.current = 0;
+    markScrolling();
+  }, [markScrolling]);
 
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     const width = event.nativeEvent.layout.width;
@@ -518,6 +695,11 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
   );
 
   useEffect(() => {
+    const existingIds = imageLoadStore.getIds();
+    if (existingIds.size > 0) {
+      return;
+    }
+
     const initialIds = new Set(
       itemsRef.current
         .slice(0, COLUMNS * PLACEHOLDER_INITIAL_ROWS)
@@ -539,6 +721,10 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
         return;
       }
 
+      if (Date.now() < ignoreViewabilityUntilRef.current) {
+        return;
+      }
+
       const currentItems = itemsRef.current;
       const minIndex = Math.min(...indices);
       const maxIndex = Math.max(...indices);
@@ -549,49 +735,16 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
         COLUMNS,
       );
 
-      const currentAlbumId = albumIdRef.current;
-      if (currentAlbumId) {
-        const hydrateKey = `${start}:${end}`;
-        if (lastHydrateRangeRef.current !== hydrateKey) {
-          lastHydrateRangeRef.current = hydrateKey;
-          scheduleHydrateVisiblePhotos(
-            currentAlbumId,
-            indices,
-            SCROLL_GRID_VISIBLE_PADDING,
-          );
-        }
-
-        const thumbnailKey = `${start}:${end}`;
-        if (lastThumbnailRangeRef.current !== thumbnailKey) {
-          lastThumbnailRangeRef.current = thumbnailKey;
-          const photoIdsNeedingThumbnail = currentItems
-            .slice(start, end)
-            .filter(item => !isUsableThumbnailUri(item.file.thumbnailUri))
-            .map(item => item.photoId);
-          if (photoIdsNeedingThumbnail.length > 0) {
-            scheduleResolveExistingThumbnails(
-              currentAlbumId,
-              photoIdsNeedingThumbnail,
-            );
-            scheduleThumbnailBackfillForPhotos(
-              currentAlbumId,
-              photoIdsNeedingThumbnail,
-            );
-          }
-        }
-      }
-
-      const rangeItems = currentItems.slice(start, end);
-      imageLoadStore.setIds(new Set(rangeItems.map(item => item.photoId)));
-
-      const preloadKey = `${start}:${end}`;
-      if (lastPreloadRangeRef.current === preloadKey) {
+      // Hold new image loads until scroll settles only while analysis is
+      // saturating the JS/native threads. After that, fling should paint.
+      if (deferHeavyMediaWorkRef.current && isScrollingRef.current) {
+        pendingViewableRef.current = {start, end, indices};
         return;
       }
-      lastPreloadRangeRef.current = preloadKey;
-      scheduleScrollImagePreload(rangeItems.map(item => item.file));
+
+      applyVisibleRange(start, end, indices);
     },
-    [imageLoadStore],
+    [applyVisibleRange],
   );
 
   const onViewableItemsChangedRef = useRef(handleViewableItemsChanged);
@@ -614,9 +767,10 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
         itemWidth={itemWidth}
         itemHeight={itemHeight}
         gap={gap}
+        deferHeavyMediaWork={deferHeavyMediaWork}
       />
     ),
-    [albumId, gap, itemHeight, itemWidth],
+    [albumId, deferHeavyMediaWork, gap, itemHeight, itemWidth],
   );
 
   const keyExtractor = useCallback((row: PhotoGridRow) => row.key, []);
@@ -645,13 +799,16 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
             keyExtractor={keyExtractor}
             getItemLayout={getItemLayout}
             extraData={settledItemWidth}
-            windowSize={Platform.OS === 'windows' ? 3 : 7}
+            windowSize={
+              deferHeavyMediaWork || Platform.OS === 'windows' ? 3 : 7
+            }
             removeClippedSubviews={false}
             initialNumToRender={PLACEHOLDER_INITIAL_ROWS}
-            maxToRenderPerBatch={6}
+            maxToRenderPerBatch={deferHeavyMediaWork ? 3 : 6}
             updateCellsBatchingPeriod={GRAY_FILL_BATCH_PERIOD_MS}
             showsVerticalScrollIndicator
             onScroll={handleScroll}
+            onScrollBeginDrag={handleScrollBeginDrag}
             scrollEventThrottle={16}
             contentContainerStyle={[
               styles.listContent,

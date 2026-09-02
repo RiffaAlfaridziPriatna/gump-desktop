@@ -5,7 +5,6 @@ import {
 import {getPhotoById} from '@lib/culledAlbum/store';
 import {
   scheduleThumbnailBackfillForPhotos,
-  scheduleResolveExistingThumbnails,
 } from '@lib/culledAlbum/thumbnailBackfill';
 import {scheduleHydrateVisiblePhotos} from '@hooks/useVisiblePhotos';
 import {
@@ -249,17 +248,6 @@ export function CulledAlbumPhotoGrid({
       clearScrollEndTimer();
     };
   }, [clearScrollEndTimer]);
-
-  useEffect(() => {
-    if (photoIds.length === 0) {
-      return;
-    }
-    const initialIds = photoIds.slice(0, COLUMNS * 4);
-    const missingThumbnailIds = photoIdsNeedingThumbnail(albumId, initialIds);
-    if (missingThumbnailIds.length > 0) {
-      scheduleResolveExistingThumbnails(albumId, missingThumbnailIds);
-    }
-  }, [albumId, photoIds]);
 
   const beginScrollInteraction = useCallback(() => {
     if (!isScrollActiveRef.current) {
