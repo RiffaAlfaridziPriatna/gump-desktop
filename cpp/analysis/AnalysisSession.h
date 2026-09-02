@@ -36,6 +36,7 @@ struct AnalysisResult {
   PhotoFlags flags;
   int starRating{0};
   std::vector<std::string> faceClusterIds;
+  bool duplicated{false};
   bool success{false};
   std::string error;
 };
@@ -55,13 +56,20 @@ struct CompletionSummary {
 };
 
 using ProgressCallback = std::function<void(const ProgressUpdate &)>;
+using BatchCallback = std::function<void(const std::vector<AnalysisResult> &)>;
 using CompletionCallback = std::function<void(const CompletionSummary &)>;
 
 struct SessionConfig {
   int maxConcurrency{3};
+  int minConcurrency{1};
   int pipelinePoolSize{2};
   int persistBatchSize{50};
   int progressIntervalMs{500};
+  int interJobDelayMs{50};
+  int maxDecodePixelSize{FaceDetection::kAnalysisMaxPixelSize};
+  int measurementMaxPixelSize{FaceDetection::kMeasurementMaxPixelSize};
+  int progressiveBatchSize{20};
+  bool adaptiveConcurrency{true};
   
   std::string albumId;
   std::vector<PhotoInput> photos;
@@ -70,6 +78,7 @@ struct SessionConfig {
   FaceDetection::PipelineConfig pipelineConfig;
   
   ProgressCallback onProgress;
+  BatchCallback onBatchResults;
   CompletionCallback onComplete;
 };
 

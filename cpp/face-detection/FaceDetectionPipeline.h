@@ -43,6 +43,18 @@ struct FaceResult {
   std::string engine{"scrfd"};
 };
 
+// Normalized rect in full-image space (0-1). Used to map a hi-res crop back
+// onto the detection box / landmarks from the 2048 buffer.
+struct NormalizedRect {
+  float left{0.0f};
+  float top{0.0f};
+  float width{0.0f};
+  float height{0.0f};
+};
+
+// 1.5× max-side crop around the face — matches Landmark106 EAR's input window.
+NormalizedRect paddedMeasurementRect(const FaceResult &face);
+
 struct PipelineConfig {
   std::string scrfdModelPath;
   std::string ocecModelPath;
@@ -77,7 +89,21 @@ public:
       const uint8_t *bgraPixels,
       int imageWidth,
       int imageHeight,
-      int stride) const;
+      int stride,
+      bool measurePhotometrics = true) const;
+
+  // Re-run sharpness + OCEC/EAR on a hi-res crop. `face` box/landmarks stay in
+  // full-image normalized coords; `cropRect` is that crop in the same space.
+  // Heuristics that key off face area use the full-frame fraction, not the crop.
+  void refineFacePhotometrics(
+      FaceResult &face,
+      const uint8_t *cropBgra,
+      int cropWidth,
+      int cropHeight,
+      int cropStride,
+      const NormalizedRect &cropRect) const;
+
+  void relabelFaces(std::vector<FaceResult> &faces) const;
 
 private:
   struct Impl;

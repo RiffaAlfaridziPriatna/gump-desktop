@@ -4,10 +4,11 @@ import {IPhotoRepository} from '@domain/repositories/IPhotoRepository';
 import {CulledAlbumPhoto, comparePhotosByFilename} from './types';
 import {domainPhotoToLegacy} from './photoMapper';
 import {
-  bumpPhotoGridRevision,
   photoKey,
   photoStateStore,
+  scheduleGridRevisionBump,
 } from './photoStateStore';
+import {scheduleRenderSync} from './photoRenderStore';
 import {putCachedImageDimensions} from '@lib/media/imageDimensions';
 import {isUsableThumbnailUri} from '@lib/storage/localStorage';
 
@@ -42,6 +43,7 @@ export function setPhotoOrder(albumId: string, photoIds: string[]): void {
     }
     state.photoOrder[albumId] = photoIds;
   });
+  scheduleRenderSync();
 }
 
 export function hydratePhotos(
@@ -84,7 +86,8 @@ export function hydratePhotos(
           seedThumbnailDimensionCache(photo);
         }
       });
-      bumpPhotoGridRevision(albumId);
+      scheduleGridRevisionBump(albumId);
+      scheduleRenderSync();
     }
   }
 

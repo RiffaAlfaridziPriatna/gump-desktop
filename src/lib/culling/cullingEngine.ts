@@ -5,6 +5,7 @@ import {
 } from '@/application/syncPhotoRepository';
 import { hydratePhotos } from '@lib/culledAlbum/photoLoader';
 import { photoKey, photoStateStore } from '@lib/culledAlbum/photoStateStore';
+import { flushRenderSync } from '@lib/culledAlbum/photoRenderStore';
 import { purgeLocalCulledAlbum } from '@lib/culledAlbum/service';
 import { removePersistedPhoto } from '@lib/culledAlbum/storage';
 import {
@@ -20,7 +21,7 @@ import {
   updateCullingSummary,
   updatePhoto,
 } from '@lib/culledAlbum/store';
-import { CulledAlbumPhoto, isCulledPhotoDisabled, NativeDetectedFace, toCullingPhoto } from '@lib/culledAlbum/types';
+import { CulledAlbumPhoto, isCulledPhotoDisabled, NativeDetectedFace, toCullingPhoto, type CullingDuplicateGroup } from '@lib/culledAlbum/types';
 import { readImageCaptureTime } from '@lib/media/imageCaptureTime';
 import { computeImagePerceptualHash } from '@lib/media/perceptualHash';
 import {
@@ -37,7 +38,6 @@ import {
   backfillMissingAnalyzedPhotoAssets,
   clearScheduledAnalyzedPhotoAssets,
   ensureAnalyzedPhotoAssetsForPhoto,
-  scheduleAnalyzedPhotoAssetsForPhoto,
 } from './analyzedPhotoAssets';
 import {
   assignFaceClustersToSinglePhoto,
@@ -73,7 +73,19 @@ type AnalyzedNativePhoto = {
   faces: CullingFace[];
   perceptualHash: string | null;
   capturedAt: number | null;
+  flags?: {
+    aiSelected: boolean;
+    maybe: boolean;
+    blurred: boolean;
+    closedEyes: boolean;
+    selected: boolean;
+  };
+  starRating?: number | null;
+  duplicated?: boolean;
 };
+
+const nativePostProcessedAlbums = new Set<string>();
+const nativeDuplicatesAppliedAlbums = new Set<string>();
 
 function mapNativeFace(
   face: NativeDetectedFace,
@@ -103,7 +115,7 @@ function mapNativeFace(
     brightness: face.brightness ?? 0,
     landmarks: face.landmarks ?? [],
     pose: face.pose ?? {pitch: 0, roll: 0, yaw: 0},
-    rekognitionFaceId: `${photoId}-${index}`,
+    rekognitionFaceId: face.faceId || `${photoId}-${index}`,
   };
 }
 
@@ -322,7 +334,7 @@ function applyDuplicatedFlagChanges(
           photo.selected = false;
         }
       },
-      {recomputeTotals: false, immediate: true},
+      {recomputeTotals: false},
     );
     syncedPhotoIds.push(change.photoId);
   }
@@ -379,7 +391,7 @@ function reconcileFaceClusterIdsForAlbum(albumId: string): void {
           nextFaceClusterId,
         );
       },
-      {recomputeTotals: false, immediate: true},
+      {recomputeTotals: false},
     );
     syncedPhotoIds.push(photo.photoId);
   }
@@ -396,46 +408,199 @@ function reconcileFaceClusterIdsForAlbum(albumId: string): void {
   }
 }
 
-function assignFaceClusterIdsIncremental(
+const FACE_CLUSTER_ASSIGN_MIN_IOU = 0.4;
+
+function boundingBoxIou(
+  left: {left: number; top: number; width: number; height: number},
+  right: {left: number; top: number; width: number; height: number},
+): number {
+  const leftRight = left.left + left.width;
+  const leftBottom = left.top + left.height;
+  const rightRight = right.left + right.width;
+  const rightBottom = right.top + right.height;
+  const overlapWidth = Math.max(
+    0,
+    Math.min(leftRight, rightRight) - Math.max(left.left, right.left),
+  );
+  const overlapHeight = Math.max(
+    0,
+    Math.min(leftBottom, rightBottom) - Math.max(left.top, right.top),
+  );
+  const intersection = overlapWidth * overlapHeight;
+  const union =
+    left.width * left.height + right.width * right.height - intersection;
+  if (union <= 0) {
+    return 0;
+  }
+  return intersection / union;
+}
+
+function nextClusterIdFromFaceId(faceId: string | undefined): number {
+  if (!faceId) {
+    return 0;
+  }
+  const match = /^person-(\d+)$/.exec(faceId);
+  if (!match) {
+    return 0;
+  }
+  return Number(match[1]) + 1;
+}
+
+function applyNativeFaceClusterIds(
   albumId: string,
-  photoId: string,
+  results: NativeSessionPhotoResult[],
 ): void {
-  const album = getAlbum(albumId);
-  if (!album) {
-    return;
+  let maxNextClusterId = 0;
+  const assignmentsByPhotoId = new Map<string, string[]>();
+
+  for (const result of results) {
+    if (!result.success) {
+      continue;
+    }
+    const nativeFaces = result.faces ?? [];
+    for (const nativeFace of nativeFaces) {
+      maxNextClusterId = Math.max(
+        maxNextClusterId,
+        nextClusterIdFromFaceId(nativeFace.faceId),
+      );
+    }
+
+    const existing = getPhotoById(albumId, result.photoId);
+    if (
+      !existing ||
+      existing.analysisStatus !== 'analyzed' ||
+      existing.faces.length === 0 ||
+      nativeFaces.length === 0
+    ) {
+      continue;
+    }
+
+    const assignedIds = existing.faces.map(() => '');
+    const usedNativeIndexes = new Set<number>();
+    for (let jsIndex = 0; jsIndex < existing.faces.length; jsIndex++) {
+      const jsFace = existing.faces[jsIndex];
+      let bestIou = 0;
+      let bestNativeIndex = -1;
+      for (
+        let nativeIndex = 0;
+        nativeIndex < nativeFaces.length;
+        nativeIndex++
+      ) {
+        if (usedNativeIndexes.has(nativeIndex)) {
+          continue;
+        }
+        const nativeBox = nativeFaces[nativeIndex].boundingBox;
+        if (!nativeBox) {
+          continue;
+        }
+        const iou = boundingBoxIou(jsFace.boundingBox, nativeBox);
+        if (iou > bestIou) {
+          bestIou = iou;
+          bestNativeIndex = nativeIndex;
+        }
+      }
+      if (bestNativeIndex < 0 || bestIou < FACE_CLUSTER_ASSIGN_MIN_IOU) {
+        continue;
+      }
+      const clusterId = nativeFaces[bestNativeIndex].faceId;
+      if (!clusterId) {
+        continue;
+      }
+      usedNativeIndexes.add(bestNativeIndex);
+      assignedIds[jsIndex] = clusterId;
+    }
+
+    if (assignedIds.some(clusterId => clusterId.length > 0)) {
+      assignmentsByPhotoId.set(result.photoId, assignedIds);
+    }
   }
 
-  const clusterRepresentatives = getFaceClusterIndex(albumId);
-  let nextFaceClusterId = album.nextFaceClusterId;
-
-  const updated = updatePhoto(
-    albumId,
-    photoId,
-    photo => {
-      if (photo.faces.length === 0) {
-        return;
+  if (assignmentsByPhotoId.size > 0) {
+    photoStateStore.setState(state => {
+      for (const [photoId, assignedIds] of assignmentsByPhotoId) {
+        const entry = state.photoState[photoKey(albumId, photoId)];
+        if (!entry) {
+          continue;
+        }
+        for (let index = 0; index < entry.faces.length; index++) {
+          const clusterId = assignedIds[index];
+          if (clusterId) {
+            entry.faces[index].rekognitionFaceId = clusterId;
+          }
+        }
       }
-      nextFaceClusterId = assignFaceClustersToSinglePhoto(
-        photo.faces,
-        clusterRepresentatives,
-        nextFaceClusterId,
-      );
-    },
-    {recomputeTotals: false, immediate: true},
-  );
-
-  if (!updated) {
-    return;
+    });
   }
 
   culledAlbumStore.setState(state => {
-    const albumState = state.albums[albumId];
-    if (albumState) {
-      albumState.nextFaceClusterId = nextFaceClusterId;
+    const album = state.albums[albumId];
+    if (!album) {
+      return;
+    }
+    for (const [photoId, assignedIds] of assignmentsByPhotoId) {
+      const entry = album.photos.find(photo => photo.photoId === photoId);
+      if (!entry) {
+        continue;
+      }
+      for (let index = 0; index < entry.faces.length; index++) {
+        const clusterId = assignedIds[index];
+        if (clusterId) {
+          entry.faces[index].rekognitionFaceId = clusterId;
+        }
+      }
+    }
+    album.nextFaceClusterId = Math.max(
+      album.nextFaceClusterId ?? 0,
+      maxNextClusterId,
+    );
+  });
+}
+
+function applyNativeDuplicateGroups(
+  albumId: string,
+  groups: CullingDuplicateGroup[],
+  duplicatedByPhotoId: Map<string, boolean>,
+): void {
+  const syncedPhotoIds: string[] = [];
+  photoStateStore.setState(state => {
+    for (const [photoId, duplicated] of duplicatedByPhotoId) {
+      const entry = state.photoState[photoKey(albumId, photoId)];
+      if (!entry) {
+        continue;
+      }
+      const nextSelected = duplicated ? false : entry.selected;
+      if (entry.duplicated === duplicated && entry.selected === nextSelected) {
+        continue;
+      }
+      entry.duplicated = duplicated;
+      entry.selected = nextSelected;
+      syncedPhotoIds.push(photoId);
     }
   });
 
-  syncPhotoFromStore(albumId, photoId);
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (!album) {
+      return;
+    }
+    album.cullingDuplicateGroups = groups;
+    for (const [photoId, duplicated] of duplicatedByPhotoId) {
+      const entry = album.photos.find(item => item.photoId === photoId);
+      if (!entry) {
+        continue;
+      }
+      const nextSelected = duplicated ? false : entry.selected;
+      if (entry.duplicated === duplicated && entry.selected === nextSelected) {
+        continue;
+      }
+      entry.duplicated = duplicated;
+      entry.selected = nextSelected;
+    }
+  });
+
+  if (syncedPhotoIds.length > 0) {
+    syncPhotosFromStore(albumId, syncedPhotoIds);
+  }
 }
 
 function ingestNativeAnalyzedPhoto(
@@ -451,9 +616,10 @@ function ingestNativeAnalyzedPhoto(
   const faces = analyzed.faces;
   const perceptualHash = existing.perceptualHash ?? analyzed.perceptualHash;
   const capturedAt = existing.capturedAt ?? analyzed.capturedAt;
-  const flags = derivePhotoFlags(faces);
+  const flags = analyzed.flags ?? derivePhotoFlags(faces);
   const isFirstAnalysis = existing.faces.length === 0;
-  const initialStarRating = existing.starRating ?? deriveStarRating(faces);
+  const initialStarRating =
+    existing.starRating ?? analyzed.starRating ?? deriveStarRating(faces);
   const fromStatus =
     existing.analysisStatus === 'analyzing' ? 'analyzing' : 'pending';
 
@@ -471,7 +637,7 @@ function ingestNativeAnalyzedPhoto(
       photo.maybe = flags.maybe;
       photo.blurred = flags.blurred;
       photo.closedEyes = flags.closedEyes;
-      photo.duplicated = existing.duplicated ?? false;
+      photo.duplicated = analyzed.duplicated ?? existing.duplicated ?? false;
       photo.starRating = initialStarRating;
       photo.selected = isFirstAnalysis ? flags.selected : existing.selected;
       photo.analysisProgress = 100;
@@ -492,18 +658,31 @@ export type NativeSessionPhotoResult = {
   faces?: NativeDetectedFace[];
   perceptualHash?: string | null;
   capturedAt?: number | null;
+  flags?: AnalyzedNativePhoto['flags'];
+  starRating?: number | null;
+  duplicated?: boolean;
+};
+
+export type NativeSessionIngestOptions = {
+  postProcessed?: boolean;
+  duplicateGroups?: CullingDuplicateGroup[];
 };
 
 function ingestNativeSessionResults(
   albumId: string,
   results: NativeSessionPhotoResult[],
+  options?: NativeSessionIngestOptions,
 ): {analyzed: number; failed: number} {
   let analyzed = 0;
   let failed = 0;
 
   for (const result of results) {
+    const existing = getPhotoById(albumId, result.photoId);
     if (!result.success) {
-      const existing = getPhotoById(albumId, result.photoId);
+      if (existing?.analysisStatus === 'failed') {
+        failed += 1;
+        continue;
+      }
       const fromStatus =
         existing?.analysisStatus === 'analyzing' ? 'analyzing' : 'pending';
       updatePhoto(
@@ -526,15 +705,47 @@ function ingestNativeSessionResults(
       continue;
     }
 
+    if (existing?.analysisStatus === 'analyzed') {
+      analyzed += 1;
+      continue;
+    }
+
     ingestNativeAnalyzedPhoto(albumId, result.photoId, {
       faces: mapDetectedFaces(result.faces ?? [], result.photoId),
       perceptualHash: normalizePerceptualHash(result.perceptualHash),
       capturedAt: normalizeCapturedAt(result.capturedAt),
+      flags: result.flags,
+      starRating: result.starRating,
+      duplicated: result.duplicated,
     });
     analyzed += 1;
   }
 
   flushPendingPhotoUpdates();
+
+  if (options?.postProcessed) {
+    nativePostProcessedAlbums.add(albumId);
+    applyNativeFaceClusterIds(albumId, results);
+  }
+  if (options?.duplicateGroups) {
+    nativeDuplicatesAppliedAlbums.add(albumId);
+    const duplicatedByPhotoId = new Map<string, boolean>();
+    for (const result of results) {
+      if (typeof result.duplicated === 'boolean') {
+        duplicatedByPhotoId.set(result.photoId, result.duplicated);
+      }
+    }
+    applyNativeDuplicateGroups(
+      albumId,
+      options.duplicateGroups,
+      duplicatedByPhotoId,
+    );
+  }
+
+  if (options?.postProcessed) {
+    flushRenderSync();
+  }
+
   return {analyzed, failed};
 }
 
@@ -580,13 +791,9 @@ export const cullingEngine = {
       photo.duplicated = existing.duplicated ?? false;
       photo.starRating = initialStarRating;
       photo.selected = isFirstAnalysis ? flags.selected : existing.selected;
-    }, {recomputeTotals: false, immediate: true});
+    }, {recomputeTotals: false});
 
     syncPhotoFromStore(albumId, photoId);
-
-    assignFaceClusterIdsIncremental(albumId, photoId);
-
-    scheduleAnalyzedPhotoAssetsForPhoto(albumId, photoId, file);
 
     if (__DEV__) {
       console.log(
@@ -771,18 +978,25 @@ export const cullingEngine = {
       throw new Error('No analyzed photos');
     }
 
-    reconcileFaceClusterIdsForAlbum(albumId);
+    const nativeDuplicatesApplied =
+      nativeDuplicatesAppliedAlbums.delete(albumId);
+    const nativePostProcessed = nativePostProcessedAlbums.delete(albumId);
+
+    if (!nativePostProcessed) {
+      reconcileFaceClusterIdsForAlbum(albumId);
+    }
+
+    if (!nativeDuplicatesApplied) {
+      await applyDuplicateFlags(albumId);
+    }
+
     await backfillMissingAnalyzedPhotoAssets(albumId, albumPhotos, {
       regenerateFaceCrops: false,
     });
     flushPendingPhotoUpdates();
-    await applyDuplicateFlags(albumId);
+    flushRenderSync();
     flushUpdateCullingSummary(albumId);
     await persistAlbum(albumId);
-  },
-
-  async refreshDuplicateFlags(albumId: string): Promise<void> {
-    await applyDuplicateFlags(albumId);
   },
 
   async refreshAssets(albumId: string): Promise<void> {

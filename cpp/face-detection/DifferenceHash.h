@@ -6,8 +6,13 @@
 
 namespace FaceDetection {
 
-/// Longest-edge cap for face analysis + perceptual hash. Keep macOS/Windows lockstep.
-constexpr int kAnalysisMaxPixelSize = 4096;
+/// Longest-edge cap for SCRFD + tiling + dHash. Keep macOS/Windows lockstep.
+constexpr int kAnalysisMaxPixelSize = 2048;
+/// Longest-edge cap when rasterizing hi-res face crops for sharpness / OCEC / EAR.
+constexpr int kMeasurementMaxPixelSize = 4096;
+/// Longest-edge of each measurement crop after regional decode. OCEC/EAR
+/// operate on a small face window; do not keep a full-frame 4096 BGRA.
+constexpr int kMeasurementCropOutputMaxPixelSize = 768;
 
 /// 64-bit difference hash (dHash) from a BGRA8 buffer.
 /// Both desktop platforms must call this on the *same* analysis-sized buffer used

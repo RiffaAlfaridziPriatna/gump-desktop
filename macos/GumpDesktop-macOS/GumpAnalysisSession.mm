@@ -7,6 +7,7 @@
 #include "../../cpp/analysis/AnalysisSession.h"
 #include "../../cpp/face-detection/ExifDateTime.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -178,8 +179,33 @@ NSDictionary *AnalysisResultDictionary(const Analysis::AnalysisResult &result) {
         ? [NSNull null]
         : [NSString stringWithUTF8String:result.perceptualHash.c_str()],
     @"capturedAt" : result.capturedAt == 0 ? [NSNull null] : @(result.capturedAt),
+    @"starRating" : @(result.starRating),
+    @"duplicated" : @(result.duplicated),
+    @"flags" : @{
+      @"aiSelected" : @(result.flags.aiSelected),
+      @"maybe" : @(result.flags.maybe),
+      @"blurred" : @(result.flags.blurred),
+      @"closedEyes" : @(result.flags.closedEyes),
+      @"selected" : @(result.flags.selected),
+    },
   }];
   return payload;
+}
+
+NSArray *DuplicateGroupsArray(const std::vector<Analysis::DuplicateGroup> &groups) {
+  NSMutableArray *payloads = [NSMutableArray arrayWithCapacity:groups.size()];
+  for (const auto &group : groups) {
+    NSMutableArray *photoIds = [NSMutableArray arrayWithCapacity:group.photoIds.size()];
+    for (const auto &photoId : group.photoIds) {
+      [photoIds addObject:[NSString stringWithUTF8String:photoId.c_str()]];
+    }
+    [payloads addObject:@{
+      @"groupId" : [NSString stringWithUTF8String:group.groupId.c_str()],
+      @"photoIds" : photoIds,
+      @"bestPhotoId" : [NSString stringWithUTF8String:group.bestPhotoId.c_str()],
+    }];
+  }
+  return payloads;
 }
 
 class MacOSPlatformDecoder : public Analysis::PlatformDecoder {
@@ -222,6 +248,78 @@ public:
     }
     
     return result;
+  }
+
+  std::vector<Analysis::DecodedImage> DecodeImageRegionsToBgra(
+      const std::string &uri,
+      const std::vector<Analysis::ImageRegion> &regions,
+      int sourceMaxPixelSize) override {
+    std::vector<Analysis::DecodedImage> results(regions.size());
+    if (regions.empty()) {
+      return results;
+    }
+
+    @autoreleasepool {
+      NSString *nsUri = [NSString stringWithUTF8String:uri.c_str()];
+      NSString *path = pathFromUri(nsUri);
+      if (path.length == 0) {
+        for (auto &result : results) {
+          result.error = "Invalid URI";
+        }
+        return results;
+      }
+
+      const int outputCap = FaceDetection::kMeasurementCropOutputMaxPixelSize;
+      for (size_t index = 0; index < regions.size(); ++index) {
+        @autoreleasepool {
+          const int sourceMax = Analysis::MeasurementSourcePixelSize(
+              regions[index], sourceMaxPixelSize, outputCap);
+          CGImageRef source =
+              orientedCGImageFromPath(path, static_cast<NSUInteger>(sourceMax));
+          if (source == nullptr) {
+            results[index].error = "Failed to decode image";
+            continue;
+          }
+
+          const int imageWidth = static_cast<int>(CGImageGetWidth(source));
+          const int imageHeight = static_cast<int>(CGImageGetHeight(source));
+          const auto pixelRect = Analysis::PixelRectFromNormalized(
+              regions[index], imageWidth, imageHeight);
+          if (pixelRect.width <= 0 || pixelRect.height <= 0) {
+            CGImageRelease(source);
+            results[index].error = "Empty crop region";
+            continue;
+          }
+
+          CGRect cropRect = CGRectMake(
+              pixelRect.x, pixelRect.y, pixelRect.width, pixelRect.height);
+          CGImageRef crop = CGImageCreateWithImageInRect(source, cropRect);
+          CGImageRelease(source);
+          if (crop == nullptr) {
+            results[index].error = "Failed to crop image";
+            continue;
+          }
+
+          auto bgraBuffer = std::make_shared<std::vector<uint8_t>>();
+          if (!CopyCGImageToBgra(
+                  crop,
+                  *bgraBuffer,
+                  results[index].width,
+                  results[index].height,
+                  results[index].stride)) {
+            CGImageRelease(crop);
+            results[index].error = "Failed to copy crop to BGRA";
+            continue;
+          }
+          CGImageRelease(crop);
+          results[index].bgraPixels = bgraBuffer->data();
+          results[index].platformHandle = bgraBuffer;
+          results[index].success = true;
+        }
+      }
+    }
+
+    return results;
   }
 
   int64_t ReadCapturedAtMillis(const std::string &uri) override {
@@ -298,7 +396,7 @@ RCT_EXPORT_MODULE();
 }
 
 - (NSArray<NSString *> *)supportedEvents {
-  return @[@"analysisProgress", @"analysisComplete"];
+  return @[@"analysisProgress", @"analysisComplete", @"analysisBatch"];
 }
 
 - (void)startObserving {
@@ -378,10 +476,13 @@ RCT_EXPORT_METHOD(startAnalysis:(NSString *)albumId
 
       // Configure session
       Analysis::SessionConfig sessionConfig;
-      sessionConfig.maxConcurrency = [configDict[@"maxConcurrency"] intValue] ?: 3;
+      sessionConfig.maxConcurrency = [configDict[@"maxConcurrency"] intValue] ?: 2;
       sessionConfig.pipelinePoolSize = 2;
       sessionConfig.persistBatchSize = 50;
       sessionConfig.progressIntervalMs = 500;
+      sessionConfig.interJobDelayMs = [configDict[@"interJobDelayMs"] intValue] ?: 50;
+      sessionConfig.maxDecodePixelSize = [configDict[@"maxDecodePixelSize"] intValue] ?: 2048;
+      sessionConfig.progressiveBatchSize = [configDict[@"progressiveBatchSize"] intValue] ?: 20;
       sessionConfig.albumId = [albumId UTF8String];
       sessionConfig.photos = photos;
       sessionConfig.decoder = self->_decoder.get();
@@ -406,6 +507,25 @@ RCT_EXPORT_METHOD(startAnalysis:(NSString *)albumId
         });
       };
 
+      sessionConfig.onBatchResults = [weakSelf](const std::vector<Analysis::AnalysisResult> &batch) {
+        GumpAnalysisSession *strongSelf = weakSelf;
+        if (!strongSelf) {
+          return;
+        }
+
+        NSMutableArray *resultPayloads = [NSMutableArray arrayWithCapacity:batch.size()];
+        for (const auto &result : batch) {
+          [resultPayloads addObject:AnalysisResultDictionary(result)];
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+          if (strongSelf->_hasListeners) {
+            [strongSelf sendEventWithName:@"analysisBatch"
+                                     body:@{@"results" : resultPayloads}];
+          }
+        });
+      };
+
       sessionConfig.onComplete = [weakSelf](const Analysis::CompletionSummary &summary) {
         GumpAnalysisSession *strongSelf = weakSelf;
         if (!strongSelf) {
@@ -416,6 +536,7 @@ RCT_EXPORT_METHOD(startAnalysis:(NSString *)albumId
         for (const auto &result : summary.results) {
           [resultPayloads addObject:AnalysisResultDictionary(result)];
         }
+        NSArray *duplicateGroups = DuplicateGroupsArray(summary.duplicateGroups);
 
         dispatch_async(dispatch_get_main_queue(), ^{
           if (strongSelf->_hasListeners) {
@@ -424,7 +545,9 @@ RCT_EXPORT_METHOD(startAnalysis:(NSString *)albumId
                                        @"done" : @(summary.done),
                                        @"total" : @(summary.total),
                                        @"failed" : @(summary.failed),
+                                       @"postProcessed" : @YES,
                                        @"results" : resultPayloads,
+                                       @"duplicateGroups" : duplicateGroups,
                                      }];
           }
         });

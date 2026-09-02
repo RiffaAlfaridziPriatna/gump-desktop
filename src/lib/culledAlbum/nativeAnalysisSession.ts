@@ -14,13 +14,45 @@ type NativeAnalysisSessionModule = {
     }>,
     config: {
       maxConcurrency: number;
+      interJobDelayMs?: number;
+      maxDecodePixelSize?: number;
+      progressiveBatchSize?: number;
     },
   ) => Promise<{success: boolean}>;
   cancelAnalysis: () => Promise<{success: boolean}>;
-  pauseAnalysis?: () => Promise<{success: boolean}>;
-  resumeAnalysis?: () => Promise<{success: boolean}>;
   isRunning?: () => Promise<{running: boolean}>;
 };
+
+export type AnalysisSessionTuning = {
+  maxConcurrency: number;
+  interJobDelayMs: number;
+  maxDecodePixelSize: number;
+  progressiveBatchSize: number;
+};
+
+let lowPowerModeEnabled = false;
+
+export function setAnalysisLowPowerMode(enabled: boolean): void {
+  lowPowerModeEnabled = enabled;
+}
+
+export function getAnalysisSessionTuning(): AnalysisSessionTuning {
+  if (lowPowerModeEnabled) {
+    return {
+      maxConcurrency: 1,
+      interJobDelayMs: 200,
+      maxDecodePixelSize: 2048,
+      progressiveBatchSize: 20,
+    };
+  }
+
+  return {
+    maxConcurrency: Platform.OS === 'windows' ? 1 : 2,
+    interJobDelayMs: 50,
+    maxDecodePixelSize: 2048,
+    progressiveBatchSize: 20,
+  };
+}
 
 function nativeAnalysisModule(): NativeAnalysisSessionModule | null {
   if (Platform.OS === 'macos') {
@@ -61,6 +93,43 @@ export type AnalysisProgressEvent = {
   failed: number;
 };
 
+function readFiniteCount(value: unknown): number | null {
+  const count = Number(value);
+  if (!Number.isFinite(count) || count < 0) {
+    return null;
+  }
+  return count;
+}
+
+function coerceAnalysisProgress(event: unknown): AnalysisProgressEvent | null {
+  if (!event || typeof event !== 'object') {
+    return null;
+  }
+  const record = event as Record<string, unknown>;
+  const nested = record.body;
+  const source =
+    nested && typeof nested === 'object'
+      ? (nested as Record<string, unknown>)
+      : record;
+  const total = readFiniteCount(source.total);
+  if (total == null || total <= 0) {
+    return null;
+  }
+  return {
+    done: readFiniteCount(source.done) ?? 0,
+    total,
+    failed: readFiniteCount(source.failed) ?? 0,
+  };
+}
+
+export type NativeAnalysisPhotoFlags = {
+  aiSelected: boolean;
+  maybe: boolean;
+  blurred: boolean;
+  closedEyes: boolean;
+  selected: boolean;
+};
+
 export type NativeAnalysisPhotoResult = {
   photoId: string;
   success: boolean;
@@ -68,31 +137,49 @@ export type NativeAnalysisPhotoResult = {
   faces?: NativeDetectedFace[];
   perceptualHash?: string | null;
   capturedAt?: number | null;
+  flags?: NativeAnalysisPhotoFlags;
+  starRating?: number;
+  duplicated?: boolean;
+};
+
+export type NativeDuplicateGroup = {
+  groupId: string;
+  photoIds: string[];
+  bestPhotoId: string;
 };
 
 export type AnalysisCompleteEvent = {
   done: number;
   total: number;
   failed: number;
+  postProcessed?: boolean;
+  results: NativeAnalysisPhotoResult[];
+  duplicateGroups?: NativeDuplicateGroup[];
+};
+
+export type AnalysisBatchEvent = {
   results: NativeAnalysisPhotoResult[];
 };
 
 type ProgressListener = (event: AnalysisProgressEvent) => void;
 type CompleteListener = (event: AnalysisCompleteEvent) => void;
+type BatchListener = (event: AnalysisBatchEvent) => void;
 
 let progressSubscription: {remove: () => void} | null = null;
 let completeSubscription: {remove: () => void} | null = null;
+let batchSubscription: {remove: () => void} | null = null;
 
 export async function startNativeAnalysis(
   albumId: string,
   photos: CulledAlbumPhoto[],
-  config: {maxConcurrency?: number} = {},
+  config: Partial<AnalysisSessionTuning> = {},
 ): Promise<void> {
   const module = nativeAnalysisModule();
   if (!module) {
     throw new Error('Native analysis not supported on this platform');
   }
 
+  const tuning = {...getAnalysisSessionTuning(), ...config};
   const photoInputs = photos.map(photo => ({
     photoId: photo.photoId,
     uri: photo.file.uri,
@@ -101,9 +188,7 @@ export async function startNativeAnalysis(
     perceptualHash: photo.perceptualHash ?? '',
   }));
 
-  await module.startAnalysis(albumId, photoInputs, {
-    maxConcurrency: config.maxConcurrency ?? (Platform.OS === 'windows' ? 2 : 3),
-  });
+  await module.startAnalysis(albumId, photoInputs, tuning);
 }
 
 export async function cancelNativeAnalysis(): Promise<void> {
@@ -117,6 +202,7 @@ export async function cancelNativeAnalysis(): Promise<void> {
 export function subscribeToNativeAnalysis(
   onProgress: ProgressListener,
   onComplete: CompleteListener,
+  onBatch?: BatchListener,
 ): () => void {
   const emitter = analysisEventSource();
   if (!emitter) {
@@ -127,8 +213,12 @@ export function subscribeToNativeAnalysis(
 
   progressSubscription = emitter.addListener(
     'analysisProgress',
-    (event: AnalysisProgressEvent) => {
-      onProgress(event);
+    (event: unknown) => {
+      const progress = coerceAnalysisProgress(event);
+      if (!progress) {
+        return;
+      }
+      onProgress(progress);
     },
   );
 
@@ -139,6 +229,15 @@ export function subscribeToNativeAnalysis(
     },
   );
 
+  if (onBatch) {
+    batchSubscription = emitter.addListener(
+      'analysisBatch',
+      (event: AnalysisBatchEvent) => {
+        onBatch(event);
+      },
+    );
+  }
+
   return unsubscribeFromNativeAnalysis;
 }
 
@@ -147,4 +246,6 @@ export function unsubscribeFromNativeAnalysis(): void {
   progressSubscription = null;
   completeSubscription?.remove();
   completeSubscription = null;
+  batchSubscription?.remove();
+  batchSubscription = null;
 }

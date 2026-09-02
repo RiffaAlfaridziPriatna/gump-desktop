@@ -835,6 +835,110 @@ SoftwareBitmap LoadSoftwareBitmapScaled(
       .get();
 }
 
+uint16_t ReadExifOrientation(const BitmapDecoder &decoder) {
+  try {
+    auto keys = winrt::single_threaded_vector<winrt::hstring>();
+    keys.Append(L"/app1/ifd/{ushort=274}");
+    keys.Append(L"System.Photo.Orientation");
+    const auto props =
+        decoder.BitmapProperties().GetPropertiesAsync(keys.GetView()).get();
+
+    const winrt::hstring exifKey{L"/app1/ifd/{ushort=274}"};
+    if (props.HasKey(exifKey)) {
+      const BitmapTypedValue typed = props.Lookup(exifKey);
+      try {
+        const auto value = winrt::unbox_value<uint16_t>(typed.Value());
+        if (value >= 1 && value <= 8) {
+          return value;
+        }
+      } catch (...) {
+        try {
+          const auto value = winrt::unbox_value<uint32_t>(typed.Value());
+          if (value >= 1 && value <= 8) {
+            return static_cast<uint16_t>(value);
+          }
+        } catch (...) {
+        }
+      }
+    }
+
+    const winrt::hstring photoKey{L"System.Photo.Orientation"};
+    if (props.HasKey(photoKey)) {
+      const BitmapTypedValue typed = props.Lookup(photoKey);
+      PhotoOrientation orientation = PhotoOrientation::Normal;
+      try {
+        orientation = typed.Value().as<PhotoOrientation>();
+      } catch (...) {
+        try {
+          orientation = static_cast<PhotoOrientation>(
+              winrt::unbox_value<uint16_t>(typed.Value()));
+        } catch (...) {
+          return 1;
+        }
+      }
+      switch (orientation) {
+      case PhotoOrientation::FlipHorizontal:
+        return 2;
+      case PhotoOrientation::Rotate180:
+        return 3;
+      case PhotoOrientation::FlipVertical:
+        return 4;
+      case PhotoOrientation::Transpose:
+        return 5;
+      case PhotoOrientation::Rotate90:
+        return 8;
+      case PhotoOrientation::Transverse:
+        return 7;
+      case PhotoOrientation::Rotate270:
+        return 6;
+      default:
+        return 1;
+      }
+    }
+  } catch (...) {
+  }
+  return 1;
+}
+
+SoftwareBitmap LoadSoftwareBitmapRegion(
+    const BitmapDecoder &decoder,
+    const Analysis::PixelRect &encodedRect,
+    uint32_t outputMaxPixelSize) {
+  const int encodedWidth = static_cast<int>(decoder.PixelWidth());
+  const int encodedHeight = static_cast<int>(decoder.PixelHeight());
+  BitmapBounds bounds{};
+  bounds.X = static_cast<uint32_t>(
+      std::clamp(encodedRect.x, 0, std::max(0, encodedWidth - 1)));
+  bounds.Y = static_cast<uint32_t>(
+      std::clamp(encodedRect.y, 0, std::max(0, encodedHeight - 1)));
+  const int maxWidth = encodedWidth - static_cast<int>(bounds.X);
+  const int maxHeight = encodedHeight - static_cast<int>(bounds.Y);
+  bounds.Width = static_cast<uint32_t>(
+      std::clamp(encodedRect.width, 1, std::max(1, maxWidth)));
+  bounds.Height = static_cast<uint32_t>(
+      std::clamp(encodedRect.height, 1, std::max(1, maxHeight)));
+
+  const auto scaled =
+      ComputeThumbnailSize(bounds.Width, bounds.Height, outputMaxPixelSize);
+
+  BitmapTransform transform;
+  transform.Bounds(bounds);
+  if (scaled.width != bounds.Width || scaled.height != bounds.Height) {
+    transform.ScaledWidth(scaled.width);
+    transform.ScaledHeight(scaled.height);
+    transform.InterpolationMode(BitmapInterpolationMode::Linear);
+  }
+
+  return decoder
+      .GetSoftwareBitmapAsync(
+          BitmapPixelFormat::Bgra8,
+          BitmapAlphaMode::Premultiplied,
+          transform,
+          ExifOrientationMode::RespectExifOrientation,
+          ColorManagementMode::DoNotColorManage)
+      .get();
+}
+
 struct BitmapPixels {
   std::vector<uint8_t> bytes;
   int width{0};
@@ -1546,6 +1650,75 @@ public:
     return result;
   }
 
+  std::vector<Analysis::DecodedImage> DecodeImageRegionsToBgra(
+      const std::string &uri,
+      const std::vector<Analysis::ImageRegion> &regions,
+      int sourceMaxPixelSize) override {
+    std::vector<Analysis::DecodedImage> results(regions.size());
+    if (regions.empty()) {
+      return results;
+    }
+
+    (void)sourceMaxPixelSize;
+
+    try {
+      const auto path = PathFromUri(uri);
+      const auto file = GetStorageFileFromPath(path);
+      const auto stream = file.OpenAsync(FileAccessMode::Read).get();
+      const auto decoder = BitmapDecoder::CreateAsync(stream).get();
+      const int encodedWidth = static_cast<int>(decoder.PixelWidth());
+      const int encodedHeight = static_cast<int>(decoder.PixelHeight());
+      int orientedWidth = static_cast<int>(decoder.OrientedPixelWidth());
+      int orientedHeight = static_cast<int>(decoder.OrientedPixelHeight());
+      if (orientedWidth <= 0 || orientedHeight <= 0) {
+        orientedWidth = encodedWidth;
+        orientedHeight = encodedHeight;
+      }
+      const uint16_t orientation = ReadExifOrientation(decoder);
+      const uint32_t outputCap = static_cast<uint32_t>(
+          FaceDetection::kMeasurementCropOutputMaxPixelSize);
+
+      for (size_t index = 0; index < regions.size(); ++index) {
+        const auto orientedRect = Analysis::PixelRectFromNormalized(
+            regions[index], orientedWidth, orientedHeight);
+        const auto encodedRect = Analysis::MapOrientedPixelRectToEncoded(
+            orientedRect,
+            orientedWidth,
+            orientedHeight,
+            encodedWidth,
+            encodedHeight,
+            orientation);
+        if (encodedRect.width <= 0 || encodedRect.height <= 0) {
+          results[index].error = "Empty crop region";
+          continue;
+        }
+
+        try {
+          const auto bitmap =
+              LoadSoftwareBitmapRegion(decoder, encodedRect, outputCap);
+          auto pixels = std::make_shared<BitmapPixels>(ReadBitmapPixels(bitmap));
+          results[index].width = pixels->width;
+          results[index].height = pixels->height;
+          results[index].stride = pixels->stride;
+          results[index].bgraPixels = pixels->bytes.data();
+          results[index].platformHandle = std::move(pixels);
+          results[index].success = true;
+        } catch (const std::exception &error) {
+          results[index].error = error.what();
+        } catch (...) {
+          results[index].error = "Regional decode failed";
+        }
+      }
+    } catch (const std::exception &e) {
+      for (auto &result : results) {
+        if (!result.success) {
+          result.error = e.what();
+        }
+      }
+    }
+    return results;
+  }
+
   int64_t ReadCapturedAtMillis(const std::string &uri) override {
     try {
       const auto path = PathFromUri(uri);
@@ -1580,6 +1753,59 @@ std::unique_ptr<Analysis::AnalysisSession> g_analysisSession;
 std::mutex g_sessionMutex;
 winrtRN::ReactContext g_sessionReactContext{nullptr};
 
+winrtRN::JSValueObject AnalysisResultToJsObject(
+    const Analysis::AnalysisResult &result) {
+  winrtRN::JSValueArray facesArray;
+  for (const auto &face : result.faces) {
+    facesArray.push_back(winrtRN::JSValue(FaceToJsObject(face)));
+  }
+
+  winrtRN::JSValue perceptualHash = nullptr;
+  if (!result.perceptualHash.empty()) {
+    perceptualHash = result.perceptualHash;
+  }
+  winrtRN::JSValue capturedAt = nullptr;
+  if (result.capturedAt != 0) {
+    capturedAt = static_cast<double>(result.capturedAt);
+  }
+
+  return winrtRN::JSValueObject{
+      {"photoId", result.photoId},
+      {"success", result.success},
+      {"error", result.error},
+      {"faces", std::move(facesArray)},
+      {"perceptualHash", std::move(perceptualHash)},
+      {"capturedAt", std::move(capturedAt)},
+      {"starRating", result.starRating},
+      {"duplicated", result.duplicated},
+      {"flags",
+       winrtRN::JSValueObject{
+           {"aiSelected", result.flags.aiSelected},
+           {"maybe", result.flags.maybe},
+           {"blurred", result.flags.blurred},
+           {"closedEyes", result.flags.closedEyes},
+           {"selected", result.flags.selected},
+       }},
+  };
+}
+
+winrtRN::JSValueArray DuplicateGroupsToJsArray(
+    const std::vector<Analysis::DuplicateGroup> &groups) {
+  winrtRN::JSValueArray payloads;
+  for (const auto &group : groups) {
+    winrtRN::JSValueArray photoIds;
+    for (const auto &photoId : group.photoIds) {
+      photoIds.push_back(photoId);
+    }
+    payloads.push_back(winrtRN::JSValue(winrtRN::JSValueObject{
+        {"groupId", group.groupId},
+        {"photoIds", std::move(photoIds)},
+        {"bestPhotoId", group.bestPhotoId},
+    }));
+  }
+  return payloads;
+}
+
 void EmitAnalysisProgress(const Analysis::ProgressUpdate &progress) {
   if (!g_sessionReactContext) {
     return;
@@ -1595,6 +1821,24 @@ void EmitAnalysisProgress(const Analysis::ProgressUpdate &progress) {
       }));
 }
 
+void EmitAnalysisBatch(const std::vector<Analysis::AnalysisResult> &batch) {
+  if (!g_sessionReactContext) {
+    return;
+  }
+
+  winrtRN::JSValueArray resultsArray;
+  for (const auto &result : batch) {
+    resultsArray.push_back(winrtRN::JSValue(AnalysisResultToJsObject(result)));
+  }
+
+  g_sessionReactContext.EmitJSEvent(
+      L"RCTDeviceEventEmitter",
+      L"analysisBatch",
+      winrtRN::JSValue(winrtRN::JSValueObject{
+          {"results", winrtRN::JSValue(std::move(resultsArray))},
+      }));
+}
+
 void EmitAnalysisComplete(const Analysis::CompletionSummary &summary) {
   if (!g_sessionReactContext) {
     return;
@@ -1602,28 +1846,7 @@ void EmitAnalysisComplete(const Analysis::CompletionSummary &summary) {
 
   winrtRN::JSValueArray resultsArray;
   for (const auto &result : summary.results) {
-    winrtRN::JSValueArray facesArray;
-    for (const auto &face : result.faces) {
-      facesArray.push_back(winrtRN::JSValue(FaceToJsObject(face)));
-    }
-
-    winrtRN::JSValue perceptualHash = nullptr;
-    if (!result.perceptualHash.empty()) {
-      perceptualHash = result.perceptualHash;
-    }
-    winrtRN::JSValue capturedAt = nullptr;
-    if (result.capturedAt != 0) {
-      capturedAt = static_cast<double>(result.capturedAt);
-    }
-
-    resultsArray.push_back(winrtRN::JSValue(winrtRN::JSValueObject{
-        {"photoId", result.photoId},
-        {"success", result.success},
-        {"error", result.error},
-        {"faces", std::move(facesArray)},
-        {"perceptualHash", std::move(perceptualHash)},
-        {"capturedAt", std::move(capturedAt)},
-    }));
+    resultsArray.push_back(winrtRN::JSValue(AnalysisResultToJsObject(result)));
   }
 
   g_sessionReactContext.EmitJSEvent(
@@ -1633,7 +1856,10 @@ void EmitAnalysisComplete(const Analysis::CompletionSummary &summary) {
           {"done", summary.done},
           {"total", summary.total},
           {"failed", summary.failed},
+          {"postProcessed", true},
           {"results", winrtRN::JSValue(std::move(resultsArray))},
+          {"duplicateGroups",
+           winrtRN::JSValue(DuplicateGroupsToJsArray(summary.duplicateGroups))},
       }));
 }
 
@@ -1670,16 +1896,33 @@ void GumpLocalStorage::StartAnalysis(
     Analysis::SessionConfig sessionConfig;
     sessionConfig.albumId = albumId;
     sessionConfig.decoder = g_decoder.get();
-    sessionConfig.maxConcurrency = 2;
+    sessionConfig.maxConcurrency = 1;
     sessionConfig.pipelinePoolSize = 2;
     sessionConfig.progressIntervalMs = 500;
+    sessionConfig.interJobDelayMs = 50;
+    sessionConfig.maxDecodePixelSize = 2048;
+    sessionConfig.progressiveBatchSize = 20;
 
     if (config.Type() == winrtRN::JSValueType::Object) {
       const auto &configObj = config.AsObject();
       if (configObj.count("maxConcurrency") &&
-          configObj["maxConcurrency"].Type() == winrtRN::JSValueType::Int64) {
+          (configObj["maxConcurrency"].Type() == winrtRN::JSValueType::Int64 ||
+           configObj["maxConcurrency"].Type() == winrtRN::JSValueType::Double)) {
         sessionConfig.maxConcurrency =
-            static_cast<int>(configObj["maxConcurrency"].AsInt64());
+            static_cast<int>(configObj["maxConcurrency"].AsDouble());
+      }
+      if (configObj.count("interJobDelayMs") &&
+          (configObj["interJobDelayMs"].Type() == winrtRN::JSValueType::Int64 ||
+           configObj["interJobDelayMs"].Type() == winrtRN::JSValueType::Double)) {
+        sessionConfig.interJobDelayMs =
+            static_cast<int>(configObj["interJobDelayMs"].AsDouble());
+      }
+      if (configObj.count("maxDecodePixelSize") &&
+          (configObj["maxDecodePixelSize"].Type() == winrtRN::JSValueType::Int64 ||
+           configObj["maxDecodePixelSize"].Type() ==
+               winrtRN::JSValueType::Double)) {
+        sessionConfig.maxDecodePixelSize =
+            static_cast<int>(configObj["maxDecodePixelSize"].AsDouble());
       }
     }
 
@@ -1737,6 +1980,7 @@ void GumpLocalStorage::StartAnalysis(
     }
 
     sessionConfig.onProgress = EmitAnalysisProgress;
+    sessionConfig.onBatchResults = EmitAnalysisBatch;
     sessionConfig.onComplete = EmitAnalysisComplete;
 
     const bool started = g_analysisSession->Start(sessionConfig);

@@ -69,17 +69,16 @@ function maxConcurrentServerUploadsForPlatform(): number {
 }
 
 function maxConcurrentAnalysisForPlatform(): number {
-  // SCRFD/OCEC pool is capped at 2. Extra JS slots only decode 4096px
-  // bitmaps that then wait — heat and RAM, not throughput. Keep one extra
-  // slot so decode can overlap the two ONNX workers.
+  // Cap workers to leave headroom for the JS thread and OS thermal
+  // scheduler. Throughput is recovered later via memory-bounded decode.
   switch (Platform.OS) {
     case 'macos':
     case 'ios':
-      return 3;
-    case 'windows':
       return 2;
+    case 'windows':
+      return 1;
     default:
-      return 3;
+      return 2;
   }
 }
 
@@ -157,7 +156,10 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     });
   }
 
-  const resumeInFlightWork = useCallback((albumId: string) => {
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingResumeAlbumIdsRef = useRef(new Set<string>());
+
+  const resumeInFlightWorkNow = useCallback((albumId: string) => {
     const album = getAlbum(albumId);
     if (!album) {
       return;
@@ -195,10 +197,45 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     }
   }, []);
 
+  const resumeInFlightWork = useCallback((albumId: string) => {
+    pendingResumeAlbumIdsRef.current.add(albumId);
+    if (resumeTimerRef.current) {
+      return;
+    }
+    resumeTimerRef.current = setTimeout(() => {
+      resumeTimerRef.current = null;
+      const albumIds = [...pendingResumeAlbumIdsRef.current];
+      pendingResumeAlbumIdsRef.current.clear();
+      for (const pendingAlbumId of albumIds) {
+        resumeInFlightWorkNow(pendingAlbumId);
+      }
+    }, 300);
+  }, [resumeInFlightWorkNow]);
+
+  useEffect(() => {
+    return () => {
+      if (resumeTimerRef.current) {
+        clearTimeout(resumeTimerRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     return onUploadNavigationCoopEnd(() => {
-      for (const albumId of Object.keys(culledAlbumStore.getState().albums)) {
-        resumeInFlightWork(albumId);
+      const albums = culledAlbumStore.getState().albums;
+      for (const albumId of Object.keys(albums)) {
+        const album = albums[albumId];
+        if (!album) {
+          continue;
+        }
+        const photos = getPhotosForAlbum(albumId);
+        if (
+          hasInFlightUploads(album, photos) ||
+          hasInFlightAnalysis(album, photos) ||
+          hasInFlightServerUploads(album, photos)
+        ) {
+          resumeInFlightWork(albumId);
+        }
       }
     });
   }, [resumeInFlightWork]);

@@ -55,6 +55,7 @@ import {
 import {computeKeyFaces, computeStats, orderCulledAlbumPhotosForCulling} from '@lib/culling/cullingUtil';
 import {APIResponse} from '@services/api';
 import {photoKey, photoStateStore} from './photoStateStore';
+import {flushRenderSync, scheduleRenderSync} from './photoRenderStore';
 import {
   flushPendingPhotoUpdates as flushBatchedPhotoUpdates,
   registerPhotoUpdateBatchApplier,
@@ -104,6 +105,7 @@ function syncAddedPhotosToState(
 
     state.photoOrder[albumId] = order;
   });
+  scheduleRenderSync();
 }
 
 function toPlainPhoto(photo: CulledAlbumPhoto): CulledAlbumPhoto {
@@ -136,6 +138,7 @@ export function syncPhotoStateForAlbum(
       state.photoState[photoKey(albumId, plainPhoto.photoId)] = plainPhoto;
     }
   });
+  scheduleRenderSync();
 }
 
 function applyAlbumMergeInState(albumId: string, incoming: CulledAlbum): void {
@@ -521,7 +524,7 @@ export function updateCullingSummary(albumId: string): void {
   });
 }
 
-const CULLING_SUMMARY_DEBOUNCE_MS = 1500;
+const CULLING_SUMMARY_DEBOUNCE_MS = 3000;
 const cullingSummaryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function scheduleUpdateCullingSummary(albumId: string): void {
@@ -964,6 +967,8 @@ function applyPhotoUpdatesBatch(updates: PendingPhotoUpdate[]): boolean {
     }
   });
 
+  scheduleRenderSync();
+
   const albumsToReconcile = new Set<string>();
   for (const update of updates) {
     const album = getAlbumFromState(update.albumId);
@@ -1004,7 +1009,9 @@ export function updatePhoto(
 
   if (options?.immediate) {
     flushPendingPhotoUpdates();
-    return applyPhotoUpdatesBatch([{albumId, photoId, updater, options}]);
+    const applied = applyPhotoUpdatesBatch([{albumId, photoId, updater, options}]);
+    flushRenderSync();
+    return applied;
   }
 
   schedulePhotoUpdate({albumId, photoId, updater, options}, applyPhotoUpdatesBatch);
@@ -1143,7 +1150,6 @@ export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {
     }
     album.analysisBatchPhotoIds = uploadedPhotoIds;
     album.analysisBatchCounts = createAnalysisBatchCounts(uploadedPhotoIds.length);
-    recomputeAlbumTotals(album);
   });
 
   flushPendingPhotoUpdates();
@@ -1172,7 +1178,20 @@ export function setAnalysisBatchCounts(
     if (!album) {
       return;
     }
-    album.analysisBatchCounts = counts;
+    const existingTotal = album.analysisBatchCounts?.total ?? 0;
+    const queuedTotal = album.analysisBatchPhotoIds.length;
+    const knownTotal = Math.max(counts.total, existingTotal, queuedTotal);
+    if (knownTotal <= 0) {
+      return;
+    }
+    album.analysisBatchCounts = {
+      ...counts,
+      total: knownTotal,
+      pending: Math.max(
+        0,
+        knownTotal - counts.analyzed - counts.failed - counts.analyzing,
+      ),
+    };
   });
 }
 

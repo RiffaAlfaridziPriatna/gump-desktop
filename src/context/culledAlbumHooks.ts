@@ -1,6 +1,7 @@
 import {useContextOrThrow} from '@lib/react/context';
 import {culledAlbumStore, getPhotoById} from '@lib/culledAlbum/store';
 import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
+import {photoRenderStore} from '@lib/culledAlbum/photoRenderStore';
 import {getServerUploadBatchPhotos} from '@lib/culledAlbum/serverUploadProgress';
 import {getAnalysisBatchPhotos} from '@lib/culledAlbum/analysisProgress';
 import {
@@ -21,6 +22,17 @@ import {
 
 const EMPTY_PHOTO_IDS: string[] = [];
 const EMPTY_PHOTOS: CulledAlbumPhoto[] = [];
+
+function photosFromRenderSnapshot(albumId: string | null): CulledAlbumPhoto[] {
+  if (!albumId) {
+    return EMPTY_PHOTOS;
+  }
+  const state = photoStateStore.getState();
+  const order = state.photoOrder[albumId] ?? [];
+  return order
+    .map(photoId => state.photoState[photoKey(albumId, photoId)])
+    .filter((photo): photo is CulledAlbumPhoto => Boolean(photo));
+}
 
 function trackMemoDependencies(..._values: unknown[]): void {}
 
@@ -162,15 +174,20 @@ export function useCulledAlbumPhoto(
   albumId: string | undefined,
   photoId: string,
 ): CulledAlbumPhoto | undefined {
-  return useStateStore(photoStateStore, state => {
+  return useStateStore(photoRenderStore, state => {
+    trackMemoDependencies(state.snapshotRevision);
     if (!albumId || !photoId) {
       return undefined;
     }
-    return state.photoState[photoKey(albumId, photoId)];
+    return photoStateStore.getState().photoState[photoKey(albumId, photoId)];
   });
 }
 
 export function useCulledAlbumPhotosState(albumId: string): CulledAlbumPhoto[] {
+  const snapshotRevision = useStateStore(
+    photoRenderStore,
+    state => state.snapshotRevision,
+  );
   const photoOrder = useStateStore(
     photoStateStore,
     state => state.photoOrder[albumId] ?? EMPTY_PHOTO_IDS,
@@ -179,10 +196,6 @@ export function useCulledAlbumPhotosState(albumId: string): CulledAlbumPhoto[] {
     photoStateStore,
     state => state.gridRevision[albumId] ?? 0,
   );
-  const photoStateEntries = useStateStore(photoStateStore, state => {
-    const order = state.photoOrder[albumId] ?? EMPTY_PHOTO_IDS;
-    return order.map(photoId => state.photoState[photoKey(albumId, photoId)]);
-  });
   const albumPhotos = useCulledAlbumStore(
     state => state.albums[albumId]?.photos ?? EMPTY_PHOTOS,
   );
@@ -192,11 +205,12 @@ export function useCulledAlbumPhotosState(albumId: string): CulledAlbumPhoto[] {
       return albumPhotos;
     }
 
+    const photoState = photoStateStore.getState().photoState;
     const albumById = new Map(albumPhotos.map(photo => [photo.photoId, photo]));
     return photoOrder
-      .map((photoId, index) => photoStateEntries[index] ?? albumById.get(photoId))
+      .map(photoId => photoState[photoKey(albumId, photoId)] ?? albumById.get(photoId))
       .filter((photo): photo is CulledAlbumPhoto => Boolean(photo));
-  }, [albumPhotos, gridRevision, photoOrder, photoStateEntries]);
+  }, [albumId, albumPhotos, gridRevision, photoOrder, snapshotRevision]);
 }
 
 export function useCulledAlbumLocalImportProgress(
@@ -229,6 +243,10 @@ export function useCulledAlbumLocalImportProgress(
 
 /** @deprecated Prefer useCulledAlbumLocalImportProgress for upload toast progress. */
 export function useCulledAlbumUploadItems(albumId: string | null) {
+  const snapshotRevision = useStateStore(
+    photoRenderStore,
+    state => state.snapshotRevision,
+  );
   const batchPhotoIds = useCulledAlbumStore(state => {
     if (!albumId) {
       return EMPTY_PHOTO_IDS;
@@ -236,18 +254,10 @@ export function useCulledAlbumUploadItems(albumId: string | null) {
     return state.albums[albumId]?.localImportBatchPhotoIds ?? EMPTY_PHOTO_IDS;
   });
   const batchCounts = useCulledAlbumLocalImportProgress(albumId);
-  const albumPhotos = useStateStore(photoStateStore, state => {
-    if (!albumId) {
-      return EMPTY_PHOTOS;
-    }
-    const order = state.photoOrder[albumId] ?? [];
-    const photos = order.map(photoId =>
-      state.photoState[photoKey(albumId, photoId)],
-    );
-    return photos.filter(
-      (photo): photo is CulledAlbumPhoto => Boolean(photo),
-    );
-  });
+  const albumPhotos = useMemo(
+    () => photosFromRenderSnapshot(albumId),
+    [albumId, snapshotRevision],
+  );
 
   return useMemo(() => {
     trackMemoDependencies(batchCounts);
@@ -259,21 +269,20 @@ export function useCulledAlbumUploadItems(albumId: string | null) {
 }
 
 export function useCulledAlbumServerUploadBatch(albumId: string) {
+  const snapshotRevision = useStateStore(
+    photoRenderStore,
+    state => state.snapshotRevision,
+  );
   const batchPhotoIds = useCulledAlbumStore(
     state => state.albums[albumId]?.uploadBatchPhotoIds ?? EMPTY_PHOTO_IDS,
   );
   const uploadStateSignature = useCulledAlbumStore(state =>
     buildServerUploadStateSignature(albumId, state),
   );
-  const albumPhotos = useStateStore(photoStateStore, state => {
-    const order = state.photoOrder[albumId] ?? [];
-    const photos = order.map(photoId =>
-      state.photoState[photoKey(albumId, photoId)],
-    );
-    return photos.filter(
-      (photo): photo is CulledAlbumPhoto => Boolean(photo),
-    );
-  });
+  const albumPhotos = useMemo(
+    () => photosFromRenderSnapshot(albumId),
+    [albumId, snapshotRevision],
+  );
 
   return useMemo(() => {
     trackMemoDependencies(uploadStateSignature);
@@ -298,6 +307,10 @@ export function useCulledAlbumAnalysisCounts(albumId: string | null) {
 }
 
 function useCulledAlbumAnalysisBatch(albumId: string | null) {
+  const snapshotRevision = useStateStore(
+    photoRenderStore,
+    state => state.snapshotRevision,
+  );
   const batchPhotoIds = useCulledAlbumStore(state => {
     if (!albumId) {
       return EMPTY_PHOTO_IDS;
@@ -310,18 +323,10 @@ function useCulledAlbumAnalysisBatch(albumId: string | null) {
     }
     return buildAnalysisStateSignature(albumId, state);
   });
-  const albumPhotos = useStateStore(photoStateStore, state => {
-    if (!albumId) {
-      return EMPTY_PHOTOS;
-    }
-    const order = state.photoOrder[albumId] ?? [];
-    const photos = order.map(photoId =>
-      state.photoState[photoKey(albumId, photoId)],
-    );
-    return photos.filter(
-      (photo): photo is CulledAlbumPhoto => Boolean(photo),
-    );
-  });
+  const albumPhotos = useMemo(
+    () => photosFromRenderSnapshot(albumId),
+    [albumId, snapshotRevision],
+  );
 
   return useMemo(() => {
     trackMemoDependencies(analysisStateSignature);

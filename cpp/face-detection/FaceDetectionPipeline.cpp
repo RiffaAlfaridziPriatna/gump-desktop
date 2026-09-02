@@ -828,6 +828,171 @@ float SharpnessFromDetection(
       boxH * (1.0f - inset * 2.0f));
 }
 
+void FillPhotometrics(
+    OcecEyeStateClassifier *ocec,
+    Landmark106EarClassifier *landmark106,
+    float earMinFaceArea,
+    const uint8_t *bgraPixels,
+    int imageWidth,
+    int imageHeight,
+    int stride,
+    const ScrfdDetection &detection,
+    float heuristicFaceArea,
+    FaceResult &face) {
+  const bool ocecReady = ocec != nullptr && ocec->isReady();
+  const bool earReady = landmark106 != nullptr && landmark106->isReady();
+  EyeStateResult eyeState;
+  std::string eyeEngine = "none";
+  if (earReady && heuristicFaceArea >= earMinFaceArea) {
+    eyeState = landmark106->classifyBgraBox(
+        bgraPixels,
+        imageWidth,
+        imageHeight,
+        stride,
+        detection.x1,
+        detection.y1,
+        detection.x2,
+        detection.y2);
+    if (eyeState.state != EyeState::Unknown) {
+      eyeEngine = "ear106";
+    }
+  }
+  if (eyeState.state == EyeState::Unknown && ocecReady) {
+    eyeState = ocec->classifyBgra(
+        bgraPixels,
+        imageWidth,
+        imageHeight,
+        stride,
+        {detection.leftEye.x, detection.leftEye.y},
+        {detection.rightEye.x, detection.rightEye.y});
+    if (eyeState.state != EyeState::Unknown) {
+      eyeEngine = "ocec";
+    }
+  }
+
+  face.sharpness =
+      SharpnessFromDetection(bgraPixels, imageWidth, imageHeight, stride, detection);
+
+  EyesOpenResult eyesOpen;
+  eyesOpen.value = eyeState.state == EyeState::Open;
+  eyesOpen.confidence = eyeState.confidence;
+  eyesOpen.leftProbability = eyeState.leftOpenProbability;
+  eyesOpen.rightProbability = eyeState.rightOpenProbability;
+  if (eyeState.state == EyeState::Closed) {
+    eyesOpen.value = false;
+    const float maxOpen =
+        std::max(eyesOpen.leftProbability, eyesOpen.rightProbability);
+    const float minOpen =
+        std::min(eyesOpen.leftProbability, eyesOpen.rightProbability);
+    const bool clearlyClosed = maxOpen <= 0.12f && minOpen <= 0.10f;
+    if (heuristicFaceArea < 0.00085f) {
+      eyesOpen.value = true;
+      eyesOpen.confidence = 72.0f;
+    } else if (heuristicFaceArea < 0.0018f && !clearlyClosed && maxOpen >= 0.20f) {
+      eyesOpen.value = true;
+      eyesOpen.confidence = 72.0f;
+    }
+  } else if (eyeState.state == EyeState::Unknown) {
+    eyesOpen.value = true;
+    eyesOpen.confidence = 70.0f;
+  }
+
+  if (eyeEngine != "ear106" && eyesOpen.value && heuristicFaceArea >= 0.015f &&
+      eyesOpen.confidence <= 76.0f) {
+    const float maxOpen =
+        std::max(eyesOpen.leftProbability, eyesOpen.rightProbability);
+    const float minOpen =
+        std::min(eyesOpen.leftProbability, eyesOpen.rightProbability);
+    if (maxOpen <= 0.12f && minOpen <= 0.10f) {
+      eyesOpen.value = false;
+      eyesOpen.confidence = 95.0f;
+    }
+  }
+
+  if (eyeEngine != "ear106" && eyesOpen.value && heuristicFaceArea >= 0.0018f &&
+      heuristicFaceArea < 0.0040f && eyesOpen.confidence <= 76.0f) {
+    const float maxOpen =
+        std::max(eyesOpen.leftProbability, eyesOpen.rightProbability);
+    const float minOpen =
+        std::min(eyesOpen.leftProbability, eyesOpen.rightProbability);
+    if (maxOpen > 0.12f && maxOpen <= 0.19f && minOpen <= 0.05f) {
+      eyesOpen.value = false;
+      eyesOpen.confidence = 90.0f;
+    }
+  }
+
+  face.eyesOpen = eyesOpen;
+}
+
+ScrfdDetection DetectionFromFaceInCrop(
+    const FaceResult &face,
+    const NormalizedRect &crop,
+    int cropWidth,
+    int cropHeight) {
+  const float cropW = std::max(crop.width, 1e-6f);
+  const float cropH = std::max(crop.height, 1e-6f);
+  auto mapX = [&](float x) {
+    return (x - crop.left) / cropW * static_cast<float>(cropWidth);
+  };
+  auto mapY = [&](float y) {
+    return (y - crop.top) / cropH * static_cast<float>(cropHeight);
+  };
+
+  ScrfdDetection detection;
+  detection.x1 = mapX(face.left);
+  detection.y1 = mapY(face.top);
+  detection.x2 = mapX(face.left + face.width);
+  detection.y2 = mapY(face.top + face.height);
+  detection.score = face.confidence;
+  for (const auto &landmark : face.landmarks) {
+    const float pixelX = mapX(landmark.x);
+    const float pixelY = mapY(landmark.y);
+    if (landmark.type == "eyeLeft") {
+      detection.leftEye = {pixelX, pixelY};
+    } else if (landmark.type == "eyeRight") {
+      detection.rightEye = {pixelX, pixelY};
+    } else if (landmark.type == "nose") {
+      detection.nose = {pixelX, pixelY};
+    } else if (landmark.type == "mouth") {
+      detection.leftMouth = {pixelX, pixelY};
+      detection.rightMouth = {pixelX, pixelY};
+    }
+  }
+  return detection;
+}
+
+void ApplySpuriousClosedEyeSuppression(std::vector<FaceResult> &results) {
+  std::vector<size_t> closedIdx;
+  for (size_t i = 0; i < results.size(); ++i) {
+    const auto &face = results[i];
+    const float area = face.width * face.height;
+    if (!face.eyesOpen.value && area >= 0.0010f && area < 0.0025f) {
+      closedIdx.push_back(i);
+    }
+  }
+  if (closedIdx.size() < 2) {
+    return;
+  }
+  size_t keep = closedIdx[0];
+  auto closedStrength = [](const FaceResult &face) {
+    const float maxOpen = std::max(
+        face.eyesOpen.leftProbability, face.eyesOpen.rightProbability);
+    return std::make_pair(maxOpen, -face.eyesOpen.confidence);
+  };
+  for (size_t i = 1; i < closedIdx.size(); ++i) {
+    if (closedStrength(results[closedIdx[i]]) < closedStrength(results[keep])) {
+      keep = closedIdx[i];
+    }
+  }
+  for (size_t idx : closedIdx) {
+    if (idx == keep) {
+      continue;
+    }
+    results[idx].eyesOpen.value = true;
+    results[idx].eyesOpen.confidence = 72.0f;
+  }
+}
+
 // Match Apple Vision VNFaceObservation.yaw (radians). TS media filters
 // (rejectLikelyDisplayedMediaFaces) and AbsYawRadians assume radians; emitting
 // degrees caused side-of-frame group faces with mild pose (~0.5–3°) to be
@@ -1363,7 +1528,8 @@ std::vector<FaceResult> FaceDetectionPipeline::detectFaces(
     const uint8_t *bgraPixels,
     int imageWidth,
     int imageHeight,
-    int stride) const {
+    int stride,
+    bool measurePhotometrics) const {
   if (!impl_ || !impl_->ready || bgraPixels == nullptr || imageWidth <= 0 ||
       imageHeight <= 0) {
     return {};
@@ -1407,7 +1573,6 @@ std::vector<FaceResult> FaceDetectionPipeline::detectFaces(
   }
   accepted = DeduplicateFaces(std::move(accepted), imageWidth, imageHeight);
 
-  const bool ocecReady = worker->ocec.isReady();
   const bool earReady = worker->landmark106.isReady();
   std::vector<FaceResult> results;
   results.reserve(accepted.size());
@@ -1416,39 +1581,6 @@ std::vector<FaceResult> FaceDetectionPipeline::detectFaces(
   for (const auto &detection : accepted) {
     const float boxW = detection.x2 - detection.x1;
     const float boxH = detection.y2 - detection.y1;
-    const float faceArea =
-        (boxW * boxH) /
-        (static_cast<float>(imageWidth) * static_cast<float>(imageHeight));
-
-    EyeStateResult eyeState;
-    std::string eyeEngine = "none";
-    // Phase 2: EAR on medium+ faces; OCEC for tiny crops where mesh is weak.
-    if (earReady && faceArea >= impl_->config.earMinFaceArea) {
-      eyeState = worker->landmark106.classifyBgraBox(
-          bgraPixels,
-          imageWidth,
-          imageHeight,
-          stride,
-          detection.x1,
-          detection.y1,
-          detection.x2,
-          detection.y2);
-      if (eyeState.state != EyeState::Unknown) {
-        eyeEngine = "ear106";
-      }
-    }
-    if (eyeState.state == EyeState::Unknown && ocecReady) {
-      eyeState = worker->ocec.classifyBgra(
-          bgraPixels,
-          imageWidth,
-          imageHeight,
-          stride,
-          {detection.leftEye.x, detection.leftEye.y},
-          {detection.rightEye.x, detection.rightEye.y});
-      if (eyeState.state != EyeState::Unknown) {
-        eyeEngine = "ocec";
-      }
-    }
 
     FaceResult face;
     face.left = detection.x1 / static_cast<float>(imageWidth);
@@ -1456,62 +1588,27 @@ std::vector<FaceResult> FaceDetectionPipeline::detectFaces(
     face.width = boxW / static_cast<float>(imageWidth);
     face.height = boxH / static_cast<float>(imageHeight);
     face.confidence = detection.score;
-    face.sharpness =
-        SharpnessFromDetection(bgraPixels, imageWidth, imageHeight, stride, detection);
     face.brightness = kMacOsBrightnessPlaceholder;
-
-    EyesOpenResult eyesOpen;
-    eyesOpen.value = eyeState.state == EyeState::Open;
-    eyesOpen.confidence = eyeState.confidence;
-    eyesOpen.leftProbability = eyeState.leftOpenProbability;
-    eyesOpen.rightProbability = eyeState.rightOpenProbability;
-    if (eyeState.state == EyeState::Closed) {
-      eyesOpen.value = false;
-      const float maxOpen =
-          std::max(eyesOpen.leftProbability, eyesOpen.rightProbability);
-      const float minOpen =
-          std::min(eyesOpen.leftProbability, eyesOpen.rightProbability);
-      const bool clearlyClosed = maxOpen <= 0.12f && minOpen <= 0.10f;
-      if (faceArea < 0.00085f) {
-        eyesOpen.value = true;
-        eyesOpen.confidence = 72.0f;
-      } else if (faceArea < 0.0018f && !clearlyClosed && maxOpen >= 0.20f) {
-        eyesOpen.value = true;
-        eyesOpen.confidence = 72.0f;
-      }
-    } else if (eyeState.state == EyeState::Unknown) {
-      eyesOpen.value = true;
-      eyesOpen.confidence = 70.0f;
-    }
-
-    if (eyeEngine != "ear106" && eyesOpen.value && faceArea >= 0.015f &&
-        eyesOpen.confidence <= 76.0f) {
-      const float maxOpen =
-          std::max(eyesOpen.leftProbability, eyesOpen.rightProbability);
-      const float minOpen =
-          std::min(eyesOpen.leftProbability, eyesOpen.rightProbability);
-      if (maxOpen <= 0.12f && minOpen <= 0.10f) {
-        eyesOpen.value = false;
-        eyesOpen.confidence = 95.0f;
-      }
-    }
-
-    if (eyeEngine != "ear106" && eyesOpen.value && faceArea >= 0.0018f &&
-        faceArea < 0.0040f && eyesOpen.confidence <= 76.0f) {
-      const float maxOpen =
-          std::max(eyesOpen.leftProbability, eyesOpen.rightProbability);
-      const float minOpen =
-          std::min(eyesOpen.leftProbability, eyesOpen.rightProbability);
-      if (maxOpen > 0.12f && maxOpen <= 0.19f && minOpen <= 0.05f) {
-        eyesOpen.value = false;
-        eyesOpen.confidence = 90.0f;
-      }
+    if (measurePhotometrics) {
+      const float faceArea =
+          (boxW * boxH) /
+          (static_cast<float>(imageWidth) * static_cast<float>(imageHeight));
+      FillPhotometrics(
+          &worker->ocec,
+          &worker->landmark106,
+          impl_->config.earMinFaceArea,
+          bgraPixels,
+          imageWidth,
+          imageHeight,
+          stride,
+          detection,
+          faceArea,
+          face);
     }
 
     face.pose.yaw = EstimateYawRadians(
         detection.leftEye.x, detection.rightEye.x, detection.nose.x);
     face.pose.pitch = EstimatePitchRadians(detection);
-    face.eyesOpen = eyesOpen;
     face.faceId = "local-face-" + std::to_string(index);
     face.engine = earReady ? "scrfd+ear106" : "scrfd";
 
@@ -1539,36 +1636,8 @@ std::vector<FaceResult> FaceDetectionPipeline::detectFaces(
     ++index;
   }
 
-  {
-    std::vector<size_t> closedIdx;
-    for (size_t i = 0; i < results.size(); ++i) {
-      const auto &face = results[i];
-      const float area = face.width * face.height;
-      if (!face.eyesOpen.value && area >= 0.0010f && area < 0.0025f) {
-        closedIdx.push_back(i);
-      }
-    }
-    if (closedIdx.size() >= 2) {
-      size_t keep = closedIdx[0];
-      auto closedStrength = [](const FaceResult &face) {
-        const float maxOpen = std::max(
-            face.eyesOpen.leftProbability, face.eyesOpen.rightProbability);
-        return std::make_pair(maxOpen, -face.eyesOpen.confidence);
-      };
-      for (size_t i = 1; i < closedIdx.size(); ++i) {
-        if (closedStrength(results[closedIdx[i]]) <
-            closedStrength(results[keep])) {
-          keep = closedIdx[i];
-        }
-      }
-      for (size_t idx : closedIdx) {
-        if (idx == keep) {
-          continue;
-        }
-        results[idx].eyesOpen.value = true;
-        results[idx].eyesOpen.confidence = 72.0f;
-      }
-    }
+  if (measurePhotometrics) {
+    ApplySpuriousClosedEyeSuppression(results);
   }
 
   if (impl_->config.enableNativeFpFilter) {
@@ -1584,8 +1653,72 @@ std::vector<FaceResult> FaceDetectionPipeline::detectFaces(
     results = ReindexFaces(std::move(results));
   }
 
-  ApplyProductEyeAndFocusLabels(results);
+  if (measurePhotometrics) {
+    ApplyProductEyeAndFocusLabels(results);
+  }
   return results;
+}
+
+constexpr float kMeasurementCropScale = 1.5f;
+
+NormalizedRect paddedMeasurementRect(const FaceResult &face) {
+  const float centerX = face.left + face.width * 0.5f;
+  const float centerY = face.top + face.height * 0.5f;
+  const float side = std::max(face.width, face.height) * kMeasurementCropScale;
+  const float half = side * 0.5f;
+  const float x1 = std::clamp(centerX - half, 0.0f, 1.0f);
+  const float y1 = std::clamp(centerY - half, 0.0f, 1.0f);
+  const float x2 = std::clamp(centerX + half, 0.0f, 1.0f);
+  const float y2 = std::clamp(centerY + half, 0.0f, 1.0f);
+  NormalizedRect rect;
+  rect.left = x1;
+  rect.top = y1;
+  rect.width = std::max(0.0f, x2 - x1);
+  rect.height = std::max(0.0f, y2 - y1);
+  return rect;
+}
+
+void FaceDetectionPipeline::refineFacePhotometrics(
+    FaceResult &face,
+    const uint8_t *cropBgra,
+    int cropWidth,
+    int cropHeight,
+    int cropStride,
+    const NormalizedRect &cropRect) const {
+  if (!impl_ || !impl_->ready || cropBgra == nullptr || cropWidth <= 0 ||
+      cropHeight <= 0 || cropRect.width <= 1e-6f || cropRect.height <= 1e-6f) {
+    return;
+  }
+
+  Impl::Worker *worker = impl_->acquireWorker();
+  if (worker == nullptr) {
+    return;
+  }
+  struct WorkerGuard {
+    const Impl *impl;
+    Impl::Worker *worker;
+    ~WorkerGuard() { impl->releaseWorker(worker); }
+  } guard{impl_.get(), worker};
+
+  const ScrfdDetection detection =
+      DetectionFromFaceInCrop(face, cropRect, cropWidth, cropHeight);
+  const float heuristicFaceArea = std::max(0.0f, face.width) * std::max(0.0f, face.height);
+  FillPhotometrics(
+      &worker->ocec,
+      &worker->landmark106,
+      impl_->config.earMinFaceArea,
+      cropBgra,
+      cropWidth,
+      cropHeight,
+      cropStride,
+      detection,
+      heuristicFaceArea,
+      face);
+}
+
+void FaceDetectionPipeline::relabelFaces(std::vector<FaceResult> &faces) const {
+  ApplySpuriousClosedEyeSuppression(faces);
+  ApplyProductEyeAndFocusLabels(faces);
 }
 
 } // namespace FaceDetection

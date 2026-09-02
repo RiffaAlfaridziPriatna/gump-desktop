@@ -14,6 +14,7 @@ import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useEffect, useState} from 'react';
+import {useIsFocused} from '@react-navigation/native';
 import {useLayout} from '@hooks/useLayout';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {TouchableOpacity} from '@components/ui';
@@ -37,6 +38,7 @@ export default function CulledAlbumUploadProgressScreen({
   const {screenPaddingHorizontal, isMobileLayout} = useLayout();
   const {resumeInFlightWork} = useCulledAlbumActions();
   const {batchPhotoIds, photos} = useCulledAlbumServerUploadBatch(albumId);
+  const isFocused = useIsFocused();
 
   const progress = computeServerUploadBatchProgress(photos, batchPhotoIds);
   const finished = isServerUploadBatchFinished(photos, batchPhotoIds);
@@ -52,8 +54,11 @@ export default function CulledAlbumUploadProgressScreen({
   const [headerHeight, setHeaderHeight] = useState(0);
 
   useEffect(() => {
+    if (!isFocused) {
+      return;
+    }
     resumeInFlightWork(albumId);
-  }, [albumId, resumeInFlightWork]);
+  }, [albumId, isFocused, resumeInFlightWork]);
 
   useEffect(() => {
     if (!finished) {

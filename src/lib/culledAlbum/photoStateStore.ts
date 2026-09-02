@@ -22,3 +22,20 @@ export function bumpPhotoGridRevision(albumId: string): void {
   });
 }
 
+const GRID_REVISION_DEBOUNCE_MS = 300;
+const gridRevisionTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export function scheduleGridRevisionBump(albumId: string): void {
+  if (gridRevisionTimers.has(albumId)) {
+    return;
+  }
+
+  gridRevisionTimers.set(
+    albumId,
+    setTimeout(() => {
+      gridRevisionTimers.delete(albumId);
+      bumpPhotoGridRevision(albumId);
+    }, GRID_REVISION_DEBOUNCE_MS),
+  );
+}
+

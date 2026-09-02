@@ -37,7 +37,14 @@ export async function uploadServerPhoto(
   });
   getUploadSelectedPhotosUseCase().startUpload(albumId, photoId);
 
+  let lastProgressWriteAt = 0;
   const onProgress = (progress: number) => {
+    getUploadSelectedPhotosUseCase().updateProgress(albumId, photoId, progress);
+    const now = Date.now();
+    if (now - lastProgressWriteAt < 250 && progress < 99) {
+      return;
+    }
+    lastProgressWriteAt = now;
     updatePhoto(albumId, photoId, entry => {
       if (entry.serverUploadStatus === 'failed') {
         return;
@@ -45,7 +52,6 @@ export async function uploadServerPhoto(
       entry.serverUploadProgress = Math.min(progress, 99);
       entry.serverUploadStatus = 'uploading';
     });
-    getUploadSelectedPhotosUseCase().updateProgress(albumId, photoId, progress);
   };
 
   try {
