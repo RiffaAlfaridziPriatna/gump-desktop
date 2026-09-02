@@ -31,6 +31,7 @@ import {uploadServerPhoto} from '@lib/culledAlbum/serverUpload';
 import {createUploadQueue} from '@lib/culledAlbum/uploadQueue';
 import {onUploadNavigationCoopEnd} from '@lib/navigation/uploadAwareNavigation';
 import {
+  beginAnalysisQueue,
   beginLocalImportQueue,
   clearAlbumQueues,
   finishLocalImportQueue,
@@ -187,7 +188,13 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
     if (hasInFlightAnalysis(album, photos)) {
       reconcileAnalysisBatchCounts(albumId);
-      setQueueOperationStatus(albumId, 'analysis', 'active');
+      const analysisAlbum = getAlbum(albumId);
+      beginAnalysisQueue(
+        albumId,
+        analysisAlbum?.analysisBatchCounts?.total ??
+          analysisAlbum?.analysisBatchPhotoIds.length ??
+          0,
+      );
       analysisQueueRef.current!.processPending(albumId);
     }
 
@@ -259,9 +266,9 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
   const startAnalysis = useCallback((albumId: string) => {
     syncedAlbumsRef.current.delete(albumId);
     uiStoreRef.current!.setState({analyzeError: null});
-    setQueueOperationStatus(albumId, 'analysis', 'active');
 
-    queuePhotosForAnalysis(albumId);
+    const photos = queuePhotosForAnalysis(albumId);
+    beginAnalysisQueue(albumId, photos.length);
     flushPendingPhotoUpdates();
     analysisQueueRef.current!.beginBatch(albumId);
     analysisQueueRef.current!.processPending(albumId);
