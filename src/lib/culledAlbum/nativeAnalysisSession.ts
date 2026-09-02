@@ -95,10 +95,14 @@ export type AnalysisProgressEvent = {
 
 function readFiniteCount(value: unknown): number | null {
   const count = Number(value);
-  if (!Number.isFinite(count) || count < 0) {
+  if (!Number.isFinite(count) || count < 0 || count > 1_000_000) {
     return null;
   }
-  return count;
+  const rounded = Math.round(count);
+  if (Math.abs(count - rounded) > 0.001) {
+    return null;
+  }
+  return rounded;
 }
 
 function coerceAnalysisProgress(event: unknown): AnalysisProgressEvent | null {

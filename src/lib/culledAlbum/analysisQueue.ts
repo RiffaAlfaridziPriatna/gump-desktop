@@ -10,6 +10,7 @@ import {Platform} from 'react-native';
 import {
   isAnalysisBatchFinished,
   isAnalysisBatchFinishedByCounts,
+  resolveAnalysisBatchTotal,
 } from './analysisProgress';
 import {
   cancelNativeAnalysis,
@@ -664,11 +665,11 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         if (isCancelled(albumId, generation)) {
           return;
         }
-        const queuedTotal = getAlbum(albumId)?.analysisBatchPhotoIds.length ?? 0;
-        const knownTotal = Math.max(
+        const album = getAlbum(albumId);
+        const knownTotal = resolveAnalysisBatchTotal(
           progress.total,
-          getAlbum(albumId)?.analysisBatchCounts?.total ?? 0,
-          queuedTotal,
+          album?.analysisBatchPhotoIds.length ?? 0,
+          album?.analysisBatchCounts?.total ?? 0,
         );
         if (knownTotal <= 0) {
           return;

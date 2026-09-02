@@ -22,6 +22,7 @@ import {
   createAnalysisBatchCounts,
   computeAnalysisBatchCountsForIds,
   isAnalysisBatchFinishedByCounts,
+  resolveAnalysisBatchTotal,
 } from './analysisProgress';
 import {readAlbumMeta, readAllAlbumMeta, removeAlbum, saveAlbum, type SaveAlbumOptions} from './storage';
 import {toPersistableAlbum} from './toPersistableAlbum';
@@ -1178,9 +1179,11 @@ export function setAnalysisBatchCounts(
     if (!album) {
       return;
     }
-    const existingTotal = album.analysisBatchCounts?.total ?? 0;
-    const queuedTotal = album.analysisBatchPhotoIds.length;
-    const knownTotal = Math.max(counts.total, existingTotal, queuedTotal);
+    const knownTotal = resolveAnalysisBatchTotal(
+      counts.total,
+      album.analysisBatchPhotoIds.length,
+      album.analysisBatchCounts?.total ?? 0,
+    );
     if (knownTotal <= 0) {
       return;
     }

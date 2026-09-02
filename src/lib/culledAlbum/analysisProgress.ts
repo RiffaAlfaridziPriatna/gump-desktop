@@ -3,6 +3,30 @@ import {
   CulledAlbumPhoto,
 } from './types';
 
+/** Hard ceiling so a malformed native `total` cannot latch into UI counts. */
+export const MAX_ANALYSIS_BATCH_TOTAL = 1_000_000;
+
+export function resolveAnalysisBatchTotal(
+  reportedTotal: number,
+  queuedTotal: number,
+  existingTotal: number,
+): number {
+  if (queuedTotal > 0) {
+    return queuedTotal;
+  }
+
+  const fallback = existingTotal > 0 ? existingTotal : reportedTotal;
+  if (
+    !Number.isFinite(fallback) ||
+    fallback <= 0 ||
+    fallback > MAX_ANALYSIS_BATCH_TOTAL
+  ) {
+    return 0;
+  }
+
+  return fallback;
+}
+
 export function createAnalysisBatchCounts(total: number): AnalysisBatchCounts {
   return {
     total,

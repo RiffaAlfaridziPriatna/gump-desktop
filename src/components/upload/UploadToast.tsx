@@ -32,37 +32,77 @@ const useNativeDriver = Platform.OS !== 'windows';
 const SLIDE_DISTANCE = 120;
 const ANIMATION_MS = 220;
 const AUTO_CLOSE_DELAY_MS = 5000;
-/** Match C++ `progressIntervalMs` so the fake 1-by-1 catch-up lands as the next native batch typically arrives. */
-const ANALYZE_COUNT_CATCHUP_MS = 500;
+const MIN_MS_PER_PHOTO = 80;
+const MAX_MS_PER_PHOTO = 350;
+const DEFAULT_MS_PER_PHOTO = 180;
+const MAX_LEAD_PHOTOS = 20;
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
 
 function useInterpolatedRemaining(
   enabled: boolean,
   targetRemaining: number,
   shouldSnap: boolean,
   resetKey: string,
+  batchTotal: number,
 ): number {
   const [displayedRemaining, setDisplayedRemaining] = useState(targetRemaining);
   const displayedRef = useRef(targetRemaining);
+  const targetRef = useRef(targetRemaining);
   const resetKeyRef = useRef(resetKey);
+  const msPerPhotoRef = useRef(DEFAULT_MS_PER_PHOTO);
+  const lastNativeTargetRef = useRef(targetRemaining);
+  const lastNativeAtRef = useRef(0);
+  const lastNativeGapRef = useRef(MAX_LEAD_PHOTOS);
+
+  targetRef.current = Math.max(0, Math.round(targetRemaining));
 
   useEffect(() => {
-    const clampedTarget = Math.max(0, Math.round(targetRemaining));
+    const clampedTarget = targetRef.current;
     const didReset = resetKeyRef.current !== resetKey;
     resetKeyRef.current = resetKey;
 
-    if (
-      !enabled ||
-      shouldSnap ||
-      didReset ||
-      clampedTarget >= displayedRef.current
-    ) {
+    if (didReset) {
+      lastNativeTargetRef.current = clampedTarget;
+      lastNativeAtRef.current = 0;
+      lastNativeGapRef.current = MAX_LEAD_PHOTOS;
+      msPerPhotoRef.current = DEFAULT_MS_PER_PHOTO;
       displayedRef.current = clampedTarget;
       setDisplayedRemaining(clampedTarget);
       return;
     }
 
-    const gapAtStart = displayedRef.current - clampedTarget;
-    const stepMs = Math.max(16, ANALYZE_COUNT_CATCHUP_MS / gapAtStart);
+    if (lastNativeTargetRef.current > clampedTarget) {
+      const gap = lastNativeTargetRef.current - clampedTarget;
+      const elapsed = Date.now() - lastNativeAtRef.current;
+      if (gap > 0 && lastNativeAtRef.current > 0 && elapsed > 250) {
+        msPerPhotoRef.current = clampNumber(
+          elapsed / gap,
+          MIN_MS_PER_PHOTO,
+          MAX_MS_PER_PHOTO,
+        );
+        lastNativeGapRef.current = gap;
+      }
+    }
+
+    lastNativeTargetRef.current = clampedTarget;
+    lastNativeAtRef.current = Date.now();
+  }, [resetKey, targetRemaining]);
+
+  useEffect(() => {
+    if (!enabled || shouldSnap) {
+      displayedRef.current = targetRef.current;
+      setDisplayedRemaining(targetRef.current);
+      return;
+    }
+
+    if (batchTotal > 0 && displayedRef.current > batchTotal) {
+      displayedRef.current = batchTotal;
+      setDisplayedRemaining(batchTotal);
+    }
+
     let accumulatedMs = 0;
     let lastNow = 0;
     let frameId = 0;
@@ -74,10 +114,27 @@ function useInterpolatedRemaining(
       accumulatedMs += Math.min(50, now - lastNow);
       lastNow = now;
 
+      const nativeRemaining = targetRef.current;
+      const lead = lastNativeGapRef.current;
+      const floor =
+        nativeRemaining > lead
+          ? nativeRemaining - lead
+          : nativeRemaining;
       let current = displayedRef.current;
-      while (accumulatedMs >= stepMs && current > clampedTarget) {
-        accumulatedMs -= stepMs;
-        current -= 1;
+      if (batchTotal > 0 && current > batchTotal) {
+        current = batchTotal;
+      }
+
+      const goal = current > nativeRemaining ? nativeRemaining : floor;
+      const stepMs = msPerPhotoRef.current;
+
+      if (current > goal) {
+        while (accumulatedMs >= stepMs && current > goal) {
+          accumulatedMs -= stepMs;
+          current -= 1;
+        }
+      } else {
+        accumulatedMs = 0;
       }
 
       if (current !== displayedRef.current) {
@@ -85,18 +142,12 @@ function useInterpolatedRemaining(
         setDisplayedRemaining(current);
       }
 
-      if (current > clampedTarget) {
-        frameId = requestAnimationFrame(tick);
-        return;
-      }
-
-      displayedRef.current = clampedTarget;
-      setDisplayedRemaining(clampedTarget);
+      frameId = requestAnimationFrame(tick);
     };
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [enabled, resetKey, shouldSnap, targetRemaining]);
+  }, [batchTotal, enabled, resetKey, shouldSnap]);
 
   if (!enabled) {
     return targetRemaining;
@@ -303,6 +354,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     targetAnalyzeRemaining,
     shouldSnapAnalyzeCount,
     albumId,
+    batchTotal,
   );
 
   const totalProgress = useMemo(() => {
@@ -331,7 +383,12 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     if (batchTotal === 0) {
       return 0;
     }
-    if (displayAnalyzeRemaining === 0 && counts.completed === 0 && counts.failed === 0) {
+    if (
+      displayAnalyzeRemaining === 0 &&
+      targetAnalyzeRemaining === 0 &&
+      counts.completed === 0 &&
+      counts.failed === 0
+    ) {
       return 0;
     }
     return Math.min(
@@ -352,6 +409,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     queueOperation.uploadedCount,
     renderItems,
     serverBatchPhotoIds,
+    targetAnalyzeRemaining,
   ]);
 
   const displayProgress =
