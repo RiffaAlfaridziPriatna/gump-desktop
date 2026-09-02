@@ -616,10 +616,11 @@ function ingestNativeAnalyzedPhoto(
   const faces = analyzed.faces;
   const perceptualHash = existing.perceptualHash ?? analyzed.perceptualHash;
   const capturedAt = existing.capturedAt ?? analyzed.capturedAt;
-  const flags = analyzed.flags ?? derivePhotoFlags(faces);
+  // Photo badges must match the faces we keep (key/subject set). C++ flags
+  // run on the raw SCRFD dump, so one tiny background blur poisons the photo.
+  const flags = derivePhotoFlags(faces);
   const isFirstAnalysis = existing.faces.length === 0;
-  const initialStarRating =
-    existing.starRating ?? analyzed.starRating ?? deriveStarRating(faces);
+  const initialStarRating = existing.starRating ?? deriveStarRating(faces);
   const fromStatus =
     existing.analysisStatus === 'analyzing' ? 'analyzing' : 'pending';
 
@@ -714,8 +715,6 @@ function ingestNativeSessionResults(
       faces: mapDetectedFaces(result.faces ?? [], result.photoId),
       perceptualHash: normalizePerceptualHash(result.perceptualHash),
       capturedAt: normalizeCapturedAt(result.capturedAt),
-      flags: result.flags,
-      starRating: result.starRating,
       duplicated: result.duplicated,
     });
     analyzed += 1;
