@@ -7,7 +7,7 @@
 namespace FaceDetection {
 
 /// Longest-edge cap for SCRFD + tiling + dHash. Keep macOS/Windows lockstep.
-constexpr int kAnalysisMaxPixelSize = 2048;
+constexpr int kAnalysisMaxPixelSize = 4096;
 /// Longest-edge cap when rasterizing hi-res face crops for sharpness / OCEC / EAR.
 constexpr int kMeasurementMaxPixelSize = 4096;
 /// Longest-edge of each measurement crop after regional decode. OCEC/EAR

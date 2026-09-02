@@ -44,7 +44,7 @@ struct FaceResult {
 };
 
 // Normalized rect in full-image space (0-1). Used to map a hi-res crop back
-// onto the detection box / landmarks from the 2048 buffer.
+// onto the detection box / landmarks from the analysis buffer.
 struct NormalizedRect {
   float left{0.0f};
   float top{0.0f};

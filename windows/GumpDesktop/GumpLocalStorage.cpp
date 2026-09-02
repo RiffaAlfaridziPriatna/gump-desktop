@@ -1900,7 +1900,7 @@ void GumpLocalStorage::StartAnalysis(
     sessionConfig.pipelinePoolSize = 2;
     sessionConfig.progressIntervalMs = 500;
     sessionConfig.interJobDelayMs = 50;
-    sessionConfig.maxDecodePixelSize = 2048;
+    sessionConfig.maxDecodePixelSize = 4096;
     sessionConfig.progressiveBatchSize = 20;
 
     if (config.Type() == winrtRN::JSValueType::Object) {

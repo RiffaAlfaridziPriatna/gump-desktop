@@ -481,7 +481,7 @@ RCT_EXPORT_METHOD(startAnalysis:(NSString *)albumId
       sessionConfig.persistBatchSize = 50;
       sessionConfig.progressIntervalMs = 500;
       sessionConfig.interJobDelayMs = [configDict[@"interJobDelayMs"] intValue] ?: 50;
-      sessionConfig.maxDecodePixelSize = [configDict[@"maxDecodePixelSize"] intValue] ?: 2048;
+      sessionConfig.maxDecodePixelSize = [configDict[@"maxDecodePixelSize"] intValue] ?: 4096;
       sessionConfig.progressiveBatchSize = [configDict[@"progressiveBatchSize"] intValue] ?: 20;
       sessionConfig.albumId = [albumId UTF8String];
       sessionConfig.photos = photos;

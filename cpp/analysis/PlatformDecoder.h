@@ -171,9 +171,9 @@ class PlatformDecoder {
 public:
   virtual ~PlatformDecoder() = default;
 
-  // Decode image URI to BGRA pixels (max 2048 on longest edge by default).
+  // Decode image URI to BGRA pixels (max 4096 on longest edge by default).
   // Platform adapter downscales at decode time (ImageIO / WIC).
-  virtual DecodedImage DecodeImageToBgra(const std::string &uri, int maxPixelSize = 2048) = 0;
+  virtual DecodedImage DecodeImageToBgra(const std::string &uri, int maxPixelSize = 4096) = 0;
 
   // Regional decode: load only each crop into BGRA (longest edge ~768).
   // Never materialize a full-frame 4096 BGRA in our heaps.

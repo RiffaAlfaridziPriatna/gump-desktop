@@ -49,7 +49,7 @@ export function getAnalysisSessionTuning(): AnalysisSessionTuning {
   return {
     maxConcurrency: Platform.OS === 'windows' ? 1 : 2,
     interJobDelayMs: 50,
-    maxDecodePixelSize: 2048,
+    maxDecodePixelSize: 4096,
     progressiveBatchSize: 20,
   };
 }
