@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <iostream>
 #include <queue>
+#include <system_error>
 
 namespace Analysis {
 namespace {
@@ -120,6 +121,7 @@ struct AnalysisSession::Impl {
   
   std::vector<std::thread> workerThreads;
   std::thread orchestratorThread;
+  std::mutex joinMutex;
 
   bool Initialize() {
     if (!config.decoder) {
@@ -524,16 +526,26 @@ struct AnalysisSession::Impl {
     running.store(false);
   }
 
+  static void JoinIfJoinable(std::thread &thread) {
+    if (!thread.joinable()) {
+      return;
+    }
+    try {
+      thread.join();
+    } catch (const std::system_error &) {
+      // Already joined by another waiter, or not joinable anymore.
+    }
+  }
+
   void JoinFinishedThreads() {
+    std::lock_guard<std::mutex> lock(joinMutex);
+    // Orchestrator already joins workers. Joining those same threads here
+    // throws std::system_error and aborts the process (SIGABRT).
+    JoinIfJoinable(orchestratorThread);
     for (auto &thread : workerThreads) {
-      if (thread.joinable()) {
-        thread.join();
-      }
+      JoinIfJoinable(thread);
     }
     workerThreads.clear();
-    if (orchestratorThread.joinable()) {
-      orchestratorThread.join();
-    }
   }
 
   void Start() {
