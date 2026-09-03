@@ -137,7 +137,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   }, [isMobileLayout, screenPaddingHorizontal, screenWidth]);
 
   const layoutWidth =
-    mainContentWidth > 0 ? mainContentWidth : estimatedMainContentWidth;
+    mainContentWidth > 0 ? mainContentWidth : Math.max(estimatedMainContentWidth, 1);
 
   const initialPreloadUris = useMemo(
     () =>

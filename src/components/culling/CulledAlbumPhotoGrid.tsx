@@ -180,6 +180,7 @@ export function CulledAlbumPhotoGrid({
   onScrollInteractionStart,
 }: CulledAlbumPhotoGridProps) {
   const hoverStoreRef = useRef(createCulledAlbumPhotoHoverStore());
+  const listRef = useRef<FlatList<GridRow>>(null);
   const scrollEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isScrollActiveRef = useRef(false);
   const onScrollInteractionStartRef = useRef(onScrollInteractionStart);
@@ -216,6 +217,12 @@ export function CulledAlbumPhotoGrid({
   photoIdsRef.current = photoIds;
 
   const rows = useMemo(() => buildRows(photoIds), [photoIds]);
+
+  useEffect(() => {
+    if (photoIds.length > 0 && listRef.current) {
+      listRef.current.scrollToOffset({offset: 0, animated: false});
+    }
+  }, [photoIdsKey]);
 
   const getItemLayout = useCallback(
     (_data: ArrayLike<GridRow> | null | undefined, index: number) => ({
@@ -358,17 +365,23 @@ export function CulledAlbumPhotoGrid({
     ],
   );
 
-  if (photos.length === 0 || cardWidth <= 0) {
+  if (photos.length === 0) {
     return null;
+  }
+
+  if (cardWidth <= 0) {
+    return <View style={styles.list} />;
   }
 
   return (
     <CulledAlbumPhotoHoverContext.Provider value={hoverStoreRef.current}>
       <FlatList
+        ref={listRef}
         data={rows}
         keyExtractor={item => item.key}
         renderItem={renderRow}
         getItemLayout={getItemLayout}
+        extraData={photoIdsKey}
         contentContainerStyle={contentContainerStyle}
         style={styles.list}
         initialNumToRender={6}
