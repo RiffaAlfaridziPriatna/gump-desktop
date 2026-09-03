@@ -190,7 +190,7 @@ struct AnalysisSession::Impl {
         
         StoreResult(result);
         
-        if (__DEV__ || config.logFallbacks) {
+        if (config.logFallbacks) {
           std::cout << "[AnalysisSession] Fallback used for " 
                     << job.input.photoId << ": decode failed" << std::endl;
         }
@@ -278,7 +278,7 @@ struct AnalysisSession::Impl {
         } catch (const std::exception &e) {
           // Measurement failed, but we still have face locations
           // Just skip refinement, use basic detection data
-          if (__DEV__ || config.logFallbacks) {
+          if (config.logFallbacks) {
             std::cout << "[AnalysisSession] Face measurement failed for " 
                       << job.input.photoId << ": " << e.what() << std::endl;
           }
@@ -304,7 +304,7 @@ struct AnalysisSession::Impl {
       result.starRating = 0;
       result.success = true;  // ✅ Always succeed with fallback
       
-      if (__DEV__ || config.logFallbacks) {
+      if (config.logFallbacks) {
         std::cout << "[AnalysisSession] Critical exception, fallback used for " 
                   << job.input.photoId << ": " << e.what() << std::endl;
       }
@@ -322,7 +322,7 @@ struct AnalysisSession::Impl {
       result.starRating = 0;
       result.success = true;  // ✅ Always succeed with fallback
       
-      if (__DEV__ || config.logFallbacks) {
+      if (config.logFallbacks) {
         std::cout << "[AnalysisSession] Unknown exception, fallback used for " 
                   << job.input.photoId << std::endl;
       }
