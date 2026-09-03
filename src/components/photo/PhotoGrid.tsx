@@ -352,19 +352,6 @@ const PhotoGridRowView = memo(
             deferHeavyMediaWork={deferHeavyMediaWork}
           />
         ))}
-        {row.cells.length < COLUMNS &&
-          Array.from({length: COLUMNS - row.cells.length}).map(
-            (_, fillerIndex) => (
-              <View
-                key={`filler-${row.rowIndex}-${fillerIndex}`}
-                style={{
-                  width: itemWidth,
-                  height: itemHeight,
-                  backgroundColor: colors.cardBackgroundSecondary,
-                }}
-              />
-            ),
-          )}
       </View>
     );
   },
