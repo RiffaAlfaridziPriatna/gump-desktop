@@ -1,14 +1,14 @@
 import {useCulledAlbumPhotosState, useCulledAlbumStore} from '@context/culledAlbum';
 import {cullingEngine} from '@lib/culling/cullingEngine';
-import {computeStats, orderPhotosForCulling} from '@lib/culling/cullingUtil';
+import {orderPhotosForCulling} from '@lib/culling/cullingUtil';
 import {toCullingPhoto} from '@lib/culledAlbum/types';
 import {APIResponse} from '@services/api';
-import {useCallback, useEffect, useMemo} from 'react';
+import {useCallback, useMemo} from 'react';
 
 export function useCulledAlbumDetailData(
   albumId: string,
   albumPhotos: ReturnType<typeof useCulledAlbumPhotosState>,
-  photosReady = true,
+  _photosReady = true,
 ) {
   const persistedStats = useCulledAlbumStore(
     state => state.albums[albumId]?.cullingStats ?? null,
@@ -29,16 +29,6 @@ export function useCulledAlbumDetailData(
     [albumId, albumPhotos],
   );
 
-  const needsLiveSummary = !persistedStats;
-
-  const liveStats = useMemo(
-    () =>
-      needsLiveSummary && photosReady && analyzedPhotos.length > 0
-        ? computeStats(analyzedPhotos)
-        : null,
-    [analyzedPhotos, needsLiveSummary, photosReady],
-  );
-
   const isAnalyzing = useMemo(
     () =>
       albumPhotos.some(
@@ -55,28 +45,11 @@ export function useCulledAlbumDetailData(
   );
 
   const stats = useMemo<APIResponse.CullingStats | null>(() => {
-    if (persistedStats) {
-      return persistedStats;
-    }
-    if (!liveStats) {
+    if (!persistedStats) {
       return null;
     }
-    return {...liveStats, mySelections: mySelectionsLive};
-  }, [liveStats, mySelectionsLive, persistedStats]);
-
-  useEffect(() => {
-    if (!photosReady || analyzedPhotos.length === 0) {
-      return;
-    }
-
-    const missingCrops = analyzedPhotos.filter(
-      photo => photo.faces.length > 0 && photo.faces.some(face => !face.cropUri),
-    );
-
-    if (missingCrops.length > 0) {
-      cullingEngine.refreshAssets(albumId).catch(() => undefined);
-    }
-  }, [albumId, analyzedPhotos, photosReady]);
+    return {...persistedStats, mySelections: mySelectionsLive};
+  }, [mySelectionsLive, persistedStats]);
 
   const photoMap = useMemo(() => {
     const map = new Map<string, APIResponse.CullingPhoto>();

@@ -1,59 +1,22 @@
 import {yieldToMain} from '@lib/async/yieldToMain';
 import {syncPhotoFromStore} from '@/application/syncPhotoRepository';
-import {
-  getPhotoIdsForAlbum,
-  hydratePhotos,
-} from '@lib/culledAlbum/photoLoader';
-import {
-  bumpPhotoGridRevision,
-  photoKey,
-  photoStateStore,
-} from '@lib/culledAlbum/photoStateStore';
+import {hydratePhotos} from '@lib/culledAlbum/photoLoader';
+import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
 import {getPhotoById} from '@lib/culledAlbum/store';
+import {
+  getFileThumbnailDimensions,
+  putCachedImageDimensions,
+} from '@lib/media/imageDimensions';
 import {shouldDeferHeavyWorkForNavigation} from '@lib/navigation/uploadAwareNavigation';
 import {ensureThumbnail, isUsableThumbnailUri} from '@lib/storage/localStorage';
 
-const BATCH_SIZE = 8;
 const EXISTING_THUMB_CONCURRENCY = 12;
 const GENERATE_CONCURRENCY = 8;
-const REVISION_BUMP_DELAY_MS = 50;
-const FULL_ALBUM_BACKFILL_DELAY_MS = 400;
 const inFlightAlbumPhotoIds = new Set<string>();
 const runningAlbums = new Set<string>();
 const pendingPhotoIdsByAlbum = new Map<string, Set<string>>();
 const existingThumbInFlight = new Set<string>();
-const pendingRevisionAlbums = new Set<string>();
-const deferredFullAlbumTimers = new Map<string, ReturnType<typeof setTimeout>>();
-let revisionBumpTimer: ReturnType<typeof setTimeout> | null = null;
 let resolveExistingQueue: Promise<void> = Promise.resolve();
-
-function scheduleBumpPhotoGridRevision(albumId: string): void {
-  pendingRevisionAlbums.add(albumId);
-  if (revisionBumpTimer) {
-    return;
-  }
-
-  revisionBumpTimer = setTimeout(() => {
-    revisionBumpTimer = null;
-    const albumIds = [...pendingRevisionAlbums];
-    pendingRevisionAlbums.clear();
-    for (const id of albumIds) {
-      bumpPhotoGridRevision(id);
-    }
-  }, REVISION_BUMP_DELAY_MS);
-}
-
-function flushPendingPhotoGridRevisions(): void {
-  if (revisionBumpTimer) {
-    clearTimeout(revisionBumpTimer);
-    revisionBumpTimer = null;
-  }
-  const albumIds = [...pendingRevisionAlbums];
-  pendingRevisionAlbums.clear();
-  for (const id of albumIds) {
-    bumpPhotoGridRevision(id);
-  }
-}
 
 function photoScheduleKey(albumId: string, photoId: string): string {
   return `${albumId}:${photoId}`;
@@ -81,21 +44,44 @@ function applyThumbnailUri(
   albumId: string,
   photoId: string,
   thumbnailUri: string,
+  dimensions?: {width: number; height: number} | null,
 ): boolean {
   const key = photoKey(albumId, photoId);
   let applied = false;
+  const nextWidth = dimensions?.width ?? 0;
+  const nextHeight = dimensions?.height ?? 0;
+  const hasDimensions = nextWidth > 0 && nextHeight > 0;
 
   photoStateStore.setState(state => {
     const photo = state.photoState[key];
-    if (!photo || photo.file.thumbnailUri === thumbnailUri) {
+    if (!photo) {
       return;
     }
-    photo.file = {...photo.file, thumbnailUri};
+    const uriUnchanged = photo.file.thumbnailUri === thumbnailUri;
+    const dimsUnchanged =
+      !hasDimensions ||
+      (photo.file.thumbnailWidth === nextWidth &&
+        photo.file.thumbnailHeight === nextHeight);
+    if (uriUnchanged && dimsUnchanged) {
+      return;
+    }
+    photo.file = {
+      ...photo.file,
+      thumbnailUri,
+      ...(hasDimensions
+        ? {thumbnailWidth: nextWidth, thumbnailHeight: nextHeight}
+        : {}),
+    };
     applied = true;
   });
 
   if (applied) {
-    scheduleBumpPhotoGridRevision(albumId);
+    if (hasDimensions) {
+      putCachedImageDimensions(thumbnailUri, {
+        width: nextWidth,
+        height: nextHeight,
+      });
+    }
     syncPhotoFromStore(albumId, photoId);
   }
 
@@ -125,7 +111,12 @@ async function ensureThumbnailsForPhotoIds(
           }
           const nextFile = await ensureThumbnail(albumId, photo.file, photoId);
           if (nextFile.thumbnailUri) {
-            applyThumbnailUri(albumId, photoId, nextFile.thumbnailUri);
+            applyThumbnailUri(
+              albumId,
+              photoId,
+              nextFile.thumbnailUri,
+              getFileThumbnailDimensions(nextFile),
+            );
           }
         } finally {
           if (options?.clearInFlight) {
@@ -177,7 +168,12 @@ export async function resolveExistingThumbnailsForPhotos(
           }
           const nextFile = await ensureThumbnail(albumId, photo.file, photoId);
           if (nextFile.thumbnailUri) {
-            applyThumbnailUri(albumId, photoId, nextFile.thumbnailUri);
+            applyThumbnailUri(
+              albumId,
+              photoId,
+              nextFile.thumbnailUri,
+              getFileThumbnailDimensions(nextFile),
+            );
           }
         } finally {
           existingThumbInFlight.delete(photoScheduleKey(albumId, photoId));
@@ -189,8 +185,6 @@ export async function resolveExistingThumbnailsForPhotos(
       await yieldToMain();
     }
   }
-
-  flushPendingPhotoGridRevisions();
 }
 
 export function scheduleResolveExistingThumbnails(
@@ -205,46 +199,6 @@ export function scheduleResolveExistingThumbnails(
         error,
       );
     });
-}
-
-export async function backfillAlbumThumbnails(albumId: string): Promise<void> {
-  const photoIds = getPhotoIdsForAlbum(albumId);
-  if (photoIds.length === 0) {
-    return;
-  }
-
-  hydratePhotos(albumId, photoIds.slice(0, BATCH_SIZE));
-
-  for (let index = 0; index < photoIds.length; index += BATCH_SIZE) {
-    if (shouldDeferHeavyWorkForNavigation()) {
-      scheduleThumbnailBackfillForPhotos(albumId, photoIds.slice(index));
-      return;
-    }
-
-    const batchIds = photoIds.slice(index, index + BATCH_SIZE);
-    await ensureThumbnailsForPhotoIds(albumId, batchIds);
-
-    if (index + BATCH_SIZE < photoIds.length) {
-      await yieldToMain();
-    }
-  }
-
-  flushPendingPhotoGridRevisions();
-}
-
-export function scheduleThumbnailBackfill(albumId: string): void {
-  const existingTimer = deferredFullAlbumTimers.get(albumId);
-  if (existingTimer) {
-    clearTimeout(existingTimer);
-  }
-
-  const timer = setTimeout(() => {
-    deferredFullAlbumTimers.delete(albumId);
-    backfillAlbumThumbnails(albumId).catch(error => {
-      console.error('[thumbnailBackfill] Failed to backfill thumbnails', error);
-    });
-  }, FULL_ALBUM_BACKFILL_DELAY_MS);
-  deferredFullAlbumTimers.set(albumId, timer);
 }
 
 export function scheduleThumbnailBackfillForPhotos(
@@ -319,5 +273,4 @@ async function backfillPhotoThumbnails(
   photoIds: string[],
 ): Promise<void> {
   await ensureThumbnailsForPhotoIds(albumId, photoIds, {clearInFlight: true});
-  flushPendingPhotoGridRevisions();
 }

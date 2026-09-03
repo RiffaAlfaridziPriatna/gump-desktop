@@ -36,6 +36,7 @@ import {
 } from '@lib/look/uploadLookBake';
 import {onUploadNavigationCoopEnd} from '@lib/navigation/uploadAwareNavigation';
 import {
+  beginAnalysisQueue,
   beginLocalImportQueue,
   clearAlbumQueues,
   finishLocalImportQueue,
@@ -64,7 +65,9 @@ import {
 } from './culledAlbumContext';
 
 function maxConcurrentUploadsForPlatform(): number {
-  return Platform.OS === 'windows' ? 4 : 12;
+  // Each slot copies a full original and encodes a JPEG thumb. 12-way on
+  // macOS mostly fights disk / ImageIO rather than finishing sooner.
+  return Platform.OS === 'windows' ? 4 : 6;
 }
 
 function maxConcurrentServerUploadsForPlatform(): number {
@@ -72,14 +75,16 @@ function maxConcurrentServerUploadsForPlatform(): number {
 }
 
 function maxConcurrentAnalysisForPlatform(): number {
+  // Cap workers to leave headroom for the JS thread and OS thermal
+  // scheduler. Throughput is recovered later via memory-bounded decode.
   switch (Platform.OS) {
     case 'macos':
     case 'ios':
-      return 8;
-    case 'windows':
       return 2;
+    case 'windows':
+      return 1;
     default:
-      return 6;
+      return 2;
   }
 }
 
@@ -157,7 +162,10 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     });
   }
 
-  const resumeInFlightWork = useCallback((albumId: string) => {
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingResumeAlbumIdsRef = useRef(new Set<string>());
+
+  const resumeInFlightWorkNow = useCallback((albumId: string) => {
     const album = getAlbum(albumId);
     if (!album) {
       return;
@@ -185,7 +193,13 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
     if (hasInFlightAnalysis(album, photos)) {
       reconcileAnalysisBatchCounts(albumId);
-      setQueueOperationStatus(albumId, 'analysis', 'active');
+      const analysisAlbum = getAlbum(albumId);
+      beginAnalysisQueue(
+        albumId,
+        analysisAlbum?.analysisBatchCounts?.total ??
+          analysisAlbum?.analysisBatchPhotoIds.length ??
+          0,
+      );
       analysisQueueRef.current!.processPending(albumId);
     }
 
@@ -197,10 +211,45 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     }
   }, []);
 
+  const resumeInFlightWork = useCallback((albumId: string) => {
+    pendingResumeAlbumIdsRef.current.add(albumId);
+    if (resumeTimerRef.current) {
+      return;
+    }
+    resumeTimerRef.current = setTimeout(() => {
+      resumeTimerRef.current = null;
+      const albumIds = [...pendingResumeAlbumIdsRef.current];
+      pendingResumeAlbumIdsRef.current.clear();
+      for (const pendingAlbumId of albumIds) {
+        resumeInFlightWorkNow(pendingAlbumId);
+      }
+    }, 300);
+  }, [resumeInFlightWorkNow]);
+
+  useEffect(() => {
+    return () => {
+      if (resumeTimerRef.current) {
+        clearTimeout(resumeTimerRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     return onUploadNavigationCoopEnd(() => {
-      for (const albumId of Object.keys(culledAlbumStore.getState().albums)) {
-        resumeInFlightWork(albumId);
+      const albums = culledAlbumStore.getState().albums;
+      for (const albumId of Object.keys(albums)) {
+        const album = albums[albumId];
+        if (!album) {
+          continue;
+        }
+        const photos = getPhotosForAlbum(albumId);
+        if (
+          hasInFlightUploads(album, photos) ||
+          hasInFlightAnalysis(album, photos) ||
+          hasInFlightServerUploads(album, photos)
+        ) {
+          resumeInFlightWork(albumId);
+        }
       }
     });
   }, [resumeInFlightWork]);
@@ -224,9 +273,9 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
   const startAnalysis = useCallback((albumId: string) => {
     syncedAlbumsRef.current.delete(albumId);
     uiStoreRef.current!.setState({analyzeError: null});
-    setQueueOperationStatus(albumId, 'analysis', 'active');
 
-    queuePhotosForAnalysis(albumId);
+    const photos = queuePhotosForAnalysis(albumId);
+    beginAnalysisQueue(albumId, photos.length);
     flushPendingPhotoUpdates();
     analysisQueueRef.current!.beginBatch(albumId);
     analysisQueueRef.current!.processPending(albumId);

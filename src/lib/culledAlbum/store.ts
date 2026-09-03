@@ -22,6 +22,7 @@ import {
   createAnalysisBatchCounts,
   computeAnalysisBatchCountsForIds,
   isAnalysisBatchFinishedByCounts,
+  resolveAnalysisBatchTotal,
 } from './analysisProgress';
 import {readAlbumMeta, readAllAlbumMeta, removeAlbum, saveAlbum, type SaveAlbumOptions} from './storage';
 import {toPersistableAlbum} from './toPersistableAlbum';
@@ -41,6 +42,7 @@ import {
   createCulledAlbumPhoto,
   CulledAlbum,
   CulledAlbumPhoto,
+  AnalysisBatchCounts,
   AnalysisCountKey,
   hasInFlightAnalysis,
   hasInFlightServerUploads,
@@ -53,8 +55,8 @@ import {
 } from './types';
 import {computeKeyFaces, computeStats, orderCulledAlbumPhotosForCulling} from '@lib/culling/cullingUtil';
 import {APIResponse} from '@services/api';
-import {scheduleThumbnailBackfill} from './thumbnailBackfill';
 import {photoKey, photoStateStore} from './photoStateStore';
+import {flushRenderSync, scheduleRenderSync} from './photoRenderStore';
 import {
   flushPendingPhotoUpdates as flushBatchedPhotoUpdates,
   registerPhotoUpdateBatchApplier,
@@ -104,6 +106,7 @@ function syncAddedPhotosToState(
 
     state.photoOrder[albumId] = order;
   });
+  scheduleRenderSync();
 }
 
 function toPlainPhoto(photo: CulledAlbumPhoto): CulledAlbumPhoto {
@@ -136,6 +139,7 @@ export function syncPhotoStateForAlbum(
       state.photoState[photoKey(albumId, plainPhoto.photoId)] = plainPhoto;
     }
   });
+  scheduleRenderSync();
 }
 
 function applyAlbumMergeInState(albumId: string, incoming: CulledAlbum): void {
@@ -521,6 +525,29 @@ export function updateCullingSummary(albumId: string): void {
   });
 }
 
+const CULLING_SUMMARY_DEBOUNCE_MS = 3000;
+const cullingSummaryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export function scheduleUpdateCullingSummary(albumId: string): void {
+  if (cullingSummaryTimers.has(albumId)) {
+    return;
+  }
+  const timer = setTimeout(() => {
+    cullingSummaryTimers.delete(albumId);
+    updateCullingSummary(albumId);
+  }, CULLING_SUMMARY_DEBOUNCE_MS);
+  cullingSummaryTimers.set(albumId, timer);
+}
+
+export function flushUpdateCullingSummary(albumId: string): void {
+  const timer = cullingSummaryTimers.get(albumId);
+  if (timer) {
+    clearTimeout(timer);
+    cullingSummaryTimers.delete(albumId);
+  }
+  updateCullingSummary(albumId);
+}
+
 export function getCullingSummary(albumId: string): {
   stats: APIResponse.CullingStats | null;
   keyFaces: APIResponse.CullingKeyFace[];
@@ -697,9 +724,6 @@ export async function checkLocalImportBatchComplete(
     uploadedCount: finalCounts.uploaded,
     failedCount: finalCounts.failed,
   });
-  if (hasUploaded) {
-    scheduleThumbnailBackfill(albumId);
-  }
 
   await syncPhotosFromStoreAwait(albumId, [...batchPhotoIds]);
   await persistAlbum(albumId);
@@ -944,6 +968,8 @@ function applyPhotoUpdatesBatch(updates: PendingPhotoUpdate[]): boolean {
     }
   });
 
+  scheduleRenderSync();
+
   const albumsToReconcile = new Set<string>();
   for (const update of updates) {
     const album = getAlbumFromState(update.albumId);
@@ -984,7 +1010,9 @@ export function updatePhoto(
 
   if (options?.immediate) {
     flushPendingPhotoUpdates();
-    return applyPhotoUpdatesBatch([{albumId, photoId, updater, options}]);
+    const applied = applyPhotoUpdatesBatch([{albumId, photoId, updater, options}]);
+    flushRenderSync();
+    return applied;
   }
 
   schedulePhotoUpdate({albumId, photoId, updater, options}, applyPhotoUpdatesBatch);
@@ -1123,7 +1151,6 @@ export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {
     }
     album.analysisBatchPhotoIds = uploadedPhotoIds;
     album.analysisBatchCounts = createAnalysisBatchCounts(uploadedPhotoIds.length);
-    recomputeAlbumTotals(album);
   });
 
   flushPendingPhotoUpdates();
@@ -1140,6 +1167,34 @@ export function clearAnalysisBatch(albumId: string): void {
       album.analysisBatchPhotoIds = [];
       album.analysisBatchCounts = undefined;
     }
+  });
+}
+
+export function setAnalysisBatchCounts(
+  albumId: string,
+  counts: AnalysisBatchCounts,
+): void {
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (!album) {
+      return;
+    }
+    const knownTotal = resolveAnalysisBatchTotal(
+      counts.total,
+      album.analysisBatchPhotoIds.length,
+      album.analysisBatchCounts?.total ?? 0,
+    );
+    if (knownTotal <= 0) {
+      return;
+    }
+    album.analysisBatchCounts = {
+      ...counts,
+      total: knownTotal,
+      pending: Math.max(
+        0,
+        knownTotal - counts.analyzed - counts.failed - counts.analyzing,
+      ),
+    };
   });
 }
 

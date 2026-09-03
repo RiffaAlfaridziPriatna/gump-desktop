@@ -44,6 +44,8 @@ declare module 'react-native' {
         type: string;
         /** Required on macOS/Windows after local copy succeeds. */
         thumbnailUri: string;
+        thumbnailWidth?: number;
+        thumbnailHeight?: number;
       }>;
       getThumbnailUri: (
         albumId: string,
@@ -53,7 +55,11 @@ declare module 'react-native' {
         albumId: string,
         sourceUri: string,
         photoId: string,
-      ) => Promise<{thumbnailUri: string | null}>;
+      ) => Promise<{
+        thumbnailUri: string | null;
+        thumbnailWidth?: number | null;
+        thumbnailHeight?: number | null;
+      }>;
       ensureDetail: (
         albumId: string,
         sourceUri: string,

@@ -7,6 +7,9 @@ export type FileAsset = {
   type: string;
   capturedAt?: number | null;
   thumbnailUri?: string;
+  /** Oriented pixel size of the grid thumbnail JPEG. */
+  thumbnailWidth?: number;
+  thumbnailHeight?: number;
   /** Oriented 4096px detail derivative for the photo detail viewer. */
   detailUri?: string;
 };

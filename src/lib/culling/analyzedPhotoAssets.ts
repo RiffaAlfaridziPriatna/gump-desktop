@@ -1,7 +1,6 @@
 import {syncPhotoFromStore} from '@/application/syncPhotoRepository';
 import {getPhotoById, updatePhoto} from '@lib/culledAlbum/store';
 import {CulledAlbumPhoto} from '@lib/culledAlbum/types';
-import {ensureThumbnail} from '@lib/storage/localStorage';
 import {attachFaceCropUris} from './faceCropThumbnails';
 import {Platform} from 'react-native';
 
@@ -36,40 +35,24 @@ async function backfillAnalyzedPhotoAssets(
   const needsFaceCrops =
     photo.faces.length > 0 &&
     (regenerateFaceCrops || photo.faces.some(face => !face.cropUri));
-  const needsThumbnail = !photo.file.thumbnailUri;
 
-  if (!needsFaceCrops && !needsThumbnail) {
+  if (!needsFaceCrops) {
     return;
   }
 
-  const [facesWithCrops, fileWithThumbnail] = await Promise.all([
-    needsFaceCrops
-      ? attachFaceCropUris(
-          albumId,
-          photo.photoId,
-          photo.file,
-          photo.faces,
-          {regenerate: regenerateFaceCrops},
-        )
-      : Promise.resolve(photo.faces),
-    needsThumbnail
-      ? ensureThumbnail(albumId, photo.file, photo.photoId)
-      : Promise.resolve(photo.file),
-  ]);
+  const facesWithCrops = await attachFaceCropUris(
+    albumId,
+    photo.photoId,
+    photo.file,
+    photo.faces,
+    {regenerate: regenerateFaceCrops},
+  );
 
   updatePhoto(
     albumId,
     photo.photoId,
     entry => {
-      if (needsFaceCrops) {
-        entry.faces = facesWithCrops;
-      }
-      if (fileWithThumbnail.thumbnailUri) {
-        entry.file = {
-          ...entry.file,
-          thumbnailUri: fileWithThumbnail.thumbnailUri,
-        };
-      }
+      entry.faces = facesWithCrops;
     },
     {recomputeTotals: false},
   );
@@ -164,9 +147,7 @@ export async function backfillMissingAnalyzedPhotoAssets(
   const pending = photos.filter(
     photo =>
       photo.analysisStatus === 'analyzed' &&
-      (regenerateFaceCrops ||
-        photo.faces.some(face => !face.cropUri) ||
-        !photo.file.thumbnailUri),
+      (regenerateFaceCrops || photo.faces.some(face => !face.cropUri)),
   );
 
   for (let index = 0; index < pending.length; index += BACKFILL_CONCURRENCY) {

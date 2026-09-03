@@ -1,7 +1,7 @@
 import { resolveDisplayUri } from '@lib/storage/localStorage';
 import { FileAsset } from '@services/upload/types';
 import { Image } from 'react-native';
-import { loadImageDimensions } from './imageDimensions';
+import { getCachedImageDimensions, loadImageDimensions } from './imageDimensions';
 import { LruCache } from './lruCache';
 
 const DEFAULT_CONCURRENCY = 4;
@@ -29,7 +29,9 @@ export function preloadImage(uri: string): Promise<void> {
   }
 
   const promise = Promise.all([
-    loadImageDimensions(uri),
+    getCachedImageDimensions(uri)
+      ? Promise.resolve(getCachedImageDimensions(uri))
+      : loadImageDimensions(uri),
     Image.prefetch(uri).catch(() => undefined),
   ])
     .then(([dimensions]) => {

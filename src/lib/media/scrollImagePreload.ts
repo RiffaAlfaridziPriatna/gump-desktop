@@ -1,6 +1,10 @@
 import {FileAsset} from '@services/upload/types';
 import {resolveGridDisplayUri} from '@lib/storage/localStorage';
-import {loadImageDimensions} from './imageDimensions';
+import {
+  getCachedImageDimensions,
+  getFileThumbnailDimensions,
+  loadImageDimensions,
+} from './imageDimensions';
 
 const SCROLL_PRELOAD_DEBOUNCE_MS = 250;
 const SCROLL_PRELOAD_CONCURRENCY = 2;
@@ -10,13 +14,17 @@ let generation = 0;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingUris: string[] = [];
 
-function collectGridUris(files: FileAsset[]): string[] {
+function collectGridUrisMissingDimensions(files: FileAsset[]): string[] {
   const uris: string[] = [];
   for (const file of files) {
-    const uri = resolveGridDisplayUri(file);
-    if (uri) {
-      uris.push(uri);
+    if (getFileThumbnailDimensions(file)) {
+      continue;
     }
+    const uri = resolveGridDisplayUri(file);
+    if (!uri || getCachedImageDimensions(uri)) {
+      continue;
+    }
+    uris.push(uri);
   }
   return uris;
 }
@@ -59,7 +67,7 @@ export function scheduleScrollImagePreload(
 ): void {
   generation += 1;
   const activeGeneration = generation;
-  pendingUris = collectGridUris(files);
+  pendingUris = collectGridUrisMissingDimensions(files);
 
   if (debounceTimer) {
     clearTimeout(debounceTimer);

@@ -77,6 +77,7 @@
       <DisableSpecificWarnings>4453;28204</DisableSpecificWarnings>
       <AdditionalIncludeDirectories>
         $(MSBuildThisFileDirectory)..\..\cpp\face-detection;
+        $(MSBuildThisFileDirectory)..\..\cpp\analysis;
         $(MSBuildThisFileDirectory);
         %(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
@@ -145,6 +146,18 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\..\cpp\face-detection\MediaDerivatives.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\analysis\AnalysisSession.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\analysis\PhotoFlags.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\analysis\FaceCluster.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\analysis\DuplicateDetection.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="AutolinkedNativeModules.g.cpp" />

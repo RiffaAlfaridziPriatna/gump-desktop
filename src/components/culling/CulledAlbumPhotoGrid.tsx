@@ -2,7 +2,10 @@ import {
   CulledAlbumPhotoHoverContext,
   createCulledAlbumPhotoHoverStore,
 } from '@lib/culledAlbum/photoHover';
-import {scheduleThumbnailBackfillForPhotos, scheduleResolveExistingThumbnails} from '@lib/culledAlbum/thumbnailBackfill';
+import {getPhotoById} from '@lib/culledAlbum/store';
+import {
+  scheduleThumbnailBackfillForPhotos,
+} from '@lib/culledAlbum/thumbnailBackfill';
 import {scheduleHydrateVisiblePhotos} from '@hooks/useVisiblePhotos';
 import {
   cancelScrollImagePreload,
@@ -13,7 +16,6 @@ import {
 import {isUsableThumbnailUri} from '@lib/storage/localStorage';
 import type {LookId} from '@lib/look/types';
 import {APIResponse} from '@services/api';
-import {FileAsset} from '@services/upload/types';
 import {
   CulledAlbumPhotoCard,
   CulledAlbumPhotoCardProps,
@@ -32,7 +34,6 @@ import {
 
 export type CulledAlbumGridPhoto = {
   photoId: string;
-  file: FileAsset;
   analysis?: APIResponse.CullingPhoto;
   lookId?: LookId | null;
   lookIntensity?: number | null;
@@ -45,6 +46,7 @@ type CulledAlbumPhotoGridProps = {
   containerWidth: number;
   isMobileLayout: boolean;
   canDeletePhoto: boolean;
+  cullingHasUploads: boolean;
   hoverEnabled?: boolean;
   contentContainerStyle?: StyleProp<ViewStyle>;
   onOpenDetail: CulledAlbumPhotoCardProps['onOpenDetail'];
@@ -63,7 +65,10 @@ const VISIBLE_PADDING = SCROLL_GRID_VISIBLE_PADDING;
 const SCROLL_END_DELAY_MS = 150;
 const SCROLLBAR_GUTTER = 24;
 
-type GridListItem = CulledAlbumGridPhoto & {index: number};
+type GridListItem = {
+  photoId: string;
+  index: number;
+};
 
 type GridRow = {
   key: string;
@@ -73,8 +78,10 @@ type GridRow = {
 
 type CulledAlbumPhotoRowViewProps = {
   row: GridRow;
+  albumId: string;
   cardWidth: number;
   canDeletePhoto: boolean;
+  cullingHasUploads: boolean;
   isMobileLayout: boolean;
   onOpenDetail: CulledAlbumPhotoCardProps['onOpenDetail'];
   onToggleSelection: CulledAlbumPhotoCardProps['onToggleSelection'];
@@ -85,8 +92,10 @@ type CulledAlbumPhotoRowViewProps = {
 const CulledAlbumPhotoRowView = memo(
   function CulledAlbumPhotoRowView({
     row,
+    albumId,
     cardWidth,
     canDeletePhoto,
+    cullingHasUploads,
     isMobileLayout,
     onOpenDetail,
     onToggleSelection,
@@ -98,14 +107,11 @@ const CulledAlbumPhotoRowView = memo(
         {row.cells.map(cell => (
           <CulledAlbumPhotoCard
             key={cell.photoId}
+            albumId={albumId}
             photoId={cell.photoId}
-            file={cell.file}
-            analysis={cell.analysis}
-            lookId={cell.lookId}
-            lookIntensity={cell.lookIntensity}
             cardWidth={cardWidth}
-            canDeletePhoto={canDeletePhoto && !cell.disabled}
-            disabled={cell.disabled}
+            canDeletePhoto={canDeletePhoto}
+            cullingHasUploads={cullingHasUploads}
             isMobileLayout={isMobileLayout}
             onOpenDetail={onOpenDetail}
             onToggleSelection={onToggleSelection}
@@ -125,25 +131,40 @@ const CulledAlbumPhotoRowView = memo(
   },
   (prev, next) =>
     prev.row === next.row &&
+    prev.albumId === next.albumId &&
     prev.cardWidth === next.cardWidth &&
     prev.canDeletePhoto === next.canDeletePhoto &&
+    prev.cullingHasUploads === next.cullingHasUploads &&
     prev.isMobileLayout === next.isMobileLayout,
 );
 
-function buildRows(items: GridListItem[]): GridRow[] {
+function buildRows(photoIds: string[]): GridRow[] {
   const rows: GridRow[] = [];
 
-  for (let index = 0; index < items.length; index += COLUMNS) {
-    const rowItems = items.slice(index, index + COLUMNS);
+  for (let index = 0; index < photoIds.length; index += COLUMNS) {
+    const rowPhotoIds = photoIds.slice(index, index + COLUMNS);
     const rowIndex = index / COLUMNS;
     rows.push({
-      key: `row-${rowIndex}`,
+      key: `row-${rowIndex}:${rowPhotoIds.join(',')}`,
       rowIndex,
-      cells: rowItems,
+      cells: rowPhotoIds.map((photoId, columnIndex) => ({
+        photoId,
+        index: index + columnIndex,
+      })),
     });
   }
 
   return rows;
+}
+
+function photoIdsNeedingThumbnail(
+  albumId: string,
+  photoIds: string[],
+): string[] {
+  return photoIds.filter(photoId => {
+    const photo = getPhotoById(albumId, photoId);
+    return photo != null && !isUsableThumbnailUri(photo.file.thumbnailUri);
+  });
 }
 
 export function CulledAlbumPhotoGrid({
@@ -152,6 +173,7 @@ export function CulledAlbumPhotoGrid({
   containerWidth,
   isMobileLayout,
   canDeletePhoto,
+  cullingHasUploads,
   hoverEnabled = true,
   contentContainerStyle,
   onOpenDetail,
@@ -188,19 +210,15 @@ export function CulledAlbumPhotoGrid({
     thumbnailHeight + CARD_INTERNAL_GAP + CARD_INFO_ROW_HEIGHT;
   const rowHeight = itemHeight + GRID_GAP;
 
-  const listItems = useMemo(
-    (): GridListItem[] =>
-      photos.map((photo, index) => ({
-        ...photo,
-        index,
-      })),
-    [photos],
+  const photoIdsKey = photos.map(photo => photo.photoId).join('\0');
+  const photoIds = useMemo(
+    () => (photoIdsKey ? photoIdsKey.split('\0') : []),
+    [photoIdsKey],
   );
+  const photoIdsRef = useRef(photoIds);
+  photoIdsRef.current = photoIds;
 
-  const listItemsRef = useRef(listItems);
-  listItemsRef.current = listItems;
-
-  const rows = useMemo(() => buildRows(listItems), [listItems]);
+  const rows = useMemo(() => buildRows(photoIds), [photoIds]);
 
   const getItemLayout = useCallback(
     (_data: ArrayLike<GridRow> | null | undefined, index: number) => ({
@@ -234,20 +252,6 @@ export function CulledAlbumPhotoGrid({
     };
   }, [clearScrollEndTimer]);
 
-  useEffect(() => {
-    if (listItems.length === 0) {
-      return;
-    }
-    const initialCount = Math.min(listItems.length, COLUMNS * 4);
-    const photoIdsNeedingThumbnail = listItems
-      .slice(0, initialCount)
-      .filter(item => !isUsableThumbnailUri(item.file.thumbnailUri))
-      .map(item => item.photoId);
-    if (photoIdsNeedingThumbnail.length > 0) {
-      scheduleResolveExistingThumbnails(albumId, photoIdsNeedingThumbnail);
-    }
-  }, [albumId, listItems]);
-
   const beginScrollInteraction = useCallback(() => {
     if (!isScrollActiveRef.current) {
       isScrollActiveRef.current = true;
@@ -267,7 +271,7 @@ export function CulledAlbumPhotoGrid({
 
   const handleViewableItemsChanged = useCallback(
     ({viewableItems}: {viewableItems: ViewToken<GridRow>[]}) => {
-      const currentListItems = listItemsRef.current;
+      const currentPhotoIds = photoIdsRef.current;
       const indices = viewableItems.flatMap(
         token => token.item?.cells.map(cell => cell.index) ?? [],
       );
@@ -281,10 +285,11 @@ export function CulledAlbumPhotoGrid({
       const {start, end} = getScrollPreloadRange(
         minIndex,
         maxIndex,
-        currentListItems.length,
+        currentPhotoIds.length,
         COLUMNS,
       );
       const rangeKey = `${start}:${end}`;
+      const rangePhotoIds = currentPhotoIds.slice(start, end);
 
       if (lastHydrateRangeRef.current !== rangeKey) {
         lastHydrateRangeRef.current = rangeKey;
@@ -293,12 +298,12 @@ export function CulledAlbumPhotoGrid({
 
       if (lastThumbnailRangeRef.current !== rangeKey) {
         lastThumbnailRangeRef.current = rangeKey;
-        const photoIdsNeedingThumbnail = currentListItems
-          .slice(start, end)
-          .filter(item => !isUsableThumbnailUri(item.file.thumbnailUri))
-          .map(item => item.photoId);
-        if (photoIdsNeedingThumbnail.length > 0) {
-          scheduleThumbnailBackfillForPhotos(albumId, photoIdsNeedingThumbnail);
+        const missingThumbnailIds = photoIdsNeedingThumbnail(
+          albumId,
+          rangePhotoIds,
+        );
+        if (missingThumbnailIds.length > 0) {
+          scheduleThumbnailBackfillForPhotos(albumId, missingThumbnailIds);
         }
       }
 
@@ -307,7 +312,9 @@ export function CulledAlbumPhotoGrid({
       }
       lastPreloadRangeRef.current = rangeKey;
 
-      const files = currentListItems.slice(start, end).map(item => item.file);
+      const files = rangePhotoIds
+        .map(photoId => getPhotoById(albumId, photoId)?.file)
+        .filter((file): file is NonNullable<typeof file> => Boolean(file));
       scheduleScrollImagePreload(files);
     },
     [albumId],
@@ -330,8 +337,10 @@ export function CulledAlbumPhotoGrid({
     ({item: row}: ListRenderItemInfo<GridRow>) => (
       <CulledAlbumPhotoRowView
         row={row}
+        albumId={albumId}
         cardWidth={cardWidth}
         canDeletePhoto={canDeletePhoto}
+        cullingHasUploads={cullingHasUploads}
         isMobileLayout={isMobileLayout}
         onOpenDetail={onOpenDetail}
         onToggleSelection={onToggleSelection}
@@ -340,8 +349,10 @@ export function CulledAlbumPhotoGrid({
       />
     ),
     [
+      albumId,
       canDeletePhoto,
       cardWidth,
+      cullingHasUploads,
       isMobileLayout,
       onDeletePress,
       onOpenDetail,
@@ -363,10 +374,10 @@ export function CulledAlbumPhotoGrid({
         getItemLayout={getItemLayout}
         contentContainerStyle={contentContainerStyle}
         style={styles.list}
-        initialNumToRender={8}
-        maxToRenderPerBatch={8}
-        windowSize={7}
-        updateCellsBatchingPeriod={50}
+        initialNumToRender={6}
+        maxToRenderPerBatch={2}
+        windowSize={3}
+        updateCellsBatchingPeriod={150}
         removeClippedSubviews={Platform.OS !== 'windows'}
         showsVerticalScrollIndicator
         onScrollBeginDrag={handleScrollBegin}

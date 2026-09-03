@@ -35,9 +35,6 @@ function gridPhotoEqual(
     cached.disabled === next.disabled &&
     cached.lookId === next.lookId &&
     cached.lookIntensity === next.lookIntensity &&
-    cached.file.uri === next.file.uri &&
-    cached.file.name === next.file.name &&
-    cached.file.thumbnailUri === next.file.thumbnailUri &&
     analysisEqual(cached.analysis, next.analysis)
   );
 }
@@ -45,6 +42,7 @@ function gridPhotoEqual(
 export function stabilizeGridPhotos(
   cache: Map<string, GridPhotoInput>,
   nextPhotos: GridPhotoInput[],
+  previousPhotos?: GridPhotoInput[],
 ): GridPhotoInput[] {
   const stablePhotos: GridPhotoInput[] = [];
   const nextPhotoIds = new Set<string>();
@@ -66,6 +64,14 @@ export function stabilizeGridPhotos(
     if (!nextPhotoIds.has(photoId)) {
       cache.delete(photoId);
     }
+  }
+
+  if (
+    previousPhotos &&
+    stablePhotos.length === previousPhotos.length &&
+    stablePhotos.every((photo, index) => photo === previousPhotos[index])
+  ) {
+    return previousPhotos;
   }
 
   return stablePhotos;

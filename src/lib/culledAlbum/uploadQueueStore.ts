@@ -116,6 +116,21 @@ export type FinishLocalImportQueueInput = {
   failedCount: number;
 };
 
+export function beginAnalysisQueue(albumId: string, batchTotal: number): void {
+  uploadQueueStore.setState(state => {
+    if (!state.queues[albumId]) {
+      state.queues[albumId] = {...defaultAlbumQueueState};
+    }
+    state.queues[albumId].analysis = {
+      status: 'active',
+      completionSeen: false,
+      batchTotal,
+      uploadedCount: 0,
+      failedCount: 0,
+    };
+  });
+}
+
 export function finishLocalImportQueue(
   albumId: string,
   result: FinishLocalImportQueueInput,

@@ -4,10 +4,13 @@ import {IPhotoRepository} from '@domain/repositories/IPhotoRepository';
 import {CulledAlbumPhoto, comparePhotosByFilename} from './types';
 import {domainPhotoToLegacy} from './photoMapper';
 import {
-  bumpPhotoGridRevision,
   photoKey,
   photoStateStore,
+  scheduleGridRevisionBump,
 } from './photoStateStore';
+import {scheduleRenderSync} from './photoRenderStore';
+import {putCachedImageDimensions} from '@lib/media/imageDimensions';
+import {isUsableThumbnailUri} from '@lib/storage/localStorage';
 
 export function getPhotoIdsForAlbum(albumId: string): string[] {
   const order = photoStateStore.getState().photoOrder[albumId];
@@ -40,6 +43,7 @@ export function setPhotoOrder(albumId: string, photoIds: string[]): void {
     }
     state.photoOrder[albumId] = photoIds;
   });
+  scheduleRenderSync();
 }
 
 export function hydratePhotos(
@@ -79,16 +83,38 @@ export function hydratePhotos(
       photoStateStore.setState(nextState => {
         for (const photo of loaded) {
           nextState.photoState[photoKey(albumId, photo.photoId)] = photo;
+          seedThumbnailDimensionCache(photo);
         }
       });
-      bumpPhotoGridRevision(albumId);
+      scheduleGridRevisionBump(albumId);
+      scheduleRenderSync();
     }
   }
 
   const nextState = photoStateStore.getState();
-  return photoIds
+  const hydrated = photoIds
     .map(photoId => nextState.photoState[photoKey(albumId, photoId)])
     .filter((photo): photo is CulledAlbumPhoto => Boolean(photo));
+  for (const photo of hydrated) {
+    seedThumbnailDimensionCache(photo);
+  }
+  return hydrated;
+}
+
+function seedThumbnailDimensionCache(photo: CulledAlbumPhoto): void {
+  const uri = photo.file.thumbnailUri;
+  const width = photo.file.thumbnailWidth;
+  const height = photo.file.thumbnailHeight;
+  if (
+    !isUsableThumbnailUri(uri) ||
+    width == null ||
+    height == null ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return;
+  }
+  putCachedImageDimensions(uri, {width, height});
 }
 
 export function hydrateAllPhotos(albumId: string): CulledAlbumPhoto[] {

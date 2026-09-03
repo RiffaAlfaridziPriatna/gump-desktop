@@ -7,7 +7,7 @@ import {
   shouldYieldUploadQueueForNavigation,
 } from '@lib/navigation/uploadAwareNavigation';
 import {Platform} from 'react-native';
-import {bumpPhotoGridRevision} from './photoStateStore';
+import {scheduleGridRevisionBump} from './photoStateStore';
 import {
   getAlbum,
   scheduleLocalImportBatchCompleteCheck,
@@ -311,7 +311,7 @@ export function createUploadQueue(deps: UploadQueueDeps) {
             batchCountShift: {from: 'uploading', to: 'uploaded'},
           },
         );
-        bumpPhotoGridRevision(albumId);
+        scheduleGridRevisionBump(albumId);
         void enrichPhotoCaptureTime(
           albumId,
           photoId,
