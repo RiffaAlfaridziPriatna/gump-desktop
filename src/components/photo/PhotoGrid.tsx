@@ -625,6 +625,11 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       const delta = Math.abs(nextOffset - scrollOffsetRef.current);
       scrollOffsetRef.current = nextOffset;
       if (isProgrammaticScrollRef.current) {
+        // If user scrolls manually (e.g., via scrollbar thumb) during programmatic scroll,
+        // treat it as user-initiated and cancel programmatic state
+        if (delta > 5) {
+          cancelScrollAnimation();
+        }
         return;
       }
       if (delta < 1 && !isScrollingRef.current) {
@@ -632,13 +637,14 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       }
       markScrolling();
     },
-    [markScrolling],
+    [cancelScrollAnimation, markScrolling],
   );
 
   const handleScrollBeginDrag = useCallback(() => {
+    cancelScrollAnimation();
     ignoreViewabilityUntilRef.current = 0;
     markScrolling();
-  }, [markScrolling]);
+  }, [cancelScrollAnimation, markScrolling]);
 
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     const width = event.nativeEvent.layout.width;
