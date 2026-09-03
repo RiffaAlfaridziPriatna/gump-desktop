@@ -433,7 +433,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   const completedLabel =
     mode === 'upload'
       ? queueOperation.failedCount > 0
-        ? `Uploaded ${uploadCompletedCount} of ${queueOperation.batchTotal} photos`
+        ? `Uploaded ${uploadCompletedCount} out of ${queueOperation.batchTotal} photos`
         : `Uploaded ${uploadCompletedCount} photos`
       : mode === 'analyze'
         ? allAnalyzeFailed
