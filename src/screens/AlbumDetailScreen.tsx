@@ -401,9 +401,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         />
       )}
       <UploadToast mode="upload" albumId={albumId} />
-      {isCullingInProgress ? (
-        <UploadToast mode="analyze" albumId={albumId} />
-      ) : null}
+      <UploadToast mode="analyze" albumId={albumId} />
       <ProfileMenuPopup
         menu={profileMenu}
         rightOffset={screenPaddingHorizontal}
