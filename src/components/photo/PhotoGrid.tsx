@@ -467,6 +467,9 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
 
     const startOffset = scrollOffsetRef.current;
     if (startOffset <= 0) {
+      // Thumb-drag on desktop can skip onScroll, leaving our offset at 0
+      // while the list is actually down the page. Still force native to top.
+      list.scrollToOffset({offset: 0, animated: false});
       return;
     }
 
@@ -498,7 +501,6 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       const nextOffset = startOffset * (1 - easeOutCubic(progress));
 
       list.scrollToOffset({offset: nextOffset, animated: false});
-      scrollOffsetRef.current = nextOffset;
 
       if (progress < 1) {
         scrollAnimationFrameRef.current = requestAnimationFrame(step);
@@ -622,13 +624,16 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const nextOffset = event.nativeEvent.contentOffset.y;
-      const delta = Math.abs(nextOffset - scrollOffsetRef.current);
+      const previousOffset = scrollOffsetRef.current;
+      const delta = Math.abs(nextOffset - previousOffset);
       scrollOffsetRef.current = nextOffset;
       if (isProgrammaticScrollRef.current) {
-        // If user scrolls manually (e.g., via scrollbar thumb) during programmatic scroll,
-        // treat it as user-initiated and cancel programmatic state
-        if (delta > 5) {
+        // Animation frames move toward 0. A jump downward means the user
+        // grabbed the scrollbar thumb — onScrollBeginDrag does not fire for that.
+        // Do not use |delta| > N: our own scrollToOffset steps are much larger.
+        if (nextOffset > previousOffset + 30) {
           cancelScrollAnimation();
+          markScrolling();
         }
         return;
       }
