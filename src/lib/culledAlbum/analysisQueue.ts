@@ -37,6 +37,8 @@ const ANALYSIS_PERSIST_DEBOUNCE_MS = 3000;
 const QUEUE_YIELD_MS = Platform.OS === 'windows' ? 32 : 16;
 const PERSIST_BATCH_SIZE = Platform.OS === 'windows' ? 20 : 40;
 const NATIVE_INGEST_CHUNK = 20;
+const NATIVE_WATCHDOG_TIMEOUT_MS = 120_000; // 120 seconds
+const NATIVE_WATCHDOG_CHECK_INTERVAL_MS = 10_000; // 10 seconds
 
 type AnalysisUpdatePhotoOptions = UpdatePhotoOptions;
 
@@ -88,6 +90,8 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
   const nativeSessionAlbums = new Set<string>();
   const nativeStartInFlight = new Set<string>();
   const nativeIngestedByAlbum = new Map<string, Set<string>>();
+  const nativeLastProgressByAlbum = new Map<string, {done: number; at: number}>();
+  const nativeWatchdogTimers = new Map<string, ReturnType<typeof setInterval>>();
   let nativeIngestChain = Promise.resolve();
 
   function getCancelGeneration(albumId: string): number {
@@ -471,6 +475,15 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     return new Promise(resolve => setTimeout(resolve, 0));
   }
 
+  function clearNativeWatchdog(albumId: string): void {
+    const timer = nativeWatchdogTimers.get(albumId);
+    if (timer) {
+      clearInterval(timer);
+      nativeWatchdogTimers.delete(albumId);
+    }
+    nativeLastProgressByAlbum.delete(albumId);
+  }
+
   function requestCancel(albumId: string): void {
     if (cancelledAlbums.has(albumId)) {
       return;
@@ -478,6 +491,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     bumpCancelGeneration(albumId);
     cancelledAlbums.add(albumId);
     clearScheduledAnalyzedPhotoAssets(albumId);
+    clearNativeWatchdog(albumId);
     if (nativeSessionAlbums.has(albumId) || nativeStartInFlight.has(albumId)) {
       nativeSessionAlbums.delete(albumId);
       nativeStartInFlight.delete(albumId);
@@ -544,6 +558,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     unsubscribeFromNativeAnalysis();
     nativeSessionAlbums.delete(albumId);
     nativeStartInFlight.delete(albumId);
+    clearNativeWatchdog(albumId);
     const active = getActiveAnalysisCount(albumId);
     if (active > 0) {
       trackActiveAnalysis(albumId, -active);
@@ -592,8 +607,10 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         tryCompleteAlbum(albumId);
       })
       .catch(error => {
-        console.warn('[CulledAlbum] Native ingest failed', error);
-        onError(albumId, 'Failed to ingest analysis results');
+        console.error('[CulledAlbum] Native ingest failed', error);
+        if (!isCancelled(albumId, generation)) {
+          onError(albumId, 'Failed to ingest analysis results');
+        }
       });
   }
 
@@ -614,25 +631,71 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       duplicateGroups?: AnalysisCompleteEvent['duplicateGroups'];
     },
   ): Promise<void> {
-    const ingested = getNativeIngestedIds(albumId);
-    const pending = results.filter(result => !ingested.has(result.photoId));
+    try {
+      const ingested = getNativeIngestedIds(albumId);
+      const pending = results.filter(result => !ingested.has(result.photoId));
 
-    for (let index = 0; index < pending.length; index += NATIVE_INGEST_CHUNK) {
-      const chunk = pending.slice(index, index + NATIVE_INGEST_CHUNK);
-      cullingEngine.ingestNativeSessionResults(albumId, chunk);
-      for (const result of chunk) {
-        ingested.add(result.photoId);
-        getSettledPhotoIds(albumId).add(result.photoId);
-        if (result.success) {
-          queuePhotoPersist(albumId, result.photoId);
+      for (let index = 0; index < pending.length; index += NATIVE_INGEST_CHUNK) {
+        const chunk = pending.slice(index, index + NATIVE_INGEST_CHUNK);
+        cullingEngine.ingestNativeSessionResults(albumId, chunk);
+        for (const result of chunk) {
+          ingested.add(result.photoId);
+          getSettledPhotoIds(albumId).add(result.photoId);
+          if (result.success) {
+            queuePhotoPersist(albumId, result.photoId);
+          }
         }
+        await yieldToMain();
       }
-      await yieldToMain();
-    }
 
-    if (options) {
-      cullingEngine.ingestNativeSessionResults(albumId, results, options);
+      if (options) {
+        cullingEngine.ingestNativeSessionResults(albumId, results, options);
+      }
+    } catch (error) {
+      console.error('[CulledAlbum] Ingest native results failed', error);
+      throw error;
     }
+  }
+
+  function startNativeWatchdog(albumId: string, generation: number): void {
+    clearNativeWatchdog(albumId);
+    
+    nativeLastProgressByAlbum.set(albumId, {done: 0, at: Date.now()});
+    
+    const timer = setInterval(() => {
+      if (isCancelled(albumId, generation) || !nativeSessionAlbums.has(albumId)) {
+        clearNativeWatchdog(albumId);
+        return;
+      }
+
+      const lastProgress = nativeLastProgressByAlbum.get(albumId);
+      if (!lastProgress) {
+        return;
+      }
+
+      const now = Date.now();
+      const stuckDuration = now - lastProgress.at;
+
+      if (stuckDuration > NATIVE_WATCHDOG_TIMEOUT_MS) {
+        console.error(
+          `[CulledAlbum] Native analysis watchdog timeout album=${albumId} stuckAt=${lastProgress.done} duration=${stuckDuration}ms`,
+        );
+        clearNativeWatchdog(albumId);
+        requestCancel(albumId);
+        void cancelNativeAnalysis().then(() => {
+          onError(
+            albumId,
+            `Analysis stuck at ${lastProgress.done} photos for over 2 minutes. Please try again or contact support.`,
+          );
+        });
+      } else if (__DEV__ && stuckDuration > 30_000) {
+        console.warn(
+          `[CulledAlbum] Native analysis slow progress album=${albumId} stuckAt=${lastProgress.done} duration=${stuckDuration}ms`,
+        );
+      }
+    }, NATIVE_WATCHDOG_CHECK_INTERVAL_MS);
+
+    nativeWatchdogTimers.set(albumId, timer);
   }
 
   async function startNativeSession(albumId: string): Promise<boolean> {
@@ -665,6 +728,16 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         if (isCancelled(albumId, generation)) {
           return;
         }
+        
+        // Update watchdog progress tracker
+        const lastProgress = nativeLastProgressByAlbum.get(albumId);
+        if (!lastProgress || progress.done > lastProgress.done) {
+          nativeLastProgressByAlbum.set(albumId, {
+            done: progress.done,
+            at: Date.now(),
+          });
+        }
+
         const album = getAlbum(albumId);
         const knownTotal = resolveAnalysisBatchTotal(
           progress.total,
@@ -694,17 +767,20 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         nativeIngestChain = nativeIngestChain
           .then(() => ingestNativeResults(albumId, event.results ?? []))
           .catch(error => {
-            console.warn('[CulledAlbum] Native batch ingest failed', error);
+            console.error('[CulledAlbum] Native batch ingest failed', error);
+            // Don't fail the entire batch, just log and continue
           });
       },
     );
 
     try {
       await startNativeAnalysis(albumId, photos, getAnalysisSessionTuning());
+      startNativeWatchdog(albumId, generation);
       return true;
     } catch (error) {
       unsubscribeFromNativeAnalysis();
       nativeSessionAlbums.delete(albumId);
+      clearNativeWatchdog(albumId);
       const active = getActiveAnalysisCount(albumId);
       if (active > 0) {
         trackActiveAnalysis(albumId, -active);
