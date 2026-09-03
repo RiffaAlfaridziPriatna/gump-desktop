@@ -64,7 +64,7 @@ function useInterpolatedRemaining(
     const didReset = resetKeyRef.current !== resetKey;
     resetKeyRef.current = resetKey;
 
-    if (didReset) {
+    if (didReset || displayedRef.current < clampedTarget) {
       lastNativeTargetRef.current = clampedTarget;
       lastNativeAtRef.current = 0;
       lastNativeGapRef.current = MAX_LEAD_PHOTOS;
@@ -341,7 +341,9 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     counts.completed === 0 &&
     counts.failed === 0 &&
     queueOperation.status === 'active'
-      ? (lastAnalyzeRemainingRef.current ?? batchTotal)
+      ? lastAnalyzeRemainingRef.current && lastAnalyzeRemainingRef.current > 0
+        ? lastAnalyzeRemainingRef.current
+        : batchTotal
       : analyzeRemaining;
 
   const shouldSnapAnalyzeCount =
@@ -353,7 +355,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     mode === 'analyze',
     targetAnalyzeRemaining,
     shouldSnapAnalyzeCount,
-    albumId,
+    `${albumId}:${queueOperation.status}:${queueOperation.batchTotal}`,
     batchTotal,
   );
 
