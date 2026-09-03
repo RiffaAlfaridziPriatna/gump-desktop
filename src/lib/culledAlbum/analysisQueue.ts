@@ -635,6 +635,20 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       const ingested = getNativeIngestedIds(albumId);
       const pending = results.filter(result => !ingested.has(result.photoId));
 
+      // Log fallback usage for debugging
+      const fallbackResults = pending.filter(
+        result => result.success && result.error?.includes('fallback used')
+      );
+      if (fallbackResults.length > 0) {
+        console.warn(
+          `[CulledAlbum] ${fallbackResults.length} photo(s) used fallback analysis:`,
+          fallbackResults.map(r => ({
+            photoId: r.photoId,
+            error: r.error,
+          }))
+        );
+      }
+
       for (let index = 0; index < pending.length; index += NATIVE_INGEST_CHUNK) {
         const chunk = pending.slice(index, index + NATIVE_INGEST_CHUNK);
         cullingEngine.ingestNativeSessionResults(albumId, chunk);

@@ -70,6 +70,7 @@ struct SessionConfig {
   int measurementMaxPixelSize{FaceDetection::kMeasurementMaxPixelSize};
   int progressiveBatchSize{20};
   bool adaptiveConcurrency{true};
+  bool logFallbacks{true};  // Log when fallback results are used
   
   std::string albumId;
   std::vector<PhotoInput> photos;

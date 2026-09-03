@@ -160,14 +160,40 @@ struct AnalysisSession::Impl {
     AnalysisResult result;
     result.photoId = job.input.photoId;
     result.success = false;
+    bool fallbackUsed = false;
 
     try {
       // 1. Decode analysis-sized buffer for SCRFD + tiling + dHash.
       auto decoded = config.decoder->DecodeImageToBgra(
           job.input.uri, config.maxDecodePixelSize);
       if (!decoded.success) {
-        result.error = "Decode failed: " + decoded.error;
+        // GRACEFUL FALLBACK: Don't fail, use default values
+        result.error = "Decode failed (fallback used): " + decoded.error;
+        fallbackUsed = true;
+        
+        // Try to at least get existing metadata if available
+        if (!job.input.existingHash.empty()) {
+          result.perceptualHash = job.input.existingHash;
+        }
+        if (job.input.existingCapturedAt != 0) {
+          result.capturedAt = job.input.existingCapturedAt;
+        }
+        
+        // Provide safe default flags for UI (photo shows as "maybe")
+        result.flags.aiSelected = false;
+        result.flags.maybe = true;  // Safe default category
+        result.flags.blurred = false;
+        result.flags.closedEyes = false;
+        result.flags.selected = false;
+        result.starRating = 0;
+        result.success = true;  // ✅ Mark as success with fallback
+        
         StoreResult(result);
+        
+        if (__DEV__ || config.logFallbacks) {
+          std::cout << "[AnalysisSession] Fallback used for " 
+                    << job.input.photoId << ": decode failed" << std::endl;
+        }
         return;
       }
 
@@ -185,28 +211,38 @@ struct AnalysisSession::Impl {
 
       bool photometricsDone = false;
       if (result.faces.empty() && detectionLongEdge < measurementMax) {
-        auto retry = config.decoder->DecodeImageToBgra(
-            job.input.uri, measurementMax);
-        if (retry.success) {
-          result.faces = pipeline.detectFaces(
-              retry.bgraPixels,
-              retry.width,
-              retry.height,
-              retry.stride,
-              true);
-          photometricsDone = true;
+        // GRACEFUL: If retry fails, just continue with empty faces
+        try {
+          auto retry = config.decoder->DecodeImageToBgra(
+              job.input.uri, measurementMax);
+          if (retry.success) {
+            result.faces = pipeline.detectFaces(
+                retry.bgraPixels,
+                retry.width,
+                retry.height,
+                retry.stride,
+                true);
+            photometricsDone = true;
+          }
+        } catch (...) {
+          // Retry failed, but we already have the low-res decode
+          // Just continue with empty faces
         }
       }
 
       // Hash on the analysis buffer before dropping it for regional crops.
       if (job.input.existingHash.empty()) {
-        auto hashOpt = FaceDetection::differenceHashFromBgra(
-            decoded.bgraPixels,
-            decoded.width,
-            decoded.height,
-            decoded.stride);
-        if (hashOpt.has_value()) {
-          result.perceptualHash = FaceDetection::formatHashHex(hashOpt.value());
+        try {
+          auto hashOpt = FaceDetection::differenceHashFromBgra(
+              decoded.bgraPixels,
+              decoded.width,
+              decoded.height,
+              decoded.stride);
+          if (hashOpt.has_value()) {
+            result.perceptualHash = FaceDetection::formatHashHex(hashOpt.value());
+          }
+        } catch (...) {
+          // Hash computation failed, not critical
         }
       } else {
         result.perceptualHash = job.input.existingHash;
@@ -215,22 +251,37 @@ struct AnalysisSession::Impl {
       if (job.input.existingCapturedAt != 0) {
         result.capturedAt = job.input.existingCapturedAt;
       } else {
-        result.capturedAt = config.decoder->ReadCapturedAtMillis(job.input.uri);
+        try {
+          result.capturedAt = config.decoder->ReadCapturedAtMillis(job.input.uri);
+        } catch (...) {
+          // Timestamp read failed, use 0
+          result.capturedAt = 0;
+        }
       }
 
+      // GRACEFUL: Wrap face measurement in try-catch
       if (!result.faces.empty() && !photometricsDone) {
-        if (detectionLongEdge < measurementMax) {
-          decoded.bgraPixels = nullptr;
-          decoded.platformHandle.reset();
-          decoded.success = false;
-          MeasureFacesFromHiResCrops(
-              pipeline,
-              *config.decoder,
-              job.input.uri,
-              measurementMax,
-              result.faces);
-        } else {
-          MeasureFacesOnBuffer(pipeline, decoded, result.faces);
+        try {
+          if (detectionLongEdge < measurementMax) {
+            decoded.bgraPixels = nullptr;
+            decoded.platformHandle.reset();
+            decoded.success = false;
+            MeasureFacesFromHiResCrops(
+                pipeline,
+                *config.decoder,
+                job.input.uri,
+                measurementMax,
+                result.faces);
+          } else {
+            MeasureFacesOnBuffer(pipeline, decoded, result.faces);
+          }
+        } catch (const std::exception &e) {
+          // Measurement failed, but we still have face locations
+          // Just skip refinement, use basic detection data
+          if (__DEV__ || config.logFallbacks) {
+            std::cout << "[AnalysisSession] Face measurement failed for " 
+                      << job.input.photoId << ": " << e.what() << std::endl;
+          }
         }
       }
 
@@ -239,9 +290,42 @@ struct AnalysisSession::Impl {
       result.success = true;
 
     } catch (const std::exception &e) {
-      result.error = std::string("Exception: ") + e.what();
+      // CRITICAL EXCEPTION: Use full fallback
+      result.error = std::string("Exception (fallback used): ") + e.what();
+      fallbackUsed = true;
+      
+      // Provide safe defaults
+      result.faces.clear();
+      result.flags.aiSelected = false;
+      result.flags.maybe = true;
+      result.flags.blurred = false;
+      result.flags.closedEyes = false;
+      result.flags.selected = false;
+      result.starRating = 0;
+      result.success = true;  // ✅ Always succeed with fallback
+      
+      if (__DEV__ || config.logFallbacks) {
+        std::cout << "[AnalysisSession] Critical exception, fallback used for " 
+                  << job.input.photoId << ": " << e.what() << std::endl;
+      }
     } catch (...) {
-      result.error = "Unknown exception";
+      // UNKNOWN EXCEPTION: Use full fallback
+      result.error = "Unknown exception (fallback used)";
+      fallbackUsed = true;
+      
+      result.faces.clear();
+      result.flags.aiSelected = false;
+      result.flags.maybe = true;
+      result.flags.blurred = false;
+      result.flags.closedEyes = false;
+      result.flags.selected = false;
+      result.starRating = 0;
+      result.success = true;  // ✅ Always succeed with fallback
+      
+      if (__DEV__ || config.logFallbacks) {
+        std::cout << "[AnalysisSession] Unknown exception, fallback used for " 
+                  << job.input.photoId << std::endl;
+      }
     }
 
     StoreResult(result);
