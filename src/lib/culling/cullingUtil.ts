@@ -162,6 +162,14 @@ export function matchesCullFilterKey(
   if (key === 'duplicated') {
     return photo.duplicated;
   }
+  
+  if (key === 'blurred') {
+    return photo.blurred && !photo.closedEyes && !photo.duplicated;
+  }
+  if (key === 'closedEyes') {
+    return photo.closedEyes && !photo.blurred && !photo.duplicated;
+  }
+  
   return photo[key] && !photo.duplicated;
 }
 

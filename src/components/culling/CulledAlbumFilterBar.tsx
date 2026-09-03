@@ -256,6 +256,7 @@ const styles = StyleSheet.create({
   },
   uploadButton: {
     minHeight: 48,
+    minWidth: 180,
     borderRadius: 24,
     backgroundColor: colors.accent,
     paddingLeft: 20,
@@ -265,6 +266,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    flexShrink: 0,
   },
   uploadButtonDisabled: {
     opacity: 0.4,
@@ -276,6 +278,7 @@ const styles = StyleSheet.create({
     ...sansBoldStyle,
     fontSize: 16,
     color: colors.white,
+    flexShrink: 0,
   },
   uploadButtonTextUploaded: {
     color: colors.accent,
