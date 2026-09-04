@@ -95,7 +95,6 @@ export async function syncAlbumWithDisk(
     ...album,
     photos: sortPhotosByFilename(merged),
   };
-  nextAlbum.totalPhotos = nextAlbum.photos.length;
   recomputeAlbumTotals(nextAlbum);
 
   if (!hasInFlightUploads(nextAlbum)) {

@@ -124,6 +124,37 @@ describe('album totals and in-flight flags', () => {
     ).toEqual(['b', 'a']);
   });
 
+  it('excludes failed and pending photos from totals', () => {
+    const album = createCulledAlbumFromSelection({
+      id: 'a1',
+      name: 'N',
+      title: null,
+      cover: {thumbnail: null, small: null, medium: null, large: null},
+      coverMobile: {thumbnail: null, small: null, medium: null, large: null},
+      link: '',
+    });
+    album.photos = [
+      makeCulledAlbumPhoto({
+        photoId: 'uploaded',
+        status: 'uploaded',
+        file: makeUploadFile({size: 10}),
+      }),
+      makeCulledAlbumPhoto({
+        photoId: 'failed',
+        status: 'failed',
+        file: makeUploadFile({size: 20}),
+      }),
+      makeCulledAlbumPhoto({
+        photoId: 'pending',
+        status: 'pending',
+        file: makeUploadFile({size: 30}),
+      }),
+    ];
+    recomputeAlbumTotals(album);
+    expect(album.totalPhotos).toBe(1);
+    expect(album.totalStorage).toBe(10);
+  });
+
   it('locks the album once anything has been uploaded', () => {
     const photo = makeCulledAlbumPhoto({photoId: 'p1'});
     expect(isCulledPhotoDisabled(photo, false)).toBe(false);

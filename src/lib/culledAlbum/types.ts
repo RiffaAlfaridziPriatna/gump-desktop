@@ -250,11 +250,17 @@ export function sortPhotosByFilename(
 }
 
 export function recomputeAlbumTotals(album: CulledAlbum): CulledAlbum {
-  album.totalPhotos = album.photos.length;
-  album.totalStorage = album.photos.reduce(
-    (total, photo) => total + (photo.file.size ?? 0),
-    0,
-  );
+  let totalPhotos = 0;
+  let totalStorage = 0;
+  for (const photo of album.photos) {
+    if (photo.status !== 'uploaded') {
+      continue;
+    }
+    totalPhotos += 1;
+    totalStorage += photo.file.size ?? 0;
+  }
+  album.totalPhotos = totalPhotos;
+  album.totalStorage = totalStorage;
   return album;
 }
 

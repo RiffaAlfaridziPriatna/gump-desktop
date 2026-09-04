@@ -12,8 +12,6 @@ import {
   useCulledAlbumStore,
 } from '@context/culledAlbum';
 import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
-import {photoStateStore} from '@lib/culledAlbum/photoStateStore';
-import {useStateStore} from '@lib/react/state';
 import {pickImages} from '@lib/media/filePicker';
 import {useAlbumDetailGridPhotos} from '@hooks/useAlbumDetailGridPhotos';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
@@ -166,28 +164,14 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   const batchTotal = useCulledAlbumStore(
     state => state.albums[albumId]?.localImportBatchTotal ?? 0,
   );
-  const orderedPhotoCount = useStateStore(
-    photoStateStore,
-    state => state.photoOrder[albumId]?.length ?? 0,
-  );
-  const analysisBatchTotal = useCulledAlbumStore(
-    state =>
-      state.albums[albumId]?.analysisBatchCounts?.total ??
-      state.albums[albumId]?.analysisBatchPhotoIds.length ??
-      0,
+  const albumPhotoCount = useCulledAlbumStore(
+    state => state.albums[albumId]?.photos.length ?? 0,
   );
 
   // Show skeleton during entire upload to avoid grid rendering overhead while importing.
   // For append scenarios (adding to existing album), keep the grid visible.
-  const isAppendingToExistingAlbum = totalPhotos > batchTotal && batchTotal > 0;
+  const isAppendingToExistingAlbum = albumPhotoCount > batchTotal && batchTotal > 0;
   const showImportSkeleton = isUploading && !isAppendingToExistingAlbum;
-
-  const displayTotalPhotos = Math.max(
-    totalPhotos,
-    batchTotal,
-    orderedPhotoCount,
-    analysisBatchTotal,
-  );
 
   const analysisInProgress = useCulledAlbumStore(state => {
     if ((state.albums[albumId]?.analysisBatchPhotoIds.length ?? 0) === 0) {
@@ -214,6 +198,9 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   );
 
   const analysisQueue = useAlbumQueueOperation(albumId, 'analyze');
+  const localImportQueue = useAlbumQueueOperation(albumId, 'upload');
+  const isLocalImportInProgress =
+    isUploading || localImportQueue.status === 'active';
   const isAnalysisFinalizing = analysisQueue.status === 'finalizing';
   const isAnalysisQueueDone =
     analysisQueue.status === 'completed' || analysisQueue.status === 'failed';
@@ -349,10 +336,12 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
             styles.actionsColumn,
             isMobileLayout && styles.actionsColumnMobile,
           ]}>
-          <Text style={styles.totalPhotos}>
-            Total Photos{' '}
-            <Text style={styles.totalPhotosValue}>{displayTotalPhotos}</Text>
-          </Text>
+          {isLocalImportInProgress ? null : (
+            <Text style={styles.totalPhotos}>
+              Total Photos{' '}
+              <Text style={styles.totalPhotosValue}>{totalPhotos}</Text>
+            </Text>
+          )}
           <TouchableOpacity
             style={[
               styles.cullingButton,
