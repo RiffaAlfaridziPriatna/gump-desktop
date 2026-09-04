@@ -155,6 +155,23 @@ export type CullFilterKey =
   | 'closedEyes'
   | 'duplicated';
 
+export const DEFAULT_CULL_FILTERS: Record<CullFilterKey, boolean> = {
+  aiSelected: true,
+  maybe: true,
+  blurred: false,
+  closedEyes: false,
+  duplicated: false,
+};
+
+export function normalizeCullFilters(
+  filters?: Partial<Record<CullFilterKey, boolean>> | null,
+): Record<CullFilterKey, boolean> {
+  return {
+    ...DEFAULT_CULL_FILTERS,
+    ...filters,
+  };
+}
+
 export function matchesCullFilterKey(
   photo: CullingPhoto,
   key: CullFilterKey,

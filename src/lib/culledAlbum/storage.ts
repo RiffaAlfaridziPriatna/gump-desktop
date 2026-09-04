@@ -38,6 +38,7 @@ function legacyAlbumToDomainAlbum(album: LegacyCulledAlbum): CulledAlbum {
     cullingStats: album.cullingStats ?? null,
     cullingKeyFaces: album.cullingKeyFaces ?? null,
     cullingDuplicateGroups: album.cullingDuplicateGroups ?? null,
+    lastCullFilters: album.lastCullFilters ?? null,
   });
 }
 
@@ -76,6 +77,9 @@ function domainAlbumToLegacy(
       (album.cullingKeyFaces as LegacyCulledAlbum['cullingKeyFaces']) ?? undefined,
     cullingDuplicateGroups:
       (album.cullingDuplicateGroups as LegacyCulledAlbum['cullingDuplicateGroups']) ??
+      undefined,
+    lastCullFilters:
+      (album.lastCullFilters as LegacyCulledAlbum['lastCullFilters']) ??
       undefined,
     photos,
   };
@@ -124,6 +128,7 @@ async function ensureMigrated(): Promise<void> {
           cullingStats: normalized.cullingStats ?? null,
           cullingKeyFaces: normalized.cullingKeyFaces ?? null,
           cullingDuplicateGroups: normalized.cullingDuplicateGroups ?? null,
+          lastCullFilters: normalized.lastCullFilters ?? null,
         });
 
         await albumRepo.save(album);
@@ -220,6 +225,7 @@ export async function writeAllAlbums(
       cullingStats: legacyAlbum.cullingStats ?? null,
       cullingKeyFaces: legacyAlbum.cullingKeyFaces ?? null,
       cullingDuplicateGroups: legacyAlbum.cullingDuplicateGroups ?? null,
+      lastCullFilters: legacyAlbum.lastCullFilters ?? null,
     });
 
     await albumRepo.save(album);

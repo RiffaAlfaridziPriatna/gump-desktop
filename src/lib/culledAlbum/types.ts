@@ -1,4 +1,8 @@
-import {derivePhotoFlags} from '@lib/culling/cullingUtil';
+import {
+  CullFilterKey,
+  derivePhotoFlags,
+  normalizeCullFilters,
+} from '@lib/culling/cullingUtil';
 import {APIResponse} from '@services/api';
 import {FileAsset} from '@services/upload/types';
 
@@ -130,6 +134,7 @@ export type CulledAlbum = {
   cullingStats?: APIResponse.CullingStats;
   cullingKeyFaces?: APIResponse.CullingKeyFace[];
   cullingDuplicateGroups?: CullingDuplicateGroup[];
+  lastCullFilters?: Record<CullFilterKey, boolean>;
   photos: CulledAlbumPhoto[];
 };
 
@@ -210,6 +215,7 @@ export function createCulledAlbumFromSelection(
     cullingStats: undefined,
     cullingKeyFaces: undefined,
     cullingDuplicateGroups: undefined,
+    lastCullFilters: undefined,
     photos: [],
   };
 }
@@ -431,6 +437,9 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.cullingStats ??= undefined;
   album.cullingKeyFaces ??= undefined;
   album.cullingDuplicateGroups ??= undefined;
+  album.lastCullFilters = album.lastCullFilters
+    ? normalizeCullFilters(album.lastCullFilters)
+    : undefined;
   album.createdAt ??= new Date(0).toISOString();
   album.totalPhotos ??= album.photos.length;
   album.totalStorage ??= 0;

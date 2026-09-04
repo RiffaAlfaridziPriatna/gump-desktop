@@ -53,7 +53,13 @@ import {
   sortPhotosByFilename,
   toCullingPhoto,
 } from './types';
-import {computeKeyFaces, computeStats, orderCulledAlbumPhotosForCulling} from '@lib/culling/cullingUtil';
+import {
+  computeKeyFaces,
+  computeStats,
+  CullFilterKey,
+  normalizeCullFilters,
+  orderCulledAlbumPhotosForCulling,
+} from '@lib/culling/cullingUtil';
 import {APIResponse} from '@services/api';
 import {photoKey, photoStateStore} from './photoStateStore';
 import {flushRenderSync, scheduleRenderSync} from './photoRenderStore';
@@ -557,6 +563,19 @@ export function getCullingSummary(albumId: string): {
     stats: album?.cullingStats ?? null,
     keyFaces: album?.cullingKeyFaces ?? [],
   };
+}
+
+export function saveLastCullFilters(
+  albumId: string,
+  filters: Record<CullFilterKey, boolean>,
+): void {
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (!album) {
+      return;
+    }
+    album.lastCullFilters = normalizeCullFilters(filters);
+  });
 }
 
 export async function markCullingHasUploads(albumId: string): Promise<void> {

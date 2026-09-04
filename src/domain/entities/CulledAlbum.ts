@@ -52,6 +52,7 @@ export class CulledAlbum {
   private _cullingStats: Record<string, number> | null;
   private _cullingKeyFaces: unknown[] | null;
   private _cullingDuplicateGroups: unknown[] | null;
+  private _lastCullFilters: Record<string, boolean> | null;
 
   constructor(data: {
     albumId: string;
@@ -71,6 +72,7 @@ export class CulledAlbum {
     cullingStats?: Record<string, number> | null;
     cullingKeyFaces?: unknown[] | null;
     cullingDuplicateGroups?: unknown[] | null;
+    lastCullFilters?: Record<string, boolean> | null;
   }) {
     this.albumId = data.albumId;
     this.name = data.name;
@@ -90,6 +92,7 @@ export class CulledAlbum {
     this._cullingStats = data.cullingStats ?? null;
     this._cullingKeyFaces = data.cullingKeyFaces ?? null;
     this._cullingDuplicateGroups = data.cullingDuplicateGroups ?? null;
+    this._lastCullFilters = data.lastCullFilters ?? null;
   }
 
   get cullingCompleted(): boolean {
@@ -132,6 +135,10 @@ export class CulledAlbum {
     return this._cullingDuplicateGroups;
   }
 
+  get lastCullFilters(): Record<string, boolean> | null {
+    return this._lastCullFilters;
+  }
+
   markCullingCompleted(): void {
     this._cullingCompleted = true;
   }
@@ -150,6 +157,10 @@ export class CulledAlbum {
 
   markHasUploads(): void {
     this._cullingHasUploads = true;
+  }
+
+  setLastCullFilters(filters: Record<string, boolean> | null): void {
+    this._lastCullFilters = filters;
   }
 
   incrementFaceClusterId(): number {
@@ -187,6 +198,7 @@ export class CulledAlbum {
       cullingStats: this._cullingStats,
       cullingKeyFaces: this._cullingKeyFaces,
       cullingDuplicateGroups: this._cullingDuplicateGroups,
+      lastCullFilters: this._lastCullFilters,
     };
   }
 
@@ -209,6 +221,7 @@ export class CulledAlbum {
       cullingStats: data.cullingStats ?? null,
       cullingKeyFaces: data.cullingKeyFaces ?? null,
       cullingDuplicateGroups: data.cullingDuplicateGroups ?? null,
+      lastCullFilters: data.lastCullFilters ?? null,
     });
   }
 }

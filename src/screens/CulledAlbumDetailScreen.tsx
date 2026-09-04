@@ -23,7 +23,7 @@ import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
 import {useProfileMenu} from '@hooks/useProfileMenu';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {cullingEngine} from '@lib/culling/cullingEngine';
-import {getPhotoById} from '@lib/culledAlbum/store';
+import {getPhotoById, saveLastCullFilters} from '@lib/culledAlbum/store';
 import {preloadImage, preloadImages} from '@lib/media/imagePreload';
 import {
   resolveDetailDisplayUri,
@@ -72,6 +72,9 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   );
   const albumLink = useCulledAlbumStore(
     state => state.albums[albumId]?.link ?? '',
+  );
+  const lastCullFilters = useCulledAlbumStore(
+    state => state.albums[albumId]?.lastCullFilters,
   );
 
   useEffect(() => {
@@ -190,7 +193,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     toggleFilter,
     setSelectionFilter,
     setStarRatingFilter,
-  } = useCulledAlbumFilters(gridPhotos, stats);
+  } = useCulledAlbumFilters(gridPhotos, stats, lastCullFilters);
 
   const handleOpenPhotoDetail = useCallback(
     (photoId: string, faceIndex?: number) => {
@@ -237,6 +240,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       return;
     }
     try {
+      saveLastCullFilters(albumId, activeFilters);
       startSelectedUpload(albumId, photoIds);
       setShowUploadConfirm(false);
       navigation.replace('CulledAlbumUploadProgress', {
@@ -254,6 +258,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     }
   }, [
     actionPhotos,
+    activeFilters,
     albumId,
     albumLink,
     albumName,
