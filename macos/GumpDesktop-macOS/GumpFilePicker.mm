@@ -21,6 +21,7 @@ RCT_EXPORT_METHOD(pickImages:(RCTPromiseResolveBlock)resolve
       UTTypePNG,
       UTTypeGIF,
       UTTypeHEIC,
+      UTTypeWebP,
       UTTypeTIFF,
     ];
 
@@ -34,11 +35,6 @@ RCT_EXPORT_METHOD(pickImages:(RCTPromiseResolveBlock)resolve
       for (NSURL *url in panel.URLs) {
         NSString *path = url.path;
         if (path == nil) {
-          continue;
-        }
-
-        NSString *ext = url.pathExtension.lowercaseString;
-        if ([ext isEqualToString:@"webp"]) {
           continue;
         }
 

@@ -4,11 +4,6 @@ import {TOKENS} from '@di/tokens';
 import {IPhotoRepository} from '@/domain/repositories/IPhotoRepository';
 import {syncPhotosFromStoreAwait} from '@/application/syncPhotoRepository';
 import {createCullingPhotoId} from '@lib/culling/cullingPhotoId';
-import {
-  filterSupportedCullingImages,
-  partitionUploadablePhotoIds,
-  UNSUPPORTED_UPLOAD_FORMAT_ERROR,
-} from '@lib/media/supportedImageFormats';
 import {createStateStore} from '@lib/react/state';
 import {FileAsset} from '@services/upload/types';
 import {mergeAlbumPhotos, mergeWithMemoryAlbum} from './merge';
@@ -601,31 +596,25 @@ export function startServerUploadBatch(
   }
 
   hydratePhotos(albumId, photoIds);
-  const albumPhotos = getPhotosForAlbum(albumId);
-  const {uploadablePhotoIds, unsupportedPhotoIds} = partitionUploadablePhotoIds(
-    albumPhotos,
-    photoIds,
+  const albumPhotoIds = new Set(
+    getPhotosForAlbum(albumId).map(photo => photo.photoId),
+  );
+  const uploadablePhotoIds = photoIds.filter(photoId =>
+    albumPhotoIds.has(photoId),
   );
 
   if (uploadablePhotoIds.length === 0) {
-    throw new Error('No supported photos to upload');
+    throw new Error('No photos selected for upload');
   }
 
-  const uploadableIds = new Set(uploadablePhotoIds);
-  for (const photoId of photoIds) {
-    const supported = uploadableIds.has(photoId);
+  for (const photoId of uploadablePhotoIds) {
     updatePhoto(
       albumId,
       photoId,
       photo => {
-        if (supported) {
-          photo.serverUploadStatus = 'pending';
-          photo.serverUploadProgress = 0;
-          photo.serverUploadError = undefined;
-          return;
-        }
-        photo.serverUploadStatus = 'failed';
-        photo.serverUploadError = UNSUPPORTED_UPLOAD_FORMAT_ERROR;
+        photo.serverUploadStatus = 'pending';
+        photo.serverUploadProgress = 0;
+        photo.serverUploadError = undefined;
       },
       {recomputeTotals: false},
     );
@@ -638,12 +627,6 @@ export function startServerUploadBatch(
     }
     album.uploadBatchPhotoIds = uploadablePhotoIds;
   });
-
-  if (unsupportedPhotoIds.length > 0) {
-    console.warn(
-      `[startServerUploadBatch] Skipped ${unsupportedPhotoIds.length} unsupported photo(s)`,
-    );
-  }
 
   flushPendingPhotoUpdates();
 }
@@ -834,10 +817,9 @@ export function addPhotosToAlbum(
     throw new Error(`Album ${albumId} is not registered locally`);
   }
 
-  const supportedFiles = filterSupportedCullingImages(files);
   const addedPhotoIds: string[] = [];
   const addedPhotos: CulledAlbumPhoto[] = [];
-  if (supportedFiles.length === 0) {
+  if (files.length === 0) {
     return [];
   }
 
@@ -845,8 +827,8 @@ export function addPhotosToAlbum(
     const album = state.albums[albumId]!;
 
     const baseUploadedAt = Date.now();
-    for (let index = 0; index < supportedFiles.length; index++) {
-      const file = supportedFiles[index]!;
+    for (let index = 0; index < files.length; index++) {
+      const file = files[index]!;
       const photo = createCulledAlbumPhoto(
         file,
         createCullingPhotoId(),

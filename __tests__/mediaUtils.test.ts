@@ -12,16 +12,9 @@ import {LruCache} from '../src/lib/media/lruCache';
 import {hammingDistance} from '../src/lib/media/perceptualHash';
 import {parsePickerCaptureTime} from '../src/lib/media/imageCaptureTime';
 import {
-  filterSupportedCullingImages,
-  isSupportedCullingImageFormat,
-  partitionUploadablePhotoIds,
-  UNSUPPORTED_UPLOAD_FORMAT_ERROR,
-} from '../src/lib/media/supportedImageFormats';
-import {
   arePerceptualHashesSimilar,
   PERCEPTUAL_HASH_DUPLICATE_THRESHOLD,
 } from '../src/lib/culling/cullingUtil';
-import {makeUploadFile} from './helpers/fixtures';
 
 describe('hammingDistance', () => {
   it('counts differing bits between 64-bit hex hashes', () => {
@@ -59,37 +52,6 @@ describe('LruCache', () => {
     cache.set('b', '2');
     expect(cache.has('a')).toBe(false);
     expect(cache.get('b')).toBe('2');
-  });
-});
-
-describe('supported image formats', () => {
-  it('rejects WebP by extension or MIME type', () => {
-    expect(
-      isSupportedCullingImageFormat(makeUploadFile({name: 'shot.webp'})),
-    ).toBe(false);
-    expect(
-      isSupportedCullingImageFormat(
-        makeUploadFile({name: 'shot.jpg', type: 'image/webp'}),
-      ),
-    ).toBe(false);
-    expect(
-      isSupportedCullingImageFormat(makeUploadFile({name: 'shot.jpg'})),
-    ).toBe(true);
-  });
-
-  it('partitions uploadable vs unsupported photo ids', () => {
-    const photos = [
-      {photoId: 'ok', file: makeUploadFile({name: 'a.jpg'})},
-      {photoId: 'bad', file: makeUploadFile({name: 'b.webp'})},
-    ];
-    expect(partitionUploadablePhotoIds(photos, ['ok', 'bad', 'missing'])).toEqual({
-      uploadablePhotoIds: ['ok'],
-      unsupportedPhotoIds: ['bad', 'missing'],
-    });
-    expect(filterSupportedCullingImages(photos.map(photo => photo.file))).toHaveLength(
-      1,
-    );
-    expect(UNSUPPORTED_UPLOAD_FORMAT_ERROR).toMatch(/WebP/i);
   });
 });
 
