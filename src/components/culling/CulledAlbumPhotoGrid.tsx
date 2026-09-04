@@ -219,9 +219,9 @@ export function CulledAlbumPhotoGrid({
   const rows = useMemo(() => buildRows(photoIds), [photoIds]);
 
   useEffect(() => {
-    if (photoIds.length > 0 && listRef.current) {
-      listRef.current.scrollToOffset({offset: 0, animated: false});
-    }
+    lastPreloadRangeRef.current = '';
+    lastHydrateRangeRef.current = '';
+    lastThumbnailRangeRef.current = '';
   }, [photoIdsKey]);
 
   const getItemLayout = useCallback(
@@ -377,6 +377,7 @@ export function CulledAlbumPhotoGrid({
     <CulledAlbumPhotoHoverContext.Provider value={hoverStoreRef.current}>
       <FlatList
         ref={listRef}
+        key={photoIdsKey}
         data={rows}
         keyExtractor={item => item.key}
         renderItem={renderRow}
