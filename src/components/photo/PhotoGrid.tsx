@@ -59,6 +59,8 @@ const PLACEHOLDER_INITIAL_ROWS = 8;
 const GRAY_FILL_BATCH_PERIOD_MS = 50;
 const SCROLL_SETTLE_MS = 120;
 const SCROLL_TO_TOP_DURATION_MS = 450;
+const SCROLL_TO_TOP_NUDGE_PX = 1;
+const PROGRAMMATIC_SCROLL_GRACE_MS = 120;
 const EMPTY_IMAGE_LOAD_IDS = new Set<string>();
 
 type ImageLoadStore = {
@@ -418,6 +420,8 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
   const listRef = useRef<FlatList<PhotoGridRow>>(null);
   const scrollOffsetRef = useRef(0);
   const scrollAnimationFrameRef = useRef<number | null>(null);
+  const forceToTopFrameRef = useRef<number | null>(null);
+  const programmaticGraceUntilRef = useRef(0);
   const itemsRef = useRef(items);
   const albumIdRef = useRef(albumId);
   const deferHeavyMediaWorkRef = useRef(deferHeavyMediaWork);
@@ -454,6 +458,23 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     isProgrammaticScrollRef.current = false;
   }, []);
 
+  const forceNativeToTop = useCallback((list: FlatList<PhotoGridRow>) => {
+    // RN macOS no-ops scrollTo(0) when its shadow offset is already 0,
+    // even if the NSScroller already moved the clip view. Nudge first,
+    // on the next frame, so the two commands are not coalesced into the
+    // no-op. Keep this rAF off the ease-out cancel path — leftover thumb
+    // onScroll must not swallow the second command.
+    list.scrollToOffset({offset: SCROLL_TO_TOP_NUDGE_PX, animated: false});
+    if (forceToTopFrameRef.current != null) {
+      cancelAnimationFrame(forceToTopFrameRef.current);
+    }
+    forceToTopFrameRef.current = requestAnimationFrame(() => {
+      forceToTopFrameRef.current = null;
+      list.scrollToOffset({offset: 0, animated: false});
+      scrollOffsetRef.current = 0;
+    });
+  }, []);
+
   const scrollToTop = useCallback(() => {
     const list = listRef.current;
     if (!list) {
@@ -467,14 +488,17 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
 
     const startOffset = scrollOffsetRef.current;
     if (startOffset <= 0) {
-      // Thumb-drag on desktop can skip onScroll, leaving our offset at 0
-      // while the list is actually down the page. Still force native to top.
-      list.scrollToOffset({offset: 0, animated: false});
+      // Thumb-drag skips onScroll, so JS offset stays 0 while the list is
+      // down the page. Jump; we do not have a real distance to ease from.
+      ignoreViewabilityUntilRef.current = Date.now() + SCROLL_SETTLE_MS;
+      forceNativeToTop(list);
       return;
     }
 
     isProgrammaticScrollRef.current = true;
     isScrollingRef.current = true;
+    programmaticGraceUntilRef.current =
+      Date.now() + PROGRAMMATIC_SCROLL_GRACE_MS;
     // Programmatic flight would otherwise hydrate/load every window we pass.
     ignoreViewabilityUntilRef.current =
       Date.now() + SCROLL_TO_TOP_DURATION_MS + SCROLL_SETTLE_MS;
@@ -482,8 +506,7 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     const startTime = Date.now();
 
     const finish = () => {
-      list.scrollToOffset({offset: 0, animated: false});
-      scrollOffsetRef.current = 0;
+      forceNativeToTop(list);
       scrollAnimationFrameRef.current = null;
       isProgrammaticScrollRef.current = false;
       ignoreViewabilityUntilRef.current = 0;
@@ -511,7 +534,7 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     };
 
     scrollAnimationFrameRef.current = requestAnimationFrame(step);
-  }, []);
+  }, [forceNativeToTop]);
 
   useImperativeHandle(
     ref,
@@ -525,6 +548,9 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     return () => {
       cancelScrollImagePreload();
       cancelScrollAnimation();
+      if (forceToTopFrameRef.current != null) {
+        cancelAnimationFrame(forceToTopFrameRef.current);
+      }
       if (resizeTimerRef.current) {
         clearTimeout(resizeTimerRef.current);
       }
@@ -628,10 +654,14 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       const delta = Math.abs(nextOffset - previousOffset);
       scrollOffsetRef.current = nextOffset;
       if (isProgrammaticScrollRef.current) {
-        // Animation frames move toward 0. A jump downward means the user
-        // grabbed the scrollbar thumb — onScrollBeginDrag does not fire for that.
-        // Do not use |delta| > N: our own scrollToOffset steps are much larger.
-        if (nextOffset > previousOffset + 30) {
+        // Animation frames move toward 0. A jump downward after the grace
+        // window means the user grabbed the scrollbar thumb — onScrollBeginDrag
+        // does not fire for that. Ignore stale thumb events at the start;
+        // do not use |delta| > N: our own scrollToOffset steps are much larger.
+        if (
+          Date.now() >= programmaticGraceUntilRef.current &&
+          nextOffset > previousOffset + 30
+        ) {
           cancelScrollAnimation();
           markScrolling();
         }
