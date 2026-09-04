@@ -92,6 +92,8 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
   const nativeIngestedByAlbum = new Map<string, Set<string>>();
   const nativeLastProgressByAlbum = new Map<string, {done: number; at: number}>();
   const nativeWatchdogTimers = new Map<string, ReturnType<typeof setInterval>>();
+  const nativeAnalyzedBaselineByAlbum = new Map<string, number>();
+  const nativeFailedBaselineByAlbum = new Map<string, number>();
   let nativeIngestChain = Promise.resolve();
 
   function getCancelGeneration(albumId: string): number {
@@ -113,6 +115,8 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     nativeSessionAlbums.delete(albumId);
     nativeStartInFlight.delete(albumId);
     nativeIngestedByAlbum.delete(albumId);
+    nativeAnalyzedBaselineByAlbum.delete(albumId);
+    nativeFailedBaselineByAlbum.delete(albumId);
     batchStartedAtByAlbum.set(albumId, Date.now());
   }
 
@@ -671,6 +675,61 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     }
   }
 
+  function applyTimeoutFallbackToRemaining(albumId: string): void {
+    const remaining = getPendingPhotoIds(albumId).flatMap(photoId => {
+      const photo = getPhoto(albumId, photoId);
+      if (
+        !photo ||
+        photo.analysisStatus === 'analyzed' ||
+        photo.analysisStatus === 'failed'
+      ) {
+        return [];
+      }
+      return [
+        {
+          photoId,
+          success: true,
+          error: 'Timed out (fallback used)',
+          faces: [],
+        },
+      ];
+    });
+    if (remaining.length === 0) {
+      return;
+    }
+    cullingEngine.ingestNativeSessionResults(albumId, remaining);
+    const ingested = getNativeIngestedIds(albumId);
+    for (const result of remaining) {
+      ingested.add(result.photoId);
+      getSettledPhotoIds(albumId).add(result.photoId);
+      queuePhotoPersist(albumId, result.photoId);
+    }
+  }
+
+  function recoverStuckNativeSession(albumId: string): void {
+    const nextGeneration = bumpCancelGeneration(albumId);
+    unsubscribeFromNativeAnalysis();
+    nativeSessionAlbums.delete(albumId);
+    nativeStartInFlight.delete(albumId);
+    const active = getActiveAnalysisCount(albumId);
+    if (active > 0) {
+      trackActiveAnalysis(albumId, -active);
+    }
+
+    void cancelNativeAnalysis().then(() => {
+      if (
+        cancelledAlbums.has(albumId) ||
+        getCancelGeneration(albumId) !== nextGeneration
+      ) {
+        return;
+      }
+      applyTimeoutFallbackToRemaining(albumId);
+      flushPendingPhotoUpdates();
+      reconcileAnalysisBatchCounts(albumId);
+      tryCompleteAlbum(albumId);
+    });
+  }
+
   function startNativeWatchdog(albumId: string, generation: number): void {
     clearNativeWatchdog(albumId);
     
@@ -695,13 +754,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
           `[CulledAlbum] Native analysis watchdog timeout album=${albumId} stuckAt=${lastProgress.done} duration=${stuckDuration}ms`,
         );
         clearNativeWatchdog(albumId);
-        requestCancel(albumId);
-        void cancelNativeAnalysis().then(() => {
-          onError(
-            albumId,
-            `Analysis stuck at ${lastProgress.done} photos for over 2 minutes. Please try again or contact support.`,
-          );
-        });
+        recoverStuckNativeSession(albumId);
       } else if (__DEV__ && stuckDuration > 30_000) {
         console.warn(
           `[CulledAlbum] Native analysis slow progress album=${albumId} stuckAt=${lastProgress.done} duration=${stuckDuration}ms`,
@@ -734,8 +787,17 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     }
 
     const generation = getCancelGeneration(albumId);
+    reconcileAnalysisBatchCounts(albumId);
     nativeSessionAlbums.add(albumId);
     trackActiveAnalysis(albumId, 1);
+    nativeAnalyzedBaselineByAlbum.set(
+      albumId,
+      getAlbum(albumId)?.analysisBatchCounts?.analyzed ?? 0,
+    );
+    nativeFailedBaselineByAlbum.set(
+      albumId,
+      getAlbum(albumId)?.analysisBatchCounts?.failed ?? 0,
+    );
 
     subscribeToNativeAnalysis(
       progress => {
@@ -761,8 +823,10 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         if (knownTotal <= 0) {
           return;
         }
-        const done = Math.min(progress.done, knownTotal);
-        const failed = Math.min(progress.failed, knownTotal);
+        const analyzedBaseline = nativeAnalyzedBaselineByAlbum.get(albumId) ?? 0;
+        const failedBaseline = nativeFailedBaselineByAlbum.get(albumId) ?? 0;
+        const done = Math.min(knownTotal, analyzedBaseline + progress.done);
+        const failed = Math.min(knownTotal, failedBaseline + progress.failed);
         setAnalysisBatchCounts(albumId, {
           total: knownTotal,
           pending: Math.max(0, knownTotal - done - failed),

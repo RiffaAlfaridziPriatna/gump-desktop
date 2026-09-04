@@ -69,6 +69,9 @@ struct SessionConfig {
   int maxDecodePixelSize{FaceDetection::kAnalysisMaxPixelSize};
   int measurementMaxPixelSize{FaceDetection::kMeasurementMaxPixelSize};
   int progressiveBatchSize{20};
+  // Wall-clock budget per photo. Hung decode/detect is skipped with an empty
+  // fallback so the rest of the album can finish. 0 disables the timeout.
+  int photoTimeoutMs{60000};
   bool adaptiveConcurrency{true};
   bool logFallbacks{true};  // Log when fallback results are used
   

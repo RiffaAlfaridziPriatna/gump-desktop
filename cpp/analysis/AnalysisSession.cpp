@@ -4,7 +4,9 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <future>
 #include <iostream>
+#include <memory>
 #include <queue>
 #include <system_error>
 
@@ -90,6 +92,11 @@ struct PhotoJob {
   int index{0};
 };
 
+struct AbandonedJob {
+  std::thread thread;
+  std::future<AnalysisResult> future;
+};
+
 struct AnalysisSession::Impl {
   SessionConfig config;
   FaceDetection::FaceDetectionPipeline pipeline;
@@ -122,6 +129,8 @@ struct AnalysisSession::Impl {
   std::vector<std::thread> workerThreads;
   std::thread orchestratorThread;
   std::mutex joinMutex;
+  std::vector<AbandonedJob> abandonedJobs;
+  std::mutex abandonedMutex;
 
   bool Initialize() {
     if (!config.decoder) {
@@ -158,45 +167,41 @@ struct AnalysisSession::Impl {
     return true;
   }
 
-  void ProcessPhoto(const PhotoJob &job) {
+  AnalysisResult EmptyFallbackResult(
+      const PhotoJob &job,
+      const std::string &error) const {
+    AnalysisResult result;
+    result.photoId = job.input.photoId;
+    result.success = true;
+    result.error = error;
+    result.starRating = 0;
+    result.flags = PhotoFlags{};
+    if (!job.input.existingHash.empty()) {
+      result.perceptualHash = job.input.existingHash;
+    }
+    if (job.input.existingCapturedAt != 0) {
+      result.capturedAt = job.input.existingCapturedAt;
+    }
+    return result;
+  }
+
+  AnalysisResult ProcessPhoto(const PhotoJob &job) {
     AnalysisResult result;
     result.photoId = job.input.photoId;
     result.success = false;
-    bool fallbackUsed = false;
 
     try {
       // 1. Decode analysis-sized buffer for SCRFD + tiling + dHash.
       auto decoded = config.decoder->DecodeImageToBgra(
           job.input.uri, config.maxDecodePixelSize);
       if (!decoded.success) {
-        // GRACEFUL FALLBACK: Don't fail, use default values
-        result.error = "Decode failed (fallback used): " + decoded.error;
-        fallbackUsed = true;
-        
-        // Try to at least get existing metadata if available
-        if (!job.input.existingHash.empty()) {
-          result.perceptualHash = job.input.existingHash;
-        }
-        if (job.input.existingCapturedAt != 0) {
-          result.capturedAt = job.input.existingCapturedAt;
-        }
-        
-        // Provide safe default flags for UI (photo shows as "maybe")
-        result.flags.aiSelected = false;
-        result.flags.maybe = true;  // Safe default category
-        result.flags.blurred = false;
-        result.flags.closedEyes = false;
-        result.flags.selected = false;
-        result.starRating = 0;
-        result.success = true;  // ✅ Mark as success with fallback
-        
-        StoreResult(result);
-        
+        auto fallback = EmptyFallbackResult(
+            job, "Decode failed (fallback used): " + decoded.error);
         if (config.logFallbacks) {
-          std::cout << "[AnalysisSession] Fallback used for " 
+          std::cout << "[AnalysisSession] Fallback used for "
                     << job.input.photoId << ": decode failed" << std::endl;
         }
-        return;
+        return fallback;
       }
 
       const int detectionLongEdge = std::max(decoded.width, decoded.height);
@@ -292,45 +297,23 @@ struct AnalysisSession::Impl {
       result.success = true;
 
     } catch (const std::exception &e) {
-      // CRITICAL EXCEPTION: Use full fallback
-      result.error = std::string("Exception (fallback used): ") + e.what();
-      fallbackUsed = true;
-      
-      // Provide safe defaults
-      result.faces.clear();
-      result.flags.aiSelected = false;
-      result.flags.maybe = true;
-      result.flags.blurred = false;
-      result.flags.closedEyes = false;
-      result.flags.selected = false;
-      result.starRating = 0;
-      result.success = true;  // ✅ Always succeed with fallback
-      
+      auto fallback = EmptyFallbackResult(
+          job, std::string("Exception (fallback used): ") + e.what());
       if (config.logFallbacks) {
-        std::cout << "[AnalysisSession] Critical exception, fallback used for " 
+        std::cout << "[AnalysisSession] Critical exception, fallback used for "
                   << job.input.photoId << ": " << e.what() << std::endl;
       }
+      return fallback;
     } catch (...) {
-      // UNKNOWN EXCEPTION: Use full fallback
-      result.error = "Unknown exception (fallback used)";
-      fallbackUsed = true;
-      
-      result.faces.clear();
-      result.flags.aiSelected = false;
-      result.flags.maybe = true;
-      result.flags.blurred = false;
-      result.flags.closedEyes = false;
-      result.flags.selected = false;
-      result.starRating = 0;
-      result.success = true;  // ✅ Always succeed with fallback
-      
+      auto fallback = EmptyFallbackResult(job, "Unknown exception (fallback used)");
       if (config.logFallbacks) {
-        std::cout << "[AnalysisSession] Unknown exception, fallback used for " 
+        std::cout << "[AnalysisSession] Unknown exception, fallback used for "
                   << job.input.photoId << std::endl;
       }
+      return fallback;
     }
 
-    StoreResult(result);
+    return result;
   }
 
   void StoreResult(const AnalysisResult &result) {
@@ -347,6 +330,103 @@ struct AnalysisSession::Impl {
 
     SendProgressUpdate();
     EmitProgressiveBatch(false);
+  }
+
+  void ReapAbandonedJobs() {
+    std::lock_guard<std::mutex> lock(abandonedMutex);
+    for (auto it = abandonedJobs.begin(); it != abandonedJobs.end();) {
+      if (!it->future.valid() ||
+          it->future.wait_for(std::chrono::milliseconds(0)) !=
+              std::future_status::ready) {
+        ++it;
+        continue;
+      }
+      if (it->thread.joinable()) {
+        it->thread.join();
+      }
+      it = abandonedJobs.erase(it);
+    }
+  }
+
+  void DetachAbandonedJobs() {
+    std::lock_guard<std::mutex> lock(abandonedMutex);
+    for (auto &job : abandonedJobs) {
+      if (!job.thread.joinable()) {
+        continue;
+      }
+      if (job.future.valid() &&
+          job.future.wait_for(std::chrono::milliseconds(0)) ==
+              std::future_status::ready) {
+        job.thread.join();
+      } else {
+        job.thread.detach();
+      }
+    }
+    abandonedJobs.clear();
+  }
+
+  bool WaitForFuture(std::future<AnalysisResult> &future, int timeoutMs) {
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(timeoutMs);
+    while (future.wait_for(std::chrono::milliseconds(50)) !=
+           std::future_status::ready) {
+      if (cancelled.load() || !running.load()) {
+        return false;
+      }
+      if (paused.load()) {
+        continue;
+      }
+      if (std::chrono::steady_clock::now() >= deadline) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void ProcessPhotoJob(const PhotoJob &job) {
+    const int timeoutMs = std::max(config.photoTimeoutMs, 0);
+    if (timeoutMs <= 0) {
+      StoreResult(ProcessPhoto(job));
+      return;
+    }
+
+    ReapAbandonedJobs();
+
+    auto promise = std::make_shared<std::promise<AnalysisResult>>();
+    auto future = promise->get_future();
+    std::thread jobThread([this, job, promise]() {
+      try {
+        promise->set_value(ProcessPhoto(job));
+      } catch (...) {
+        try {
+          promise->set_exception(std::current_exception());
+        } catch (...) {
+        }
+      }
+    });
+
+    if (WaitForFuture(future, timeoutMs)) {
+      try {
+        StoreResult(future.get());
+      } catch (...) {
+        StoreResult(EmptyFallbackResult(job, "Exception (fallback used)"));
+      }
+      if (jobThread.joinable()) {
+        jobThread.join();
+      }
+      return;
+    }
+
+    if (!cancelled.load() && running.load()) {
+      StoreResult(EmptyFallbackResult(job, "Timed out (fallback used)"));
+      if (config.logFallbacks) {
+        std::cout << "[AnalysisSession] Timeout fallback for "
+                  << job.input.photoId << std::endl;
+      }
+    }
+
+    std::lock_guard<std::mutex> lock(abandonedMutex);
+    abandonedJobs.push_back({std::move(jobThread), std::move(future)});
   }
 
   void EmitProgressiveBatch(bool flushRemaining) {
@@ -465,7 +545,7 @@ struct AnalysisSession::Impl {
       }
 
       const auto jobStarted = std::chrono::steady_clock::now();
-      ProcessPhoto(job);
+      ProcessPhotoJob(job);
       const auto jobMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                              std::chrono::steady_clock::now() - jobStarted)
                              .count();
@@ -499,9 +579,12 @@ struct AnalysisSession::Impl {
     }
 
     if (cancelled.load()) {
+      DetachAbandonedJobs();
       running.store(false);
       return;
     }
+
+    DetachAbandonedJobs();
 
     EmitProgressiveBatch(true);
 
@@ -552,6 +635,7 @@ struct AnalysisSession::Impl {
     // A finished session still owns a joinable orchestrator thread. Assigning a
     // new std::thread over it (or destroying joinable threads) calls terminate.
     JoinFinishedThreads();
+    DetachAbandonedJobs();
 
     {
       std::lock_guard<std::mutex> queueLock(queueMutex);
@@ -588,6 +672,7 @@ struct AnalysisSession::Impl {
     running.store(false);
     queueCondition.notify_all();
     JoinFinishedThreads();
+    DetachAbandonedJobs();
   }
 };
 

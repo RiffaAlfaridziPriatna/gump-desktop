@@ -14,7 +14,6 @@ import {
   isLocalImportBatchFinishedForIds,
 } from './localImportProgress';
 import {
-  createAnalysisBatchCounts,
   computeAnalysisBatchCountsForIds,
   isAnalysisBatchFinishedByCounts,
   resolveAnalysisBatchTotal,
@@ -1133,6 +1132,10 @@ export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {
   });
 
   for (const photoId of uploadedPhotoIds) {
+    const photo = getPhotoById(albumId, photoId);
+    if (photo?.analysisStatus === 'analyzed') {
+      continue;
+    }
     updatePhoto(
       albumId,
       photoId,
@@ -1151,10 +1154,10 @@ export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {
       return;
     }
     album.analysisBatchPhotoIds = uploadedPhotoIds;
-    album.analysisBatchCounts = createAnalysisBatchCounts(uploadedPhotoIds.length);
   });
 
   flushPendingPhotoUpdates();
+  reconcileAnalysisBatchCounts(albumId);
 
   return uploadedPhotoIds
     .map(photoId => getPhotoById(albumId, photoId))

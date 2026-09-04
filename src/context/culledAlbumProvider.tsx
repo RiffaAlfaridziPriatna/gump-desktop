@@ -268,7 +268,9 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     uiStoreRef.current!.setState({analyzeError: null});
 
     const photos = queuePhotosForAnalysis(albumId);
-    beginAnalysisQueue(albumId, photos.length);
+    const batchTotal =
+      getAlbum(albumId)?.analysisBatchCounts?.total ?? photos.length;
+    beginAnalysisQueue(albumId, batchTotal);
     flushPendingPhotoUpdates();
     analysisQueueRef.current!.beginBatch(albumId);
     analysisQueueRef.current!.processPending(albumId);
