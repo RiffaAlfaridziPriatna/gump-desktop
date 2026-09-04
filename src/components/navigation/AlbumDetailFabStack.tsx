@@ -20,7 +20,7 @@ export function AlbumDetailFabStack({
   onAddPhotos,
   addDisabled = false,
   hideAdd = false,
-  rightOffset = 8,
+  rightOffset = 28,
   bottomOffset = 8,
 }: AlbumDetailFabStackProps) {
   return (

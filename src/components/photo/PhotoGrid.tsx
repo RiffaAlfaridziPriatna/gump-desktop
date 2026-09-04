@@ -30,6 +30,7 @@ import {
   useContext,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -438,6 +439,8 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
   );
   const isScrollingRef = useRef(false);
   const isProgrammaticScrollRef = useRef(false);
+  const firstVisibleRowRef = useRef(0);
+  const rowHeightRef = useRef(0);
   const imageLoadStoreRef = useRef<ImageLoadStore | null>(null);
   if (imageLoadStoreRef.current == null) {
     imageLoadStoreRef.current = createImageLoadStore();
@@ -486,16 +489,20 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       scrollAnimationFrameRef.current = null;
     }
 
-    const startOffset = scrollOffsetRef.current;
+    // Use the larger of the reported offset and the estimate from the
+    // last-known visible row.  On macOS Sonoma, thumb-drag throttles
+    // onScroll events so scrollOffsetRef stays near 0 even though the
+    // user scrolled far down.  firstVisibleRowRef (updated by
+    // onViewableItemsChanged) gives us a second estimate.
+    const reportedOffset = scrollOffsetRef.current;
+    const currentRowHeight = rowHeightRef.current;
+    const estimatedOffset = firstVisibleRowRef.current * currentRowHeight;
+    const startOffset = Math.max(reportedOffset, estimatedOffset);
+
     if (startOffset <= 16) {
-      // Thumb-drag on RN macOS moves NSClipView bounds while
-      // documentVisibleRect / contentOffset can stay 0. Instead of
-      // remounting the entire FlatList (which causes a blank flash while
-      // thumbnails reload), hit two independent native scroll paths:
-      // scrollToIndex triggers FlatList's own scroll-to-item logic, while
-      // forceNativeToTop uses the 1px nudge to shake the native scroll
-      // view out of a stale contentOffset.
+      // Genuinely near the top — reset tracking state and nudge native.
       scrollOffsetRef.current = 0;
+      firstVisibleRowRef.current = 0;
       lastPreloadRangeRef.current = '';
       lastHydrateRangeRef.current = '';
       lastThumbnailRangeRef.current = '';
@@ -523,6 +530,7 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     const startTime = Date.now();
 
     const finish = () => {
+      firstVisibleRowRef.current = 0;
       forceNativeToTop(list);
       scrollAnimationFrameRef.current = null;
       isProgrammaticScrollRef.current = false;
@@ -655,6 +663,32 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     flushPendingVisibleRange();
   }, [deferHeavyMediaWork, flushPendingVisibleRange]);
 
+  // When deferHeavyMediaWork flips true, FlatList's windowSize shrinks
+  // (7 → 3).  If VirtualizedList's internal scroll-metrics offset is
+  // desynced (stuck near 0 due to Sonoma onScroll throttling), it
+  // re-renders cells near the top — a "virtual scroll-to-top" that also
+  // blocks the main thread and delays the UploadToast.  Scrolling to the
+  // last-known visible row before paint keeps both the native clip-view
+  // and VirtualizedList converged on the correct position.
+  useLayoutEffect(() => {
+    if (!deferHeavyMediaWork || firstVisibleRowRef.current <= 0) {
+      return;
+    }
+    const list = listRef.current;
+    if (!list) {
+      return;
+    }
+    try {
+      list.scrollToIndex({
+        index: firstVisibleRowRef.current,
+        animated: false,
+        viewPosition: 0,
+      });
+    } catch {
+      // scrollToIndex may throw if layout is unknown
+    }
+  }, [deferHeavyMediaWork]);
+
   const markScrolling = useCallback(() => {
     cancelScrollAnimation();
     isScrollingRef.current = true;
@@ -731,6 +765,7 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       : 0;
   const itemHeight = itemWidth / ASPECT_RATIO;
   const rowHeight = itemHeight + gap;
+  rowHeightRef.current = rowHeight;
   const settledItemWidth = Math.round(itemWidth);
 
   const photoIdsKey = items.map(item => item.photoId).join('\0');
@@ -773,6 +808,22 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       const currentItems = itemsRef.current;
       const minIndex = Math.min(...indices);
       const maxIndex = Math.max(...indices);
+
+      // Track the first visible row for offset recovery.
+      // When macOS Sonoma throttles onScroll during thumb drag,
+      // scrollOffsetRef falls behind. onViewableItemsChanged gives
+      // us a second chance to estimate the real position.
+      const minRowIndex = Math.floor(minIndex / COLUMNS);
+      firstVisibleRowRef.current = minRowIndex;
+
+      const currentRowHeight = rowHeightRef.current;
+      if (currentRowHeight > 0) {
+        const estimatedOffset = minRowIndex * currentRowHeight;
+        if (estimatedOffset > scrollOffsetRef.current + currentRowHeight * 2) {
+          scrollOffsetRef.current = estimatedOffset;
+        }
+      }
+
       const {start, end} = getScrollPreloadRange(
         minIndex,
         maxIndex,
