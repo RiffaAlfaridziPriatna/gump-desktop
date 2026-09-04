@@ -17,6 +17,7 @@ import {
 import {
   computeAnalysisBatchCountsForIds,
   isAnalysisBatchFinishedByCounts,
+  mergeAnalysisBatchCounts,
   resolveAnalysisBatchTotal,
 } from './analysisProgress';
 import {readAlbumMeta, readAllAlbumMeta, removeAlbum, saveAlbum, type SaveAlbumOptions} from './storage';
@@ -1217,14 +1218,13 @@ export function setAnalysisBatchCounts(
     if (knownTotal <= 0) {
       return;
     }
-    album.analysisBatchCounts = {
-      ...counts,
-      total: knownTotal,
-      pending: Math.max(
-        0,
-        knownTotal - counts.analyzed - counts.failed - counts.analyzing,
-      ),
-    };
+    album.analysisBatchCounts = mergeAnalysisBatchCounts(
+      album.analysisBatchCounts,
+      {
+        ...counts,
+        total: knownTotal,
+      },
+    );
   });
 }
 

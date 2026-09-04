@@ -37,6 +37,34 @@ export function createAnalysisBatchCounts(total: number): AnalysisBatchCounts {
   };
 }
 
+/**
+ * Progress from native events and photo ingest can arrive out of order.
+ * Never let analyzed/failed go backwards (or pending jump up) for the same
+ * batch total — that is what makes the analyze toast bounce 2700 ↔ 2800.
+ */
+export function mergeAnalysisBatchCounts(
+  previous: AnalysisBatchCounts | undefined,
+  next: AnalysisBatchCounts,
+): AnalysisBatchCounts {
+  const analyzed =
+    previous && previous.total === next.total
+      ? Math.max(previous.analyzed, next.analyzed)
+      : next.analyzed;
+  const failed =
+    previous && previous.total === next.total
+      ? Math.max(previous.failed, next.failed)
+      : next.failed;
+  const analyzing = Math.max(0, next.analyzing);
+
+  return {
+    total: next.total,
+    analyzed,
+    failed,
+    analyzing,
+    pending: Math.max(0, next.total - analyzed - failed - analyzing),
+  };
+}
+
 export function getAnalysisBatchPhotos(
   photos: CulledAlbumPhoto[],
   batchPhotoIds: string[],

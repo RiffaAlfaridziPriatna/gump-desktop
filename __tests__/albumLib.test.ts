@@ -23,6 +23,7 @@ import {
   isAnalysisBatchFinished,
   isAnalysisBatchFinishedByCounts,
   MAX_ANALYSIS_BATCH_TOTAL,
+  mergeAnalysisBatchCounts,
   resolveAnalysisBatchTotal,
 } from '../src/lib/culledAlbum/analysisProgress';
 import {
@@ -255,6 +256,46 @@ describe('analysis batch progress', () => {
       pending: 0,
       analyzing: 1,
       analyzed: 1,
+      failed: 0,
+    });
+  });
+
+  it('does not let analyzed/failed go backwards for the same batch total', () => {
+    const previous = {
+      total: 3000,
+      pending: 300,
+      analyzing: 0,
+      analyzed: 2700,
+      failed: 0,
+    };
+    expect(
+      mergeAnalysisBatchCounts(previous, {
+        total: 3000,
+        pending: 400,
+        analyzing: 0,
+        analyzed: 2600,
+        failed: 0,
+      }),
+    ).toEqual({
+      total: 3000,
+      pending: 300,
+      analyzing: 0,
+      analyzed: 2700,
+      failed: 0,
+    });
+    expect(
+      mergeAnalysisBatchCounts(previous, {
+        total: 3000,
+        pending: 200,
+        analyzing: 0,
+        analyzed: 2800,
+        failed: 0,
+      }),
+    ).toEqual({
+      total: 3000,
+      pending: 200,
+      analyzing: 0,
+      analyzed: 2800,
       failed: 0,
     });
   });

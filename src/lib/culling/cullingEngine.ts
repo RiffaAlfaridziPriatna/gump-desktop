@@ -608,6 +608,7 @@ function ingestNativeAnalyzedPhoto(
   albumId: string,
   photoId: string,
   analyzed: AnalyzedNativePhoto,
+  shiftAnalysisCounts = true,
 ): void {
   const existing = getPhotoById(albumId, photoId);
   if (!existing) {
@@ -648,7 +649,9 @@ function ingestNativeAnalyzedPhoto(
     },
     {
       recomputeTotals: false,
-      analysisCountShift: {from: fromStatus, to: 'analyzed'},
+      ...(shiftAnalysisCounts
+        ? {analysisCountShift: {from: fromStatus, to: 'analyzed' as const}}
+        : {}),
     },
   );
 }
@@ -668,6 +671,8 @@ export type NativeSessionPhotoResult = {
 export type NativeSessionIngestOptions = {
   postProcessed?: boolean;
   duplicateGroups?: CullingDuplicateGroup[];
+  /** Native progress events already own analysisBatchCounts; skip relative shifts. */
+  shiftAnalysisCounts?: boolean;
 };
 
 function ingestNativeSessionResults(
@@ -677,6 +682,7 @@ function ingestNativeSessionResults(
 ): {analyzed: number; failed: number} {
   let analyzed = 0;
   let failed = 0;
+  const shiftAnalysisCounts = options?.shiftAnalysisCounts !== false;
 
   for (const result of results) {
     const existing = getPhotoById(albumId, result.photoId);
@@ -700,7 +706,9 @@ function ingestNativeSessionResults(
         },
         {
           recomputeTotals: false,
-          analysisCountShift: {from: fromStatus, to: 'failed'},
+          ...(shiftAnalysisCounts
+            ? {analysisCountShift: {from: fromStatus, to: 'failed' as const}}
+            : {}),
         },
       );
       failed += 1;
@@ -712,12 +720,17 @@ function ingestNativeSessionResults(
       continue;
     }
 
-    ingestNativeAnalyzedPhoto(albumId, result.photoId, {
-      faces: mapDetectedFaces(result.faces ?? [], result.photoId),
-      perceptualHash: normalizePerceptualHash(result.perceptualHash),
-      capturedAt: normalizeCapturedAt(result.capturedAt),
-      duplicated: result.duplicated,
-    });
+    ingestNativeAnalyzedPhoto(
+      albumId,
+      result.photoId,
+      {
+        faces: mapDetectedFaces(result.faces ?? [], result.photoId),
+        perceptualHash: normalizePerceptualHash(result.perceptualHash),
+        capturedAt: normalizeCapturedAt(result.capturedAt),
+        duplicated: result.duplicated,
+      },
+      shiftAnalysisCounts,
+    );
     analyzed += 1;
   }
 

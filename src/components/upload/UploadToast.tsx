@@ -64,7 +64,7 @@ function useInterpolatedRemaining(
     const didReset = resetKeyRef.current !== resetKey;
     resetKeyRef.current = resetKey;
 
-    if (didReset || displayedRef.current < clampedTarget) {
+    if (didReset) {
       lastNativeTargetRef.current = clampedTarget;
       lastNativeAtRef.current = 0;
       lastNativeGapRef.current = MAX_LEAD_PHOTOS;
@@ -83,7 +83,7 @@ function useInterpolatedRemaining(
           MIN_MS_PER_PHOTO,
           MAX_MS_PER_PHOTO,
         );
-        lastNativeGapRef.current = gap;
+        lastNativeGapRef.current = clampNumber(gap, 1, MAX_LEAD_PHOTOS);
       }
     }
 

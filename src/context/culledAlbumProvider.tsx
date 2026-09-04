@@ -187,7 +187,9 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     }
 
     if (hasInFlightAnalysis(album, photos)) {
-      reconcileAnalysisBatchCounts(albumId);
+      if (!analysisQueueRef.current!.isNativeSessionActive(albumId)) {
+        reconcileAnalysisBatchCounts(albumId);
+      }
       const analysisAlbum = getAlbum(albumId);
       beginAnalysisQueue(
         albumId,

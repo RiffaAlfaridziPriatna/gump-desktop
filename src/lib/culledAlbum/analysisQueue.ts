@@ -657,7 +657,9 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
 
       for (let index = 0; index < pending.length; index += NATIVE_INGEST_CHUNK) {
         const chunk = pending.slice(index, index + NATIVE_INGEST_CHUNK);
-        cullingEngine.ingestNativeSessionResults(albumId, chunk);
+        cullingEngine.ingestNativeSessionResults(albumId, chunk, {
+          shiftAnalysisCounts: false,
+        });
         for (const result of chunk) {
           ingested.add(result.photoId);
           getSettledPhotoIds(albumId).add(result.photoId);
@@ -669,7 +671,10 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       }
 
       if (options) {
-        cullingEngine.ingestNativeSessionResults(albumId, results, options);
+        cullingEngine.ingestNativeSessionResults(albumId, results, {
+          ...options,
+          shiftAnalysisCounts: false,
+        });
       }
     } catch (error) {
       console.error('[CulledAlbum] Ingest native results failed', error);
@@ -699,7 +704,9 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     if (remaining.length === 0) {
       return;
     }
-    cullingEngine.ingestNativeSessionResults(albumId, remaining);
+    cullingEngine.ingestNativeSessionResults(albumId, remaining, {
+      shiftAnalysisCounts: false,
+    });
     const ingested = getNativeIngestedIds(albumId);
     for (const result of remaining) {
       ingested.add(result.photoId);
@@ -858,6 +865,15 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       startNativeWatchdog(albumId, generation);
       return true;
     } catch (error) {
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as {code?: unknown}).code)
+          : '';
+      if (code === 'ALREADY_RUNNING' && !isCancelled(albumId, generation)) {
+        nativeSessionAlbums.add(albumId);
+        startNativeWatchdog(albumId, generation);
+        return true;
+      }
       unsubscribeFromNativeAnalysis();
       nativeSessionAlbums.delete(albumId);
       clearNativeWatchdog(albumId);
@@ -979,5 +995,16 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     });
   }
 
-  return {beginBatch, requestCancel, cancel, processPending, tryCompleteAlbum};
+  function isNativeSessionActive(albumId: string): boolean {
+    return nativeSessionAlbums.has(albumId) || nativeStartInFlight.has(albumId);
+  }
+
+  return {
+    beginBatch,
+    requestCancel,
+    cancel,
+    processPending,
+    tryCompleteAlbum,
+    isNativeSessionActive,
+  };
 }
