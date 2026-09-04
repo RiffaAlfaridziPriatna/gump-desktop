@@ -1,5 +1,7 @@
 import {FileAsset} from '@services/upload/types';
 import {NativeDetectedFace} from '@lib/culledAlbum/types';
+import {describeFileUri} from '@lib/observability/serializeError';
+import {wrapError} from '@lib/observability/AppError';
 import {NativeModules, Platform} from 'react-native';
 
 export type NativeAnalyzePhotoResult = {
@@ -113,7 +115,24 @@ export async function copyPhotoToAlbum(
   file: FileAsset,
   photoId: string,
 ): Promise<FileAsset> {
-  if (hasNativeLocalStorage()) {
+  const context = {
+    operation: 'local_photo_copy',
+    albumId,
+    photoId,
+    fileName: file.name,
+    fileSize: file.size ?? null,
+    nativeModuleAvailable: hasNativeLocalStorage(),
+    platform: Platform.OS,
+    ...describeFileUri(file.uri),
+  };
+
+  try {
+    if (!hasNativeLocalStorage()) {
+      throw new Error(
+        'Local photo storage is not available. Build the app with GumpLocalStorage native module.',
+      );
+    }
+
     const copied = await NativeLocalStorage!.copyPhoto(
       albumId,
       file.uri,
@@ -134,11 +153,9 @@ export async function copyPhotoToAlbum(
       ...copied,
       ...thumbnailDimensionsFromNative(copied),
     };
+  } catch (error) {
+    throw wrapError(error, 'Local photo copy failed', context);
   }
-
-  throw new Error(
-    'Local photo storage is not available. Build the app with GumpLocalStorage native module.',
-  );
 }
 
 export async function deleteLocalAlbumFiles(albumId: string): Promise<void> {

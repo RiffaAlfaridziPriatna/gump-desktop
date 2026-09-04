@@ -4,6 +4,7 @@ import {TOKENS} from '@di/tokens';
 import {IPhotoRepository} from '@/domain/repositories/IPhotoRepository';
 import {syncPhotosFromStoreAwait} from '@/application/syncPhotoRepository';
 import {createCullingPhotoId} from '@lib/culling/cullingPhotoId';
+import {reportError} from '@lib/observability/reportError';
 import {createStateStore} from '@lib/react/state';
 import {FileAsset} from '@services/upload/types';
 import {mergeAlbumPhotos, mergeWithMemoryAlbum} from './merge';
@@ -247,15 +248,21 @@ export async function persistAlbum(
   albumId: string,
   options: PersistAlbumOptions = {},
 ): Promise<void> {
-  if (shouldDeferHeavyWorkForNavigation()) {
-    return new Promise<void>((resolve, reject) => {
-      runOrDeferHeavyWorkForNavigation(() => {
-        persistAlbumNow(albumId, options).then(resolve).catch(reject);
+  try {
+    if (shouldDeferHeavyWorkForNavigation()) {
+      await new Promise<void>((resolve, reject) => {
+        runOrDeferHeavyWorkForNavigation(() => {
+          persistAlbumNow(albumId, options).then(resolve).catch(reject);
+        });
       });
-    });
-  }
+      return;
+    }
 
-  return persistAlbumNow(albumId, options);
+    await persistAlbumNow(albumId, options);
+  } catch (error) {
+    reportError(error, {source: 'persist_album', operation: 'persist_album', albumId});
+    throw error;
+  }
 }
 
 export function syncAlbumTotalsFromRepository(albumId: string): void {

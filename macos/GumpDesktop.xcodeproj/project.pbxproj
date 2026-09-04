@@ -30,15 +30,15 @@
 		D1A2C3D40123456700000006 /* DifferenceHash.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000014 /* DifferenceHash.cpp */; };
 		D1A2C3D40123456700000007 /* ExifDateTime.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000016 /* ExifDateTime.cpp */; };
 		D1A2C3D40123456700000008 /* MediaDerivatives.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000018 /* MediaDerivatives.cpp */; };
+		D1A2C3D40123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx */; };
+		D1A2C3D40123456700000011 /* eye_state_ocec_s.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000011 /* eye_state_ocec_s.onnx */; };
+		D1A2C3D40123456700000012 /* face_landmarks_2d106det.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */; };
+		D1A2C3D40123456700000013 /* face_detection_scrfd_10g_bnkps.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000013 /* face_detection_scrfd_10g_bnkps.onnx */; };
 		E2B3C4D50123456700000001 /* GumpAnalysisSession.mm in Sources */ = {isa = PBXBuildFile; fileRef = E2B3C4D51123456700000001 /* GumpAnalysisSession.mm */; };
 		E3A4B5C60123456700000001 /* AnalysisSession.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000001 /* AnalysisSession.cpp */; };
 		E3A4B5C60123456700000002 /* PhotoFlags.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000003 /* PhotoFlags.cpp */; };
 		E3A4B5C60123456700000003 /* FaceCluster.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000005 /* FaceCluster.cpp */; };
 		E3A4B5C60123456700000004 /* DuplicateDetection.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000007 /* DuplicateDetection.cpp */; };
-		D1A2C3D40123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx */; };
-		D1A2C3D40123456700000011 /* eye_state_ocec_s.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000011 /* eye_state_ocec_s.onnx */; };
-		D1A2C3D40123456700000012 /* face_landmarks_2d106det.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */; };
-		D1A2C3D40123456700000013 /* face_detection_scrfd_10g_bnkps.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000013 /* face_detection_scrfd_10g_bnkps.onnx */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -67,37 +67,37 @@
 		C3D4E5F61123456700000002 /* GumpLocalStorage.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpLocalStorage.h; sourceTree = "<group>"; };
 		C4E5F6170123456700000001 /* GumpSharedFaceDetection.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpSharedFaceDetection.mm; sourceTree = "<group>"; };
 		C4E5F6170123456700000002 /* GumpSharedFaceDetection.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpSharedFaceDetection.h; sourceTree = "<group>"; };
-		E2B3C4D51123456700000001 /* GumpAnalysisSession.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpAnalysisSession.mm; sourceTree = "<group>"; };
-		E2B3C4D51123456700000002 /* GumpAnalysisSession.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpAnalysisSession.h; sourceTree = "<group>"; };
-		E3A4B5C61123456700000001 /* AnalysisSession.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = AnalysisSession.cpp; path = "../cpp/analysis/AnalysisSession.cpp"; sourceTree = SOURCE_ROOT; };
-		E3A4B5C61123456700000002 /* AnalysisSession.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = AnalysisSession.h; path = "../cpp/analysis/AnalysisSession.h"; sourceTree = SOURCE_ROOT; };
-		E3A4B5C61123456700000003 /* PhotoFlags.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PhotoFlags.cpp; path = "../cpp/analysis/PhotoFlags.cpp"; sourceTree = SOURCE_ROOT; };
-		E3A4B5C61123456700000004 /* PhotoFlags.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PhotoFlags.h; path = "../cpp/analysis/PhotoFlags.h"; sourceTree = SOURCE_ROOT; };
-		E3A4B5C61123456700000005 /* FaceCluster.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = FaceCluster.cpp; path = "../cpp/analysis/FaceCluster.cpp"; sourceTree = SOURCE_ROOT; };
-		E3A4B5C61123456700000006 /* FaceCluster.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FaceCluster.h; path = "../cpp/analysis/FaceCluster.h"; sourceTree = SOURCE_ROOT; };
-		E3A4B5C61123456700000007 /* DuplicateDetection.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = DuplicateDetection.cpp; path = "../cpp/analysis/DuplicateDetection.cpp"; sourceTree = SOURCE_ROOT; };
-		E3A4B5C61123456700000008 /* DuplicateDetection.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DuplicateDetection.h; path = "../cpp/analysis/DuplicateDetection.h"; sourceTree = SOURCE_ROOT; };
-		E3A4B5C61123456700000009 /* PlatformDecoder.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PlatformDecoder.h; path = "../cpp/analysis/PlatformDecoder.h"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000001 /* ScrfdFaceDetector.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ScrfdFaceDetector.cpp; path = "../cpp/face-detection/ScrfdFaceDetector.cpp"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000002 /* OcecEyeStateClassifier.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OcecEyeStateClassifier.cpp; path = "../cpp/face-detection/OcecEyeStateClassifier.cpp"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000003 /* FaceDetectionPipeline.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = FaceDetectionPipeline.cpp; path = "../cpp/face-detection/FaceDetectionPipeline.cpp"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000004 /* ScrfdFaceDetector.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ScrfdFaceDetector.h; path = "../cpp/face-detection/ScrfdFaceDetector.h"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000005 /* OcecEyeStateClassifier.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OcecEyeStateClassifier.h; path = "../cpp/face-detection/OcecEyeStateClassifier.h"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000006 /* FaceDetectionPipeline.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FaceDetectionPipeline.h; path = "../cpp/face-detection/FaceDetectionPipeline.h"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000007 /* Landmark106EarClassifier.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Landmark106EarClassifier.cpp; path = "../cpp/face-detection/Landmark106EarClassifier.cpp"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000008 /* Landmark106EarClassifier.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Landmark106EarClassifier.h; path = "../cpp/face-detection/Landmark106EarClassifier.h"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000009 /* FaceLabeling.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = FaceLabeling.cpp; path = "../cpp/face-detection/FaceLabeling.cpp"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D4112345670000000A /* FaceLabeling.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FaceLabeling.h; path = "../cpp/face-detection/FaceLabeling.h"; sourceTree = SOURCE_ROOT; };
+		D1A2C3D41123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = face_detection_scrfd_2.5g_bnkps.onnx; sourceTree = "<group>"; };
+		D1A2C3D41123456700000011 /* eye_state_ocec_s.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = eye_state_ocec_s.onnx; sourceTree = "<group>"; };
+		D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = face_landmarks_2d106det.onnx; sourceTree = "<group>"; };
+		D1A2C3D41123456700000013 /* face_detection_scrfd_10g_bnkps.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = face_detection_scrfd_10g_bnkps.onnx; sourceTree = "<group>"; };
 		D1A2C3D41123456700000014 /* DifferenceHash.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = DifferenceHash.cpp; path = "../cpp/face-detection/DifferenceHash.cpp"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000015 /* DifferenceHash.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DifferenceHash.h; path = "../cpp/face-detection/DifferenceHash.h"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000016 /* ExifDateTime.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ExifDateTime.cpp; path = "../cpp/face-detection/ExifDateTime.cpp"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000017 /* ExifDateTime.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ExifDateTime.h; path = "../cpp/face-detection/ExifDateTime.h"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000018 /* MediaDerivatives.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MediaDerivatives.cpp; path = "../cpp/face-detection/MediaDerivatives.cpp"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000019 /* MediaDerivatives.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MediaDerivatives.h; path = "../cpp/face-detection/MediaDerivatives.h"; sourceTree = SOURCE_ROOT; };
-		D1A2C3D41123456700000004 /* ScrfdFaceDetector.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ScrfdFaceDetector.h; path = "../cpp/face-detection/ScrfdFaceDetector.h"; sourceTree = SOURCE_ROOT; };
-		D1A2C3D41123456700000005 /* OcecEyeStateClassifier.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OcecEyeStateClassifier.h; path = "../cpp/face-detection/OcecEyeStateClassifier.h"; sourceTree = SOURCE_ROOT; };
-		D1A2C3D41123456700000006 /* FaceDetectionPipeline.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FaceDetectionPipeline.h; path = "../cpp/face-detection/FaceDetectionPipeline.h"; sourceTree = SOURCE_ROOT; };
-		D1A2C3D41123456700000008 /* Landmark106EarClassifier.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Landmark106EarClassifier.h; path = "../cpp/face-detection/Landmark106EarClassifier.h"; sourceTree = SOURCE_ROOT; };
-		D1A2C3D41123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = face_detection_scrfd_2.5g_bnkps.onnx; sourceTree = "<group>"; };
-		D1A2C3D41123456700000011 /* eye_state_ocec_s.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = eye_state_ocec_s.onnx; sourceTree = "<group>"; };
-		D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = face_landmarks_2d106det.onnx; sourceTree = "<group>"; };
-		D1A2C3D41123456700000013 /* face_detection_scrfd_10g_bnkps.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = face_detection_scrfd_10g_bnkps.onnx; sourceTree = "<group>"; };
+		E2B3C4D51123456700000001 /* GumpAnalysisSession.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpAnalysisSession.mm; sourceTree = "<group>"; };
+		E2B3C4D51123456700000002 /* GumpAnalysisSession.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpAnalysisSession.h; sourceTree = "<group>"; };
+		E3A4B5C61123456700000001 /* AnalysisSession.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = AnalysisSession.cpp; path = ../cpp/analysis/AnalysisSession.cpp; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000002 /* AnalysisSession.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = AnalysisSession.h; path = ../cpp/analysis/AnalysisSession.h; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000003 /* PhotoFlags.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PhotoFlags.cpp; path = ../cpp/analysis/PhotoFlags.cpp; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000004 /* PhotoFlags.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PhotoFlags.h; path = ../cpp/analysis/PhotoFlags.h; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000005 /* FaceCluster.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = FaceCluster.cpp; path = ../cpp/analysis/FaceCluster.cpp; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000006 /* FaceCluster.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FaceCluster.h; path = ../cpp/analysis/FaceCluster.h; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000007 /* DuplicateDetection.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = DuplicateDetection.cpp; path = ../cpp/analysis/DuplicateDetection.cpp; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000008 /* DuplicateDetection.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DuplicateDetection.h; path = ../cpp/analysis/DuplicateDetection.h; sourceTree = SOURCE_ROOT; };
+		E3A4B5C61123456700000009 /* PlatformDecoder.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PlatformDecoder.h; path = ../cpp/analysis/PlatformDecoder.h; sourceTree = SOURCE_ROOT; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 

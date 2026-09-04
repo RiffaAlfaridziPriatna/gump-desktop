@@ -3,6 +3,7 @@ import {colors} from '@lib/ui/colors';
 import {make} from '@di/tsyringe';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {APIException, APIService, flattenValidationErrors} from '@services/api';
+import {reportError} from '@lib/observability/reportError';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
@@ -69,6 +70,7 @@ export function ForgotPasswordModal({
       }
       setError('Unable to send reset email. Please try again.');
     } catch (err) {
+      reportError(err, {source: 'forgot_password', operation: 'forgot_password'});
       if (err instanceof APIException) {
         const validationErrors = flattenValidationErrors(err.details);
         setError(

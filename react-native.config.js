@@ -40,5 +40,15 @@ module.exports = {
         windows: null,
       },
     },
+    'react-native-device-info': {
+      platforms: {
+        macos: null,
+      },
+    },
+    'react-native-localize': {
+      platforms: {
+        windows: null,
+      },
+    },
   },
 };

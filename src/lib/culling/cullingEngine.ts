@@ -6,6 +6,7 @@ import {
 import { hydratePhotos } from '@lib/culledAlbum/photoLoader';
 import { photoKey, photoStateStore } from '@lib/culledAlbum/photoStateStore';
 import { flushRenderSync } from '@lib/culledAlbum/photoRenderStore';
+import { reportError } from '@lib/observability/reportError';
 import { purgeLocalCulledAlbum } from '@lib/culledAlbum/service';
 import { removePersistedPhoto } from '@lib/culledAlbum/storage';
 import {
@@ -956,7 +957,14 @@ export const cullingEngine = {
     await removePersistedPhoto(albumId, photoId);
     try {
       await deleteLocalPhotoFile(photo.file.uri);
-    } catch (error) {}
+    } catch (error) {
+      reportError(error, {
+        source: 'culling_engine',
+        operation: 'delete_local_photo',
+        albumId,
+        photoId,
+      });
+    }
 
     await persistAlbum(albumId);
 

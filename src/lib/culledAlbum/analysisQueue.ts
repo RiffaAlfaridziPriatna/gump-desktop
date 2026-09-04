@@ -7,6 +7,8 @@ import {
 } from '@lib/navigation/uploadAwareNavigation';
 import {FileAsset} from '@services/upload/types';
 import {Platform} from 'react-native';
+import {describeFileUri} from '@lib/observability/serializeError';
+import {reportError} from '@lib/observability/reportError';
 import {
   isAnalysisBatchFinished,
   isAnalysisBatchFinishedByCounts,
@@ -924,6 +926,15 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
           err instanceof Error && err.message
             ? err.message
             : 'Analysis failed';
+        reportError(err, {
+          source: 'analysis_queue',
+          operation: 'analyze_photo',
+          albumId,
+          photoId,
+          fileName: photo.file.name,
+          fileSize: photo.file.size ?? null,
+          ...describeFileUri(photo.file.uri),
+        });
         console.error('[CulledAlbum] Photo analysis failed', photoId, err);
         failPhoto(albumId, photoId, message);
       });

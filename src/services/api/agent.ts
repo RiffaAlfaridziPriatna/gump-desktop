@@ -1,5 +1,6 @@
 import {Injectable} from '@di/tsyringe';
 import {API_BASE_URL} from '@lib/config/constants';
+import {reportError} from '@lib/observability/reportError';
 import {APIException} from './exception';
 import {APIResponse} from './types';
 
@@ -47,11 +48,23 @@ export class APIAgent {
       }
     }
 
-    const response = await fetch(url.toString(), options);
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), options);
+    } catch (error) {
+      reportError(error, {
+        source: 'api_agent',
+        operation: 'api_network',
+        httpMethod: method,
+        httpPath: path,
+      });
+      throw error;
+    }
+
     const content = await this.parseResponseBody(response);
 
     if (response.status >= 400) {
-      throw new APIException(
+      const exception = new APIException(
         response.status,
         typeof content.error === 'string' ? content.error : `HTTP_${response.status}`,
         typeof content.message === 'string'
@@ -59,6 +72,14 @@ export class APIAgent {
           : response.statusText || 'Request failed',
         content.details,
       );
+      reportError(exception, {
+        source: 'api_agent',
+        operation: 'api_request',
+        httpMethod: method,
+        httpPath: path,
+        httpStatus: response.status,
+      });
+      throw exception;
     }
 
     return content as T;

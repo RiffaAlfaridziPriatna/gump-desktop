@@ -5,7 +5,7 @@ module.exports = {
     ['@babel/plugin-proposal-decorators', {legacy: true}],
     [
       'transform-inline-environment-variables',
-      {include: ['API_BASE_URL']},
+      {include: ['API_BASE_URL', 'POSTHOG_API_KEY', 'POSTHOG_HOST']},
     ],
     [
       'module-resolver',

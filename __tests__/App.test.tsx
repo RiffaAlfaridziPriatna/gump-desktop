@@ -11,6 +11,8 @@ jest.mock('@tanstack/react-query', () => {
   const React = require('react');
   return {
     QueryClient: class QueryClient {},
+    QueryCache: class QueryCache {},
+    MutationCache: class MutationCache {},
     QueryClientProvider: ({children}: {children: React.ReactNode}) => children,
   };
 });
@@ -54,9 +56,13 @@ jest.mock('../src/app/MainNavigator', () => ({
   MainNavigator: () => null,
 }));
 
-jest.mock('@components/error', () => ({
-  ErrorToast: () => null,
-}));
+jest.mock('@components/error', () => {
+  const React = require('react');
+  return {
+    ErrorToast: () => null,
+    AppErrorBoundary: ({children}: {children: React.ReactNode}) => children,
+  };
+});
 
 import App from '../src/app/App';
 
