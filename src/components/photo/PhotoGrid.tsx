@@ -487,10 +487,27 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     }
 
     const startOffset = scrollOffsetRef.current;
-    if (startOffset <= 0) {
-      // Thumb-drag skips onScroll, so JS offset stays 0 while the list is
-      // down the page. Jump; we do not have a real distance to ease from.
-      ignoreViewabilityUntilRef.current = Date.now() + SCROLL_SETTLE_MS;
+    if (startOffset <= 16) {
+      // Thumb-drag on RN macOS moves NSClipView bounds while
+      // documentVisibleRect / contentOffset can stay 0. Instead of
+      // remounting the entire FlatList (which causes a blank flash while
+      // thumbnails reload), hit two independent native scroll paths:
+      // scrollToIndex triggers FlatList's own scroll-to-item logic, while
+      // forceNativeToTop uses the 1px nudge to shake the native scroll
+      // view out of a stale contentOffset.
+      scrollOffsetRef.current = 0;
+      lastPreloadRangeRef.current = '';
+      lastHydrateRangeRef.current = '';
+      lastThumbnailRangeRef.current = '';
+      pendingViewableRef.current = null;
+      ignoreViewabilityUntilRef.current = 0;
+      isScrollingRef.current = false;
+      isProgrammaticScrollRef.current = false;
+      try {
+        list.scrollToIndex({index: 0, animated: false, viewPosition: 0});
+      } catch {
+        // scrollToIndex may throw if data is empty or layout unknown
+      }
       forceNativeToTop(list);
       return;
     }
