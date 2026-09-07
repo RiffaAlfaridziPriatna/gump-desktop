@@ -34,11 +34,36 @@ static BOOL CopyOrCloneRegularFile(NSString *sourcePath, NSString *destPath, NSE
                                                   error:outError];
 }
 
+// Path-based copyItem/clonefile does not inherit NSOpenPanel powerbox
+// access. Sandboxed reads of ~/Downloads must use the retained NSURL.
+static BOOL CopySecurityScopedURL(
+    NSURL *sourceURL,
+    NSString *destPath,
+    NSError **outError)
+{
+  if (sourceURL == nil || destPath.length == 0) {
+    if (outError != nil) {
+      *outError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                      code:EINVAL
+                                  userInfo:nil];
+    }
+    return NO;
+  }
+
+  NSURL *destURL = [NSURL fileURLWithPath:destPath isDirectory:NO];
+  NSFileManager *fileManager = [NSFileManager defaultManager];
+  if ([fileManager fileExistsAtPath:destPath]) {
+    [fileManager removeItemAtURL:destURL error:nil];
+  }
+  return [fileManager copyItemAtURL:sourceURL toURL:destURL error:outError];
+}
+
 static NSError *GumpEnrichCopyError(
     NSError *copyError,
     NSString *sourcePath,
     NSString *albumDir,
-    NSString *destPath)
+    NSString *destPath,
+    NSString *copyMethod)
 {
   if (copyError == nil) {
     copyError = [NSError errorWithDomain:NSCocoaErrorDomain
@@ -48,16 +73,23 @@ static NSError *GumpEnrichCopyError(
   NSFileManager *fileManager = [NSFileManager defaultManager];
   BOOL destIsDirectory = NO;
   BOOL destExists = [fileManager fileExistsAtPath:albumDir isDirectory:&destIsDirectory];
+  NSURL *scopedSource = GumpSecurityScopedFileURLForPath(sourcePath);
+  BOOL scopedReachable = NO;
+  if (scopedSource != nil) {
+    scopedReachable = [scopedSource checkResourceIsReachableAndReturnError:nil];
+  }
   NSMutableDictionary *info =
       [NSMutableDictionary dictionaryWithDictionary:copyError.userInfo ?: @{}];
   info[@"sourcePath"] = sourcePath ?: @"";
   info[@"albumDir"] = albumDir ?: @"";
   info[@"destPath"] = destPath ?: @"";
+  info[@"copyMethod"] = copyMethod ?: @"";
   info[@"sourceReadable"] = @([fileManager isReadableFileAtPath:sourcePath]);
+  info[@"sourceReachableViaScopedURL"] = @(scopedReachable);
   info[@"destWritable"] = @([fileManager isWritableFileAtPath:albumDir]);
   info[@"destExists"] = @(destExists);
   info[@"destIsDirectory"] = @(destIsDirectory);
-  info[@"hasSecurityScope"] = @(GumpHasSecurityScopedFilePath(sourcePath));
+  info[@"hasSecurityScope"] = @(scopedSource != nil);
   return [NSError errorWithDomain:copyError.domain ?: NSCocoaErrorDomain
                              code:copyError.code
                          userInfo:info];
@@ -2372,9 +2404,17 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
                          : destId;
       NSString *destPath = [albumDir stringByAppendingPathComponent:destName];
       NSError *copyError = nil;
-      if (!CopyOrCloneRegularFile(sourcePath, destPath, &copyError)) {
-        NSError *richError =
-            GumpEnrichCopyError(copyError, sourcePath, albumDir, destPath);
+      NSURL *scopedSource = GumpSecurityScopedFileURLForPath(sourcePath);
+      const BOOL copied = scopedSource != nil
+                              ? CopySecurityScopedURL(scopedSource, destPath, &copyError)
+                              : CopyOrCloneRegularFile(sourcePath, destPath, &copyError);
+      if (!copied) {
+        NSError *richError = GumpEnrichCopyError(
+            copyError,
+            sourcePath,
+            albumDir,
+            destPath,
+            scopedSource != nil ? @"scoped_url" : @"path");
         dispatch_async(dispatch_get_main_queue(), ^{
           reject(@"ECOPY", richError.localizedDescription, richError);
         });

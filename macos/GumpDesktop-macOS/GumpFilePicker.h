@@ -8,4 +8,5 @@
 // Hold the panel URLs until local copy finishes so sandbox reads still work.
 void GumpRetainSecurityScopedFileURL(NSURL *url);
 BOOL GumpHasSecurityScopedFilePath(NSString *path);
+NSURL *GumpSecurityScopedFileURLForPath(NSString *path);
 void GumpReleaseSecurityScopedFilePath(NSString *path);

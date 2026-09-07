@@ -56,10 +56,18 @@ void GumpRetainSecurityScopedFileURL(NSURL *url)
 
 BOOL GumpHasSecurityScopedFilePath(NSString *path)
 {
+  return GumpSecurityScopedFileURLForPath(path) != nil;
+}
+
+NSURL *GumpSecurityScopedFileURLForPath(NSString *path)
+{
   NSString *normalized = GumpNormalizedFilePath(path);
   @synchronized(GumpScopedURLMap()) {
-    return GumpScopedURLMap()[normalized] != nil ||
-           (path.length > 0 && GumpScopedURLMap()[path] != nil);
+    NSURL *url = GumpScopedURLMap()[normalized];
+    if (url == nil && path.length > 0) {
+      url = GumpScopedURLMap()[path];
+    }
+    return url;
   }
 }
 
