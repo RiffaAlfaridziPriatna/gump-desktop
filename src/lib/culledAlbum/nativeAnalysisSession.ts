@@ -152,12 +152,24 @@ export type NativeDuplicateGroup = {
   bestPhotoId: string;
 };
 
+export type NativeAnalysisAssignment = {
+  photoId: string;
+  success: boolean;
+  duplicated?: boolean;
+  faces?: Array<{
+    faceId?: string;
+    boundingBox?: NativeDetectedFace['boundingBox'];
+  }>;
+};
+
 export type AnalysisCompleteEvent = {
   done: number;
   total: number;
   failed: number;
   postProcessed?: boolean;
-  results: NativeAnalysisPhotoResult[];
+  /** Legacy full-result dump. New native builds send `assignments` instead. */
+  results?: NativeAnalysisPhotoResult[];
+  assignments?: NativeAnalysisAssignment[];
   duplicateGroups?: NativeDuplicateGroup[];
 };
 

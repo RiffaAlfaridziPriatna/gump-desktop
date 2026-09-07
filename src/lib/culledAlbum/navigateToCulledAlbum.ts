@@ -7,6 +7,7 @@ import type {MainStackParamList} from '../../app/MainNavigator';
 import type {StackNavigationProp} from '@react-navigation/stack';
 import {resolveCulledAlbumRouteFromMemory} from './service';
 import {culledAlbumStore, getPhotosForAlbum} from './store';
+import {getPhotosSnapshot} from './photoStateStore';
 import {hasInFlightServerUploads} from './types';
 import {
   getAlbumQueueState,
@@ -16,12 +17,14 @@ import {
 import {CulledAlbumListItem} from './types';
 
 function preloadUploadedThumbnails(albumId: string): void {
-  const storedPhotos =
-    culledAlbumStore.getState().albums[albumId]?.photos ?? [];
-  const uris = storedPhotos
+  const uris = getPhotosSnapshot(albumId)
     .filter(photo => photo.status === 'uploaded')
     .slice(0, 8)
-    .map(photo => photo.file.uri);
+    .map(photo => photo.file.thumbnailUri || photo.file.uri)
+    .filter((uri): uri is string => Boolean(uri));
+  if (uris.length === 0) {
+    return;
+  }
   preloadImages(uris).catch(() => undefined);
 }
 

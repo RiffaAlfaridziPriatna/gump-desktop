@@ -1,6 +1,7 @@
 import {photoIdFromStoredFile} from '@lib/culling/cullingPhotoId';
 import {listAlbumPhotos} from '@lib/storage/localStorage';
 import {saveAlbum} from './storage';
+import {getPhotosSnapshot} from './photoStateStore';
 import {setPhotoOrder} from './photoLoader';
 import {toPersistableAlbum} from './toPersistableAlbum';
 import {
@@ -22,8 +23,10 @@ export async function syncAlbumWithDisk(
   knownPhotoIds: string[] = [],
 ): Promise<SyncAlbumWithDiskResult> {
   const diskFiles = await listAlbumPhotos(album.albumId);
+  const livePhotos = getPhotosSnapshot(album.albumId);
+  const sourcePhotos = livePhotos.length > 0 ? livePhotos : album.photos;
   const photosByPath = new Map(
-    album.photos.map(photo => [photo.file.uri, photo]),
+    sourcePhotos.map(photo => [photo.file.uri, photo]),
   );
   const knownIds = new Set(knownPhotoIds);
   const merged: CulledAlbumPhoto[] = [];
@@ -74,7 +77,7 @@ export async function syncAlbumWithDisk(
     orderIds.push(photoId);
   }
 
-  for (const photo of album.photos) {
+  for (const photo of sourcePhotos) {
     if (mergedPhotoIds.has(photo.photoId)) {
       continue;
     }

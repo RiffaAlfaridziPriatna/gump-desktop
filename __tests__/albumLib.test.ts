@@ -31,6 +31,11 @@ import {
   createLocalImportBatchCounts,
   isLocalImportBatchFinishedForIds,
 } from '../src/lib/culledAlbum/localImportProgress';
+import {
+  photoKey,
+  photoStateStore,
+} from '../src/lib/culledAlbum/photoStateStore';
+import {toPersistableAlbum} from '../src/lib/culledAlbum/toPersistableAlbum';
 import {makeCullingFace, makeCulledAlbumPhoto, makeUploadFile} from './helpers/fixtures';
 
 describe('album format helpers', () => {
@@ -330,5 +335,71 @@ describe('local import batch progress', () => {
       false,
     );
     expect(isLocalImportBatchFinishedForIds([], id => photos.get(id))).toBe(false);
+  });
+});
+
+describe('persist snapshot from photoStateStore', () => {
+  afterEach(() => {
+    photoStateStore.setState({
+      photoState: {},
+      photoOrder: {},
+      gridRevision: {},
+    });
+  });
+
+  it('assembles persist photos from Record + photoOrder, not album.photos', () => {
+    const album = createCulledAlbumFromSelection({
+      id: 'a1',
+      name: 'N',
+      title: null,
+      cover: {thumbnail: null, small: null, medium: null, large: null},
+      coverMobile: {thumbnail: null, small: null, medium: null, large: null},
+      link: '',
+    });
+    album.photos = [];
+    const live = makeCulledAlbumPhoto({
+      photoId: 'p1',
+      status: 'uploaded',
+      progress: 40,
+      file: makeUploadFile({name: 'IMG.JPG', size: 50, uri: 'file:///p1.jpg'}),
+    });
+    const key = photoKey(album.albumId, live.photoId);
+    photoStateStore.setState({
+      photoState: {[key]: live},
+      photoOrder: {[album.albumId]: [live.photoId]},
+      gridRevision: {},
+    });
+
+    const persisted = toPersistableAlbum(album);
+    expect(persisted.photos).toHaveLength(1);
+    expect(persisted.photos[0]?.photoId).toBe('p1');
+    expect(persisted.photos[0]?.progress).toBe(100);
+    expect(album.photos).toEqual([]);
+  });
+
+  it('recomputes totals from a snapshot without reading album.photos', () => {
+    const album = createCulledAlbumFromSelection({
+      id: 'a1',
+      name: 'N',
+      title: null,
+      cover: {thumbnail: null, small: null, medium: null, large: null},
+      coverMobile: {thumbnail: null, small: null, medium: null, large: null},
+      link: '',
+    });
+    album.photos = [];
+    const snapshot = [
+      makeCulledAlbumPhoto({
+        photoId: 'p1',
+        file: makeUploadFile({size: 10}),
+      }),
+      makeCulledAlbumPhoto({
+        photoId: 'p2',
+        file: makeUploadFile({size: 30}),
+      }),
+    ];
+    recomputeAlbumTotals(album, snapshot);
+    expect(album.totalPhotos).toBe(2);
+    expect(album.totalStorage).toBe(40);
+    expect(album.photos).toEqual([]);
   });
 });

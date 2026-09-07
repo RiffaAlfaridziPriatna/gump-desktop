@@ -1,4 +1,3 @@
-import {culledAlbumStore} from '@lib/culledAlbum/store';
 import {
   stabilizeAlbumGridFiles,
   type AlbumGridFileItem,
@@ -10,16 +9,11 @@ import {useMemo, useRef} from 'react';
 const EMPTY_PHOTO_IDS: string[] = [];
 
 function buildAlbumGridItems(albumId: string, photoOrder: string[]): AlbumGridFileItem[] {
-  const album = culledAlbumStore.getState().albums[albumId];
-  const albumById = new Map(
-    (album?.photos ?? []).map(photo => [photo.photoId, photo]),
-  );
   const state = photoStateStore.getState();
   const items: AlbumGridFileItem[] = [];
 
   for (const photoId of photoOrder) {
-    const photo =
-      state.photoState[photoKey(albumId, photoId)] ?? albumById.get(photoId);
+    const photo = state.photoState[photoKey(albumId, photoId)];
     if (!photo || photo.status !== 'uploaded') {
       continue;
     }

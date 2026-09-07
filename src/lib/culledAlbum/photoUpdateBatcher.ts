@@ -29,6 +29,7 @@ export type PendingPhotoUpdate = {
 
 const MIN_FLUSH_INTERVAL_MS = Platform.OS === 'windows' ? 250 : 120;
 const DEFERRED_FLUSH_MS = Platform.OS === 'windows' ? 80 : 50;
+export const PHOTO_UPDATE_APPLY_CHUNK = 20;
 
 let pending: PendingPhotoUpdate[] = [];
 let flushScheduled = false;
@@ -161,7 +162,7 @@ export function schedulePhotoUpdate(
   }
 
   if (update.options?.immediate) {
-    flushPendingPhotoUpdates(applyBatch);
+    flushPendingPhotoUpdates(applyBatch, {drain: true});
     applyBatch([update]);
     return;
   }
@@ -186,31 +187,40 @@ export function schedulePhotoUpdate(
 
 export function flushPendingPhotoUpdates(
   applyBatch: (updates: PendingPhotoUpdate[]) => void,
+  options?: {drain?: boolean},
 ): void {
   if (pending.length === 0) {
     flushScheduled = false;
     return;
   }
 
-  flushScheduled = false;
-  const batch = pending.splice(0);
-  const merged = new Map<string, PendingPhotoUpdate>();
+  const drain = options?.drain === true;
 
-  for (const update of batch) {
-    const key = `${update.albumId}:${update.photoId}`;
-    const existing = merged.get(key);
-    if (!existing) {
-      merged.set(key, {...update});
-      continue;
+  do {
+    flushScheduled = false;
+    const batch = pending.splice(0, PHOTO_UPDATE_APPLY_CHUNK);
+    const merged = new Map<string, PendingPhotoUpdate>();
+
+    for (const update of batch) {
+      const key = `${update.albumId}:${update.photoId}`;
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, {...update});
+        continue;
+      }
+
+      const previousUpdater = existing.updater;
+      existing.updater = photo => {
+        previousUpdater(photo);
+        update.updater(photo);
+      };
+      existing.options = mergeOptions(existing.options, update.options);
     }
 
-    const previousUpdater = existing.updater;
-    existing.updater = photo => {
-      previousUpdater(photo);
-      update.updater(photo);
-    };
-    existing.options = mergeOptions(existing.options, update.options);
-  }
+    applyBatch([...merged.values()]);
+  } while (drain && pending.length > 0);
 
-  applyBatch([...merged.values()]);
+  if (pending.length > 0) {
+    scheduleBatchFlush(applyBatch);
+  }
 }

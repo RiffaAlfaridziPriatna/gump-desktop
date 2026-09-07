@@ -7,7 +7,7 @@ import {
   clearAnalysisBatch,
   clearLocalImportBatch,
   culledAlbumStore,
-  flushPendingPhotoUpdates,
+  flushAllPendingPhotoUpdates,
   getAlbum,
   getPhotoById,
   getPhotosForAlbum,
@@ -273,14 +273,14 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     const batchTotal =
       getAlbum(albumId)?.analysisBatchCounts?.total ?? photos.length;
     beginAnalysisQueue(albumId, batchTotal);
-    flushPendingPhotoUpdates();
+    flushAllPendingPhotoUpdates();
     analysisQueueRef.current!.beginBatch(albumId);
     analysisQueueRef.current!.processPending(albumId);
   }, []);
 
   const startSelectedUpload = useCallback((albumId: string, photoIds: string[]) => {
     startServerUploadBatch(albumId, photoIds);
-    flushPendingPhotoUpdates();
+    flushAllPendingPhotoUpdates();
     serverUploadQueueRef.current!.resetActiveUploadCount(albumId);
     setQueueOperationStatus(albumId, 'serverUpload', 'active');
     persistAlbum(albumId).catch(() => undefined);
@@ -322,7 +322,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
   const failNotUploadedItems = useCallback(async (albumId: string, error?: string) => {
     await uploadQueueRef.current!.cancel(albumId, error ?? 'Upload cancelled');
 
-    flushPendingPhotoUpdates();
+    flushAllPendingPhotoUpdates();
     reconcileLocalImportBatchCounts(albumId);
 
     const albumBeforePrune = getAlbum(albumId);
@@ -384,7 +384,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     syncedAlbumsRef.current.delete(albumId);
     setQueueOperationStatus(albumId, 'analysis', 'finalizing');
     await analysisQueueRef.current!.cancel(albumId, error ?? 'Analysis cancelled');
-    flushPendingPhotoUpdates();
+    flushAllPendingPhotoUpdates();
     reconcileAnalysisBatchCounts(albumId);
 
     const album = getAlbum(albumId);

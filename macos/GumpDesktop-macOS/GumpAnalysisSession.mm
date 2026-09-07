@@ -192,6 +192,28 @@ NSDictionary *AnalysisResultDictionary(const Analysis::AnalysisResult &result) {
   return payload;
 }
 
+NSDictionary *AssignmentDictionary(const Analysis::AnalysisResult &result) {
+  NSMutableArray *faces = [NSMutableArray arrayWithCapacity:result.faces.size()];
+  for (const auto &face : result.faces) {
+    [faces addObject:@{
+      @"faceId" : [NSString stringWithUTF8String:face.faceId.c_str()],
+      @"boundingBox" : @{
+        @"left" : @(face.left),
+        @"top" : @(face.top),
+        @"width" : @(face.width),
+        @"height" : @(face.height),
+      },
+    }];
+  }
+
+  return @{
+    @"photoId" : [NSString stringWithUTF8String:result.photoId.c_str()],
+    @"success" : @(result.success),
+    @"duplicated" : @(result.duplicated),
+    @"faces" : faces,
+  };
+}
+
 NSArray *DuplicateGroupsArray(const std::vector<Analysis::DuplicateGroup> &groups) {
   NSMutableArray *payloads = [NSMutableArray arrayWithCapacity:groups.size()];
   for (const auto &group : groups) {
@@ -532,9 +554,9 @@ RCT_EXPORT_METHOD(startAnalysis:(NSString *)albumId
           return;
         }
 
-        NSMutableArray *resultPayloads = [NSMutableArray arrayWithCapacity:summary.results.size()];
+        NSMutableArray *assignments = [NSMutableArray arrayWithCapacity:summary.results.size()];
         for (const auto &result : summary.results) {
-          [resultPayloads addObject:AnalysisResultDictionary(result)];
+          [assignments addObject:AssignmentDictionary(result)];
         }
         NSArray *duplicateGroups = DuplicateGroupsArray(summary.duplicateGroups);
 
@@ -546,7 +568,7 @@ RCT_EXPORT_METHOD(startAnalysis:(NSString *)albumId
                                        @"total" : @(summary.total),
                                        @"failed" : @(summary.failed),
                                        @"postProcessed" : @YES,
-                                       @"results" : resultPayloads,
+                                       @"assignments" : assignments,
                                        @"duplicateGroups" : duplicateGroups,
                                      }];
           }

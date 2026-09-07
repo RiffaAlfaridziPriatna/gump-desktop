@@ -5,13 +5,17 @@ import {
 } from '@/application/syncPhotoRepository';
 import { hydratePhotos } from '@lib/culledAlbum/photoLoader';
 import { photoKey, photoStateStore } from '@lib/culledAlbum/photoStateStore';
-import { flushRenderSync } from '@lib/culledAlbum/photoRenderStore';
+import {
+  flushRenderSync,
+  scheduleRenderSync,
+} from '@lib/culledAlbum/photoRenderStore';
 import { reportError } from '@lib/observability/reportError';
 import { purgeLocalCulledAlbum } from '@lib/culledAlbum/service';
 import { removePersistedPhoto } from '@lib/culledAlbum/storage';
 import {
   culledAlbumStore,
   ensureAlbumLoaded,
+  flushAllPendingPhotoUpdates,
   flushPendingPhotoUpdates,
   getAlbum,
   getPhotoById,
@@ -285,6 +289,9 @@ async function applyDuplicateFlags(albumId: string): Promise<void> {
       syncedPhotoIds.push(photo.photoId);
     }
   });
+  if (syncedPhotoIds.length > 0) {
+    scheduleRenderSync();
+  }
 
   culledAlbumStore.setState(state => {
     const album = state.albums[albumId];
@@ -293,22 +300,6 @@ async function applyDuplicateFlags(albumId: string): Promise<void> {
     }
 
     album.cullingDuplicateGroups = groups;
-
-    for (const photo of Object.values(photoMap)) {
-      const entry = album.photos.find(item => item.photoId === photo.photoId);
-      if (!entry) {
-        continue;
-      }
-      const nextSelected = photo.duplicated ? false : entry.selected;
-      if (
-        entry.duplicated === photo.duplicated &&
-        entry.selected === nextSelected
-      ) {
-        continue;
-      }
-      entry.duplicated = photo.duplicated;
-      entry.selected = nextSelected;
-    }
   });
 
   if (syncedPhotoIds.length > 0) {
@@ -376,26 +367,26 @@ function reconcileFaceClusterIdsForAlbum(albumId: string): void {
   const clusterRepresentatives = getFaceClusterIndex(albumId);
   let nextFaceClusterId = 0;
   const syncedPhotoIds: string[] = [];
+  const photos = getPhotosForAlbum(albumId);
 
-  for (const photo of getPhotosForAlbum(albumId)) {
-    if (photo.analysisStatus !== 'analyzed' || photo.faces.length === 0) {
-      continue;
+  photoStateStore.setState(state => {
+    for (const photo of photos) {
+      if (photo.analysisStatus !== 'analyzed' || photo.faces.length === 0) {
+        continue;
+      }
+      const entry = state.photoState[photoKey(albumId, photo.photoId)];
+      if (!entry || entry.faces.length === 0) {
+        continue;
+      }
+      nextFaceClusterId = assignFaceClustersToSinglePhoto(
+        entry.faces,
+        clusterRepresentatives,
+        nextFaceClusterId,
+      );
+      syncedPhotoIds.push(photo.photoId);
     }
-
-    updatePhoto(
-      albumId,
-      photo.photoId,
-      entry => {
-        nextFaceClusterId = assignFaceClustersToSinglePhoto(
-          entry.faces,
-          clusterRepresentatives,
-          nextFaceClusterId,
-        );
-      },
-      {recomputeTotals: false},
-    );
-    syncedPhotoIds.push(photo.photoId);
-  }
+  });
+  scheduleRenderSync();
 
   culledAlbumStore.setState(state => {
     const albumState = state.albums[albumId];
@@ -449,7 +440,14 @@ function nextClusterIdFromFaceId(faceId: string | undefined): number {
 
 function applyNativeFaceClusterIds(
   albumId: string,
-  results: NativeSessionPhotoResult[],
+  results: Array<{
+    photoId: string;
+    success?: boolean;
+    faces?: Array<{
+      faceId?: string;
+      boundingBox?: NativeDetectedFace['boundingBox'];
+    }>;
+  }>,
 ): void {
   let maxNextClusterId = 0;
   const assignmentsByPhotoId = new Map<string, string[]>();
@@ -531,24 +529,13 @@ function applyNativeFaceClusterIds(
         }
       }
     });
+    scheduleRenderSync();
   }
 
   culledAlbumStore.setState(state => {
     const album = state.albums[albumId];
     if (!album) {
       return;
-    }
-    for (const [photoId, assignedIds] of assignmentsByPhotoId) {
-      const entry = album.photos.find(photo => photo.photoId === photoId);
-      if (!entry) {
-        continue;
-      }
-      for (let index = 0; index < entry.faces.length; index++) {
-        const clusterId = assignedIds[index];
-        if (clusterId) {
-          entry.faces[index].rekognitionFaceId = clusterId;
-        }
-      }
     }
     album.nextFaceClusterId = Math.max(
       album.nextFaceClusterId ?? 0,
@@ -578,6 +565,9 @@ function applyNativeDuplicateGroups(
       syncedPhotoIds.push(photoId);
     }
   });
+  if (syncedPhotoIds.length > 0) {
+    scheduleRenderSync();
+  }
 
   culledAlbumStore.setState(state => {
     const album = state.albums[albumId];
@@ -585,18 +575,6 @@ function applyNativeDuplicateGroups(
       return;
     }
     album.cullingDuplicateGroups = groups;
-    for (const [photoId, duplicated] of duplicatedByPhotoId) {
-      const entry = album.photos.find(item => item.photoId === photoId);
-      if (!entry) {
-        continue;
-      }
-      const nextSelected = duplicated ? false : entry.selected;
-      if (entry.duplicated === duplicated && entry.selected === nextSelected) {
-        continue;
-      }
-      entry.duplicated = duplicated;
-      entry.selected = nextSelected;
-    }
   });
 
   if (syncedPhotoIds.length > 0) {
@@ -671,6 +649,15 @@ export type NativeSessionPhotoResult = {
 export type NativeSessionIngestOptions = {
   postProcessed?: boolean;
   duplicateGroups?: CullingDuplicateGroup[];
+  assignments?: Array<{
+    photoId: string;
+    success: boolean;
+    duplicated?: boolean;
+    faces?: Array<{
+      faceId?: string;
+      boundingBox?: NativeDetectedFace['boundingBox'];
+    }>;
+  }>;
   /** Native progress events already own analysisBatchCounts; skip relative shifts. */
   shiftAnalysisCounts?: boolean;
 };
@@ -735,15 +722,28 @@ function ingestNativeSessionResults(
   }
 
   flushPendingPhotoUpdates();
+  applyNativeSessionPostProcess(albumId, results, options);
 
+  return {analyzed, failed};
+}
+
+function applyNativeSessionPostProcess(
+  albumId: string,
+  results: NativeSessionPhotoResult[],
+  options?: Pick<
+    NativeSessionIngestOptions,
+    'postProcessed' | 'duplicateGroups' | 'assignments'
+  >,
+): void {
+  const sources = options?.assignments?.length ? options.assignments : results;
   if (options?.postProcessed) {
     nativePostProcessedAlbums.add(albumId);
-    applyNativeFaceClusterIds(albumId, results);
+    applyNativeFaceClusterIds(albumId, sources);
   }
   if (options?.duplicateGroups) {
     nativeDuplicatesAppliedAlbums.add(albumId);
     const duplicatedByPhotoId = new Map<string, boolean>();
-    for (const result of results) {
+    for (const result of sources) {
       if (typeof result.duplicated === 'boolean') {
         duplicatedByPhotoId.set(result.photoId, result.duplicated);
       }
@@ -754,12 +754,9 @@ function ingestNativeSessionResults(
       duplicatedByPhotoId,
     );
   }
-
   if (options?.postProcessed) {
     flushRenderSync();
   }
-
-  return {analyzed, failed};
 }
 
 export const cullingEngine = {
@@ -822,6 +819,7 @@ export const cullingEngine = {
   },
 
   ingestNativeSessionResults,
+  applyNativeSessionPostProcess,
 
   async getPhotos(albumId: string): Promise<APIResponse.CullingPhotoList> {
     return {results: await getAnalyzedPhotos(albumId)};
@@ -1013,7 +1011,7 @@ export const cullingEngine = {
     await backfillMissingAnalyzedPhotoAssets(albumId, albumPhotos, {
       regenerateFaceCrops: false,
     });
-    flushPendingPhotoUpdates();
+    flushAllPendingPhotoUpdates();
     flushRenderSync();
     flushUpdateCullingSummary(albumId);
     await persistAlbum(albumId);
@@ -1024,7 +1022,7 @@ export const cullingEngine = {
     await backfillMissingAnalyzedPhotoAssets(albumId, albumPhotos, {
       regenerateFaceCrops: false,
     });
-    flushPendingPhotoUpdates();
+    flushAllPendingPhotoUpdates();
     updateCullingSummary(albumId);
     await persistAlbum(albumId);
   },

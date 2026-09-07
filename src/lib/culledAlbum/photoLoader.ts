@@ -41,7 +41,12 @@ export function setPhotoOrder(albumId: string, photoIds: string[]): void {
       }
       delete state.photoState[photoKey(albumId, prevPhotoId)];
     }
-    state.photoOrder[albumId] = photoIds;
+    return {
+      photoOrder: {
+        ...state.photoOrder,
+        [albumId]: photoIds,
+      },
+    };
   });
   scheduleRenderSync();
 }

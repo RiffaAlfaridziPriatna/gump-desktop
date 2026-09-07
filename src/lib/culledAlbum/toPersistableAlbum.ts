@@ -1,3 +1,4 @@
+import {getPhotosSnapshot} from './photoStateStore';
 import {CulledAlbum, CulledAlbumPhoto, hasInFlightUploads} from './types';
 
 function toPersistablePhoto(photo: CulledAlbumPhoto): CulledAlbumPhoto {
@@ -15,8 +16,14 @@ function toPersistablePhoto(photo: CulledAlbumPhoto): CulledAlbumPhoto {
   };
 }
 
+export function photosForPersist(album: CulledAlbum): CulledAlbumPhoto[] {
+  const snapshot = getPhotosSnapshot(album.albumId);
+  return snapshot.length > 0 ? snapshot : album.photos;
+}
+
 export function toPersistableAlbum(album: CulledAlbum): CulledAlbum {
-  const inFlightImport = hasInFlightUploads(album);
+  const persistPhotos = photosForPersist(album);
+  const inFlightImport = hasInFlightUploads(album, persistPhotos);
 
   return {
     ...album,
@@ -26,6 +33,6 @@ export function toPersistableAlbum(album: CulledAlbum): CulledAlbum {
     localImportBatchTotal: inFlightImport ? album.localImportBatchTotal : 0,
     localImportBatchCounts: undefined,
     analysisBatchCounts: undefined,
-    photos: album.photos.map(toPersistablePhoto),
+    photos: persistPhotos.map(toPersistablePhoto),
   };
 }

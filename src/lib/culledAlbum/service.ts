@@ -1,4 +1,6 @@
 import {deleteLocalAlbumFiles} from '@lib/storage/localStorage';
+import {getPhotosSnapshot, photoStateStore} from './photoStateStore';
+import {gumpPerfMark} from './perfDebug';
 import {clearAlbumData, culledAlbumStore, loadAlbumIntoStore} from './store';
 import {CulledAlbum, hasInFlightAnalysis} from './types';
 
@@ -16,7 +18,16 @@ export function shouldOpenCulledDetailScreen(
     return false;
   }
 
-  if (hasInFlightAnalysis(localAlbum)) {
+  const photos = getPhotosSnapshot(localAlbum.albumId);
+  const order = photoStateStore.getState().photoOrder[localAlbum.albumId];
+  gumpPerfMark('shouldOpenCulledDetailScreen', {
+    albumId: localAlbum.albumId,
+    snapshot: photos.length,
+    albumPhotos: localAlbum.photos.length,
+    order: order?.length ?? 0,
+    cullingCompleted: localAlbum.cullingCompleted,
+  });
+  if (hasInFlightAnalysis(localAlbum, photos)) {
     return false;
   }
 
@@ -24,7 +35,7 @@ export function shouldOpenCulledDetailScreen(
     return true;
   }
 
-  return localAlbum.photos.some(photo => photo.analysisStatus === 'analyzed');
+  return photos.some(photo => photo.analysisStatus === 'analyzed');
 }
 
 export function resolveCulledAlbumRouteFromMemory(

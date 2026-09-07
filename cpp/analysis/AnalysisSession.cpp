@@ -137,6 +137,12 @@ struct AnalysisSession::Impl {
       return false;
     }
 
+    // Re-init destroys SCRFD/ORT workers. Abandoned ProcessPhoto threads
+    // from a cancelled session still call detectFaces on those objects.
+    if (pipeline.isReady()) {
+      return true;
+    }
+
     if (!pipeline.initialize(config.pipelineConfig)) {
       return false;
     }
@@ -189,6 +195,10 @@ struct AnalysisSession::Impl {
     AnalysisResult result;
     result.photoId = job.input.photoId;
     result.success = false;
+
+    if (cancelled.load() || !running.load()) {
+      return EmptyFallbackResult(job, "Cancelled");
+    }
 
     try {
       // 1. Decode analysis-sized buffer for SCRFD + tiling + dHash.

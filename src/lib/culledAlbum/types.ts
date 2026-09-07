@@ -249,10 +249,13 @@ export function sortPhotosByFilename(
   return [...photos].sort(comparePhotosByFilename);
 }
 
-export function recomputeAlbumTotals(album: CulledAlbum): CulledAlbum {
+export function recomputeAlbumTotals(
+  album: CulledAlbum,
+  photos: CulledAlbumPhoto[] = album.photos,
+): CulledAlbum {
   let totalPhotos = 0;
   let totalStorage = 0;
-  for (const photo of album.photos) {
+  for (const photo of photos) {
     if (photo.status !== 'uploaded') {
       continue;
     }
@@ -371,14 +374,18 @@ export function countByAnalysisStatus(
   return photos.filter(photo => photo.analysisStatus === status).length;
 }
 
-export function hasStartedCulling(album: CulledAlbum | null | undefined): boolean {
+export function hasStartedCulling(
+  album: CulledAlbum | null | undefined,
+  photos?: CulledAlbumPhoto[],
+): boolean {
   if (!album) {
     return false;
   }
   if (album.cullingCompleted) {
     return true;
   }
-  return album.photos.some(photo => photo.analysisStatus !== 'idle');
+  const source = photos ?? album.photos;
+  return source.some(photo => photo.analysisStatus !== 'idle');
 }
 
 export function toCullingPhoto(photo: CulledAlbumPhoto): APIResponse.CullingPhoto {

@@ -1839,14 +1839,38 @@ void EmitAnalysisBatch(const std::vector<Analysis::AnalysisResult> &batch) {
       }));
 }
 
+winrtRN::JSValueObject AnalysisAssignmentToJsObject(
+    const Analysis::AnalysisResult &result) {
+  winrtRN::JSValueArray facesArray;
+  for (const auto &face : result.faces) {
+    facesArray.push_back(winrtRN::JSValue(winrtRN::JSValueObject{
+        {"faceId", face.faceId},
+        {"boundingBox",
+         winrtRN::JSValueObject{
+             {"left", face.left},
+             {"top", face.top},
+             {"width", face.width},
+             {"height", face.height},
+         }},
+    }));
+  }
+
+  return winrtRN::JSValueObject{
+      {"photoId", result.photoId},
+      {"success", result.success},
+      {"duplicated", result.duplicated},
+      {"faces", winrtRN::JSValue(std::move(facesArray))},
+  };
+}
+
 void EmitAnalysisComplete(const Analysis::CompletionSummary &summary) {
   if (!g_sessionReactContext) {
     return;
   }
 
-  winrtRN::JSValueArray resultsArray;
+  winrtRN::JSValueArray assignments;
   for (const auto &result : summary.results) {
-    resultsArray.push_back(winrtRN::JSValue(AnalysisResultToJsObject(result)));
+    assignments.push_back(winrtRN::JSValue(AnalysisAssignmentToJsObject(result)));
   }
 
   g_sessionReactContext.EmitJSEvent(
@@ -1857,7 +1881,7 @@ void EmitAnalysisComplete(const Analysis::CompletionSummary &summary) {
           {"total", summary.total},
           {"failed", summary.failed},
           {"postProcessed", true},
-          {"results", winrtRN::JSValue(std::move(resultsArray))},
+          {"assignments", winrtRN::JSValue(std::move(assignments))},
           {"duplicateGroups",
            winrtRN::JSValue(DuplicateGroupsToJsArray(summary.duplicateGroups))},
       }));

@@ -4,7 +4,7 @@ import {
   alignPhotoOrderByFilename,
   hydratePhotos,
 } from '@lib/culledAlbum/photoLoader';
-import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
+import {getPhotosSnapshot, photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
 import {useCulledAlbumPhotosState} from '@context/culledAlbum';
 import {FileAsset} from '@services/upload/types';
 import {useCallback, useEffect, useMemo, useState} from 'react';
@@ -24,11 +24,13 @@ function hasCachedAlbumPhotos(albumId: string): boolean {
     }
   }
   const album = culledAlbumStore.getState().albums[albumId];
-  return Boolean(
-    album &&
-      album.photos.some(
-        photo => photo.status === 'uploaded' && Boolean(photo.file.uri),
-      ),
+  if (album?.photos.some(
+    photo => photo.status === 'uploaded' && Boolean(photo.file.uri),
+  )) {
+    return true;
+  }
+  return getPhotosSnapshot(albumId).some(
+    photo => photo.status === 'uploaded' && Boolean(photo.file.uri),
   );
 }
 
