@@ -1,4 +1,5 @@
 #import "GumpLocalStorage.h"
+#import "GumpFilePicker.h"
 #import "GumpSharedFaceDetection.h"
 
 #import <AppKit/AppKit.h>
@@ -31,6 +32,35 @@ static BOOL CopyOrCloneRegularFile(NSString *sourcePath, NSString *destPath, NSE
   return [[NSFileManager defaultManager] copyItemAtPath:sourcePath
                                                  toPath:destPath
                                                   error:outError];
+}
+
+static NSError *GumpEnrichCopyError(
+    NSError *copyError,
+    NSString *sourcePath,
+    NSString *albumDir,
+    NSString *destPath)
+{
+  if (copyError == nil) {
+    copyError = [NSError errorWithDomain:NSCocoaErrorDomain
+                                    code:NSFileWriteUnknownError
+                                userInfo:nil];
+  }
+  NSFileManager *fileManager = [NSFileManager defaultManager];
+  BOOL destIsDirectory = NO;
+  BOOL destExists = [fileManager fileExistsAtPath:albumDir isDirectory:&destIsDirectory];
+  NSMutableDictionary *info =
+      [NSMutableDictionary dictionaryWithDictionary:copyError.userInfo ?: @{}];
+  info[@"sourcePath"] = sourcePath ?: @"";
+  info[@"albumDir"] = albumDir ?: @"";
+  info[@"destPath"] = destPath ?: @"";
+  info[@"sourceReadable"] = @([fileManager isReadableFileAtPath:sourcePath]);
+  info[@"destWritable"] = @([fileManager isWritableFileAtPath:albumDir]);
+  info[@"destExists"] = @(destExists);
+  info[@"destIsDirectory"] = @(destIsDirectory);
+  info[@"hasSecurityScope"] = @(GumpHasSecurityScopedFilePath(sourcePath));
+  return [NSError errorWithDomain:copyError.domain ?: NSCocoaErrorDomain
+                             code:copyError.code
+                         userInfo:info];
 }
 
 @implementation GumpLocalStorage
@@ -2343,11 +2373,14 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
       NSString *destPath = [albumDir stringByAppendingPathComponent:destName];
       NSError *copyError = nil;
       if (!CopyOrCloneRegularFile(sourcePath, destPath, &copyError)) {
+        NSError *richError =
+            GumpEnrichCopyError(copyError, sourcePath, albumDir, destPath);
         dispatch_async(dispatch_get_main_queue(), ^{
-          reject(@"ECOPY", copyError.localizedDescription, copyError);
+          reject(@"ECOPY", richError.localizedDescription, richError);
         });
         return;
       }
+      GumpReleaseSecurityScopedFilePath(sourcePath);
 
       NSString *thumbPath =
           [self generateThumbnailAtPath:destPath albumId:albumId photoId:destId];
