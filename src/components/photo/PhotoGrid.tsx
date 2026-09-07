@@ -545,16 +545,25 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     // onViewableItemsChanged) gives us a second estimate.
     const reportedOffset = scrollOffsetRef.current;
     const currentRowHeight = rowHeightRef.current;
+    const lastViewableRow = lastViewableRangeRef.current?.minRow ?? 0;
+    if (firstVisibleRowRef.current === 0 && lastViewableRow > 0) {
+      firstVisibleRowRef.current = lastViewableRow;
+    }
     const estimatedOffset = firstVisibleRowRef.current * currentRowHeight;
     const lastNativeOffset = lastScrollEventRef.current?.contentOffsetY ?? 0;
-    const viewableOffset =
-      (lastViewableRangeRef.current?.minRow ?? 0) * currentRowHeight;
+    const viewableOffset = lastViewableRow * currentRowHeight;
     const startOffset = Math.max(
       reportedOffset,
       estimatedOffset,
       lastNativeOffset,
       viewableOffset,
     );
+    // Sonoma can leave VirtualizedList's shadow at 0 while the clip view
+    // is still at lastNativeOffset. scrollTo(0) then no-ops. Sync first.
+    if (lastNativeOffset > reportedOffset + 16) {
+      list.scrollToOffset({offset: lastNativeOffset, animated: false});
+      scrollOffsetRef.current = lastNativeOffset;
+    }
     const startSnapshot = {
       startOffset,
       lastNativeOffset,
