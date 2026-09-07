@@ -6,6 +6,7 @@ jest.mock('posthog-react-native', () => {
     captureException() {}
     identify() {}
     reset() {}
+    addExceptionStep() {}
   }
   return {
     __esModule: true,

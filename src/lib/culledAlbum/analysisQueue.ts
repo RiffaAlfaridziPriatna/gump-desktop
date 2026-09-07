@@ -9,6 +9,7 @@ import {FileAsset} from '@services/upload/types';
 import {Platform} from 'react-native';
 import {describeFileUri} from '@lib/observability/serializeError';
 import {reportError} from '@lib/observability/reportError';
+import {addErrorStep} from '@lib/observability/posthogClient';
 import {
   isAnalysisBatchFinished,
   isAnalysisBatchFinishedByCounts,
@@ -17,14 +18,17 @@ import {
 import {
   cancelNativeAnalysis,
   getAnalysisSessionTuning,
+  isNativeAnalysisRunning,
   isNativeAnalysisSupported,
   startNativeAnalysis,
   subscribeToNativeAnalysis,
   unsubscribeFromNativeAnalysis,
   type AnalysisCompleteEvent,
+  type AnalysisProgressEvent,
 } from './nativeAnalysisSession';
 import {
   getAlbum,
+  getAlbumTraceContext,
   flushAllPendingPhotoUpdates,
   reconcileAnalysisBatchCounts,
   scheduleUpdateCullingSummary,
@@ -94,6 +98,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
   const nativeStartInFlight = new Set<string>();
   const nativeIngestedByAlbum = new Map<string, Set<string>>();
   const nativeLastProgressByAlbum = new Map<string, {done: number; at: number}>();
+  const nativeLastProgressDetailByAlbum = new Map<string, AnalysisProgressEvent>();
   const nativeWatchdogRestartsByAlbum = new Map<string, number>();
   const nativeWatchdogTimers = new Map<string, ReturnType<typeof setInterval>>();
   const nativeAnalyzedBaselineByAlbum = new Map<string, number>();
@@ -123,6 +128,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     nativeFailedBaselineByAlbum.delete(albumId);
     nativeWatchdogRestartsByAlbum.delete(albumId);
     nativeLastProgressByAlbum.delete(albumId);
+    nativeLastProgressDetailByAlbum.delete(albumId);
     clearNativeWatchdog(albumId);
     batchStartedAtByAlbum.set(albumId, Date.now());
   }
@@ -326,10 +332,14 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       const firstError = batchPhotoIds
         .map(photoId => getPhoto(albumId, photoId)?.analysisError)
         .find(Boolean);
-      onError(
-        albumId,
-        firstError ?? 'All photos failed to analyze. Please try again.',
-      );
+      const message =
+        firstError ?? 'All photos failed to analyze. Please try again.';
+      reportError(new Error(message), {
+        source: 'analysis_queue',
+        operation: 'analysis_all_failed',
+        ...getAlbumTraceContext(albumId),
+      });
+      onError(albumId, message);
       return;
     }
 
@@ -619,6 +629,11 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         tryCompleteAlbum(albumId);
       })
       .catch(error => {
+        reportError(error, {
+          source: 'analysis_queue',
+          operation: 'native_ingest_failed',
+          ...getAlbumTraceContext(albumId),
+        });
         console.error('[CulledAlbum] Native ingest failed', error);
         if (!isCancelled(albumId, generation)) {
           onError(albumId, 'Failed to ingest analysis results');
@@ -664,7 +679,6 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
 
       for (let index = 0; index < pending.length; index += NATIVE_INGEST_CHUNK) {
         const chunk = pending.slice(index, index + NATIVE_INGEST_CHUNK);
-        touchNativeWatchdog(albumId);
         cullingEngine.ingestNativeSessionResults(albumId, chunk, {
           shiftAnalysisCounts: false,
         });
@@ -675,6 +689,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
             queuePhotoPersist(albumId, result.photoId);
           }
         }
+        touchNativeWatchdog(albumId);
         await yieldToMain();
       }
 
@@ -703,11 +718,95 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       });
   }
 
+  function summarizePhotoForTrace(photo: CulledAlbumPhoto): Record<string, unknown> {
+    return {
+      photoId: photo.photoId,
+      fileName: photo.file.name,
+      fileSize: photo.file.size,
+      analysisStatus: photo.analysisStatus,
+      analysisError: photo.analysisError ?? null,
+      ...describeFileUri(photo.file.uri),
+    };
+  }
+
+  function sampleRemainingPhotos(
+    albumId: string,
+    limit = 5,
+  ): Record<string, unknown> {
+    const remaining = getRemainingSessionPhotos(albumId);
+    const analyzing = remaining.filter(
+      photo => photo.analysisStatus === 'analyzing',
+    );
+    const pending = remaining.filter(photo => photo.analysisStatus === 'pending');
+    const failed = remaining.filter(photo => photo.analysisStatus === 'failed');
+    return {
+      remainingCount: remaining.length,
+      remainingPendingCount: pending.length,
+      remainingAnalyzingCount: analyzing.length,
+      remainingFailedCount: failed.length,
+      remainingSample: remaining.slice(0, limit).map(summarizePhotoForTrace),
+      analyzingSample: analyzing.slice(0, limit).map(summarizePhotoForTrace),
+      failedSample: failed.slice(0, 3).map(summarizePhotoForTrace),
+    };
+  }
+
+  async function collectNativeStallContext(
+    albumId: string,
+    lastProgress: {done: number; at: number},
+    stuckDurationMs: number,
+  ): Promise<Record<string, unknown>> {
+    const lastDetail = nativeLastProgressDetailByAlbum.get(albumId);
+    const tuning = getAnalysisSessionTuning();
+    const inFlight = lastDetail?.inFlight ?? [];
+    let nativeRunning: boolean | null = null;
+    try {
+      nativeRunning = await isNativeAnalysisRunning();
+    } catch {
+      nativeRunning = null;
+    }
+
+    return {
+      source: 'analysis_queue',
+      operation: 'native_analysis_stalled',
+      stuckAt: lastProgress.done,
+      stuckDurationMs,
+      lastProgressAgeMs: Date.now() - lastProgress.at,
+      restartCount: nativeWatchdogRestartsByAlbum.get(albumId) ?? 0,
+      nativeRunning,
+      lastNativeDone: lastDetail?.done ?? lastProgress.done,
+      lastNativeTotal: lastDetail?.total ?? null,
+      lastNativeFailed: lastDetail?.failed ?? null,
+      lastNativeQueueRemaining: lastDetail?.queueRemaining ?? null,
+      lastNativeAbandonedCount: lastDetail?.abandonedCount ?? null,
+      lastCompletedPhotoId: lastDetail?.lastCompletedPhotoId ?? null,
+      lastCompletedFileName: lastDetail?.lastCompletedFileName ?? null,
+      inFlight,
+      inFlightCount: inFlight.length,
+      inFlightFileNames: inFlight.map(photo => photo.fileName).join(','),
+      nativeProgressHasInFlight: Array.isArray(lastDetail?.inFlight),
+      nativeIngestedCount: nativeIngestedByAlbum.get(albumId)?.size ?? 0,
+      jsInFlightCount: getInFlightPhotoIds(albumId).size,
+      jsInFlightPhotoIds: [...getInFlightPhotoIds(albumId)].slice(0, 10),
+      batchElapsedMs:
+        Date.now() - (batchStartedAtByAlbum.get(albumId) ?? Date.now()),
+      maxConcurrency: tuning.maxConcurrency,
+      interJobDelayMs: tuning.interJobDelayMs,
+      maxDecodePixelSize: tuning.maxDecodePixelSize,
+      progressiveBatchSize: tuning.progressiveBatchSize,
+      nativePhotoTimeoutMs: 60_000,
+      watchdogTimeoutMs: NATIVE_WATCHDOG_TIMEOUT_MS,
+      ...sampleRemainingPhotos(albumId),
+      ...getAlbumTraceContext(albumId),
+    };
+  }
+
   function touchNativeWatchdog(albumId: string, done?: number): void {
     const lastProgress = nativeLastProgressByAlbum.get(albumId);
-    if (done != null && (!lastProgress || done > lastProgress.done)) {
-      nativeWatchdogRestartsByAlbum.delete(albumId);
-      nativeLastProgressByAlbum.set(albumId, {done, at: Date.now()});
+    if (done != null) {
+      if (!lastProgress || done > lastProgress.done) {
+        nativeWatchdogRestartsByAlbum.delete(albumId);
+        nativeLastProgressByAlbum.set(albumId, {done, at: Date.now()});
+      }
       return;
     }
     nativeLastProgressByAlbum.set(albumId, {
@@ -744,22 +843,35 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       const attempts = (nativeWatchdogRestartsByAlbum.get(albumId) ?? 0) + 1;
       nativeWatchdogRestartsByAlbum.set(albumId, attempts);
       if (attempts > MAX_NATIVE_WATCHDOG_RESTARTS) {
-        reportError(
-          new Error('Native analysis watchdog exceeded restart limit'),
-          {
-            source: 'analysis_queue',
-            operation: 'native_watchdog_restart',
-            albumId,
-            stuckAt: nativeLastProgressByAlbum.get(albumId)?.done,
-            attempts,
-          },
-        );
+        const lastProgress = nativeLastProgressByAlbum.get(albumId);
+        void collectNativeStallContext(
+          albumId,
+          lastProgress ?? {done: 0, at: Date.now()},
+          lastProgress ? Date.now() - lastProgress.at : 0,
+        ).then(context => {
+          reportError(
+            new Error('Native analysis watchdog exceeded restart limit'),
+            {
+              ...context,
+              operation: 'native_analysis_abandoned',
+              remainingCount: remaining.length,
+              attempts,
+            },
+          );
+        });
         onError(
           albumId,
           'Analysis stalled after no progress. Remaining photos are still pending so you can retry.',
         );
         return;
       }
+
+      addErrorStep('native_analysis_restarted', {
+        remainingCount: remaining.length,
+        attempts,
+        stuckAt: nativeLastProgressByAlbum.get(albumId)?.done ?? 0,
+        ...getAlbumTraceContext(albumId),
+      });
 
       console.warn(
         `[CulledAlbum] Restarting native analysis album=${albumId} remaining=${remaining.length} attempt=${attempts}/${MAX_NATIVE_WATCHDOG_RESTARTS}`,
@@ -788,14 +900,64 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       const stuckDuration = now - lastProgress.at;
 
       if (stuckDuration > NATIVE_WATCHDOG_TIMEOUT_MS) {
-        console.error(
-          `[CulledAlbum] Native analysis watchdog timeout album=${albumId} stuckAt=${lastProgress.done} duration=${stuckDuration}ms`,
-        );
         clearNativeWatchdog(albumId);
-        recoverStuckNativeSession(albumId);
+        void collectNativeStallContext(
+          albumId,
+          lastProgress,
+          stuckDuration,
+        ).then(context => {
+          if (
+            isCancelled(albumId, generation) ||
+            !nativeSessionAlbums.has(albumId)
+          ) {
+            return;
+          }
+          const stallError = new Error(
+            'Native analysis stalled with no progress',
+          );
+          reportError(stallError, context);
+          addErrorStep('native_analysis_stalled', {
+            stuckAt: lastProgress.done,
+            stuckDurationMs: stuckDuration,
+            remainingCount: Number(context.remainingCount ?? 0),
+            inFlightCount: Number(context.inFlightCount ?? 0),
+            inFlightFileNames:
+              typeof context.inFlightFileNames === 'string'
+                ? context.inFlightFileNames
+                : '',
+            lastCompletedFileName:
+              typeof context.lastCompletedFileName === 'string'
+                ? context.lastCompletedFileName
+                : null,
+            nativeRunning:
+              context.nativeRunning === true
+                ? true
+                : context.nativeRunning === false
+                  ? false
+                  : null,
+            ...getAlbumTraceContext(albumId),
+          });
+          console.error(
+            `[CulledAlbum] Native analysis watchdog timeout album=${albumId}`,
+            {
+              stuckAt: lastProgress.done,
+              stuckDurationMs: stuckDuration,
+              inFlight: context.inFlight,
+              lastCompletedPhotoId: context.lastCompletedPhotoId,
+              lastCompletedFileName: context.lastCompletedFileName,
+              queueRemaining: context.lastNativeQueueRemaining,
+              abandonedCount: context.lastNativeAbandonedCount,
+              remainingSample: context.remainingSample,
+              nativeRunning: context.nativeRunning,
+            },
+            stallError,
+          );
+          recoverStuckNativeSession(albumId);
+        });
       } else if (__DEV__ && stuckDuration > 30_000) {
+        const lastDetail = nativeLastProgressDetailByAlbum.get(albumId);
         console.warn(
-          `[CulledAlbum] Native analysis slow progress album=${albumId} stuckAt=${lastProgress.done} duration=${stuckDuration}ms`,
+          `[CulledAlbum] Native analysis slow progress album=${albumId} stuckAt=${lastProgress.done} duration=${stuckDuration}ms inFlight=${JSON.stringify(lastDetail?.inFlight ?? [])} lastCompleted=${lastDetail?.lastCompletedFileName ?? ''}`,
         );
       }
     }, NATIVE_WATCHDOG_CHECK_INTERVAL_MS);
@@ -832,7 +994,8 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         if (isCancelled(albumId, generation)) {
           return;
         }
-        
+
+        nativeLastProgressDetailByAlbum.set(albumId, progress);
         touchNativeWatchdog(albumId, progress.done);
 
         const album = getAlbum(albumId);
@@ -865,9 +1028,6 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         }
         nativeIngestChain = nativeIngestChain
           .then(() => ingestNativeResults(albumId, event.results ?? []))
-          .then(() => {
-            touchNativeWatchdog(albumId);
-          })
           .catch(error => {
             console.error('[CulledAlbum] Native batch ingest failed', error);
           });
@@ -899,6 +1059,12 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         '[CulledAlbum] Native analysis failed, falling back to JS queue',
         error,
       );
+      reportError(error, {
+        source: 'analysis_queue',
+        operation: 'native_analysis_start_failed',
+        remainingCount: photos.length,
+        ...getAlbumTraceContext(albumId),
+      });
       return false;
     }
   }

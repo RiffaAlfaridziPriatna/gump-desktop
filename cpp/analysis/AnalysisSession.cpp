@@ -122,6 +122,12 @@ struct AnalysisSession::Impl {
   std::atomic<int> failedCount{0};
   std::atomic<int> dynamicDelayMs{50};
 
+  std::mutex inFlightMutex;
+  std::map<std::string, std::chrono::steady_clock::time_point> inFlightStartedAt;
+  std::map<std::string, std::string> inFlightFileName;
+  std::string lastCompletedPhotoId;
+  std::string lastCompletedFileName;
+
   std::chrono::steady_clock::time_point lastProgressTime;
   std::chrono::steady_clock::time_point batchStartTime;
   std::mutex progressMutex;
@@ -338,6 +344,15 @@ struct AnalysisSession::Impl {
       failedCount.fetch_add(1);
     }
 
+    {
+      std::lock_guard<std::mutex> lock(inFlightMutex);
+      lastCompletedPhotoId = result.photoId;
+      const auto inputIt = inputsByPhotoId.find(result.photoId);
+      lastCompletedFileName = inputIt != inputsByPhotoId.end()
+                                  ? inputIt->second.fileName
+                                  : std::string();
+    }
+
     SendProgressUpdate();
     EmitProgressiveBatch(false);
   }
@@ -375,6 +390,39 @@ struct AnalysisSession::Impl {
     abandonedJobs.clear();
   }
 
+  void MarkInFlightStart(const PhotoJob &job) {
+    std::lock_guard<std::mutex> lock(inFlightMutex);
+    inFlightStartedAt[job.input.photoId] = std::chrono::steady_clock::now();
+    inFlightFileName[job.input.photoId] = job.input.fileName;
+  }
+
+  void MarkInFlightEnd(const std::string &photoId) {
+    std::lock_guard<std::mutex> lock(inFlightMutex);
+    inFlightStartedAt.erase(photoId);
+    inFlightFileName.erase(photoId);
+  }
+
+  std::vector<InFlightPhoto> SnapshotInFlight() {
+    std::lock_guard<std::mutex> lock(inFlightMutex);
+    std::vector<InFlightPhoto> items;
+    const auto now = std::chrono::steady_clock::now();
+    items.reserve(inFlightStartedAt.size());
+    for (const auto &entry : inFlightStartedAt) {
+      InFlightPhoto item;
+      item.photoId = entry.first;
+      const auto nameIt = inFlightFileName.find(entry.first);
+      if (nameIt != inFlightFileName.end()) {
+        item.fileName = nameIt->second;
+      }
+      item.elapsedMs = static_cast<int>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              now - entry.second)
+              .count());
+      items.push_back(item);
+    }
+    return items;
+  }
+
   bool WaitForFuture(std::future<AnalysisResult> &future, int timeoutMs) {
     const auto deadline = std::chrono::steady_clock::now() +
                           std::chrono::milliseconds(timeoutMs);
@@ -386,6 +434,7 @@ struct AnalysisSession::Impl {
       if (paused.load()) {
         continue;
       }
+      SendProgressUpdate();
       if (std::chrono::steady_clock::now() >= deadline) {
         return false;
       }
@@ -394,9 +443,11 @@ struct AnalysisSession::Impl {
   }
 
   void ProcessPhotoJob(const PhotoJob &job) {
+    MarkInFlightStart(job);
     const int timeoutMs = std::max(config.photoTimeoutMs, 0);
     if (timeoutMs <= 0) {
       StoreResult(ProcessPhoto(job));
+      MarkInFlightEnd(job.input.photoId);
       return;
     }
 
@@ -413,6 +464,7 @@ struct AnalysisSession::Impl {
         } catch (...) {
         }
       }
+      MarkInFlightEnd(job.input.photoId);
     });
 
     if (WaitForFuture(future, timeoutMs)) {
@@ -421,6 +473,7 @@ struct AnalysisSession::Impl {
       } catch (...) {
         StoreResult(EmptyFallbackResult(job, "Exception (fallback used)"));
       }
+      MarkInFlightEnd(job.input.photoId);
       if (jobThread.joinable()) {
         jobThread.join();
       }
@@ -431,7 +484,8 @@ struct AnalysisSession::Impl {
       StoreResult(EmptyFallbackResult(job, "Timed out (fallback used)"));
       if (config.logFallbacks) {
         std::cout << "[AnalysisSession] Timeout fallback for "
-                  << job.input.photoId << std::endl;
+                  << job.input.photoId << " file=" << job.input.fileName
+                  << std::endl;
       }
     }
 
@@ -534,6 +588,20 @@ struct AnalysisSession::Impl {
       update.done = completedCount.load();
       update.total = static_cast<int>(config.photos.size());
       update.failed = failedCount.load();
+      {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        update.queueRemaining = static_cast<int>(jobQueue.size());
+      }
+      {
+        std::lock_guard<std::mutex> lock(abandonedMutex);
+        update.abandonedCount = static_cast<int>(abandonedJobs.size());
+      }
+      {
+        std::lock_guard<std::mutex> lock(inFlightMutex);
+        update.lastCompletedPhotoId = lastCompletedPhotoId;
+        update.lastCompletedFileName = lastCompletedFileName;
+      }
+      update.inFlight = SnapshotInFlight();
       config.onProgress(update);
     }
   }
@@ -663,6 +731,13 @@ struct AnalysisSession::Impl {
     completedCount.store(0);
     failedCount.store(0);
     dynamicDelayMs.store(std::max(config.interJobDelayMs, 0));
+    {
+      std::lock_guard<std::mutex> lock(inFlightMutex);
+      inFlightStartedAt.clear();
+      inFlightFileName.clear();
+      lastCompletedPhotoId.clear();
+      lastCompletedFileName.clear();
+    }
 
     EnqueueJobs();
 

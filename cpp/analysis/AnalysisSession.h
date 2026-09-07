@@ -41,10 +41,21 @@ struct AnalysisResult {
   std::string error;
 };
 
+struct InFlightPhoto {
+  std::string photoId;
+  std::string fileName;
+  int elapsedMs{0};
+};
+
 struct ProgressUpdate {
   int done{0};
   int total{0};
   int failed{0};
+  int queueRemaining{0};
+  int abandonedCount{0};
+  std::string lastCompletedPhotoId;
+  std::string lastCompletedFileName;
+  std::vector<InFlightPhoto> inFlight;
 };
 
 struct CompletionSummary {

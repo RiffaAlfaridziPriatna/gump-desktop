@@ -2,6 +2,8 @@ import {cullingEngine} from '@lib/culling/cullingEngine';
 import {resolveUseCases} from '@di/useCases';
 import {createAnalysisQueue} from '@lib/culledAlbum/analysisQueue';
 import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
+import {reportError} from '@lib/observability/reportError';
+import {addErrorStep} from '@lib/observability/posthogClient';
 import {
   addPhotosToAlbum,
   clearAnalysisBatch,
@@ -9,6 +11,7 @@ import {
   culledAlbumStore,
   flushAllPendingPhotoUpdates,
   getAlbum,
+  getAlbumTraceContext,
   getPhotoById,
   getPhotosForAlbum,
   markCullingCompleted,
@@ -149,10 +152,16 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
         await cullingEngine.completeAnalysis(albumId);
         await markCullingCompleted(albumId);
         setQueueOperationStatus(albumId, 'analysis', 'completed');
+        addErrorStep('culling_completed', getAlbumTraceContext(albumId));
       },
       onError: (albumId, message) => {
         uiStoreRef.current!.setState({analyzeError: message});
         setQueueOperationStatus(albumId, 'analysis', 'failed');
+        reportError(new Error(message), {
+          source: 'analysis_queue',
+          operation: 'analysis_failed',
+          ...getAlbumTraceContext(albumId),
+        });
       },
     });
   }
@@ -197,6 +206,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
           analysisAlbum?.analysisBatchPhotoIds.length ??
           0,
       );
+      addErrorStep('culling_resumed', getAlbumTraceContext(albumId));
       analysisQueueRef.current!.processPending(albumId);
     }
 
@@ -261,6 +271,10 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
     uiStoreRef.current!.setState({uploadError: null});
     beginLocalImportQueue(albumId, added.length);
+    addErrorStep('local_import_started', {
+      ...getAlbumTraceContext(albumId),
+      addedCount: added.length,
+    });
     uploadQueueRef.current!.beginBatch(albumId);
     uploadQueueRef.current!.processPending(albumId);
   }, []);
@@ -273,6 +287,13 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     const batchTotal =
       getAlbum(albumId)?.analysisBatchCounts?.total ?? photos.length;
     beginAnalysisQueue(albumId, batchTotal);
+    addErrorStep('culling_started', {
+      ...getAlbumTraceContext(albumId),
+      queuedCount: batchTotal,
+      alreadyAnalyzedCount: photos.filter(
+        photo => photo.analysisStatus === 'analyzed',
+      ).length,
+    });
     flushAllPendingPhotoUpdates();
     analysisQueueRef.current!.beginBatch(albumId);
     analysisQueueRef.current!.processPending(albumId);
@@ -280,6 +301,10 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
   const startSelectedUpload = useCallback((albumId: string, photoIds: string[]) => {
     startServerUploadBatch(albumId, photoIds);
+    addErrorStep('server_upload_started', {
+      ...getAlbumTraceContext(albumId),
+      selectedCount: photoIds.length,
+    });
     flushAllPendingPhotoUpdates();
     serverUploadQueueRef.current!.resetActiveUploadCount(albumId);
     setQueueOperationStatus(albumId, 'serverUpload', 'active');

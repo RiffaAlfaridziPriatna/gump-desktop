@@ -51,3 +51,17 @@ export function identifyUser(user: {
 export function resetIdentifiedUser(): void {
   posthog?.reset();
 }
+
+export function addErrorStep(
+  message: string,
+  properties?: Record<string, string | number | boolean | null>,
+): void {
+  if (!posthog || message.trim().length === 0) {
+    return;
+  }
+  try {
+    posthog.addExceptionStep(message, properties);
+  } catch {
+    // Never throw from tracing.
+  }
+}

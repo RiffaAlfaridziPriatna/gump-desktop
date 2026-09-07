@@ -87,10 +87,21 @@ function analysisEventSource() {
   return null;
 }
 
+export type AnalysisInFlightPhoto = {
+  photoId: string;
+  fileName: string;
+  elapsedMs: number;
+};
+
 export type AnalysisProgressEvent = {
   done: number;
   total: number;
   failed: number;
+  queueRemaining?: number;
+  abandonedCount?: number;
+  lastCompletedPhotoId?: string;
+  lastCompletedFileName?: string;
+  inFlight?: AnalysisInFlightPhoto[];
 };
 
 function readFiniteCount(value: unknown): number | null {
@@ -105,7 +116,40 @@ function readFiniteCount(value: unknown): number | null {
   return rounded;
 }
 
-function coerceAnalysisProgress(event: unknown): AnalysisProgressEvent | null {
+function readOptionalString(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function coerceInFlightPhotos(value: unknown): AnalysisInFlightPhoto[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const photos: AnalysisInFlightPhoto[] = [];
+  for (const item of value.slice(0, 12)) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const photoId = readOptionalString(record.photoId);
+    if (!photoId) {
+      continue;
+    }
+    photos.push({
+      photoId,
+      fileName: readOptionalString(record.fileName) ?? '',
+      elapsedMs: readFiniteCount(record.elapsedMs) ?? 0,
+    });
+  }
+  return photos;
+}
+
+export function coerceAnalysisProgress(
+  event: unknown,
+): AnalysisProgressEvent | null {
   if (!event || typeof event !== 'object') {
     return null;
   }
@@ -123,6 +167,11 @@ function coerceAnalysisProgress(event: unknown): AnalysisProgressEvent | null {
     done: readFiniteCount(source.done) ?? 0,
     total,
     failed: readFiniteCount(source.failed) ?? 0,
+    queueRemaining: readFiniteCount(source.queueRemaining) ?? undefined,
+    abandonedCount: readFiniteCount(source.abandonedCount) ?? undefined,
+    lastCompletedPhotoId: readOptionalString(source.lastCompletedPhotoId),
+    lastCompletedFileName: readOptionalString(source.lastCompletedFileName),
+    inFlight: coerceInFlightPhotos(source.inFlight),
   };
 }
 
@@ -213,6 +262,19 @@ export async function cancelNativeAnalysis(): Promise<void> {
     return;
   }
   await module.cancelAnalysis();
+}
+
+export async function isNativeAnalysisRunning(): Promise<boolean | null> {
+  const module = nativeAnalysisModule();
+  if (!module?.isRunning) {
+    return null;
+  }
+  try {
+    const result = await module.isRunning();
+    return Boolean(result?.running);
+  } catch {
+    return null;
+  }
 }
 
 export function subscribeToNativeAnalysis(

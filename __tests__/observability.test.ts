@@ -11,6 +11,7 @@ import {
   installGlobalErrorReporting,
   uninstallGlobalErrorReporting,
 } from '../src/lib/observability/reportError';
+import {coerceAnalysisProgress} from '../src/lib/culledAlbum/nativeAnalysisSession';
 
 describe('describeFileUri', () => {
   it('extracts scheme and extension without the full path', () => {
@@ -149,5 +150,64 @@ describe('reportError', () => {
         error_message: '[uploadQueue] Failed to persist album album-1',
       }),
     );
+  });
+
+  it('keeps in-flight analysis photos on stall reports', () => {
+    reportError(new Error('Native analysis stalled with no progress'), {
+      operation: 'native_analysis_stalled',
+      inFlight: [
+        {photoId: 'p1', fileName: 'IMG_001.HEIC', elapsedMs: 125000},
+      ],
+      remainingSample: [
+        {photoId: 'p1', fileName: 'IMG_001.HEIC', analysisStatus: 'pending'},
+      ],
+      lastCompletedFileName: 'IMG_000.HEIC',
+    });
+
+    expect(captureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        operation: 'native_analysis_stalled',
+        lastCompletedFileName: 'IMG_000.HEIC',
+        inFlight: [
+          {photoId: 'p1', fileName: 'IMG_001.HEIC', elapsedMs: 125000},
+        ],
+        remainingSample: [
+          {photoId: 'p1', fileName: 'IMG_001.HEIC', analysisStatus: 'pending'},
+        ],
+      }),
+    );
+  });
+});
+
+describe('coerceAnalysisProgress', () => {
+  it('reads in-flight photos and last completed file from native progress', () => {
+    expect(
+      coerceAnalysisProgress({
+        done: 12,
+        total: 80,
+        failed: 1,
+        queueRemaining: 65,
+        abandonedCount: 2,
+        lastCompletedPhotoId: 'p0',
+        lastCompletedFileName: 'IMG_000.HEIC',
+        inFlight: [
+          {photoId: 'p1', fileName: 'IMG_001.HEIC', elapsedMs: 84210},
+          {photoId: 'p2', fileName: 'IMG_002.JPG', elapsedMs: 2100},
+        ],
+      }),
+    ).toEqual({
+      done: 12,
+      total: 80,
+      failed: 1,
+      queueRemaining: 65,
+      abandonedCount: 2,
+      lastCompletedPhotoId: 'p0',
+      lastCompletedFileName: 'IMG_000.HEIC',
+      inFlight: [
+        {photoId: 'p1', fileName: 'IMG_001.HEIC', elapsedMs: 84210},
+        {photoId: 'p2', fileName: 'IMG_002.JPG', elapsedMs: 2100},
+      ],
+    });
   });
 });

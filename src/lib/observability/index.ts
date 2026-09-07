@@ -17,4 +17,5 @@ export {
   isPostHogEnabled,
   identifyUser,
   resetIdentifiedUser,
+  addErrorStep,
 } from './posthogClient';

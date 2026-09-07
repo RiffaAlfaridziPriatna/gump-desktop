@@ -214,6 +214,30 @@ NSDictionary *AssignmentDictionary(const Analysis::AnalysisResult &result) {
   };
 }
 
+NSDictionary *ProgressUpdateDictionary(const Analysis::ProgressUpdate &update) {
+  NSMutableArray *inFlight = [NSMutableArray arrayWithCapacity:update.inFlight.size()];
+  for (const auto &item : update.inFlight) {
+    [inFlight addObject:@{
+      @"photoId" : [NSString stringWithUTF8String:item.photoId.c_str()],
+      @"fileName" : [NSString stringWithUTF8String:item.fileName.c_str()],
+      @"elapsedMs" : @(item.elapsedMs),
+    }];
+  }
+
+  return @{
+    @"done" : @(update.done),
+    @"total" : @(update.total),
+    @"failed" : @(update.failed),
+    @"queueRemaining" : @(update.queueRemaining),
+    @"abandonedCount" : @(update.abandonedCount),
+    @"lastCompletedPhotoId" :
+        [NSString stringWithUTF8String:update.lastCompletedPhotoId.c_str()],
+    @"lastCompletedFileName" :
+        [NSString stringWithUTF8String:update.lastCompletedFileName.c_str()],
+    @"inFlight" : inFlight,
+  };
+}
+
 NSArray *DuplicateGroupsArray(const std::vector<Analysis::DuplicateGroup> &groups) {
   NSMutableArray *payloads = [NSMutableArray arrayWithCapacity:groups.size()];
   for (const auto &group : groups) {
@@ -519,13 +543,9 @@ RCT_EXPORT_METHOD(startAnalysis:(NSString *)albumId
           return;
         }
 
+        NSDictionary *body = ProgressUpdateDictionary(update);
         dispatch_async(dispatch_get_main_queue(), ^{
-          [strongSelf sendEventWithName:@"analysisProgress"
-                                   body:@{
-                                     @"done" : @(update.done),
-                                     @"total" : @(update.total),
-                                     @"failed" : @(update.failed),
-                                   }];
+          [strongSelf sendEventWithName:@"analysisProgress" body:body];
         });
       };
 

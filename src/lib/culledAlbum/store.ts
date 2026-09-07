@@ -820,6 +820,24 @@ export function getAlbum(albumId: string): CulledAlbum | null {
   return getAlbumFromState(albumId);
 }
 
+export function getAlbumTraceContext(
+  albumId: string,
+): Record<string, string | number | boolean | null> {
+  const album = getAlbumFromState(albumId);
+  const counts = album?.analysisBatchCounts;
+  return {
+    albumId,
+    photoCount: album?.totalPhotos ?? 0,
+    totalStorageBytes: album?.totalStorage ?? 0,
+    queuedCount: counts?.total ?? album?.analysisBatchPhotoIds.length ?? 0,
+    analyzedCount: counts?.analyzed ?? 0,
+    failedCount: counts?.failed ?? 0,
+    pendingCount: counts?.pending ?? 0,
+    analyzingCount: counts?.analyzing ?? 0,
+    cullingCompleted: album?.cullingCompleted ?? false,
+  };
+}
+
 export function addPhotosToAlbum(
   albumId: string,
   files: FileAsset[],

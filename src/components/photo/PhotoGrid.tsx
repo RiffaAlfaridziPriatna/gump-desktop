@@ -22,6 +22,8 @@ import {
   resolveGridDisplayUri,
 } from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
+import {reportError} from '@lib/observability/reportError';
+import {addErrorStep} from '@lib/observability/posthogClient';
 import {
   createContext,
   forwardRef,
@@ -441,6 +443,18 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
   const isProgrammaticScrollRef = useRef(false);
   const firstVisibleRowRef = useRef(0);
   const rowHeightRef = useRef(0);
+  const lastScrollEventRef = useRef<{
+    contentOffsetY: number;
+    contentSizeHeight: number;
+    layoutHeight: number;
+    at: number;
+  } | null>(null);
+  const lastViewableRangeRef = useRef<{
+    minIndex: number;
+    maxIndex: number;
+    minRow: number;
+    at: number;
+  } | null>(null);
   const imageLoadStoreRef = useRef<ImageLoadStore | null>(null);
   if (imageLoadStoreRef.current == null) {
     imageLoadStoreRef.current = createImageLoadStore();
@@ -474,13 +488,48 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     forceToTopFrameRef.current = requestAnimationFrame(() => {
       forceToTopFrameRef.current = null;
       list.scrollToOffset({offset: 0, animated: false});
-      scrollOffsetRef.current = 0;
     });
+  }, []);
+
+  const captureScrollDiagnostics = useCallback(() => {
+    const lastScroll = lastScrollEventRef.current;
+    const lastViewable = lastViewableRangeRef.current;
+    const estimatedOffset =
+      firstVisibleRowRef.current * rowHeightRef.current;
+    return {
+      platform: Platform.OS,
+      platformVersion: String(Platform.Version ?? ''),
+      albumId: albumIdRef.current,
+      itemCount: itemsRef.current.length,
+      rowCount: Math.ceil(itemsRef.current.length / COLUMNS),
+      columns: COLUMNS,
+      rowHeight: rowHeightRef.current,
+      layoutWidth: settledLayoutWidthRef.current,
+      deferHeavyMediaWork: deferHeavyMediaWorkRef.current,
+      isProgrammaticScroll: isProgrammaticScrollRef.current,
+      isScrolling: isScrollingRef.current,
+      reportedOffset: scrollOffsetRef.current,
+      firstVisibleRow: firstVisibleRowRef.current,
+      estimatedOffset,
+      lastScrollOffsetY: lastScroll?.contentOffsetY ?? null,
+      lastContentSizeHeight: lastScroll?.contentSizeHeight ?? null,
+      lastLayoutHeight: lastScroll?.layoutHeight ?? null,
+      lastScrollEventAgeMs: lastScroll ? Date.now() - lastScroll.at : null,
+      lastViewableMinIndex: lastViewable?.minIndex ?? null,
+      lastViewableMaxIndex: lastViewable?.maxIndex ?? null,
+      lastViewableMinRow: lastViewable?.minRow ?? null,
+      lastViewableAgeMs: lastViewable ? Date.now() - lastViewable.at : null,
+    };
   }, []);
 
   const scrollToTop = useCallback(() => {
     const list = listRef.current;
     if (!list) {
+      reportError(new Error('Photo grid scroll-to-top missing list ref'), {
+        source: 'photo_grid',
+        operation: 'scroll_to_top',
+        ...captureScrollDiagnostics(),
+      });
       return;
     }
 
@@ -497,12 +546,76 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     const reportedOffset = scrollOffsetRef.current;
     const currentRowHeight = rowHeightRef.current;
     const estimatedOffset = firstVisibleRowRef.current * currentRowHeight;
-    const startOffset = Math.max(reportedOffset, estimatedOffset);
+    const lastNativeOffset = lastScrollEventRef.current?.contentOffsetY ?? 0;
+    const viewableOffset =
+      (lastViewableRangeRef.current?.minRow ?? 0) * currentRowHeight;
+    const startOffset = Math.max(
+      reportedOffset,
+      estimatedOffset,
+      lastNativeOffset,
+      viewableOffset,
+    );
+    const startSnapshot = {
+      startOffset,
+      lastNativeOffset,
+      viewableOffset,
+      ...captureScrollDiagnostics(),
+    };
+
+    addErrorStep('scroll_to_top', {
+      albumId: albumIdRef.current ?? null,
+      itemCount: itemsRef.current.length,
+      startOffset,
+      reportedOffset,
+      estimatedOffset,
+      lastNativeOffset,
+      viewableOffset,
+      firstVisibleRow: firstVisibleRowRef.current,
+      platform: Platform.OS,
+    });
+
+    const verifyReachedTop = () => {
+      const remainingOffset = Math.max(
+        scrollOffsetRef.current,
+        lastScrollEventRef.current?.contentOffsetY ?? 0,
+        firstVisibleRowRef.current * rowHeightRef.current,
+      );
+      const remainingViewableRow = lastViewableRangeRef.current?.minRow ?? 0;
+      if (remainingOffset <= 80 && remainingViewableRow <= 1) {
+        firstVisibleRowRef.current = 0;
+        scrollOffsetRef.current = 0;
+        lastViewableRangeRef.current = {
+          minIndex: 0,
+          maxIndex: 0,
+          minRow: 0,
+          at: Date.now(),
+        };
+        return;
+      }
+      const diagnostics = {
+        ...startSnapshot,
+        ...captureScrollDiagnostics(),
+        remainingOffset,
+        remainingViewableRow,
+      };
+      console.error(
+        '[PhotoGrid] scroll-to-top did not reach the top',
+        diagnostics,
+      );
+      reportError(new Error('Photo grid scroll-to-top did not reach the top'), {
+        source: 'photo_grid',
+        operation: 'scroll_to_top',
+        ...diagnostics,
+      });
+    };
+
+    const scheduleVerify = () => {
+      setTimeout(verifyReachedTop, SCROLL_SETTLE_MS + 80);
+    };
 
     if (startOffset <= 16) {
-      // Genuinely near the top — reset tracking state and nudge native.
-      scrollOffsetRef.current = 0;
-      firstVisibleRowRef.current = 0;
+      // JS thinks we are near the top. Native clip-view can still be
+      // scrolled; verify after the nudge instead of trusting that.
       lastPreloadRangeRef.current = '';
       lastHydrateRangeRef.current = '';
       lastThumbnailRangeRef.current = '';
@@ -512,10 +625,15 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       isProgrammaticScrollRef.current = false;
       try {
         list.scrollToIndex({index: 0, animated: false, viewPosition: 0});
-      } catch {
-        // scrollToIndex may throw if data is empty or layout unknown
+      } catch (error) {
+        reportError(error, {
+          source: 'photo_grid',
+          operation: 'scroll_to_index',
+          ...captureScrollDiagnostics(),
+        });
       }
       forceNativeToTop(list);
+      scheduleVerify();
       return;
     }
 
@@ -530,12 +648,12 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     const startTime = Date.now();
 
     const finish = () => {
-      firstVisibleRowRef.current = 0;
       forceNativeToTop(list);
       scrollAnimationFrameRef.current = null;
       isProgrammaticScrollRef.current = false;
       ignoreViewabilityUntilRef.current = 0;
       isScrollingRef.current = false;
+      scheduleVerify();
     };
 
     const step = () => {
@@ -559,7 +677,7 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     };
 
     scrollAnimationFrameRef.current = requestAnimationFrame(step);
-  }, [forceNativeToTop]);
+  }, [captureScrollDiagnostics, forceNativeToTop]);
 
   useImperativeHandle(
     ref,
@@ -700,9 +818,16 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const nextOffset = event.nativeEvent.contentOffset.y;
+      const nativeEvent = event.nativeEvent;
+      const nextOffset = nativeEvent.contentOffset.y;
       const previousOffset = scrollOffsetRef.current;
       const delta = Math.abs(nextOffset - previousOffset);
+      lastScrollEventRef.current = {
+        contentOffsetY: nextOffset,
+        contentSizeHeight: nativeEvent.contentSize.height,
+        layoutHeight: nativeEvent.layoutMeasurement.height,
+        at: Date.now(),
+      };
       scrollOffsetRef.current = nextOffset;
       if (isProgrammaticScrollRef.current) {
         // Animation frames move toward 0. A jump downward after the grace
@@ -815,6 +940,12 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       // us a second chance to estimate the real position.
       const minRowIndex = Math.floor(minIndex / COLUMNS);
       firstVisibleRowRef.current = minRowIndex;
+      lastViewableRangeRef.current = {
+        minIndex,
+        maxIndex,
+        minRow: minRowIndex,
+        at: Date.now(),
+      };
 
       const currentRowHeight = rowHeightRef.current;
       if (currentRowHeight > 0) {

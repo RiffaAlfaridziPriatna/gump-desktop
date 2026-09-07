@@ -1811,6 +1811,15 @@ void EmitAnalysisProgress(const Analysis::ProgressUpdate &progress) {
     return;
   }
 
+  winrtRN::JSValueArray inFlight;
+  for (const auto &item : progress.inFlight) {
+    inFlight.push_back(winrtRN::JSValueObject{
+        {"photoId", item.photoId},
+        {"fileName", item.fileName},
+        {"elapsedMs", item.elapsedMs},
+    });
+  }
+
   g_sessionReactContext.EmitJSEvent(
       L"RCTDeviceEventEmitter",
       L"analysisProgress",
@@ -1818,6 +1827,11 @@ void EmitAnalysisProgress(const Analysis::ProgressUpdate &progress) {
           {"done", progress.done},
           {"failed", progress.failed},
           {"total", progress.total},
+          {"queueRemaining", progress.queueRemaining},
+          {"abandonedCount", progress.abandonedCount},
+          {"lastCompletedPhotoId", progress.lastCompletedPhotoId},
+          {"lastCompletedFileName", progress.lastCompletedFileName},
+          {"inFlight", winrtRN::JSValue(std::move(inFlight))},
       }));
 }
 
