@@ -21,6 +21,16 @@ static NSString *GumpNormalizedFilePath(NSString *path)
   return path.stringByStandardizingPath ?: path;
 }
 
+static NSMutableDictionary<NSString *, NSNumber *> *GumpScopedURLRetainCounts(void)
+{
+  static NSMutableDictionary<NSString *, NSNumber *> *counts;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    counts = [NSMutableDictionary dictionary];
+  });
+  return counts;
+}
+
 static void GumpStoreScopedURL(NSString *path, NSURL *url)
 {
   if (path.length == 0 || url == nil) {
@@ -44,6 +54,11 @@ void GumpRetainSecurityScopedFileURL(NSURL *url)
   @synchronized(GumpScopedURLMap()) {
     NSURL *existing = GumpScopedURLMap()[normalized] ?: GumpScopedURLMap()[path ?: @""];
     if (existing != nil) {
+      NSInteger count = GumpScopedURLRetainCounts()[normalized].integerValue;
+      if (count < 1) {
+        count = 1;
+      }
+      GumpScopedURLRetainCounts()[normalized] = @(count + 1);
       return;
     }
     [url startAccessingSecurityScopedResource];
@@ -51,6 +66,7 @@ void GumpRetainSecurityScopedFileURL(NSURL *url)
     if (path.length > 0 && ![path isEqualToString:normalized]) {
       GumpStoreScopedURL(path, url);
     }
+    GumpScopedURLRetainCounts()[normalized] = @(1);
   }
 }
 
@@ -82,11 +98,17 @@ void GumpReleaseSecurityScopedFilePath(NSString *path)
     if (url == nil) {
       return;
     }
+    NSInteger count = GumpScopedURLRetainCounts()[normalized].integerValue;
+    if (count > 1) {
+      GumpScopedURLRetainCounts()[normalized] = @(count - 1);
+      return;
+    }
     [url stopAccessingSecurityScopedResource];
     NSArray<NSString *> *keys = [GumpScopedURLMap() allKeysForObject:url];
     if (keys.count > 0) {
       [GumpScopedURLMap() removeObjectsForKeys:keys];
     }
+    [GumpScopedURLRetainCounts() removeObjectForKey:normalized];
   }
 }
 

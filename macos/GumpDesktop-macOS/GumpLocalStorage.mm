@@ -2374,10 +2374,12 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
                   rejecter:(RCTPromiseRejectBlock)reject)
 {
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    NSString *sourcePath = nil;
     @try {
-      NSString *sourcePath = [self pathFromUri:sourceUri];
+      sourcePath = [self pathFromUri:sourceUri];
       if (sourcePath.length == 0 ||
           ![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
+        GumpReleaseSecurityScopedFilePath(sourcePath);
         dispatch_async(dispatch_get_main_queue(), ^{
           reject(@"ENOENT", @"Source file not found", nil);
         });
@@ -2391,6 +2393,7 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
                                                  attributes:nil
                                                       error:&dirError];
       if (dirError != nil) {
+        GumpReleaseSecurityScopedFilePath(sourcePath);
         dispatch_async(dispatch_get_main_queue(), ^{
           reject(@"EACCES", dirError.localizedDescription, dirError);
         });
@@ -2415,6 +2418,7 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
             albumDir,
             destPath,
             scopedSource != nil ? @"scoped_url" : @"path");
+        GumpReleaseSecurityScopedFilePath(sourcePath);
         dispatch_async(dispatch_get_main_queue(), ^{
           reject(@"ECOPY", richError.localizedDescription, richError);
         });
@@ -2452,6 +2456,7 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
         resolve(payload);
       });
     } @catch (NSException *exception) {
+      GumpReleaseSecurityScopedFilePath(sourcePath);
       dispatch_async(dispatch_get_main_queue(), ^{
         reject(@"EUNKNOWN", exception.reason, nil);
       });
