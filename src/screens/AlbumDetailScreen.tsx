@@ -52,6 +52,7 @@ type AlbumDetailBodyProps = {
   showImportSkeleton: boolean;
   photoGridRef: RefObject<PhotoGridHandle | null>;
   deferHeavyMediaWork: boolean;
+  onProgrammaticScrollChange: (active: boolean) => void;
 };
 
 function AlbumDetailUploadingBody({
@@ -67,11 +68,13 @@ const AlbumDetailGridBody = memo(function AlbumDetailGridBody({
   screenPaddingHorizontal,
   photoGridRef,
   deferHeavyMediaWork,
+  onProgrammaticScrollChange,
 }: {
   albumId: string;
   screenPaddingHorizontal: number;
   photoGridRef: RefObject<PhotoGridHandle | null>;
   deferHeavyMediaWork: boolean;
+  onProgrammaticScrollChange: (active: boolean) => void;
 }) {
   const gridPhotos = useAlbumDetailGridPhotos(albumId);
   const {loadingPhotos, loadError} = useCulledAlbumPhotos(albumId, {
@@ -101,6 +104,7 @@ const AlbumDetailGridBody = memo(function AlbumDetailGridBody({
       albumId={albumId}
       horizontalPadding={screenPaddingHorizontal}
       deferHeavyMediaWork={deferHeavyMediaWork}
+      onProgrammaticScrollChange={onProgrammaticScrollChange}
     />
   );
 });
@@ -111,6 +115,7 @@ const AlbumDetailBody = memo(function AlbumDetailBody({
   showImportSkeleton,
   photoGridRef,
   deferHeavyMediaWork,
+  onProgrammaticScrollChange,
 }: AlbumDetailBodyProps) {
   if (showImportSkeleton) {
     return (
@@ -126,6 +131,7 @@ const AlbumDetailBody = memo(function AlbumDetailBody({
       screenPaddingHorizontal={screenPaddingHorizontal}
       photoGridRef={photoGridRef}
       deferHeavyMediaWork={deferHeavyMediaWork}
+      onProgrammaticScrollChange={onProgrammaticScrollChange}
     />
   );
 });
@@ -140,6 +146,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     useCulledAlbumActions();
   const profileMenu = useProfileMenu();
   const [cullingActive, setCullingActive] = useState(false);
+  const [isScrollingToTop, setIsScrollingToTop] = useState(false);
   const photoGridRef = useRef<PhotoGridHandle | null>(null);
 
   const isUploading = useCulledAlbumStore(state => {
@@ -271,7 +278,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   ]);
 
   function handleStartCulling() {
-    if (!hasUploadedPhotos || isUploading || cullingActive) {
+    if (!hasUploadedPhotos || isUploading || cullingActive || isScrollingToTop) {
       return;
     }
     setCullingActive(true);
@@ -346,14 +353,18 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
             style={[
               styles.cullingButton,
               isCullingInProgress && styles.cullingButtonInProgress,
-              (isUploading || !hasUploadedPhotos || cullingActive) &&
+              (isUploading ||
+                !hasUploadedPhotos ||
+                cullingActive ||
+                isScrollingToTop) &&
                 !isCullingInProgress &&
                 styles.cullingButtonDisabled,
             ]}
             disabled={
               isUploading ||
               !hasUploadedPhotos ||
-              cullingActive
+              cullingActive ||
+              isScrollingToTop
             }
             onPress={handleStartCulling}
             activeOpacity={0.8}>
@@ -380,6 +391,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
           showImportSkeleton={showImportSkeleton}
           photoGridRef={photoGridRef}
           deferHeavyMediaWork={isCullingInProgress}
+          onProgrammaticScrollChange={setIsScrollingToTop}
         />
       </View>
       {isUploading ? null : (
