@@ -4,7 +4,7 @@ import {uploadPartFromFile} from '@services/upload/multipart';
 import {APIAgent} from '../agent';
 import {APIRequest, APIResponse} from '../types';
 
-const UPLOAD_PART_BATCH_SIZE = 4;
+const UPLOAD_PART_BATCH_SIZE = 2;
 
 @Injectable()
 export class MediaResource {
@@ -35,6 +35,7 @@ export class MediaResource {
 
     const uploadedParts: APIResponse.UploadedPart[] = [];
     let completedParts = 0;
+    onProgress(1);
 
     for (let index = 0; index < session.parts.length; index += UPLOAD_PART_BATCH_SIZE) {
       const batch = session.parts.slice(index, index + UPLOAD_PART_BATCH_SIZE);

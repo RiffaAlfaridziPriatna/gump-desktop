@@ -3,7 +3,7 @@ import {resolveUseCases} from '@di/useCases';
 import {createAnalysisQueue} from '@lib/culledAlbum/analysisQueue';
 import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
 import {reportError} from '@lib/observability/reportError';
-import {addErrorStep} from '@lib/observability/posthogClient';
+import {addErrorStep, captureAppEvent} from '@lib/observability/posthogClient';
 import {
   addPhotosToAlbum,
   clearAnalysisBatch,
@@ -23,6 +23,7 @@ import {
   startServerUploadBatch,
   updatePhoto,
 } from '@lib/culledAlbum/store';
+import {flushRenderSync} from '@lib/culledAlbum/photoRenderStore';
 import {countLocalImportBatchForAlbum} from '@lib/culledAlbum/localImportProgress';
 import {
   hasInFlightAnalysis,
@@ -69,7 +70,9 @@ function maxConcurrentUploadsForPlatform(): number {
 }
 
 function maxConcurrentServerUploadsForPlatform(): number {
-  return Platform.OS === 'windows' ? 3 : 8;
+  // Each in-flight photo can PUT several S3 parts. 8-way on macOS used to
+  // pin dozens of GCD threads inside native uploadFilePart and freeze the UI.
+  return 3;
 }
 
 function maxConcurrentAnalysisForPlatform(): number {
@@ -300,16 +303,22 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
   }, []);
 
   const startSelectedUpload = useCallback((albumId: string, photoIds: string[]) => {
-    startServerUploadBatch(albumId, photoIds);
-    addErrorStep('server_upload_started', {
+    const trace = {
       ...getAlbumTraceContext(albumId),
       selectedCount: photoIds.length,
-    });
-    flushAllPendingPhotoUpdates();
+    };
+    addErrorStep('server_upload_started', trace);
+    captureAppEvent('server_upload_started', trace);
+
+    startServerUploadBatch(albumId, photoIds);
     serverUploadQueueRef.current!.resetActiveUploadCount(albumId);
     setQueueOperationStatus(albumId, 'serverUpload', 'active');
-    persistAlbum(albumId).catch(() => undefined);
-    serverUploadQueueRef.current!.processPending(albumId);
+
+    setTimeout(() => {
+      flushRenderSync();
+      persistAlbum(albumId).catch(() => undefined);
+      serverUploadQueueRef.current?.processPending(albumId);
+    }, 0);
   }, []);
 
   const purgeAlbum = useCallback(async (albumId: string) => {

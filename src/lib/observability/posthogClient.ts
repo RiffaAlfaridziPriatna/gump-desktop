@@ -65,3 +65,18 @@ export function addErrorStep(
     // Never throw from tracing.
   }
 }
+
+export function captureAppEvent(
+  event: string,
+  properties?: Record<string, string | number | boolean | null>,
+): void {
+  if (!posthog || event.trim().length === 0) {
+    return;
+  }
+  try {
+    posthog.capture(event, properties);
+    void posthog.flush();
+  } catch {
+    // Never throw from tracing.
+  }
+}

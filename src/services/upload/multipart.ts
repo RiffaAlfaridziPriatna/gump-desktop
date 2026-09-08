@@ -190,29 +190,60 @@ export async function uploadPart(
   });
 }
 
+const MAX_NATIVE_PART_UPLOADS = 4;
+let nativePartInFlight = 0;
+const nativePartWaiters: Array<() => void> = [];
+
+function acquireNativePartSlot(): Promise<void> {
+  if (nativePartInFlight < MAX_NATIVE_PART_UPLOADS) {
+    nativePartInFlight += 1;
+    return Promise.resolve();
+  }
+
+  return new Promise(resolve => {
+    nativePartWaiters.push(() => {
+      nativePartInFlight += 1;
+      resolve();
+    });
+  });
+}
+
+function releaseNativePartSlot(): void {
+  nativePartInFlight = Math.max(0, nativePartInFlight - 1);
+  const next = nativePartWaiters.shift();
+  if (next) {
+    next();
+  }
+}
+
 export async function uploadPartFromFile(
   fileUri: string,
   part: UploadPart,
 ): Promise<UploadedPart> {
   if (NativeFileUploader?.uploadFilePart) {
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      try {
-        const result = await NativeFileUploader.uploadFilePart(
-          fileUri,
-          part.start,
-          part.end,
-          part.url,
-        );
-        return {num: part.num, eTag: result.eTag};
-      } catch (err) {
-        if (attempt === MAX_ATTEMPTS - 1) {
-          throw err;
+    await acquireNativePartSlot();
+    try {
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        try {
+          const result = await NativeFileUploader.uploadFilePart(
+            fileUri,
+            part.start,
+            part.end,
+            part.url,
+          );
+          return {num: part.num, eTag: result.eTag};
+        } catch (err) {
+          if (attempt === MAX_ATTEMPTS - 1) {
+            throw err;
+          }
+          await delay(
+            Math.random() *
+              Math.min(MAX_DELAY_MS, BASE_DELAY_MS * MULTIPLIER ** attempt),
+          );
         }
-        await delay(
-          Math.random() *
-            Math.min(MAX_DELAY_MS, BASE_DELAY_MS * MULTIPLIER ** attempt),
-        );
       }
+    } finally {
+      releaseNativePartSlot();
     }
   }
 

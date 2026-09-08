@@ -228,8 +228,9 @@ async function persistAlbumNow(
 
   const album = getAlbumFromState(albumId);
   if (album) {
-    await saveAlbum(toPersistableAlbum(album), {
-      includePhotos: options.includePhotos ?? false,
+    const includePhotos = options.includePhotos ?? false;
+    await saveAlbum(toPersistableAlbum(album, {includePhotos}), {
+      includePhotos,
     });
   }
 }
@@ -596,28 +597,22 @@ export function startServerUploadBatch(
   }
 
   hydratePhotos(albumId, photoIds);
-  const albumPhotoIds = new Set(
-    getPhotosForAlbum(albumId).map(photo => photo.photoId),
-  );
-  const uploadablePhotoIds = photoIds.filter(photoId =>
-    albumPhotoIds.has(photoId),
-  );
+  const photoState = photoStateStore.getState().photoState;
+  const uploadablePhotoIds: string[] = [];
+
+  for (const photoId of photoIds) {
+    const photo = photoState[photoKey(albumId, photoId)];
+    if (!photo) {
+      continue;
+    }
+    photo.serverUploadStatus = 'pending';
+    photo.serverUploadProgress = 0;
+    photo.serverUploadError = undefined;
+    uploadablePhotoIds.push(photoId);
+  }
 
   if (uploadablePhotoIds.length === 0) {
     throw new Error('No photos selected for upload');
-  }
-
-  for (const photoId of uploadablePhotoIds) {
-    updatePhoto(
-      albumId,
-      photoId,
-      photo => {
-        photo.serverUploadStatus = 'pending';
-        photo.serverUploadProgress = 0;
-        photo.serverUploadError = undefined;
-      },
-      {recomputeTotals: false},
-    );
   }
 
   culledAlbumStore.setState(state => {
@@ -627,8 +622,6 @@ export function startServerUploadBatch(
     }
     album.uploadBatchPhotoIds = uploadablePhotoIds;
   });
-
-  flushAllPendingPhotoUpdates();
 }
 
 export async function checkServerUploadBatchComplete(

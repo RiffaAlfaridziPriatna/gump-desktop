@@ -375,6 +375,7 @@ describe('persist snapshot from photoStateStore', () => {
     expect(persisted.photos[0]?.photoId).toBe('p1');
     expect(persisted.photos[0]?.progress).toBe(100);
     expect(album.photos).toEqual([]);
+    expect(toPersistableAlbum(album, {includePhotos: false}).photos).toEqual([]);
   });
 
   it('recomputes totals from a snapshot without reading album.photos', () => {

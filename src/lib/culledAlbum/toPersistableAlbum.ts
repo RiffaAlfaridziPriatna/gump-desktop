@@ -21,7 +21,11 @@ export function photosForPersist(album: CulledAlbum): CulledAlbumPhoto[] {
   return snapshot.length > 0 ? snapshot : album.photos;
 }
 
-export function toPersistableAlbum(album: CulledAlbum): CulledAlbum {
+export function toPersistableAlbum(
+  album: CulledAlbum,
+  options?: {includePhotos?: boolean},
+): CulledAlbum {
+  const includePhotos = options?.includePhotos ?? true;
   const persistPhotos = photosForPersist(album);
   const inFlightImport = hasInFlightUploads(album, persistPhotos);
 
@@ -33,6 +37,6 @@ export function toPersistableAlbum(album: CulledAlbum): CulledAlbum {
     localImportBatchTotal: inFlightImport ? album.localImportBatchTotal : 0,
     localImportBatchCounts: undefined,
     analysisBatchCounts: undefined,
-    photos: persistPhotos.map(toPersistablePhoto),
+    photos: includePhotos ? persistPhotos.map(toPersistablePhoto) : [],
   };
 }

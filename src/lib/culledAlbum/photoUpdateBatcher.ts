@@ -31,7 +31,12 @@ const MIN_FLUSH_INTERVAL_MS = Platform.OS === 'windows' ? 250 : 120;
 const DEFERRED_FLUSH_MS = Platform.OS === 'windows' ? 80 : 50;
 export const PHOTO_UPDATE_APPLY_CHUNK = 20;
 
+function pendingPhotoKey(update: PendingPhotoUpdate): string {
+  return `${update.albumId}:${update.photoId}`;
+}
+
 let pending: PendingPhotoUpdate[] = [];
+const pendingByPhoto = new Map<string, PendingPhotoUpdate>();
 let flushScheduled = false;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let lastFlushAt = 0;
@@ -167,9 +172,8 @@ export function schedulePhotoUpdate(
     return;
   }
 
-  const existing = pending.find(
-    item => item.albumId === update.albumId && item.photoId === update.photoId,
-  );
+  const key = pendingPhotoKey(update);
+  const existing = pendingByPhoto.get(key);
 
   if (existing) {
     const previousUpdater = existing.updater;
@@ -180,6 +184,7 @@ export function schedulePhotoUpdate(
     existing.options = mergeOptions(existing.options, update.options);
   } else {
     pending.push(update);
+    pendingByPhoto.set(key, update);
   }
 
   scheduleBatchFlush(applyBatch);
@@ -199,6 +204,9 @@ export function flushPendingPhotoUpdates(
   do {
     flushScheduled = false;
     const batch = pending.splice(0, PHOTO_UPDATE_APPLY_CHUNK);
+    for (const update of batch) {
+      pendingByPhoto.delete(pendingPhotoKey(update));
+    }
     const merged = new Map<string, PendingPhotoUpdate>();
 
     for (const update of batch) {
