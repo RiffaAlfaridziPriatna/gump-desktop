@@ -286,20 +286,21 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     syncedAlbumsRef.current.delete(albumId);
     uiStoreRef.current!.setState({analyzeError: null});
 
-    const photos = queuePhotosForAnalysis(albumId);
+    const trace = getAlbumTraceContext(albumId);
+    addErrorStep('culling_started', trace);
+    captureAppEvent('culling_started', trace);
+
+    const queuedCount = queuePhotosForAnalysis(albumId);
     const batchTotal =
-      getAlbum(albumId)?.analysisBatchCounts?.total ?? photos.length;
+      getAlbum(albumId)?.analysisBatchCounts?.total ?? queuedCount;
     beginAnalysisQueue(albumId, batchTotal);
-    addErrorStep('culling_started', {
-      ...getAlbumTraceContext(albumId),
-      queuedCount: batchTotal,
-      alreadyAnalyzedCount: photos.filter(
-        photo => photo.analysisStatus === 'analyzed',
-      ).length,
-    });
-    flushAllPendingPhotoUpdates();
-    analysisQueueRef.current!.beginBatch(albumId);
-    analysisQueueRef.current!.processPending(albumId);
+
+    setTimeout(() => {
+      flushRenderSync();
+      persistAlbum(albumId).catch(() => undefined);
+      analysisQueueRef.current?.beginBatch(albumId);
+      analysisQueueRef.current?.processPending(albumId);
+    }, 0);
   }, []);
 
   const startSelectedUpload = useCallback((albumId: string, photoIds: string[]) => {

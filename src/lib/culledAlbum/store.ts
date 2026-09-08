@@ -1140,36 +1140,35 @@ export function getPhotoById(
   return photoStateStore.getState().photoState[key];
 }
 
-export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {
+export function queuePhotosForAnalysis(albumId: string): number {
   const photoIds = getPhotoIdsForAlbum(albumId);
+  const photoState = photoStateStore.getState().photoState;
   const missingIds = photoIds.filter(
-    photoId =>
-      !photoStateStore.getState().photoState[photoKey(albumId, photoId)],
+    photoId => !photoState[photoKey(albumId, photoId)],
   );
   if (missingIds.length > 0) {
     hydratePhotos(albumId, missingIds);
   }
 
-  const uploadedPhotoIds = photoIds.filter(photoId => {
-    const photo = getPhotoById(albumId, photoId);
-    return photo?.status === 'uploaded';
-  });
+  const nextPhotoState = photoStateStore.getState().photoState;
+  const uploadedPhotoIds: string[] = [];
+  let pending = 0;
+  let analyzed = 0;
 
-  for (const photoId of uploadedPhotoIds) {
-    const photo = getPhotoById(albumId, photoId);
-    if (photo?.analysisStatus === 'analyzed') {
+  for (const photoId of photoIds) {
+    const photo = nextPhotoState[photoKey(albumId, photoId)];
+    if (!photo || photo.status !== 'uploaded') {
       continue;
     }
-    updatePhoto(
-      albumId,
-      photoId,
-      entry => {
-        entry.analysisProgress = 0;
-        entry.analysisStatus = 'pending';
-        entry.analysisError = undefined;
-      },
-      {recomputeTotals: false},
-    );
+    uploadedPhotoIds.push(photoId);
+    if (photo.analysisStatus === 'analyzed') {
+      analyzed += 1;
+      continue;
+    }
+    photo.analysisProgress = 0;
+    photo.analysisStatus = 'pending';
+    photo.analysisError = undefined;
+    pending += 1;
   }
 
   culledAlbumStore.setState(state => {
@@ -1178,14 +1177,16 @@ export function queuePhotosForAnalysis(albumId: string): CulledAlbumPhoto[] {
       return;
     }
     album.analysisBatchPhotoIds = uploadedPhotoIds;
+    album.analysisBatchCounts = {
+      total: uploadedPhotoIds.length,
+      pending,
+      analyzing: 0,
+      analyzed,
+      failed: 0,
+    };
   });
 
-  flushAllPendingPhotoUpdates();
-  reconcileAnalysisBatchCounts(albumId);
-
-  return uploadedPhotoIds
-    .map(photoId => getPhotoById(albumId, photoId))
-    .filter((photo): photo is CulledAlbumPhoto => Boolean(photo));
+  return uploadedPhotoIds.length;
 }
 
 export function clearAnalysisBatch(albumId: string): void {
