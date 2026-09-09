@@ -187,6 +187,11 @@ export function CulledAlbumPhotoGrid({
   const lastPreloadRangeRef = useRef('');
   const lastHydrateRangeRef = useRef('');
   const lastThumbnailRangeRef = useRef('');
+  const pendingViewableRef = useRef<{
+    start: number;
+    end: number;
+    indices: number[];
+  } | null>(null);
 
   onScrollInteractionStartRef.current = onScrollInteractionStart;
 
@@ -222,6 +227,7 @@ export function CulledAlbumPhotoGrid({
     lastPreloadRangeRef.current = '';
     lastHydrateRangeRef.current = '';
     lastThumbnailRangeRef.current = '';
+    pendingViewableRef.current = null;
   }, [photoIdsKey]);
 
   const getItemLayout = useCallback(
@@ -240,60 +246,17 @@ export function CulledAlbumPhotoGrid({
     }
   }, []);
 
-  const scheduleScrollEnd = useCallback(() => {
-    clearScrollEndTimer();
-    scrollEndTimerRef.current = setTimeout(() => {
-      hoverStoreRef.current.setScrolling(false);
-      isScrollActiveRef.current = false;
-      scrollEndTimerRef.current = null;
-    }, SCROLL_END_DELAY_MS);
-  }, [clearScrollEndTimer]);
-
-  useEffect(() => {
-    return () => {
-      cancelScrollImagePreload();
-      clearScrollEndTimer();
-    };
-  }, [clearScrollEndTimer]);
-
-  const beginScrollInteraction = useCallback(() => {
-    if (!isScrollActiveRef.current) {
-      isScrollActiveRef.current = true;
-      onScrollInteractionStartRef.current?.();
-      hoverStoreRef.current.setScrolling(true);
-    }
-  }, []);
-
-  const handleScrollBegin = useCallback(() => {
-    beginScrollInteraction();
-    clearScrollEndTimer();
-  }, [beginScrollInteraction, clearScrollEndTimer]);
-
-  const handleScrollEnd = useCallback(() => {
-    scheduleScrollEnd();
-  }, [scheduleScrollEnd]);
-
-  const handleViewableItemsChanged = useCallback(
-    ({viewableItems}: {viewableItems: ViewToken<GridRow>[]}) => {
+  const applyVisibleRange = useCallback(
+    (start: number, end: number, indices: number[]) => {
       const currentPhotoIds = photoIdsRef.current;
-      const indices = viewableItems.flatMap(
-        token => token.item?.cells.map(cell => cell.index) ?? [],
-      );
-
-      if (indices.length === 0) {
-        return;
-      }
-
-      const minIndex = Math.min(...indices);
-      const maxIndex = Math.max(...indices);
-      const {start, end} = getScrollPreloadRange(
-        minIndex,
-        maxIndex,
+      const {start: paddedStart, end: paddedEnd} = getScrollPreloadRange(
+        start,
+        end,
         currentPhotoIds.length,
         COLUMNS,
       );
-      const rangeKey = `${start}:${end}`;
-      const rangePhotoIds = currentPhotoIds.slice(start, end);
+      const rangeKey = `${paddedStart}:${paddedEnd}`;
+      const rangePhotoIds = currentPhotoIds.slice(paddedStart, paddedEnd);
 
       if (lastHydrateRangeRef.current !== rangeKey) {
         lastHydrateRangeRef.current = rangeKey;
@@ -322,6 +285,80 @@ export function CulledAlbumPhotoGrid({
       scheduleScrollImagePreload(files);
     },
     [albumId],
+  );
+
+  const flushPendingVisibleRange = useCallback(() => {
+    const pending = pendingViewableRef.current;
+    if (!pending) {
+      return;
+    }
+    pendingViewableRef.current = null;
+    applyVisibleRange(pending.start, pending.end, pending.indices);
+  }, [applyVisibleRange]);
+
+  const scheduleScrollEnd = useCallback(() => {
+    clearScrollEndTimer();
+    scrollEndTimerRef.current = setTimeout(() => {
+      hoverStoreRef.current.setScrolling(false);
+      isScrollActiveRef.current = false;
+      scrollEndTimerRef.current = null;
+      flushPendingVisibleRange();
+    }, SCROLL_END_DELAY_MS);
+  }, [clearScrollEndTimer, flushPendingVisibleRange]);
+
+  useEffect(() => {
+    return () => {
+      cancelScrollImagePreload();
+      clearScrollEndTimer();
+    };
+  }, [clearScrollEndTimer]);
+
+  const beginScrollInteraction = useCallback(() => {
+    if (!isScrollActiveRef.current) {
+      isScrollActiveRef.current = true;
+      onScrollInteractionStartRef.current?.();
+      hoverStoreRef.current.setScrolling(true);
+    }
+  }, []);
+
+  const handleScrollBegin = useCallback(() => {
+    beginScrollInteraction();
+    clearScrollEndTimer();
+  }, [beginScrollInteraction, clearScrollEndTimer]);
+
+  const handleScrollEnd = useCallback(() => {
+    scheduleScrollEnd();
+  }, [scheduleScrollEnd]);
+
+  const handleScroll = useCallback(() => {
+    beginScrollInteraction();
+    scheduleScrollEnd();
+  }, [beginScrollInteraction, scheduleScrollEnd]);
+
+  const handleViewableItemsChanged = useCallback(
+    ({viewableItems}: {viewableItems: ViewToken<GridRow>[]}) => {
+      const indices = viewableItems.flatMap(
+        token => token.item?.cells.map(cell => cell.index) ?? [],
+      );
+
+      if (indices.length === 0) {
+        return;
+      }
+
+      const minIndex = Math.min(...indices);
+      const maxIndex = Math.max(...indices);
+      if (Platform.OS === 'macos' && isScrollActiveRef.current) {
+        pendingViewableRef.current = {
+          start: minIndex,
+          end: maxIndex,
+          indices,
+        };
+        return;
+      }
+
+      applyVisibleRange(minIndex, maxIndex, indices);
+    },
+    [applyVisibleRange],
   );
 
   const onViewableItemsChangedRef = useRef(handleViewableItemsChanged);
@@ -391,6 +428,7 @@ export function CulledAlbumPhotoGrid({
         updateCellsBatchingPeriod={150}
         removeClippedSubviews={Platform.OS !== 'windows'}
         showsVerticalScrollIndicator
+        onScroll={handleScroll}
         onScrollBeginDrag={handleScrollBegin}
         onScrollEndDrag={handleScrollEnd}
         onMomentumScrollEnd={handleScrollEnd}

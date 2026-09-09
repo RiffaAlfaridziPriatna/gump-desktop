@@ -63,7 +63,7 @@ const GAP = 8;
 const RESIZE_SETTLE_MS = 150;
 const PLACEHOLDER_INITIAL_ROWS = 8;
 const GRAY_FILL_BATCH_PERIOD_MS = 50;
-const SCROLL_SETTLE_MS = 120;
+const SCROLL_SETTLE_MS = Platform.OS === 'macos' ? 180 : 120;
 const SCROLL_TO_TOP_NUDGE_PX = 1;
 const NATIVE_TOP_THRESHOLD_PX = 80;
 const PROGRAMMATIC_SCROLL_GRACE_MS = 120;
@@ -942,6 +942,13 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
         if (generation !== scrollToTopGenerationRef.current) {
           return;
         }
+        captureAppEvent('scroll_to_top_clicked', {
+          albumId: albumIdRef.current ?? null,
+          itemCount: itemsRef.current.length,
+          platform: Platform.OS,
+          nativeResolved: native?.resolved === true,
+          nativeReason: native?.reason ?? 'native_timeout',
+        });
         if (native == null) {
           runJsFallback('native_timeout');
           return;
@@ -1306,9 +1313,14 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
             COLUMNS,
           );
 
-      // Hold new image loads until scroll settles only while analysis is
-      // saturating the JS/native threads. After that, fling should paint.
-      if (deferHeavyMediaWorkRef.current && isScrollingRef.current) {
+      // Hold image loads until scroll settles on macOS (thumb drags never fire
+      // onScrollBeginDrag) and while analysis is saturating the JS thread.
+      // Do not hold during an in-flight jump — top cells must paint immediately.
+      if (
+        isScrollingRef.current &&
+        !scrollJumpActiveRef.current &&
+        (deferHeavyMediaWorkRef.current || Platform.OS === 'macos')
+      ) {
         pendingViewableRef.current = {start, end, indices};
         return;
       }

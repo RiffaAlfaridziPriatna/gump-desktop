@@ -311,13 +311,13 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
       return;
     }
     lastScrollToTopClickRef.current = now;
-    const hasGridHandle = photoGridRef.current != null;
-    captureAppEvent('scroll_to_top_clicked', {
-      albumId,
-      hasGridHandle,
-      platform: Platform.OS,
-    });
-    if (!hasGridHandle) {
+    const grid = photoGridRef.current;
+    if (grid == null) {
+      captureAppEvent('scroll_to_top_clicked', {
+        albumId,
+        hasGridHandle: false,
+        platform: Platform.OS,
+      });
       captureAppEvent('scroll_to_top_failed', {
         albumId,
         reason: 'grid_ref_null',
@@ -329,7 +329,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
       });
       return;
     }
-    photoGridRef.current?.scrollToTop();
+    grid.scrollToTop();
   }, [albumId]);
 
   return (
