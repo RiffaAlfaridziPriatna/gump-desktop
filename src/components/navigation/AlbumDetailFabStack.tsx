@@ -1,6 +1,6 @@
 import { TouchableOpacity } from '@components/ui';
 import { colors } from '@lib/ui/colors';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
 import IconPlus from '../../assets/images/icon_plus.svg';
 
@@ -31,6 +31,7 @@ export function AlbumDetailFabStack({
       <TouchableOpacity
         style={[styles.fab, styles.scrollFab]}
         onPress={onScrollToTop}
+        {...(Platform.OS === 'macos' ? {onClick: onScrollToTop} : null)}
         activeOpacity={0.8}
         accessibilityRole="button"
         accessibilityLabel="Scroll to top"

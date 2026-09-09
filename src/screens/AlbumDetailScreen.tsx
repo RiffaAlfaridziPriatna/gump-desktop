@@ -20,6 +20,8 @@ import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {useLayout} from '@hooks/useLayout';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
+import {captureAppEvent} from '@lib/observability/posthogClient';
+import {reportError} from '@lib/observability/reportError';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useIsFocused} from '@react-navigation/native';
@@ -35,6 +37,7 @@ import {
 import {TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -301,9 +304,33 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     }
   }, [addPhotos, albumId, isCullingInProgress, isUploading]);
 
+  const lastScrollToTopClickRef = useRef(0);
   const handleScrollToTop = useCallback(() => {
+    const now = Date.now();
+    if (now - lastScrollToTopClickRef.current < 200) {
+      return;
+    }
+    lastScrollToTopClickRef.current = now;
+    const hasGridHandle = photoGridRef.current != null;
+    captureAppEvent('scroll_to_top_clicked', {
+      albumId,
+      hasGridHandle,
+      platform: Platform.OS,
+    });
+    if (!hasGridHandle) {
+      captureAppEvent('scroll_to_top_failed', {
+        albumId,
+        reason: 'grid_ref_null',
+      });
+      reportError(new Error('Photo grid scroll-to-top missing grid handle'), {
+        source: 'album_detail',
+        operation: 'scroll_to_top',
+        albumId,
+      });
+      return;
+    }
     photoGridRef.current?.scrollToTop();
-  }, []);
+  }, [albumId]);
 
   return (
     <UploadAwareModalShell {...shellProps}>
