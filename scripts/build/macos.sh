@@ -51,6 +51,11 @@ build_app() {
     -derivedDataPath "$DERIVED_DATA_PATH" \
     DEVELOPMENT_TEAM="${APPLE_TEAM_ID:-$DEFAULT_TEAM_ID}" \
     CODE_SIGN_STYLE=Automatic \
+    CURRENT_PROJECT_VERSION="${APP_BUILD_NUMBER}" \
+    APP_VERSION="${APP_VERSION}" \
+    APP_BUILD_ID="${APP_BUILD_ID}" \
+    GIT_SHA="${GIT_SHA}" \
+    EXTRA_PACKAGER_ARGS="${EXTRA_PACKAGER_ARGS}" \
     build
 }
 
@@ -58,7 +63,9 @@ sync_dist_app() {
   ensure_dir "${DIST_DIR}/macos"
   rm -rf "$DIST_APP_PATH"
   cp -R "$APP_PATH" "$DIST_APP_PATH"
+  printf '%s\n' "$APP_BUILD_ID" >"${DIST_DIR}/macos/BUILD_ID.txt"
   log "Artifact ready at ${DIST_APP_PATH}"
+  log "QA PostHog appBuildId should be ${APP_BUILD_ID} (also in ${DIST_DIR}/macos/BUILD_ID.txt)"
 }
 
 package_zip() {

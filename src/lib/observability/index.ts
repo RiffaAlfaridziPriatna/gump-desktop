@@ -15,6 +15,7 @@ export type {ErrorCaptureClient} from './reportError';
 export {
   posthog,
   isPostHogEnabled,
+  appBuildProperties,
   identifyUser,
   resetIdentifiedUser,
   addErrorStep,

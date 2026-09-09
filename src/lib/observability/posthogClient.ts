@@ -1,5 +1,12 @@
-import {POSTHOG_API_KEY, POSTHOG_HOST} from '@lib/config/constants';
+import {
+  APP_BUILD_ID,
+  APP_VERSION,
+  GIT_SHA,
+  POSTHOG_API_KEY,
+  POSTHOG_HOST,
+} from '@lib/config/constants';
 import {PostHog} from 'posthog-react-native';
+import {Platform} from 'react-native';
 import type {ErrorCaptureClient} from './reportError';
 import {setErrorCaptureClient} from './reportError';
 
@@ -25,8 +32,18 @@ export const posthog: PostHog | null = isPostHogEnabled
     })
   : null;
 
+export function appBuildProperties(): Record<string, string> {
+  return {
+    appVersion: APP_VERSION,
+    appBuildId: APP_BUILD_ID,
+    gitSha: GIT_SHA,
+    platform: Platform.OS,
+  };
+}
+
 if (posthog) {
   setErrorCaptureClient(posthog as ErrorCaptureClient);
+  void posthog.register(appBuildProperties());
 }
 
 export function identifyUser(user: {
@@ -35,7 +52,7 @@ export function identifyUser(user: {
   name?: string;
   role?: string;
 }): void {
-  const properties: Record<string, string> = {};
+  const properties: Record<string, string> = {...appBuildProperties()};
   if (user.email) {
     properties.email = user.email;
   }
@@ -45,6 +62,7 @@ export function identifyUser(user: {
   if (user.role) {
     properties.role = user.role;
   }
+  void posthog?.register(appBuildProperties());
   posthog?.identify(user.id, properties);
 }
 
@@ -74,7 +92,7 @@ export function captureAppEvent(
     return;
   }
   try {
-    posthog.capture(event, properties);
+    posthog.capture(event, {...appBuildProperties(), ...properties});
     void posthog.flush();
   } catch {
     // Never throw from tracing.

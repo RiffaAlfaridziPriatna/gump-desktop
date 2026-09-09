@@ -36,3 +36,31 @@ copy_artifact() {
   cp -R "$source_path" "$destination_dir/"
   log "Artifact copied to ${destination_dir}/$(basename "$source_path")"
 }
+
+# Inlined into the JS bundle via babel-plugin-transform-inline-environment-variables.
+# Unique per invocation so QA can tell whether they launched this binary.
+ensure_app_build_identity() {
+  if [[ -z "${GIT_SHA:-}" ]]; then
+    GIT_SHA="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || true)"
+    if [[ -z "$GIT_SHA" ]]; then
+      GIT_SHA="unknown"
+    fi
+    export GIT_SHA
+  fi
+  if [[ -z "${APP_VERSION:-}" ]]; then
+    export APP_VERSION="1.0"
+  fi
+  if [[ -z "${APP_BUILD_NUMBER:-}" ]]; then
+    export APP_BUILD_NUMBER="$(date -u +%s)"
+  fi
+  if [[ -z "${APP_BUILD_ID:-}" ]]; then
+    export APP_BUILD_ID="${GIT_SHA}-${APP_BUILD_NUMBER}"
+  fi
+  if [[ -z "${EXTRA_PACKAGER_ARGS:-}" ]]; then
+    # Metro cache keys files, not env, so reset or the previous APP_BUILD_ID sticks.
+    export EXTRA_PACKAGER_ARGS="--reset-cache"
+  fi
+  log "App identity: version=${APP_VERSION} build=${APP_BUILD_ID} git=${GIT_SHA}"
+}
+
+ensure_app_build_identity
