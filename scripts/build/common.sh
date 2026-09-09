@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST_DIR="${ROOT_DIR}/dist"
 BUILD_DIR="${ROOT_DIR}/build"
+VERSION_FILE="${ROOT_DIR}/VERSION"
 
 log() {
   printf '\n▸ %s\n' "$*"
@@ -29,7 +30,7 @@ copy_artifact() {
   local destination_dir="$2"
 
   if [[ ! -e "$source_path" ]]; then
-    die "Build artifact not found: $source_path"
+    die "Build artifact not found: ${source_path}"
   fi
 
   ensure_dir "$destination_dir"
@@ -37,30 +38,78 @@ copy_artifact() {
   log "Artifact copied to ${destination_dir}/$(basename "$source_path")"
 }
 
+# Map GUMP_ENV → dotenv file. Values: prod | local | staging.
+gump_env_file_for() {
+  case "$1" in
+    prod) echo "${ROOT_DIR}/.env" ;;
+    local) echo "${ROOT_DIR}/.env.local" ;;
+    staging) echo "${ROOT_DIR}/.env.staging" ;;
+    *)
+      die "Unknown GUMP_ENV '${1}'. Use: prod | local | staging"
+      ;;
+  esac
+}
+
+# Source the env file for the given environment and pin APP_BUILD_ID to it.
+# Does not require the file to exist (falls back to identity defaults).
+load_gump_env() {
+  local env_name="${1:-${GUMP_ENV:-prod}}"
+  local env_file
+  env_file="$(gump_env_file_for "$env_name")"
+
+  export GUMP_ENV="$env_name"
+  # Force the PostHog / identity label from the selected environment.
+  export APP_BUILD_ID="$env_name"
+
+  if [[ -f "$env_file" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$env_file"
+    set +a
+    # Env file must not override the selected environment label.
+    export APP_BUILD_ID="$env_name"
+    log "Loaded env ${env_name} from ${env_file}"
+  else
+    log "No env file at ${env_file}; continuing with defaults for ${env_name}"
+  fi
+}
+
+read_app_version() {
+  if [[ -f "$VERSION_FILE" ]]; then
+    tr -d '[:space:]' <"$VERSION_FILE"
+  else
+    echo "0.0.1"
+  fi
+}
+
 # Inlined into the JS bundle via babel-plugin-transform-inline-environment-variables.
-# Unique per invocation so QA can tell whether they launched this binary.
+# GIT_SHA is always taken from the current checkout. APP_VERSION comes from VERSION.
+# APP_BUILD_ID is the selected environment (prod | local | staging).
 ensure_app_build_identity() {
-  if [[ -z "${GIT_SHA:-}" ]]; then
-    GIT_SHA="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || true)"
-    if [[ -z "$GIT_SHA" ]]; then
-      GIT_SHA="unknown"
-    fi
-    export GIT_SHA
+  export GIT_SHA
+  GIT_SHA="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || true)"
+  if [[ -z "$GIT_SHA" ]]; then
+    GIT_SHA="unknown"
   fi
-  if [[ -z "${APP_VERSION:-}" ]]; then
-    export APP_VERSION="1.0"
+
+  export APP_VERSION
+  APP_VERSION="$(read_app_version)"
+
+  if [[ -z "${GUMP_ENV:-}" ]]; then
+    export GUMP_ENV="prod"
   fi
+  if [[ -z "${APP_BUILD_ID:-}" ]]; then
+    export APP_BUILD_ID="$GUMP_ENV"
+  fi
+
   if [[ -z "${APP_BUILD_NUMBER:-}" ]]; then
     export APP_BUILD_NUMBER="$(date -u +%s)"
   fi
-  if [[ -z "${APP_BUILD_ID:-}" ]]; then
-    export APP_BUILD_ID="${GIT_SHA}-${APP_BUILD_NUMBER}"
-  fi
+
   if [[ -z "${EXTRA_PACKAGER_ARGS:-}" ]]; then
-    # Metro cache keys files, not env, so reset or the previous APP_BUILD_ID sticks.
+    # Metro cache keys files, not env, so reset or the previous identity sticks.
     export EXTRA_PACKAGER_ARGS="--reset-cache"
   fi
-  log "App identity: version=${APP_VERSION} build=${APP_BUILD_ID} git=${GIT_SHA}"
-}
 
-ensure_app_build_identity
+  log "App identity: env=${GUMP_ENV} version=${APP_VERSION} buildId=${APP_BUILD_ID} git=${GIT_SHA}"
+}

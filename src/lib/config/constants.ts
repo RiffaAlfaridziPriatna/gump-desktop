@@ -5,11 +5,15 @@ export const POSTHOG_API_KEY = process.env.POSTHOG_API_KEY ?? '';
 export const POSTHOG_HOST =
   process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com';
 
-/** Marketing version (`CFBundleShortVersionString`). Stable across builds. */
-export const APP_VERSION = process.env.APP_VERSION ?? '1.0';
+/** Marketing version from root `VERSION` (inlined at bundle time). */
+export const APP_VERSION = process.env.APP_VERSION ?? '0.0.1';
 
-/** Unique per release bundle: `{gitSha}-{unixSeconds}`. `dev` when Metro has no build env. */
-export const APP_BUILD_ID = process.env.APP_BUILD_ID ?? 'dev';
+/**
+ * Build channel: `prod` | `local` | `staging`.
+ * Forced from GUMP_ENV / which dotenv file was loaded. Defaults to `local` under Metro.
+ */
+export const APP_BUILD_ID = process.env.APP_BUILD_ID ?? 'local';
 
+/** Short git SHA resolved at `npm run build*` / `npm run macos`. */
 export const GIT_SHA = process.env.GIT_SHA ?? 'unknown';
 

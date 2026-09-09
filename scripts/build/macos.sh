@@ -23,22 +23,19 @@ if [[ ! -d "${ROOT_DIR}/macos/Pods" ]]; then
   die "macOS Pods not installed. Run: cd macos && pod install"
 fi
 
-load_env_file() {
-  local env_file="${ROOT_DIR}/.env"
-  if [[ -f "$env_file" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$env_file"
-    set +a
-  fi
-}
-
 require_env() {
   local name="$1"
   if [[ -z "${!name:-}" ]]; then
     die "Missing required environment variable: ${name}"
   fi
 }
+
+# Parent build.sh already called load_gump_env + ensure_app_build_identity.
+# When this script is invoked directly, still load a default env.
+if [[ -z "${GUMP_ENV:-}" || -z "${APP_BUILD_ID:-}" ]]; then
+  load_gump_env "${GUMP_ENV:-prod}"
+  ensure_app_build_identity
+fi
 
 build_app() {
   log "Building macOS release app..."
@@ -63,9 +60,9 @@ sync_dist_app() {
   ensure_dir "${DIST_DIR}/macos"
   rm -rf "$DIST_APP_PATH"
   cp -R "$APP_PATH" "$DIST_APP_PATH"
-  printf '%s\n' "$APP_BUILD_ID" >"${DIST_DIR}/macos/BUILD_ID.txt"
+  printf '%s\n' "${APP_BUILD_ID}@${GIT_SHA} (v${APP_VERSION})" >"${DIST_DIR}/macos/BUILD_ID.txt"
   log "Artifact ready at ${DIST_APP_PATH}"
-  log "QA PostHog appBuildId should be ${APP_BUILD_ID} (also in ${DIST_DIR}/macos/BUILD_ID.txt)"
+  log "QA PostHog: appBuildId=${APP_BUILD_ID} gitSha=${GIT_SHA} appVersion=${APP_VERSION}"
 }
 
 package_zip() {
@@ -161,7 +158,6 @@ verify_distribution() {
 }
 
 distribute_app() {
-  load_env_file
   build_app
   sync_dist_app
   sign_app

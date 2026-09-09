@@ -10,7 +10,7 @@ usage() {
 Generate release artifacts for GumpDesktop.
 
 Usage:
-  ./scripts/build.sh <platform> [variant]
+  ./scripts/build.sh <platform> [variant] [env]
 
 Platforms:
   android   apk (default) | aab
@@ -19,16 +19,21 @@ Platforms:
   windows   exe (default) | msix
   all       build android apk + macos app (host-dependent)
 
+Env (optional, default: prod, or GUMP_ENV):
+  prod      loads .env           → APP_BUILD_ID=prod
+  local     loads .env.local     → APP_BUILD_ID=local
+  staging   loads .env.staging   → APP_BUILD_ID=staging
+
 Examples:
-  npm run build:android
-  npm run build:android:aab
-  npm run build:ios
   npm run build:macos
+  npm run build:macos:staging
+  GUMP_ENV=local npm run build:macos
+  npm run build:android
   npm run build:macos:zip
   npm run build:macos:distribute
-  npm run build:windows
 
 Environment:
+  GUMP_ENV                       prod | local | staging (default: prod)
   IOS_EXPORT_METHOD              iOS export method (development | ad-hoc | app-store | enterprise)
   MACOS_CODESIGN_IDENTITY        Developer ID identity (distribute)
   APPLE_TEAM_ID                  Team ID (default: FWQ2YTUNN4)
@@ -42,11 +47,25 @@ EOF
 
 PLATFORM="${1:-}"
 VARIANT="${2:-}"
+ENV_ARG="${3:-}"
 
 if [[ -z "$PLATFORM" || "$PLATFORM" == "-h" || "$PLATFORM" == "--help" ]]; then
   usage
   exit 0
 fi
+
+# Third positional arg, or GUMP_ENV, otherwise prod.
+if [[ -n "$ENV_ARG" ]]; then
+  case "$ENV_ARG" in
+    prod | local | staging) ;;
+    *)
+      die "Unknown env '${ENV_ARG}'. Use: prod | local | staging"
+      ;;
+  esac
+  GUMP_ENV="$ENV_ARG"
+fi
+load_gump_env "${GUMP_ENV:-prod}"
+ensure_app_build_identity
 
 ensure_dir "$DIST_DIR"
 
