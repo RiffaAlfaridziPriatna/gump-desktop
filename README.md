@@ -91,9 +91,8 @@ Fetch-based client hitting `https://api.gump.app` with Bearer token auth. Resour
 |--------|-------------|
 | `npm run start` | Start Metro bundler |
 | `npm run macos` | Build and run macOS app |
+| `npm run windows` | Build and run Windows app |
 | `npm run typecheck` | Run TypeScript compiler check |
-| `npm run ios` | Build and run iOS (future) |
-| `npm run android` | Build and run Android (future) |
 
 ## Project Structure
 
@@ -107,14 +106,6 @@ src/
 ├── lib/               DI, token storage, state helpers
 └── services/api/      APIService, resources, types
 ```
-
-## Adding iOS/Android Later
-
-1. iOS is already scaffolded (`ios/` folder from RN init). Run `cd ios && pod install`.
-2. Android is scaffolded (`android/` folder). Should work with `npm run android`.
-3. For token storage on mobile, add `expo-secure-store` and make `authTokenStorage.ts` platform-conditional (Platform.OS check).
-4. For mobile navigation, the `@react-navigation/stack` navigators work unchanged.
-5. Consider adding `react-native-screens` for iOS/Android performance (it has native support there).
 
 ## Known Limitations
 

@@ -13,11 +13,9 @@ Usage:
   ./scripts/build.sh <platform> [variant] [env]
 
 Platforms:
-  android   apk (default) | aab
-  ios       ipa (default) | archive
   macos     app (default) | zip | distribute
   windows   exe (default) | msix
-  all       build android apk + macos app (host-dependent)
+  all       build macos app (host-dependent) — Windows must be built on Windows
 
 Env (optional, default: prod, or GUMP_ENV):
   prod      loads .env           → APP_BUILD_ID=prod
@@ -28,13 +26,12 @@ Examples:
   npm run build:macos
   npm run build:macos:staging
   GUMP_ENV=local npm run build:macos
-  npm run build:android
   npm run build:macos:zip
   npm run build:macos:distribute
+  npm run build:windows
 
 Environment:
   GUMP_ENV                       prod | local | staging (default: prod)
-  IOS_EXPORT_METHOD              iOS export method (development | ad-hoc | app-store | enterprise)
   MACOS_CODESIGN_IDENTITY        Developer ID identity (distribute)
   APPLE_TEAM_ID                  Team ID (default: FWQ2YTUNN4)
   APPLE_ID                       Apple ID for notarytool (distribute)
@@ -74,12 +71,6 @@ run_platform_build() {
   local variant="${2:-}"
 
   case "$platform" in
-    android)
-      bash "${SCRIPT_DIR}/build/android.sh" "${variant:-apk}"
-      ;;
-    ios)
-      bash "${SCRIPT_DIR}/build/ios.sh" "${variant:-ipa}"
-      ;;
     macos)
       bash "${SCRIPT_DIR}/build/macos.sh" "${variant:-app}"
       ;;
@@ -87,22 +78,25 @@ run_platform_build() {
       bash "${SCRIPT_DIR}/build/windows.sh" "${variant:-exe}"
       ;;
     *)
-      die "Unknown platform: ${platform}"
+      die "Unknown platform: ${platform}. Use: macos | windows | all"
       ;;
   esac
 }
 
 case "$PLATFORM" in
   all)
-    run_platform_build android apk
     if [[ "$(uname -s)" == "Darwin" ]]; then
       run_platform_build macos app
     else
       log "Skipping macOS build (requires macOS host)."
     fi
+    log "Windows builds must run on Windows: npm run build:windows"
     ;;
-  android | ios | macos | windows)
+  macos | windows)
     run_platform_build "$PLATFORM" "$VARIANT"
+    ;;
+  android | ios)
+    die "Android/iOS targets were removed. Use macos or windows."
     ;;
   *)
     usage
