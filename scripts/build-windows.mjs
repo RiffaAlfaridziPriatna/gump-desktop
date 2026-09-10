@@ -24,11 +24,52 @@ const ARCH_ALIASES = {
   amd64: 'x64',
 };
 
-const variant = process.argv[2] ?? 'exe';
+const VALID_ENVS = new Set(['prod', 'local', 'staging']);
+const VALID_VARIANTS = new Set(['exe', 'zip', 'portable', 'msix']);
+
+function die(message) {
+  console.error(`✗ ${message}`);
+  process.exit(1);
+}
+
+/**
+ * Parse CLI: build-windows.mjs <variant> [env]
+ * Examples:
+ *   node scripts/build-windows.mjs zip
+ *   node scripts/build-windows.mjs zip staging
+ *   npm run build:windows:zip -- staging
+ */
+function parseArgs(argv) {
+  const positional = argv.slice(2).filter(arg => arg !== '--');
+  let variant = 'zip';
+  let envName = process.env.GUMP_ENV ?? 'prod';
+
+  for (const arg of positional) {
+    if (VALID_VARIANTS.has(arg)) {
+      variant = arg === 'portable' ? 'zip' : arg;
+      continue;
+    }
+    if (VALID_ENVS.has(arg)) {
+      envName = arg;
+      continue;
+    }
+    die(
+      `Unknown argument '${arg}'. Use: zip | msix, and optional env: prod | local | staging`,
+    );
+  }
+
+  if (!VALID_ENVS.has(envName)) {
+    die(`Unknown GUMP_ENV '${envName}'. Use: prod | local | staging`);
+  }
+
+  return {variant, envName};
+}
+
+const {variant, envName} = parseArgs(process.argv);
 
 applyGumpBuildIdentity({
   platform: 'windows',
-  envName: process.env.GUMP_ENV ?? 'prod',
+  envName,
 });
 scrubWindowsSolutionOrDie();
 
@@ -36,11 +77,6 @@ const DIST_WINDOWS_DIR = process.env.GUMP_DIST_DIR;
 
 function log(message) {
   console.log(`\n▸ ${message}`);
-}
-
-function die(message) {
-  console.error(`✗ ${message}`);
-  process.exit(1);
 }
 
 function normalizeArch(value) {

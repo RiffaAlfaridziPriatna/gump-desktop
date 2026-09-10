@@ -19,7 +19,9 @@
     "build:macos:distribute": "bash scripts/build.sh macos distribute",
     "build:windows": "node scripts/build-windows.mjs zip",
     "build:windows:zip": "node scripts/build-windows.mjs zip",
+    "build:windows:staging": "node scripts/build-windows.mjs zip staging",
     "build:windows:msix": "node scripts/build-windows.mjs msix",
+    "build:windows:msix:staging": "node scripts/build-windows.mjs msix staging",
     "build:all": "bash scripts/build.sh all",
     "windows": "node scripts/run-windows.mjs",
     "test:windows": "jest --config jest.config.windows.js"

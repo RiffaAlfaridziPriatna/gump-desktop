@@ -94,11 +94,13 @@ Fetch-based client hitting `https://api.gump.app` with Bearer token auth. Resour
 | `npm run windows` | Build and run Windows app |
 | `npm run typecheck` | Run TypeScript compiler check |
 | `npm run build:macos` | Release macOS app (prod, `VERSION.macos`) |
+| `npm run build:macos:staging` | Release macOS app (staging) |
 | `npm run build:windows` | Release Windows zip (prod, `VERSION.windows`) |
+| `npm run build:windows:staging` | Release Windows zip (staging) |
 
-App marketing versions are **per platform**: edit `VERSION.macos` or `VERSION.windows` (not a shared `VERSION`). Channel (`prod` / `local` / `staging`) comes from `GUMP_ENV`.
+App marketing versions are **per platform**: edit `VERSION.macos` or `VERSION.windows` (not a shared `VERSION`). Channel (`prod` / `local` / `staging`) comes from `GUMP_ENV` or the script/env arg.
 
-Release artifacts go to `dist/<env>/<platform>/` (e.g. `dist/prod/macos/`, `dist/staging/macos/`).
+Release artifacts go to `dist/<env>/<platform>/` (e.g. `dist/prod/macos/`, `dist/staging/windows/`).
 
 ## Project Structure
 
