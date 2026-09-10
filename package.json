@@ -35,7 +35,6 @@
     "posthog-react-native": "^4.67.0",
     "react": "19.1.4",
     "react-native": "0.81.6",
-    "react-native-device-info": "^15.0.2",
     "react-native-gesture-handler": "^3.0.0",
     "react-native-image-picker": "^8.2.1",
     "react-native-localize": "^3.7.0",

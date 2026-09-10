@@ -5,6 +5,7 @@ import path from 'node:path';
 import url from 'node:url';
 
 import { applyGumpBuildIdentity } from './gump-env.mjs';
+import { scrubWindowsSolutionOrDie } from './scrub-windows-solution.mjs';
 
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..');
@@ -29,6 +30,7 @@ applyGumpBuildIdentity({
   platform: 'windows',
   envName: process.env.GUMP_ENV ?? 'prod',
 });
+scrubWindowsSolutionOrDie();
 
 const DIST_WINDOWS_DIR = process.env.GUMP_DIST_DIR;
 
@@ -311,7 +313,14 @@ function resolveMsbuildExe(requiredArchs) {
 }
 
 function runReactNativeWindows(args) {
-  run(process.execPath, [REACT_NATIVE_CLI, 'run-windows', ...args]);
+  const skipAutolink = args.includes('--no-autolink');
+  if (!skipAutolink) {
+    run(process.execPath, [REACT_NATIVE_CLI, 'autolink-windows']);
+  }
+  // Strip stale UWP projects that autolink may have left in the .sln earlier.
+  scrubWindowsSolutionOrDie();
+  const runArgs = skipAutolink ? args : ['--no-autolink', ...args];
+  run(process.execPath, [REACT_NATIVE_CLI, 'run-windows', ...runArgs]);
 }
 
 function copyArtifact(sourcePath, destinationDir) {

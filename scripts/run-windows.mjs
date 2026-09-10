@@ -7,6 +7,7 @@ import url from 'node:url';
 
 import { ensureRnwWindowsPowerShell } from './ensure-rnw-windows-powershell.mjs';
 import { applyGumpBuildIdentity } from './gump-env.mjs';
+import { scrubWindowsSolutionOrDie } from './scrub-windows-solution.mjs';
 
 applyGumpBuildIdentity({platform: 'windows', envName: process.env.GUMP_ENV ?? 'local'});
 
@@ -133,6 +134,33 @@ const userArgs = process.argv.slice(2);
 
 await ensureMetroRunning();
 
+// Autolink never removes projects it previously added. Run autolink, then
+// scrub incompatible UWP leftovers (e.g. RNDeviceInfoCPP) before MSBuild.
+const skipAutolink = userArgs.includes('--no-autolink');
+if (!skipAutolink) {
+  const autolink = spawnSync(
+    process.execPath,
+    [REACT_NATIVE_CLI, 'autolink-windows'],
+    {
+      cwd: ROOT_DIR,
+      stdio: 'inherit',
+      shell: false,
+    },
+  );
+  if (autolink.error) {
+    die(autolink.error.message);
+  }
+  if ((autolink.status ?? 1) !== 0) {
+    process.exit(autolink.status ?? 1);
+  }
+}
+
+scrubWindowsSolutionOrDie();
+
+const runArgs = skipAutolink
+  ? userArgs
+  : ['--no-autolink', ...userArgs];
+
 const result = spawnSync(
   process.execPath,
   [
@@ -142,7 +170,7 @@ const result = spawnSync(
     windowsArch,
     '--msbuildprops',
     `_WindowsAppSDKFoundationPlatform=${wasdkPlatform},UseExperimentalNuget=true`,
-    ...userArgs,
+    ...runArgs,
   ],
   {
     cwd: ROOT_DIR,
