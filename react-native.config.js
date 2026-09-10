@@ -40,7 +40,9 @@ module.exports = {
     },
     'react-native-device-info': {
       platforms: {
+        // Old UWP project; incompatible with RNW New Arch (RnwNewArch=true).
         macos: null,
+        windows: null,
       },
     },
     'react-native-localize': {

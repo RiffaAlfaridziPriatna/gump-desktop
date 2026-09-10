@@ -37,6 +37,10 @@ const windowsShims = {
     __dirname,
     'src/shims/op-sqlite.windows.ts',
   ),
+  'react-native-device-info': path.resolve(
+    __dirname,
+    'src/shims/react-native-device-info.windows.ts',
+  ),
 };
 
 const config = {
