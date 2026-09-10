@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "postinstall": "ruby macos/scripts/patch_secure_text_field.rb",
-    "start": "bash scripts/run-with-env.sh local npx react-native start",
+    "start": "node scripts/run-with-env.mjs local node node_modules/react-native/cli.js start",
     "macos": "bash scripts/run-with-env.sh local npx react-native run-macos",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
