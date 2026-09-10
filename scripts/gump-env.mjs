@@ -128,9 +128,12 @@ export function applyGumpBuildIdentity(options = {}) {
     process.env.EXTRA_PACKAGER_ARGS = '--reset-cache';
   }
 
+  process.env.GUMP_DIST_DIR = path.join(ROOT_DIR, 'dist', envName, platform);
+
   console.log(
     `\n▸ App identity: platform=${platform} env=${envName} version=${process.env.APP_VERSION} buildId=${process.env.APP_BUILD_ID} git=${process.env.GIT_SHA}`,
   );
+  console.log(`▸ Dist output: ${process.env.GUMP_DIST_DIR}`);
 
   if (platform === 'windows') {
     const identityVersion = syncWindowsPackageVersion(process.env.APP_VERSION);
@@ -145,5 +148,6 @@ export function applyGumpBuildIdentity(options = {}) {
     appVersion: process.env.APP_VERSION,
     appBuildId: process.env.APP_BUILD_ID,
     gitSha: process.env.GIT_SHA,
+    distDir: process.env.GUMP_DIST_DIR,
   };
 }

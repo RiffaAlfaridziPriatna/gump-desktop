@@ -109,4 +109,4 @@ case "$PLATFORM" in
     ;;
 esac
 
-log "Done. Output directory: ${DIST_DIR}/${PLATFORM}/"
+log "Done. Output directory: ${GUMP_DIST_DIR:-${DIST_DIR}/${GUMP_ENV:-prod}/${PLATFORM}}/"

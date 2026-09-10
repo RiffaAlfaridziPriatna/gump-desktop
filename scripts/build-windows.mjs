@@ -8,7 +8,6 @@ import { applyGumpBuildIdentity } from './gump-env.mjs';
 
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..');
-const DIST_DIR = path.join(ROOT_DIR, 'dist');
 const WINDOWS_MSIX_DIR = path.join(ROOT_DIR, 'windows/AppPackages');
 const REACT_NATIVE_CLI = path.join(ROOT_DIR, 'node_modules/react-native/cli.js');
 const REACT_NATIVE_WINDOWS_DIR = path.join(
@@ -30,6 +29,8 @@ applyGumpBuildIdentity({
   platform: 'windows',
   envName: process.env.GUMP_ENV ?? 'prod',
 });
+
+const DIST_WINDOWS_DIR = process.env.GUMP_DIST_DIR;
 
 function log(message) {
   console.log(`\n▸ ${message}`);
@@ -536,7 +537,7 @@ function packagePortableRelease(arch) {
   ensureAutolinkedDllsInReleaseDir(releaseDir, arch);
   ensureReleaseBundleInDir(releaseDir);
 
-  const distWindowsDir = path.join(DIST_DIR, 'windows');
+  const distWindowsDir = DIST_WINDOWS_DIR;
   const portableName = `GumpDesktop-windows-${arch}`;
   const portableDir = path.join(distWindowsDir, portableName);
   const zipPath = path.join(distWindowsDir, `${portableName}.zip`);
@@ -641,7 +642,7 @@ function buildMsix(archs) {
   const isMultiArch = archs.length > 1;
   const windowsDir = path.join(ROOT_DIR, 'windows');
   const solutionDir = `${windowsDir}${path.sep}`;
-  const appxPackageDir = `${path.join(DIST_DIR, 'windows', 'AppPackages')}${path.sep}`;
+  const appxPackageDir = `${path.join(DIST_WINDOWS_DIR, 'AppPackages')}${path.sep}`;
 
   ensureDir(appxPackageDir);
 
@@ -686,7 +687,7 @@ function buildMsix(archs) {
     );
   }
 
-  copyArtifact(latestPackage, path.join(DIST_DIR, 'windows'));
+  copyArtifact(latestPackage, DIST_WINDOWS_DIR);
 }
 
 if (process.platform !== 'win32') {
@@ -694,7 +695,7 @@ if (process.platform !== 'win32') {
 }
 
 ensureWindowsTooling();
-ensureDir(DIST_DIR);
+ensureDir(DIST_WINDOWS_DIR);
 
 const windowsArchs = resolveWindowsArchs();
 log(`Detected Windows target architecture(s): ${windowsArchs.join(', ')}`);
@@ -712,4 +713,4 @@ switch (variant) {
     die(`Unknown Windows variant: ${variant}. Use: zip | msix`);
 }
 
-log(`Done. Output directory: ${path.join(DIST_DIR, 'windows')}/`);
+log(`Done. Output directory: ${DIST_WINDOWS_DIR}/`);

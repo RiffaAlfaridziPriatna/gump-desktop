@@ -98,6 +98,8 @@ Fetch-based client hitting `https://api.gump.app` with Bearer token auth. Resour
 
 App marketing versions are **per platform**: edit `VERSION.macos` or `VERSION.windows` (not a shared `VERSION`). Channel (`prod` / `local` / `staging`) comes from `GUMP_ENV`.
 
+Release artifacts go to `dist/<env>/<platform>/` (e.g. `dist/prod/macos/`, `dist/staging/macos/`).
+
 ## Project Structure
 
 ```

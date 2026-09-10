@@ -134,5 +134,9 @@ ensure_app_build_identity() {
     export EXTRA_PACKAGER_ARGS="--reset-cache"
   fi
 
+  # Artifacts land in dist/<env>/<platform>/ so prod/local/staging do not overwrite each other.
+  export GUMP_DIST_DIR="${DIST_DIR}/${GUMP_ENV}/${GUMP_PLATFORM}"
+
   log "App identity: platform=${GUMP_PLATFORM} env=${GUMP_ENV} version=${APP_VERSION} buildId=${APP_BUILD_ID} git=${GIT_SHA}"
+  log "Dist output: ${GUMP_DIST_DIR}"
 }

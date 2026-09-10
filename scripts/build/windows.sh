@@ -25,7 +25,7 @@ build_exe() {
   )
 
   if [[ -f "${WINDOWS_RELEASE_DIR}/GumpDesktop.exe" ]]; then
-    copy_artifact "${WINDOWS_RELEASE_DIR}/GumpDesktop.exe" "${DIST_DIR}/windows"
+    copy_artifact "${WINDOWS_RELEASE_DIR}/GumpDesktop.exe" "${GUMP_DIST_DIR:?GUMP_DIST_DIR unset}"
     return
   fi
 
@@ -52,11 +52,16 @@ build_msix() {
     die "MSIX package not found under ${WINDOWS_MSIX_DIR}"
   fi
 
-  copy_artifact "$latest_package" "${DIST_DIR}/windows"
+  copy_artifact "$latest_package" "${GUMP_DIST_DIR:?GUMP_DIST_DIR unset}"
 }
 
 if ! is_windows; then
   die "Windows builds must run on Windows (or Git Bash on a Windows machine)."
+fi
+
+if [[ -z "${GUMP_ENV:-}" || -z "${GUMP_DIST_DIR:-}" ]]; then
+  load_gump_env "${GUMP_ENV:-prod}"
+  ensure_app_build_identity windows
 fi
 
 case "$VARIANT" in
@@ -70,3 +75,5 @@ case "$VARIANT" in
     die "Unknown Windows variant: ${VARIANT}. Use: exe | msix"
     ;;
 esac
+
+log "Done. Output directory: ${GUMP_DIST_DIR}/"
