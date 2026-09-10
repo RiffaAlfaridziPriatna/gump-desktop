@@ -22,6 +22,10 @@ Env (optional, default: prod, or GUMP_ENV):
   local     loads .env.local     → APP_BUILD_ID=local
   staging   loads .env.staging   → APP_BUILD_ID=staging
 
+App version is per platform:
+  macos   → VERSION.macos
+  windows → VERSION.windows
+
 Examples:
   npm run build:macos
   npm run build:macos:staging
@@ -62,7 +66,6 @@ if [[ -n "$ENV_ARG" ]]; then
   GUMP_ENV="$ENV_ARG"
 fi
 load_gump_env "${GUMP_ENV:-prod}"
-ensure_app_build_identity
 
 ensure_dir "$DIST_DIR"
 
@@ -72,9 +75,11 @@ run_platform_build() {
 
   case "$platform" in
     macos)
+      ensure_app_build_identity macos
       bash "${SCRIPT_DIR}/build/macos.sh" "${variant:-app}"
       ;;
     windows)
+      ensure_app_build_identity windows
       bash "${SCRIPT_DIR}/build/windows.sh" "${variant:-exe}"
       ;;
     *)

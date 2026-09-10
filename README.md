@@ -93,6 +93,10 @@ Fetch-based client hitting `https://api.gump.app` with Bearer token auth. Resour
 | `npm run macos` | Build and run macOS app |
 | `npm run windows` | Build and run Windows app |
 | `npm run typecheck` | Run TypeScript compiler check |
+| `npm run build:macos` | Release macOS app (prod, `VERSION.macos`) |
+| `npm run build:windows` | Release Windows zip (prod, `VERSION.windows`) |
+
+App marketing versions are **per platform**: edit `VERSION.macos` or `VERSION.windows` (not a shared `VERSION`). Channel (`prod` / `local` / `staging`) comes from `GUMP_ENV`.
 
 ## Project Structure
 

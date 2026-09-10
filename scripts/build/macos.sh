@@ -32,9 +32,9 @@ require_env() {
 
 # Parent build.sh already called load_gump_env + ensure_app_build_identity.
 # When this script is invoked directly, still load a default env.
-if [[ -z "${GUMP_ENV:-}" || -z "${APP_BUILD_ID:-}" ]]; then
+if [[ -z "${GUMP_ENV:-}" || -z "${APP_BUILD_ID:-}" || -z "${APP_VERSION:-}" ]]; then
   load_gump_env "${GUMP_ENV:-prod}"
-  ensure_app_build_identity
+  ensure_app_build_identity macos
 fi
 
 build_app() {
@@ -49,6 +49,7 @@ build_app() {
     DEVELOPMENT_TEAM="${APPLE_TEAM_ID:-$DEFAULT_TEAM_ID}" \
     CODE_SIGN_STYLE=Automatic \
     CURRENT_PROJECT_VERSION="${APP_BUILD_NUMBER}" \
+    MARKETING_VERSION="${APP_VERSION}" \
     APP_VERSION="${APP_VERSION}" \
     APP_BUILD_ID="${APP_BUILD_ID}" \
     GIT_SHA="${GIT_SHA}" \

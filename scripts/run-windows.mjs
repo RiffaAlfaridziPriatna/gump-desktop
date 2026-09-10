@@ -6,6 +6,9 @@ import path from 'node:path';
 import url from 'node:url';
 
 import { ensureRnwWindowsPowerShell } from './ensure-rnw-windows-powershell.mjs';
+import { applyGumpBuildIdentity } from './gump-env.mjs';
+
+applyGumpBuildIdentity({platform: 'windows', envName: process.env.GUMP_ENV ?? 'local'});
 
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..');

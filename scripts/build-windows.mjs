@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 
+import { applyGumpBuildIdentity } from './gump-env.mjs';
+
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
@@ -23,6 +25,11 @@ const ARCH_ALIASES = {
 };
 
 const variant = process.argv[2] ?? 'exe';
+
+applyGumpBuildIdentity({
+  platform: 'windows',
+  envName: process.env.GUMP_ENV ?? 'prod',
+});
 
 function log(message) {
   console.log(`\n▸ ${message}`);

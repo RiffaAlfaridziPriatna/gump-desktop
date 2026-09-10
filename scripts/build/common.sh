@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST_DIR="${ROOT_DIR}/dist"
 BUILD_DIR="${ROOT_DIR}/build"
-VERSION_FILE="${ROOT_DIR}/VERSION"
 
 log() {
   printf '\n▸ %s\n' "$*"
@@ -74,18 +73,42 @@ load_gump_env() {
   fi
 }
 
+# Platform marketing version lives in VERSION.macos / VERSION.windows.
+version_file_for() {
+  case "$1" in
+    macos) echo "${ROOT_DIR}/VERSION.macos" ;;
+    windows) echo "${ROOT_DIR}/VERSION.windows" ;;
+    *)
+      die "Unknown GUMP_PLATFORM '${1}'. Use: macos | windows"
+      ;;
+  esac
+}
+
 read_app_version() {
-  if [[ -f "$VERSION_FILE" ]]; then
-    tr -d '[:space:]' <"$VERSION_FILE"
+  local platform="${1:-${GUMP_PLATFORM:-macos}}"
+  local version_file
+  version_file="$(version_file_for "$platform")"
+  if [[ -f "$version_file" ]]; then
+    tr -d '[:space:]' <"$version_file"
+  elif [[ "$platform" == "macos" ]]; then
+    echo "1.0.0"
   else
-    echo "0.0.1"
+    echo "0.0.0.1"
   fi
 }
 
 # Inlined into the JS bundle via babel-plugin-transform-inline-environment-variables.
-# GIT_SHA is always taken from the current checkout. APP_VERSION comes from VERSION.
-# APP_BUILD_ID is the selected environment (prod | local | staging).
+# GIT_SHA from git. APP_VERSION from VERSION.<platform>. APP_BUILD_ID from GUMP_ENV.
 ensure_app_build_identity() {
+  local platform="${1:-${GUMP_PLATFORM:-macos}}"
+  case "$platform" in
+    macos | windows) ;;
+    *)
+      die "Unknown GUMP_PLATFORM '${platform}'. Use: macos | windows"
+      ;;
+  esac
+  export GUMP_PLATFORM="$platform"
+
   export GIT_SHA
   GIT_SHA="$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || true)"
   if [[ -z "$GIT_SHA" ]]; then
@@ -93,7 +116,7 @@ ensure_app_build_identity() {
   fi
 
   export APP_VERSION
-  APP_VERSION="$(read_app_version)"
+  APP_VERSION="$(read_app_version "$platform")"
 
   if [[ -z "${GUMP_ENV:-}" ]]; then
     export GUMP_ENV="prod"
@@ -111,5 +134,5 @@ ensure_app_build_identity() {
     export EXTRA_PACKAGER_ARGS="--reset-cache"
   fi
 
-  log "App identity: env=${GUMP_ENV} version=${APP_VERSION} buildId=${APP_BUILD_ID} git=${GIT_SHA}"
+  log "App identity: platform=${GUMP_PLATFORM} env=${GUMP_ENV} version=${APP_VERSION} buildId=${APP_BUILD_ID} git=${GIT_SHA}"
 }

@@ -5,8 +5,8 @@ export const POSTHOG_API_KEY = process.env.POSTHOG_API_KEY ?? '';
 export const POSTHOG_HOST =
   process.env.POSTHOG_HOST ?? 'https://us.i.posthog.com';
 
-/** Marketing version from root `VERSION` (inlined at bundle time). */
-export const APP_VERSION = process.env.APP_VERSION ?? '0.0.1';
+/** Marketing version from VERSION.macos / VERSION.windows (inlined at bundle time). */
+export const APP_VERSION = process.env.APP_VERSION ?? '1.0.0';
 
 /**
  * Build channel: `prod` | `local` | `staging`.

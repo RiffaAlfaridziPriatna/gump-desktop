@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Load a Gump env file and exec the remaining args.
 # Usage: scripts/run-with-env.sh <prod|local|staging> <command...>
+# Optional: GUMP_PLATFORM=macos|windows (default: macos)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,9 +16,12 @@ Load Gump env vars then run a command.
 Usage:
   scripts/run-with-env.sh <prod|local|staging> <command...>
 
+Optional env:
+  GUMP_PLATFORM=macos|windows   (default: macos) → VERSION.macos / VERSION.windows
+
 Examples:
   scripts/run-with-env.sh local npx react-native run-macos
-  scripts/run-with-env.sh staging npx react-native start
+  GUMP_PLATFORM=windows scripts/run-with-env.sh local node scripts/run-windows.mjs
 EOF
   exit 0
 fi
@@ -28,5 +32,5 @@ if [[ $# -eq 0 ]]; then
 fi
 
 load_gump_env "$ENV_NAME"
-ensure_app_build_identity
+ensure_app_build_identity "${GUMP_PLATFORM:-macos}"
 exec "$@"
