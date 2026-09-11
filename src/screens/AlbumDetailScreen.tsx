@@ -1,32 +1,34 @@
-import {PhotoGrid, type PhotoGridHandle} from '@components/photo/PhotoGrid';
-import {PhotoGridSkeleton} from '@components/photo/PhotoGridSkeleton';
-import {AlbumDetailFabStack} from '@components/navigation/AlbumDetailFabStack';
-import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
+import { AlbumDetailFabStack } from '@components/navigation/AlbumDetailFabStack';
+import { ProfileMenuPopup } from '@components/navigation/ProfileMenu';
+import { UploadAwareModalShell } from '@components/navigation/UploadAwareModalShell';
+import { PhotoGrid, type PhotoGridHandle } from '@components/photo/PhotoGrid';
+import { PhotoGridSkeleton } from '@components/photo/PhotoGridSkeleton';
 import {
+  AlbumCapacityBanner,
+  CapacityExceededModal,
   HeaderAccountCluster,
   HeaderPlanModal,
 } from '@components/plan';
-import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
-import {UploadToast} from '@components/upload/UploadToast';
+import { TouchableOpacity } from '@components/ui';
+import { UploadToast } from '@components/upload/UploadToast';
 import {
   useCulledAlbumActions,
   useCulledAlbumStore,
 } from '@context/culledAlbum';
-import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
-import {pickImages} from '@lib/media/filePicker';
-import {useAlbumDetailGridPhotos} from '@hooks/useAlbumDetailGridPhotos';
-import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
-import {usePlanMenu} from '@hooks/usePlanMenu';
-import {useProfileMenu} from '@hooks/useProfileMenu';
-import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
-import {useLayout} from '@hooks/useLayout';
-import {colors} from '@lib/ui/colors';
-import {fonts, sansBoldStyle} from '@lib/ui/typography';
-import {captureAppEvent} from '@lib/observability/posthogClient';
-import {reportError} from '@lib/observability/reportError';
-import {MainStackParamList} from '../app/MainNavigator';
-import {StackScreenProps} from '@react-navigation/stack';
-import {useIsFocused} from '@react-navigation/native';
+import { useAlbumDetailGridPhotos } from '@hooks/useAlbumDetailGridPhotos';
+import { useCulledAlbumPhotos } from '@hooks/useCulledAlbumPhotos';
+import { useLayout } from '@hooks/useLayout';
+import { usePlanMenu } from '@hooks/usePlanMenu';
+import { useProfileMenu } from '@hooks/useProfileMenu';
+import { useUploadAwareModalScreen } from '@hooks/useUploadAwareModalScreen';
+import { useAlbumQueueOperation } from '@lib/culledAlbum/uploadQueueStore';
+import { pickImages } from '@lib/media/filePicker';
+import { captureAppEvent } from '@lib/observability/posthogClient';
+import { reportError } from '@lib/observability/reportError';
+import { colors } from '@lib/ui/colors';
+import { fonts, sansBoldStyle } from '@lib/ui/typography';
+import { useIsFocused } from '@react-navigation/native';
+import { StackScreenProps } from '@react-navigation/stack';
 import {
   memo,
   useCallback,
@@ -36,7 +38,6 @@ import {
   useState,
   type RefObject,
 } from 'react';
-import {TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
   Platform,
@@ -44,7 +45,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MainStackParamList } from '../app/MainNavigator';
 import IconChevronLeft from '../assets/images/icon_chevron_left.svg';
 import IconScissors from '../assets/images/icon_scissors.svg';
 import GumpLogo from '../assets/images/logo.svg';
@@ -82,7 +84,7 @@ const AlbumDetailGridBody = memo(function AlbumDetailGridBody({
   onProgrammaticScrollChange: (active: boolean) => void;
 }) {
   const gridPhotos = useAlbumDetailGridPhotos(albumId);
-  const {loadingPhotos, loadError} = useCulledAlbumPhotos(albumId, {
+  const { loadingPhotos, loadError } = useCulledAlbumPhotos(albumId, {
     skipInitialLoad: gridPhotos.length > 0,
   });
 
@@ -141,19 +143,22 @@ const AlbumDetailBody = memo(function AlbumDetailBody({
   );
 });
 
-export default function AlbumDetailScreen({navigation, route}: Props) {
-  const {albumId, albumName, ownerName, skipResumeImport} = route.params;
-  const {shellProps, handleBack, handleBackPressIn} =
-    useUploadAwareModalScreen(navigation, route.params.instant, {albumId});
-  const {isMobileLayout, screenPaddingHorizontal} = useLayout();
+export default function AlbumDetailScreen({ navigation, route }: Props) {
+  const { albumId, albumName, ownerName, skipResumeImport } = route.params;
+  const { shellProps, handleBack, handleBackPressIn } =
+    useUploadAwareModalScreen(navigation, route.params.instant, { albumId });
+  const { isMobileLayout, screenPaddingHorizontal } = useLayout();
   const isFocused = useIsFocused();
-  const {resumeInFlightWork, startAnalysis, addPhotos} =
+  const { resumeInFlightWork, startAnalysis, addPhotos } =
     useCulledAlbumActions();
   const profileMenu = useProfileMenu();
   const planMenu = usePlanMenu();
   const [cullingActive, setCullingActive] = useState(false);
   const [isScrollingToTop, setIsScrollingToTop] = useState(false);
   const photoGridRef = useRef<PhotoGridHandle | null>(null);
+  const [showCapacityModal, setShowCapacityModal] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [successBannerVisible, setSuccessBannerVisible] = useState(false);
 
   const isUploading = useCulledAlbumStore(state => {
     const counts = state.albums[albumId]?.localImportBatchCounts;
@@ -183,7 +188,8 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
 
   // Show skeleton during entire upload to avoid grid rendering overhead while importing.
   // For append scenarios (adding to existing album), keep the grid visible.
-  const isAppendingToExistingAlbum = albumPhotoCount > batchTotal && batchTotal > 0;
+  const isAppendingToExistingAlbum =
+    albumPhotoCount > batchTotal && batchTotal > 0;
   const showImportSkeleton = isUploading && !isAppendingToExistingAlbum;
 
   const analysisInProgress = useCulledAlbumStore(state => {
@@ -273,7 +279,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     ) {
       return;
     }
-    navigation.replace('CulledAlbumDetail', {albumId});
+    navigation.replace('CulledAlbumDetail', { albumId });
   }, [
     albumId,
     analysisQueue.status,
@@ -284,9 +290,27 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   ]);
 
   function handleStartCulling() {
-    if (!hasUploadedPhotos || isUploading || cullingActive || isScrollingToTop) {
+    if (
+      !hasUploadedPhotos ||
+      isUploading ||
+      cullingActive ||
+      isScrollingToTop
+    ) {
       return;
     }
+
+    if (planMenu.snapshot) {
+      const { usage } = planMenu.snapshot;
+      const photosUsed = usage.photos.used;
+      const photosLimit = usage.photos.limit ?? 0;
+      const projectedUsage = photosUsed + totalPhotos;
+
+      if (photosLimit > 0 && projectedUsage > photosLimit) {
+        setShowCapacityModal(true);
+        return;
+      }
+    }
+
     setCullingActive(true);
     startAnalysis(albumId);
   }
@@ -335,112 +359,223 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     grid.scrollToTop();
   }, [albumId]);
 
+  const handleAddCapacity = useCallback(() => {
+    planMenu.open();
+    setShowCapacityModal(false);
+    setBannerDismissed(true);
+  }, [planMenu]);
+
+  const handleDismissBanner = useCallback(() => {
+    setBannerDismissed(true);
+    setSuccessBannerVisible(false);
+  }, []);
+
+  const handleCancelCapacityModal = useCallback(() => {
+    setShowCapacityModal(false);
+  }, []);
+
+  const bannerState = useMemo(() => {
+    if (bannerDismissed || !planMenu.snapshot) {
+      return null;
+    }
+
+    const { usage } = planMenu.snapshot;
+    const photosUsed = usage.photos.used;
+    const photosLimit = usage.photos.limit ?? 0;
+
+    if (photosLimit === 0) {
+      return null;
+    }
+
+    if (successBannerVisible) {
+      return {
+        variant: 'success' as const,
+        capacityAdded: 10000,
+      };
+    }
+
+    if (isCullingInProgress) {
+      return {
+        variant: 'processing' as const,
+        photoCount: totalPhotos,
+        photosUsed,
+        photosLimit,
+      };
+    }
+
+    if (hasUploadedPhotos && !isUploading) {
+      const projectedUsage = photosUsed + totalPhotos;
+      const projectedRatio = projectedUsage / photosLimit;
+
+      if (projectedRatio >= 0.9 && projectedUsage <= photosLimit) {
+        return {
+          variant: 'warning' as const,
+          photoCount: totalPhotos,
+          photosUsed,
+          photosLimit,
+        };
+      }
+    }
+
+    return null;
+  }, [
+    bannerDismissed,
+    planMenu.snapshot,
+    successBannerVisible,
+    isCullingInProgress,
+    totalPhotos,
+    hasUploadedPhotos,
+    isUploading,
+  ]);
+
   return (
     <UploadAwareModalShell {...shellProps}>
       <SafeAreaView style={styles.container}>
-      <View
-        style={[
-          styles.header,
-          {paddingHorizontal: screenPaddingHorizontal},
-          isMobileLayout && styles.headerMobile,
-        ]}>
-        <View style={[styles.headerLeft, isMobileLayout && styles.headerLeftMobile]}>
-          <GumpLogo width={112} height={40} />
-          <TouchableOpacity
-            style={styles.backButton}
-            onPressIn={handleBackPressIn}
-            onPress={handleBack}
-            activeOpacity={0.7}>
-            <IconChevronLeft width={24} height={24} color={colors.accent} />
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
-        </View>
-        <HeaderAccountCluster profileMenu={profileMenu} planMenu={planMenu} />
-      </View>
-
-      <View
-        style={[
-          styles.titleRow,
-          {paddingHorizontal: screenPaddingHorizontal},
-          isMobileLayout && styles.titleRowMobile,
-        ]}>
-        <View style={styles.titleColumn}>
-          <Text style={styles.title}>{ownerName}</Text>
-          <Text style={styles.subtitle}>{albumName}</Text>
-        </View>
         <View
           style={[
-            styles.actionsColumn,
-            isMobileLayout && styles.actionsColumnMobile,
-          ]}>
-          {isLocalImportInProgress ? null : (
-            <Text style={styles.totalPhotos}>
-              Total Photos{' '}
-              <Text style={styles.totalPhotosValue}>{totalPhotos}</Text>
-            </Text>
-          )}
-          <TouchableOpacity
+            styles.header,
+            { paddingHorizontal: screenPaddingHorizontal },
+            isMobileLayout && styles.headerMobile,
+          ]}
+        >
+          <View
             style={[
-              styles.cullingButton,
-              isCullingInProgress && styles.cullingButtonInProgress,
-              (isUploading ||
+              styles.headerLeft,
+              isMobileLayout && styles.headerLeftMobile,
+            ]}
+          >
+            <GumpLogo width={112} height={40} />
+            <TouchableOpacity
+              style={styles.backButton}
+              onPressIn={handleBackPressIn}
+              onPress={handleBack}
+              activeOpacity={0.7}
+            >
+              <IconChevronLeft width={24} height={24} color={colors.accent} />
+              <Text style={styles.backText}>Back</Text>
+            </TouchableOpacity>
+          </View>
+          <HeaderAccountCluster profileMenu={profileMenu} planMenu={planMenu} />
+        </View>
+
+        <View
+          style={[
+            styles.titleRow,
+            { paddingHorizontal: screenPaddingHorizontal },
+            isMobileLayout && styles.titleRowMobile,
+          ]}
+        >
+          <View style={styles.titleColumn}>
+            <Text style={styles.title}>{ownerName}</Text>
+            <Text style={styles.subtitle}>{albumName}</Text>
+          </View>
+          <View
+            style={[
+              styles.actionsColumn,
+              isMobileLayout && styles.actionsColumnMobile,
+            ]}
+          >
+            {isLocalImportInProgress ? null : (
+              <Text style={styles.totalPhotos}>
+                Total Photos{' '}
+                <Text style={styles.totalPhotosValue}>{totalPhotos}</Text>
+              </Text>
+            )}
+            <TouchableOpacity
+              style={[
+                styles.cullingButton,
+                isCullingInProgress && styles.cullingButtonInProgress,
+                (isUploading ||
+                  !hasUploadedPhotos ||
+                  cullingActive ||
+                  isScrollingToTop) &&
+                  !isCullingInProgress &&
+                  styles.cullingButtonDisabled,
+              ]}
+              disabled={
+                isUploading ||
                 !hasUploadedPhotos ||
                 cullingActive ||
-                isScrollingToTop) &&
-                !isCullingInProgress &&
-                styles.cullingButtonDisabled,
-            ]}
-            disabled={
-              isUploading ||
-              !hasUploadedPhotos ||
-              cullingActive ||
-              isScrollingToTop
-            }
-            onPress={handleStartCulling}
-            activeOpacity={0.8}>
-            <IconScissors
-              width={16}
-              height={16}
-              color={isCullingInProgress ? colors.accent : colors.white}
-            />
-            <Text
-              style={[
-                styles.cullingText,
-                isCullingInProgress && styles.cullingTextInProgress,
-              ]}>
-              {isCullingInProgress ? 'Culling in Progress...' : 'Start Culling'}
-            </Text>
-          </TouchableOpacity>
+                isScrollingToTop
+              }
+              onPress={handleStartCulling}
+              activeOpacity={0.8}
+            >
+              <IconScissors
+                width={16}
+                height={16}
+                color={isCullingInProgress ? colors.accent : colors.white}
+              />
+              <Text
+                style={[
+                  styles.cullingText,
+                  isCullingInProgress && styles.cullingTextInProgress,
+                ]}
+              >
+                {isCullingInProgress
+                  ? 'Culling in Progress...'
+                  : 'Start Culling'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
 
-      <View
-        style={styles.body}
-        pointerEvents={planMenu.isOpen ? 'none' : 'auto'}>
-        <AlbumDetailBody
-          albumId={albumId}
-          screenPaddingHorizontal={screenPaddingHorizontal}
-          showImportSkeleton={showImportSkeleton}
-          photoGridRef={photoGridRef}
-          deferHeavyMediaWork={isCullingInProgress}
-          onProgrammaticScrollChange={setIsScrollingToTop}
+        {bannerState && planMenu.snapshot && (
+          <View style={{ paddingHorizontal: screenPaddingHorizontal }}>
+            <AlbumCapacityBanner
+              variant={bannerState.variant}
+              photoCount={bannerState.photoCount ?? totalPhotos}
+              photosUsed={planMenu.snapshot.usage.photos.used}
+              photosLimit={planMenu.snapshot.usage.photos.limit ?? 0}
+              capacityAdded={bannerState.capacityAdded}
+              onAddCapacity={
+                bannerState.variant === 'warning'
+                  ? handleAddCapacity
+                  : undefined
+              }
+              onDismiss={handleDismissBanner}
+            />
+          </View>
+        )}
+
+        <View
+          style={styles.body}
+          pointerEvents={planMenu.isOpen ? 'none' : 'auto'}
+        >
+          <AlbumDetailBody
+            albumId={albumId}
+            screenPaddingHorizontal={screenPaddingHorizontal}
+            showImportSkeleton={showImportSkeleton}
+            photoGridRef={photoGridRef}
+            deferHeavyMediaWork={isCullingInProgress}
+            onProgrammaticScrollChange={setIsScrollingToTop}
+          />
+        </View>
+        {isUploading ? null : (
+          <AlbumDetailFabStack
+            onScrollToTop={handleScrollToTop}
+            onAddPhotos={handleAddPhotos}
+            hideAdd={isCullingInProgress || cullingActive}
+          />
+        )}
+        <UploadToast mode="upload" albumId={albumId} />
+        <UploadToast mode="analyze" albumId={albumId} />
+        <ProfileMenuPopup
+          menu={profileMenu}
+          rightOffset={screenPaddingHorizontal}
         />
-      </View>
-      {isUploading ? null : (
-        <AlbumDetailFabStack
-          onScrollToTop={handleScrollToTop}
-          onAddPhotos={handleAddPhotos}
-          hideAdd={isCullingInProgress || cullingActive}
-        />
-      )}
-      <UploadToast mode="upload" albumId={albumId} />
-      <UploadToast mode="analyze" albumId={albumId} />
-      <ProfileMenuPopup
-        menu={profileMenu}
-        rightOffset={screenPaddingHorizontal}
-      />
-      <HeaderPlanModal planMenu={planMenu} />
-    </SafeAreaView>
+        <HeaderPlanModal planMenu={planMenu} />
+        {planMenu.snapshot && (
+          <CapacityExceededModal
+            visible={showCapacityModal}
+            photosLimit={planMenu.snapshot.usage.photos.limit ?? 0}
+            photosUsed={planMenu.snapshot.usage.photos.used}
+            albumPhotoCount={totalPhotos}
+            onAddCapacity={handleAddCapacity}
+            onCancel={handleCancelCapacityModal}
+          />
+        )}
+      </SafeAreaView>
     </UploadAwareModalShell>
   );
 }

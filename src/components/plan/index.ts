@@ -4,3 +4,5 @@ export {YourPlanModal} from './YourPlanModal';
 export {UsageMeter, meterProgress} from './UsageMeter';
 export {PlanAlertBanner} from './PlanAlertBanner';
 export {TopUpPicker} from './TopUpPicker';
+export {AlbumCapacityBanner} from './AlbumCapacityBanner';
+export {CapacityExceededModal} from './CapacityExceededModal';
