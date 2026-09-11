@@ -26,38 +26,6 @@ resize_square() {
   sips -z "$size" "$size" "$SOURCE_PNG" --out "$output" >/dev/null
 }
 
-write_ios_icons() {
-  local dir="$ROOT_DIR/ios/GumpDesktop/Images.xcassets/AppIcon.appiconset"
-  mkdir -p "$dir"
-
-  resize_square 40 "$dir/Icon-20@2x.png"
-  resize_square 60 "$dir/Icon-20@3x.png"
-  resize_square 58 "$dir/Icon-29@2x.png"
-  resize_square 87 "$dir/Icon-29@3x.png"
-  resize_square 80 "$dir/Icon-40@2x.png"
-  resize_square 120 "$dir/Icon-40@3x.png"
-  resize_square 120 "$dir/Icon-60@2x.png"
-  resize_square 180 "$dir/Icon-60@3x.png"
-  cp "$SOURCE_PNG" "$dir/Icon-1024.png"
-
-  cat >"$dir/Contents.json" <<'EOF'
-{
-  "images": [
-    { "filename": "Icon-20@2x.png", "idiom": "iphone", "scale": "2x", "size": "20x20" },
-    { "filename": "Icon-20@3x.png", "idiom": "iphone", "scale": "3x", "size": "20x20" },
-    { "filename": "Icon-29@2x.png", "idiom": "iphone", "scale": "2x", "size": "29x29" },
-    { "filename": "Icon-29@3x.png", "idiom": "iphone", "scale": "3x", "size": "29x29" },
-    { "filename": "Icon-40@2x.png", "idiom": "iphone", "scale": "2x", "size": "40x40" },
-    { "filename": "Icon-40@3x.png", "idiom": "iphone", "scale": "3x", "size": "40x40" },
-    { "filename": "Icon-60@2x.png", "idiom": "iphone", "scale": "2x", "size": "60x60" },
-    { "filename": "Icon-60@3x.png", "idiom": "iphone", "scale": "3x", "size": "60x60" },
-    { "filename": "Icon-1024.png", "idiom": "ios-marketing", "scale": "1x", "size": "1024x1024" }
-  ],
-  "info": { "author": "xcode", "version": 1 }
-}
-EOF
-}
-
 write_macos_icons() {
   local dir="$ROOT_DIR/macos/GumpDesktop-macOS/Assets.xcassets/AppIcon.appiconset"
   mkdir -p "$dir"
@@ -92,25 +60,6 @@ write_macos_icons() {
 EOF
 }
 
-write_android_icons() {
-  local densities=(
-    "mipmap-mdpi:48"
-    "mipmap-hdpi:72"
-    "mipmap-xhdpi:96"
-    "mipmap-xxhdpi:144"
-    "mipmap-xxxhdpi:192"
-  )
-
-  for entry in "${densities[@]}"; do
-    local folder="${entry%%:*}"
-    local size="${entry##*:}"
-    local dir="$ROOT_DIR/android/app/src/main/res/$folder"
-    mkdir -p "$dir"
-    resize_square "$size" "$dir/ic_launcher.png"
-    cp "$dir/ic_launcher.png" "$dir/ic_launcher_round.png"
-  done
-}
-
 write_windows_icons() {
   local dir="$ROOT_DIR/windows/GumpDesktop.Package/Images"
   mkdir -p "$dir"
@@ -130,9 +79,7 @@ write_windows_icons() {
   npx --yes png-to-ico "$SOURCE_PNG" >"$ROOT_DIR/windows/GumpDesktop/GumpDesktop.ico"
 }
 
-write_ios_icons
 write_macos_icons
-write_android_icons
 write_windows_icons
 
 echo "Generated app icons from $SOURCE_SVG"

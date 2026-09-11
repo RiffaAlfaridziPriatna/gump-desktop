@@ -2369,6 +2369,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - RNLocalize (3.7.0):
+    - React-Core
   - RNSVG (15.15.5):
     - React-Core
   - SocketRocket (0.7.1)
@@ -2452,6 +2454,7 @@ DEPENDENCIES:
   - ReactCodegen (from `build/generated/ios`)
   - ReactCommon/turbomodule/core (from `../node_modules/react-native-macos/ReactCommon`)
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
+  - RNLocalize (from `../node_modules/react-native-localize`)
   - RNSVG (from `../node_modules/react-native-svg`)
   - SocketRocket (~> 0.7.1)
   - Yoga (from `../node_modules/react-native-macos/ReactCommon/yoga`)
@@ -2613,6 +2616,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-macos/ReactCommon"
   RNGestureHandler:
     :path: "../node_modules/react-native-gesture-handler"
+  RNLocalize:
+    :path: "../node_modules/react-native-localize"
   RNSVG:
     :path: "../node_modules/react-native-svg"
   Yoga:
@@ -2695,6 +2700,7 @@ SPEC CHECKSUMS:
   ReactCodegen: 8b4eefc1bbc1b4691070c87fb6593e78856e43aa
   ReactCommon: b2b6ff304cf01e1b67d8e9646e34d58320be0964
   RNGestureHandler: 46f9c70235c727401f1a336c4e7ca947c7c2b3b9
+  RNLocalize: 5b24342fb7288242c2215756412d8dcb8dadf31e
   RNSVG: 7ee150379dc2a5ed4c9fdac92a5d6efab98e9cf7
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Yoga: 8a0df683a71bee13fe0b9d8b653d1a062ff65b2e

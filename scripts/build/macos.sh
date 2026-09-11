@@ -12,7 +12,6 @@ MACOS_SCHEME="GumpDesktop-macOS"
 DERIVED_DATA_PATH="${BUILD_DIR}/macos"
 APP_NAME="GUMP - Cull Your Photos.app"
 APP_PATH="${DERIVED_DATA_PATH}/Build/Products/Release/${APP_NAME}"
-DIST_APP_PATH="${DIST_DIR}/macos/${APP_NAME}"
 ENTITLEMENTS_PATH="${ROOT_DIR}/macos/GumpDesktop-macOS/GumpDesktop.entitlements"
 DEFAULT_CODESIGN_IDENTITY="Developer ID Application: Gump Ai Limited (FWQ2YTUNN4)"
 DEFAULT_TEAM_ID="FWQ2YTUNN4"
@@ -23,22 +22,22 @@ if [[ ! -d "${ROOT_DIR}/macos/Pods" ]]; then
   die "macOS Pods not installed. Run: cd macos && pod install"
 fi
 
-load_env_file() {
-  local env_file="${ROOT_DIR}/.env"
-  if [[ -f "$env_file" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$env_file"
-    set +a
-  fi
-}
-
 require_env() {
   local name="$1"
   if [[ -z "${!name:-}" ]]; then
     die "Missing required environment variable: ${name}"
   fi
 }
+
+# Parent build.sh already called load_gump_env + ensure_app_build_identity.
+# When this script is invoked directly, still load a default env.
+if [[ -z "${GUMP_ENV:-}" || -z "${APP_BUILD_ID:-}" || -z "${APP_VERSION:-}" ]]; then
+  load_gump_env "${GUMP_ENV:-prod}"
+  ensure_app_build_identity macos
+fi
+
+DIST_OUT="${GUMP_DIST_DIR:?GUMP_DIST_DIR unset — call ensure_app_build_identity first}"
+DIST_APP_PATH="${DIST_OUT}/${APP_NAME}"
 
 build_app() {
   log "Building macOS release app..."
@@ -51,25 +50,33 @@ build_app() {
     -derivedDataPath "$DERIVED_DATA_PATH" \
     DEVELOPMENT_TEAM="${APPLE_TEAM_ID:-$DEFAULT_TEAM_ID}" \
     CODE_SIGN_STYLE=Automatic \
+    CURRENT_PROJECT_VERSION="${APP_BUILD_NUMBER}" \
+    MARKETING_VERSION="${APP_VERSION}" \
+    APP_VERSION="${APP_VERSION}" \
+    APP_BUILD_ID="${APP_BUILD_ID}" \
+    GIT_SHA="${GIT_SHA}" \
+    EXTRA_PACKAGER_ARGS="${EXTRA_PACKAGER_ARGS}" \
     build
 }
 
 sync_dist_app() {
-  ensure_dir "${DIST_DIR}/macos"
+  ensure_dir "$DIST_OUT"
   rm -rf "$DIST_APP_PATH"
   cp -R "$APP_PATH" "$DIST_APP_PATH"
+  printf '%s\n' "${APP_BUILD_ID}@${GIT_SHA} (v${APP_VERSION})" >"${DIST_OUT}/BUILD_ID.txt"
   log "Artifact ready at ${DIST_APP_PATH}"
+  log "QA PostHog: appBuildId=${APP_BUILD_ID} gitSha=${GIT_SHA} appVersion=${APP_VERSION}"
 }
 
 package_zip() {
   local source_app="${1:-$DIST_APP_PATH}"
-  local zip_path="${DIST_DIR}/macos/GumpDesktop-macOS.zip"
+  local zip_path="${DIST_OUT}/GumpDesktop-macOS.zip"
 
   if [[ ! -d "$source_app" ]]; then
     die "App not found for zip: ${source_app}"
   fi
 
-  ensure_dir "${DIST_DIR}/macos"
+  ensure_dir "$DIST_OUT"
   rm -f "$zip_path"
   ditto -c -k --keepParent --norsrc --noextattr "$source_app" "$zip_path"
   log "ZIP created at ${zip_path}"
@@ -154,7 +161,6 @@ verify_distribution() {
 }
 
 distribute_app() {
-  load_env_file
   build_app
   sync_dist_app
   sign_app
@@ -163,7 +169,7 @@ distribute_app() {
   package_zip "$DIST_APP_PATH"
   log "Distribution bundle ready:"
   log "  App: ${DIST_APP_PATH}"
-  log "  ZIP: ${DIST_DIR}/macos/GumpDesktop-macOS.zip"
+  log "  ZIP: ${DIST_OUT}/GumpDesktop-macOS.zip"
 }
 
 case "$VARIANT" in

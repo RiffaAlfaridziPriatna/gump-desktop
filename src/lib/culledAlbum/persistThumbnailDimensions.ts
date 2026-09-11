@@ -5,6 +5,7 @@ import {
   type ImageDimensions,
 } from '@lib/media/imageDimensions';
 import {isUsableThumbnailUri} from '@lib/storage/localStorage';
+import {scheduleRenderSync} from './photoRenderStore';
 import {photoKey, photoStateStore} from './photoStateStore';
 
 export function persistThumbnailDimensions(
@@ -36,6 +37,10 @@ export function persistThumbnailDimensions(
     thumbnailUri = photo.file.thumbnailUri;
     shouldSync = true;
   });
+
+  if (shouldSync) {
+    scheduleRenderSync();
+  }
 
   if (thumbnailUri && isUsableThumbnailUri(thumbnailUri)) {
     putCachedImageDimensions(thumbnailUri, dimensions);

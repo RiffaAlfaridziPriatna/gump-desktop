@@ -1,4 +1,5 @@
 #import "GumpLocalStorage.h"
+#import "GumpFilePicker.h"
 #import "GumpSharedFaceDetection.h"
 
 #import <AppKit/AppKit.h>
@@ -35,6 +36,67 @@ static BOOL CopyOrCloneRegularFile(NSString *sourcePath, NSString *destPath, NSE
   return [[NSFileManager defaultManager] copyItemAtPath:sourcePath
                                                  toPath:destPath
                                                   error:outError];
+}
+
+// Path-based copyItem/clonefile does not inherit NSOpenPanel powerbox
+// access. Sandboxed reads of ~/Downloads must use the retained NSURL.
+static BOOL CopySecurityScopedURL(
+    NSURL *sourceURL,
+    NSString *destPath,
+    NSError **outError)
+{
+  if (sourceURL == nil || destPath.length == 0) {
+    if (outError != nil) {
+      *outError = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                      code:EINVAL
+                                  userInfo:nil];
+    }
+    return NO;
+  }
+
+  NSURL *destURL = [NSURL fileURLWithPath:destPath isDirectory:NO];
+  NSFileManager *fileManager = [NSFileManager defaultManager];
+  if ([fileManager fileExistsAtPath:destPath]) {
+    [fileManager removeItemAtURL:destURL error:nil];
+  }
+  return [fileManager copyItemAtURL:sourceURL toURL:destURL error:outError];
+}
+
+static NSError *GumpEnrichCopyError(
+    NSError *copyError,
+    NSString *sourcePath,
+    NSString *albumDir,
+    NSString *destPath,
+    NSString *copyMethod)
+{
+  if (copyError == nil) {
+    copyError = [NSError errorWithDomain:NSCocoaErrorDomain
+                                    code:NSFileWriteUnknownError
+                                userInfo:nil];
+  }
+  NSFileManager *fileManager = [NSFileManager defaultManager];
+  BOOL destIsDirectory = NO;
+  BOOL destExists = [fileManager fileExistsAtPath:albumDir isDirectory:&destIsDirectory];
+  NSURL *scopedSource = GumpSecurityScopedFileURLForPath(sourcePath);
+  BOOL scopedReachable = NO;
+  if (scopedSource != nil) {
+    scopedReachable = [scopedSource checkResourceIsReachableAndReturnError:nil];
+  }
+  NSMutableDictionary *info =
+      [NSMutableDictionary dictionaryWithDictionary:copyError.userInfo ?: @{}];
+  info[@"sourcePath"] = sourcePath ?: @"";
+  info[@"albumDir"] = albumDir ?: @"";
+  info[@"destPath"] = destPath ?: @"";
+  info[@"copyMethod"] = copyMethod ?: @"";
+  info[@"sourceReadable"] = @([fileManager isReadableFileAtPath:sourcePath]);
+  info[@"sourceReachableViaScopedURL"] = @(scopedReachable);
+  info[@"destWritable"] = @([fileManager isWritableFileAtPath:albumDir]);
+  info[@"destExists"] = @(destExists);
+  info[@"destIsDirectory"] = @(destIsDirectory);
+  info[@"hasSecurityScope"] = @(scopedSource != nil);
+  return [NSError errorWithDomain:copyError.domain ?: NSCocoaErrorDomain
+                             code:copyError.code
+                         userInfo:info];
 }
 
 @implementation GumpLocalStorage
@@ -2316,10 +2378,12 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
                   rejecter:(RCTPromiseRejectBlock)reject)
 {
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    NSString *sourcePath = nil;
     @try {
-      NSString *sourcePath = [self pathFromUri:sourceUri];
+      sourcePath = [self pathFromUri:sourceUri];
       if (sourcePath.length == 0 ||
           ![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
+        GumpReleaseSecurityScopedFilePath(sourcePath);
         dispatch_async(dispatch_get_main_queue(), ^{
           reject(@"ENOENT", @"Source file not found", nil);
         });
@@ -2333,6 +2397,7 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
                                                  attributes:nil
                                                       error:&dirError];
       if (dirError != nil) {
+        GumpReleaseSecurityScopedFilePath(sourcePath);
         dispatch_async(dispatch_get_main_queue(), ^{
           reject(@"EACCES", dirError.localizedDescription, dirError);
         });
@@ -2346,12 +2411,24 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
                          : destId;
       NSString *destPath = [albumDir stringByAppendingPathComponent:destName];
       NSError *copyError = nil;
-      if (!CopyOrCloneRegularFile(sourcePath, destPath, &copyError)) {
+      NSURL *scopedSource = GumpSecurityScopedFileURLForPath(sourcePath);
+      const BOOL copied = scopedSource != nil
+                              ? CopySecurityScopedURL(scopedSource, destPath, &copyError)
+                              : CopyOrCloneRegularFile(sourcePath, destPath, &copyError);
+      if (!copied) {
+        NSError *richError = GumpEnrichCopyError(
+            copyError,
+            sourcePath,
+            albumDir,
+            destPath,
+            scopedSource != nil ? @"scoped_url" : @"path");
+        GumpReleaseSecurityScopedFilePath(sourcePath);
         dispatch_async(dispatch_get_main_queue(), ^{
-          reject(@"ECOPY", copyError.localizedDescription, copyError);
+          reject(@"ECOPY", richError.localizedDescription, richError);
         });
         return;
       }
+      GumpReleaseSecurityScopedFilePath(sourcePath);
 
       NSString *thumbPath =
           [self generateThumbnailAtPath:destPath albumId:albumId photoId:destId];
@@ -2383,6 +2460,7 @@ RCT_EXPORT_METHOD(copyPhoto:(NSString *)albumId
         resolve(payload);
       });
     } @catch (NSException *exception) {
+      GumpReleaseSecurityScopedFilePath(sourcePath);
       dispatch_async(dispatch_get_main_queue(), ^{
         reject(@"EUNKNOWN", exception.reason, nil);
       });
@@ -2619,25 +2697,37 @@ RCT_EXPORT_METHOD(uploadFilePart:(NSString *)uri
                   rejecter:(RCTPromiseRejectBlock)reject)
 {
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    void (^rejectOnMain)(NSString *, NSString *, NSError *) =
+        ^(NSString *code, NSString *message, NSError *error) {
+          dispatch_async(dispatch_get_main_queue(), ^{
+            reject(code, message, error);
+          });
+        };
+    void (^resolveOnMain)(id) = ^(id value) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        resolve(value);
+      });
+    };
+
     @try {
       NSString *path = [self pathFromUri:uri];
       if (path.length == 0 ||
           ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
-        reject(@"ENOENT", @"File not found", nil);
+        rejectOnMain(@"ENOENT", @"File not found", nil);
         return;
       }
 
       unsigned long long startOffset = start.unsignedLongLongValue;
       unsigned long long endOffset = end.unsignedLongLongValue;
       if (endOffset < startOffset) {
-        reject(@"EINVAL", @"Invalid slice range", nil);
+        rejectOnMain(@"EINVAL", @"Invalid slice range", nil);
         return;
       }
 
       NSUInteger length = (NSUInteger)(endOffset - startOffset);
       NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
       if (handle == nil) {
-        reject(@"EOPEN", @"Unable to open file", nil);
+        rejectOnMain(@"EOPEN", @"Unable to open file", nil);
         return;
       }
 
@@ -2646,13 +2736,13 @@ RCT_EXPORT_METHOD(uploadFilePart:(NSString *)uri
       [handle closeFile];
 
       if (data.length != length) {
-        reject(@"EREAD", @"Unexpected end of file while reading slice", nil);
+        rejectOnMain(@"EREAD", @"Unexpected end of file while reading slice", nil);
         return;
       }
 
       NSURL *url = [NSURL URLWithString:uploadUrl];
       if (url == nil) {
-        reject(@"EINVAL", @"Invalid upload URL", nil);
+        rejectOnMain(@"EINVAL", @"Invalid upload URL", nil);
         return;
       }
 
@@ -2661,52 +2751,51 @@ RCT_EXPORT_METHOD(uploadFilePart:(NSString *)uri
                                   cachePolicy:NSURLRequestUseProtocolCachePolicy
                               timeoutInterval:60.0];
       request.HTTPMethod = @"PUT";
-      request.HTTPBody = data;
 
-      dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-      __block NSHTTPURLResponse *httpResponse = nil;
-      __block NSError *requestError = nil;
+      // Never block a GCD worker with dispatch_semaphore_wait. Concurrent
+      // multipart uploads used to pin the global pool and freeze the app.
+      NSURLSessionUploadTask *task = [[NSURLSession sharedSession]
+          uploadTaskWithRequest:request
+                       fromData:data
+              completionHandler:^(NSData *_Nullable __unused responseData,
+                                  NSURLResponse *_Nullable response,
+                                  NSError *_Nullable error) {
+                if (error != nil) {
+                  rejectOnMain(@"ENETWORK", error.localizedDescription, error);
+                  return;
+                }
 
-      NSURLSessionDataTask *task = [[NSURLSession sharedSession]
-          dataTaskWithRequest:request
-            completionHandler:^(__unused NSData *responseData,
-                                NSURLResponse *response,
-                                NSError *error) {
-              requestError = error;
-              if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
-                httpResponse = (NSHTTPURLResponse *)response;
-              }
-              dispatch_semaphore_signal(sema);
-            }];
+                NSHTTPURLResponse *httpResponse =
+                    [response isKindOfClass:[NSHTTPURLResponse class]]
+                        ? (NSHTTPURLResponse *)response
+                        : nil;
+                if (httpResponse == nil || httpResponse.statusCode < 200 ||
+                    httpResponse.statusCode >= 300) {
+                  NSInteger status =
+                      httpResponse != nil ? httpResponse.statusCode : 0;
+                  rejectOnMain(
+                      @"EUPLOAD",
+                      [NSString
+                          stringWithFormat:@"Upload part failed with HTTP %ld",
+                                           (long)status],
+                      nil);
+                  return;
+                }
+
+                NSString *rawETag = httpResponse.allHeaderFields[@"ETag"];
+                if (rawETag == nil || rawETag.length == 0) {
+                  rejectOnMain(@"EUPLOAD", @"Missing ETag header", nil);
+                  return;
+                }
+
+                NSString *eTag = [rawETag
+                    stringByReplacingOccurrencesOfString:@"\""
+                                              withString:@""];
+                resolveOnMain(@{@"eTag" : eTag});
+              }];
       [task resume];
-      dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
-
-      if (requestError != nil) {
-        reject(@"ENETWORK", requestError.localizedDescription, requestError);
-        return;
-      }
-
-      if (httpResponse == nil || httpResponse.statusCode < 200 ||
-          httpResponse.statusCode >= 300) {
-        NSInteger status = httpResponse != nil ? httpResponse.statusCode : 0;
-        reject(@"EUPLOAD",
-               [NSString stringWithFormat:@"Upload part failed with HTTP %ld",
-                                          (long)status],
-               nil);
-        return;
-      }
-
-      NSString *rawETag = httpResponse.allHeaderFields[@"ETag"];
-      if (rawETag == nil || rawETag.length == 0) {
-        reject(@"EUPLOAD", @"Missing ETag header", nil);
-        return;
-      }
-
-      NSString *eTag =
-          [rawETag stringByReplacingOccurrencesOfString:@"\"" withString:@""];
-      resolve(@{@"eTag" : eTag});
     } @catch (NSException *exception) {
-      reject(@"EUNKNOWN", exception.reason, nil);
+      rejectOnMain(@"EUNKNOWN", exception.reason, nil);
     }
   });
 }

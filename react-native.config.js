@@ -1,7 +1,5 @@
 module.exports = {
   project: {
-    ios: {},
-    android: {},
     windows: {},
     macos: {
       sourceDir: 'macos',
@@ -36,6 +34,18 @@ module.exports = {
       },
     },
     '@op-engineering/op-sqlite': {
+      platforms: {
+        windows: null,
+      },
+    },
+    'react-native-device-info': {
+      platforms: {
+        // Old UWP project; incompatible with RNW New Arch (RnwNewArch=true).
+        macos: null,
+        windows: null,
+      },
+    },
+    'react-native-localize': {
       platforms: {
         windows: null,
       },

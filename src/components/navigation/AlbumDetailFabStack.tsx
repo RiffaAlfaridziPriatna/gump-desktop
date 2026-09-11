@@ -1,8 +1,8 @@
 import { TouchableOpacity } from '@components/ui';
 import { colors } from '@lib/ui/colors';
 import { StyleSheet, View } from 'react-native';
-import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
 import IconPlus from '../../assets/images/icon_plus.svg';
+import { GumpScrollToTopButton } from './GumpScrollToTopButton';
 
 const FAB_SIZE = 48;
 
@@ -20,7 +20,7 @@ export function AlbumDetailFabStack({
   onAddPhotos,
   addDisabled = false,
   hideAdd = false,
-  rightOffset = 8,
+  rightOffset = 28,
   bottomOffset = 8,
 }: AlbumDetailFabStackProps) {
   return (
@@ -28,15 +28,10 @@ export function AlbumDetailFabStack({
       style={[styles.stack, { right: rightOffset, bottom: bottomOffset }]}
       pointerEvents="box-none"
     >
-      <TouchableOpacity
-        style={[styles.fab, styles.scrollFab]}
+      <GumpScrollToTopButton
         onPress={onScrollToTop}
-        activeOpacity={0.8}
-        accessibilityRole="button"
-        accessibilityLabel="Scroll to top"
-      >
-        <IconChevronUp width={32} height={32} color={colors.white} />
-      </TouchableOpacity>
+        style={styles.scrollFab}
+      />
       {hideAdd ? null : (
         <TouchableOpacity
           style={[styles.fab, styles.addFab, addDisabled && styles.fabDisabled]}
@@ -68,6 +63,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scrollFab: {
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: 8,
     backgroundColor: colors.fabBackground,
   },
   addFab: {

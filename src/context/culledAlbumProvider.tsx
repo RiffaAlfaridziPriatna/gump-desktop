@@ -2,13 +2,16 @@ import {cullingEngine} from '@lib/culling/cullingEngine';
 import {resolveUseCases} from '@di/useCases';
 import {createAnalysisQueue} from '@lib/culledAlbum/analysisQueue';
 import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
+import {reportError} from '@lib/observability/reportError';
+import {addErrorStep, captureAppEvent} from '@lib/observability/posthogClient';
 import {
   addPhotosToAlbum,
   clearAnalysisBatch,
   clearLocalImportBatch,
   culledAlbumStore,
-  flushPendingPhotoUpdates,
+  flushAllPendingPhotoUpdates,
   getAlbum,
+  getAlbumTraceContext,
   getPhotoById,
   getPhotosForAlbum,
   markCullingCompleted,
@@ -20,6 +23,7 @@ import {
   startServerUploadBatch,
   updatePhoto,
 } from '@lib/culledAlbum/store';
+import {flushRenderSync} from '@lib/culledAlbum/photoRenderStore';
 import {countLocalImportBatchForAlbum} from '@lib/culledAlbum/localImportProgress';
 import {
   hasInFlightAnalysis,
@@ -71,7 +75,9 @@ function maxConcurrentUploadsForPlatform(): number {
 }
 
 function maxConcurrentServerUploadsForPlatform(): number {
-  return Platform.OS === 'windows' ? 3 : 8;
+  // Each in-flight photo can PUT several S3 parts. 8-way on macOS used to
+  // pin dozens of GCD threads inside native uploadFilePart and freeze the UI.
+  return 3;
 }
 
 function maxConcurrentAnalysisForPlatform(): number {
@@ -154,10 +160,16 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
         await cullingEngine.completeAnalysis(albumId);
         await markCullingCompleted(albumId);
         setQueueOperationStatus(albumId, 'analysis', 'completed');
+        addErrorStep('culling_completed', getAlbumTraceContext(albumId));
       },
       onError: (albumId, message) => {
         uiStoreRef.current!.setState({analyzeError: message});
         setQueueOperationStatus(albumId, 'analysis', 'failed');
+        reportError(new Error(message), {
+          source: 'analysis_queue',
+          operation: 'analysis_failed',
+          ...getAlbumTraceContext(albumId),
+        });
       },
     });
   }
@@ -192,7 +204,9 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     }
 
     if (hasInFlightAnalysis(album, photos)) {
-      reconcileAnalysisBatchCounts(albumId);
+      if (!analysisQueueRef.current!.isNativeSessionActive(albumId)) {
+        reconcileAnalysisBatchCounts(albumId);
+      }
       const analysisAlbum = getAlbum(albumId);
       beginAnalysisQueue(
         albumId,
@@ -200,6 +214,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
           analysisAlbum?.analysisBatchPhotoIds.length ??
           0,
       );
+      addErrorStep('culling_resumed', getAlbumTraceContext(albumId));
       analysisQueueRef.current!.processPending(albumId);
     }
 
@@ -266,6 +281,10 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
     uiStoreRef.current!.setState({uploadError: null});
     beginLocalImportQueue(albumId, added.length);
+    addErrorStep('local_import_started', {
+      ...getAlbumTraceContext(albumId),
+      addedCount: added.length,
+    });
     uploadQueueRef.current!.beginBatch(albumId);
     uploadQueueRef.current!.processPending(albumId);
   }, []);
@@ -274,24 +293,43 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     syncedAlbumsRef.current.delete(albumId);
     uiStoreRef.current!.setState({analyzeError: null});
 
-    const photos = queuePhotosForAnalysis(albumId);
-    beginAnalysisQueue(albumId, photos.length);
-    flushPendingPhotoUpdates();
-    analysisQueueRef.current!.beginBatch(albumId);
-    analysisQueueRef.current!.processPending(albumId);
+    const trace = getAlbumTraceContext(albumId);
+    addErrorStep('culling_started', trace);
+    captureAppEvent('culling_started', trace);
+
+    const queuedCount = queuePhotosForAnalysis(albumId);
+    const batchTotal =
+      getAlbum(albumId)?.analysisBatchCounts?.total ?? queuedCount;
+    beginAnalysisQueue(albumId, batchTotal);
+
+    setTimeout(() => {
+      flushRenderSync();
+      persistAlbum(albumId).catch(() => undefined);
+      analysisQueueRef.current?.beginBatch(albumId);
+      analysisQueueRef.current?.processPending(albumId);
+    }, 0);
   }, []);
 
   const startSelectedUpload = useCallback((albumId: string, photoIds: string[]) => {
+    const trace = {
+      ...getAlbumTraceContext(albumId),
+      selectedCount: photoIds.length,
+    };
+    addErrorStep('server_upload_started', trace);
+    captureAppEvent('server_upload_started', trace);
+
     startServerUploadBatch(albumId, photoIds);
-    flushPendingPhotoUpdates();
     serverUploadQueueRef.current!.resetActiveUploadCount(albumId);
     setQueueOperationStatus(albumId, 'serverUpload', 'active');
-    persistAlbum(albumId).catch(() => undefined);
     beginUploadLookBake(albumId, photoIds.length);
 
     void bakeLooksForUploadBatch(albumId, photoIds)
       .then(() => {
-        serverUploadQueueRef.current!.processPending(albumId);
+        setTimeout(() => {
+          flushRenderSync();
+          persistAlbum(albumId).catch(() => undefined);
+          serverUploadQueueRef.current?.processPending(albumId);
+        }, 0);
       })
       .catch(error => {
         console.error(
@@ -299,7 +337,11 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
           error,
         );
         // Still attempt upload of originals if bake fails entirely.
-        serverUploadQueueRef.current!.processPending(albumId);
+        setTimeout(() => {
+          flushRenderSync();
+          persistAlbum(albumId).catch(() => undefined);
+          serverUploadQueueRef.current?.processPending(albumId);
+        }, 0);
       });
   }, []);
 
@@ -338,7 +380,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
   const failNotUploadedItems = useCallback(async (albumId: string, error?: string) => {
     await uploadQueueRef.current!.cancel(albumId, error ?? 'Upload cancelled');
 
-    flushPendingPhotoUpdates();
+    flushAllPendingPhotoUpdates();
     reconcileLocalImportBatchCounts(albumId);
 
     const albumBeforePrune = getAlbum(albumId);
@@ -400,7 +442,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     syncedAlbumsRef.current.delete(albumId);
     setQueueOperationStatus(albumId, 'analysis', 'finalizing');
     await analysisQueueRef.current!.cancel(albumId, error ?? 'Analysis cancelled');
-    flushPendingPhotoUpdates();
+    flushAllPendingPhotoUpdates();
     reconcileAnalysisBatchCounts(albumId);
 
     const album = getAlbum(albumId);

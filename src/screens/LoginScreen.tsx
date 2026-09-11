@@ -3,6 +3,7 @@ import { useAuthActions } from '@context/auth';
 import { colors } from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import { APIException, flattenValidationErrors } from '@services/api';
+import { reportError } from '@lib/observability/reportError';
 import { useState } from 'react';
 import {Pressable} from '@components/ui';
 import {
@@ -46,6 +47,7 @@ export default function LoginScreen() {
     try {
       await login(email.trim(), password.trim());
     } catch (err) {
+      reportError(err, {source: 'login', operation: 'login'});
       if (err instanceof APIException) {
         const validationErrors = flattenValidationErrors(err.details);
         setError(

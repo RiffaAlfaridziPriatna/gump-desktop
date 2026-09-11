@@ -1,6 +1,7 @@
 import {createContext, PropsWithChildren, useCallback, useRef} from 'react';
 import {createStateStore, StateStore, useStateStore} from '@lib/react/state';
 import {useContextOrThrow} from '@lib/react/context';
+import {reportError} from '@lib/observability/reportError';
 import {APIException} from '@services/api/exception';
 
 export type ErrorState = {
@@ -40,6 +41,8 @@ export function ErrorProvider({children}: PropsWithChildren) {
   }
 
   const showError = useCallback((error: Error | APIException | string) => {
+    reportError(error, {source: 'error_toast'});
+
     let errorData: ErrorState['error'];
 
     if (typeof error === 'string') {

@@ -1,8 +1,9 @@
-import {createStateStore} from '@lib/react/state';
+import {createVanillaStateStore} from '@lib/react/state';
+import {gumpPerfMark} from './perfDebug';
 
 const RENDER_THROTTLE_MS = 500;
 
-export const photoRenderStore = createStateStore<{
+export const photoRenderStore = createVanillaStateStore<{
   snapshotRevision: number;
 }>({
   snapshotRevision: 0,
@@ -11,8 +12,11 @@ export const photoRenderStore = createStateStore<{
 let renderThrottleTimer: ReturnType<typeof setTimeout> | null = null;
 
 function bumpSnapshotRevision(): void {
-  photoRenderStore.setState(state => {
-    state.snapshotRevision += 1;
+  photoRenderStore.setState(state => ({
+    snapshotRevision: state.snapshotRevision + 1,
+  }));
+  gumpPerfMark('snapshotRevision', {
+    revision: photoRenderStore.getState().snapshotRevision,
   });
 }
 

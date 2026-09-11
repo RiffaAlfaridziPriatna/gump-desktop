@@ -23,6 +23,12 @@ import {
 } from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
 import {
+  nativeScrollToOffset,
+  type NativeScrollResult,
+} from '@lib/ui/nativeScrollToOffset';
+import {reportError} from '@lib/observability/reportError';
+import {addErrorStep, captureAppEvent} from '@lib/observability/posthogClient';
+import {
   createContext,
   forwardRef,
   memo,
@@ -57,8 +63,39 @@ const GAP = 8;
 const RESIZE_SETTLE_MS = 150;
 const PLACEHOLDER_INITIAL_ROWS = 8;
 const GRAY_FILL_BATCH_PERIOD_MS = 50;
-const SCROLL_SETTLE_MS = 120;
-const SCROLL_TO_TOP_DURATION_MS = 450;
+const SCROLL_SETTLE_MS = Platform.OS === 'macos' ? 180 : 120;
+const SCROLL_TO_TOP_NUDGE_PX = 1;
+const NATIVE_TOP_THRESHOLD_PX = 80;
+const PROGRAMMATIC_SCROLL_GRACE_MS = 120;
+// Phase budgets. The native call is a UIManager round trip and should return in
+// well under 50ms, but the JS thread can be saturated on a 3K album.
+const NATIVE_PHASE_TIMEOUT_MS = 400;
+const CONVERGENCE_BASE_MS = 600;
+const CONVERGENCE_PER_ITEM_MS = 0.15;
+const CONVERGENCE_MIN_MS = 800;
+const CONVERGENCE_MAX_MS = 2500;
+const RECOVERY_NUDGE_WINDOW_MS = 500;
+// Rendering is clamped hard while a jump is in flight so a 362k-pixel move
+// cannot unblock thousands of cells at once.
+const SCROLL_JUMP_WINDOW_SIZE = 2;
+const SCROLL_JUMP_MAX_PER_BATCH = 2;
+// React 19 auto-batches state updates inside timers and promises, so releasing
+// the clamp in the same tick as any other setState would collapse into one
+// render. The release is always deferred out of the current batch.
+const CLAMP_RELEASE_NORMAL_MS = 16;
+const CLAMP_RELEASE_AFTER_REMOUNT_MS = 150;
+// Once the first visible row is at or below this, we have effectively arrived.
+const SCROLL_JUMP_VIEWABILITY_ROW_LIMIT = 2;
+
+function convergenceBudgetMs(itemCount: number): number {
+  return Math.min(
+    CONVERGENCE_MAX_MS,
+    Math.max(
+      CONVERGENCE_MIN_MS,
+      CONVERGENCE_BASE_MS + itemCount * CONVERGENCE_PER_ITEM_MS,
+    ),
+  );
+}
 const EMPTY_IMAGE_LOAD_IDS = new Set<string>();
 
 type ImageLoadStore = {
@@ -117,10 +154,6 @@ function useShouldLoadGridImage(photoId: string): boolean {
 
 function subscribeNoop(): () => void {
   return () => undefined;
-}
-
-function easeOutCubic(t: number): number {
-  return 1 - Math.pow(1 - t, 3);
 }
 
 function resolveThumbnailSize(
@@ -352,19 +385,6 @@ const PhotoGridRowView = memo(
             deferHeavyMediaWork={deferHeavyMediaWork}
           />
         ))}
-        {row.cells.length < COLUMNS &&
-          Array.from({length: COLUMNS - row.cells.length}).map(
-            (_, fillerIndex) => (
-              <View
-                key={`filler-${row.rowIndex}-${fillerIndex}`}
-                style={{
-                  width: itemWidth,
-                  height: itemHeight,
-                  backgroundColor: colors.cardBackgroundSecondary,
-                }}
-              />
-            ),
-          )}
       </View>
     );
   },
@@ -383,6 +403,7 @@ export type PhotoGridProps = {
   horizontalPadding?: number;
   gap?: number;
   deferHeavyMediaWork?: boolean;
+  onProgrammaticScrollChange?: (active: boolean) => void;
 };
 
 export type PhotoGridHandle = {
@@ -421,6 +442,7 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       horizontalPadding = HORIZONTAL_PADDING,
       gap = GAP,
       deferHeavyMediaWork = false,
+      onProgrammaticScrollChange,
     },
     ref,
   ) {
@@ -431,6 +453,13 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
   const listRef = useRef<FlatList<PhotoGridRow>>(null);
   const scrollOffsetRef = useRef(0);
   const scrollAnimationFrameRef = useRef<number | null>(null);
+  const programmaticGraceUntilRef = useRef(0);
+  const scrollToTopGenerationRef = useRef(0);
+  const completeScrollToTopRef = useRef<((generation: number) => boolean) | null>(
+    null,
+  );
+  const onProgrammaticScrollChangeRef = useRef(onProgrammaticScrollChange);
+  onProgrammaticScrollChangeRef.current = onProgrammaticScrollChange;
   const itemsRef = useRef(items);
   const albumIdRef = useRef(albumId);
   const deferHeavyMediaWorkRef = useRef(deferHeavyMediaWork);
@@ -447,6 +476,27 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
   );
   const isScrollingRef = useRef(false);
   const isProgrammaticScrollRef = useRef(false);
+  const [scrollJumpActive, setScrollJumpActive] = useState(false);
+  const scrollJumpActiveRef = useRef(false);
+  const [listResetKey, setListResetKey] = useState(0);
+  const convergenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clampReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nudgeFrameRef = useRef<number | null>(null);
+  const firstVisibleRowRef = useRef(0);
+  const rowHeightRef = useRef(0);
+  const lastScrollEventRef = useRef<{
+    contentOffsetY: number;
+    contentSizeHeight: number;
+    layoutHeight: number;
+    at: number;
+  } | null>(null);
+  const lastViewableRangeRef = useRef<{
+    minIndex: number;
+    maxIndex: number;
+    minRow: number;
+    at: number;
+  } | null>(null);
   const imageLoadStoreRef = useRef<ImageLoadStore | null>(null);
   if (imageLoadStoreRef.current == null) {
     imageLoadStoreRef.current = createImageLoadStore();
@@ -457,72 +507,481 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
   albumIdRef.current = albumId;
   deferHeavyMediaWorkRef.current = deferHeavyMediaWork;
 
-  const ignoreViewabilityUntilRef = useRef(0);
+  const cancelClampRelease = useCallback(() => {
+    if (clampReleaseTimerRef.current) {
+      clearTimeout(clampReleaseTimerRef.current);
+      clampReleaseTimerRef.current = null;
+    }
+  }, []);
+
+  const engageScrollJump = useCallback(() => {
+    // A pending release from a previous attempt must never unclamp a new jump.
+    cancelClampRelease();
+    scrollJumpActiveRef.current = true;
+    setScrollJumpActive(true);
+  }, [cancelClampRelease]);
+
+  // The ref and the state are released together and always on a later tick.
+  // Releasing the ref early would let the very next viewability pass restore the
+  // full getScrollPreloadRange padding before the clamped render has painted.
+  const releaseScrollJump = useCallback(
+    (delayMs: number) => {
+      cancelClampRelease();
+      clampReleaseTimerRef.current = setTimeout(() => {
+        clampReleaseTimerRef.current = null;
+        scrollJumpActiveRef.current = false;
+        setScrollJumpActive(false);
+      }, delayMs);
+    },
+    [cancelClampRelease],
+  );
 
   const cancelScrollAnimation = useCallback(() => {
     if (scrollAnimationFrameRef.current != null) {
       cancelAnimationFrame(scrollAnimationFrameRef.current);
       scrollAnimationFrameRef.current = null;
     }
-    isProgrammaticScrollRef.current = false;
+    if (isProgrammaticScrollRef.current) {
+      isProgrammaticScrollRef.current = false;
+      onProgrammaticScrollChangeRef.current?.(false);
+    }
+  }, []);
+
+  const captureScrollDiagnostics = useCallback(() => {
+    const lastScroll = lastScrollEventRef.current;
+    const lastViewable = lastViewableRangeRef.current;
+    const estimatedOffset =
+      firstVisibleRowRef.current * rowHeightRef.current;
+    return {
+      platform: Platform.OS,
+      platformVersion: String(Platform.Version ?? ''),
+      albumId: albumIdRef.current,
+      itemCount: itemsRef.current.length,
+      rowCount: Math.ceil(itemsRef.current.length / COLUMNS),
+      columns: COLUMNS,
+      rowHeight: rowHeightRef.current,
+      layoutWidth: settledLayoutWidthRef.current,
+      deferHeavyMediaWork: deferHeavyMediaWorkRef.current,
+      isProgrammaticScroll: isProgrammaticScrollRef.current,
+      isScrolling: isScrollingRef.current,
+      reportedOffset: scrollOffsetRef.current,
+      firstVisibleRow: firstVisibleRowRef.current,
+      estimatedOffset,
+      lastScrollOffsetY: lastScroll?.contentOffsetY ?? null,
+      lastContentSizeHeight: lastScroll?.contentSizeHeight ?? null,
+      lastLayoutHeight: lastScroll?.layoutHeight ?? null,
+      lastScrollEventAgeMs: lastScroll ? Date.now() - lastScroll.at : null,
+      lastViewableMinIndex: lastViewable?.minIndex ?? null,
+      lastViewableMaxIndex: lastViewable?.maxIndex ?? null,
+      lastViewableMinRow: lastViewable?.minRow ?? null,
+      lastViewableAgeMs: lastViewable ? Date.now() - lastViewable.at : null,
+    };
   }, []);
 
   const scrollToTop = useCallback(() => {
     const list = listRef.current;
-    if (!list) {
-      return;
+    const generation = ++scrollToTopGenerationRef.current;
+    completeScrollToTopRef.current = null;
+    if (convergenceTimerRef.current) {
+      clearTimeout(convergenceTimerRef.current);
+      convergenceTimerRef.current = null;
     }
-
+    if (recoveryTimerRef.current) {
+      clearTimeout(recoveryTimerRef.current);
+      recoveryTimerRef.current = null;
+    }
+    if (nudgeFrameRef.current != null) {
+      cancelAnimationFrame(nudgeFrameRef.current);
+      nudgeFrameRef.current = null;
+    }
     if (scrollAnimationFrameRef.current != null) {
       cancelAnimationFrame(scrollAnimationFrameRef.current);
       scrollAnimationFrameRef.current = null;
     }
 
-    const startOffset = scrollOffsetRef.current;
-    if (startOffset <= 0) {
+    const reportedOffset = scrollOffsetRef.current;
+    const currentRowHeight = rowHeightRef.current;
+    const lastViewableRow = lastViewableRangeRef.current?.minRow ?? 0;
+    if (firstVisibleRowRef.current === 0 && lastViewableRow > 0) {
+      firstVisibleRowRef.current = lastViewableRow;
+    }
+    const estimatedOffset = firstVisibleRowRef.current * currentRowHeight;
+    const lastNativeOffset = lastScrollEventRef.current?.contentOffsetY ?? 0;
+    const viewableOffset = lastViewableRow * currentRowHeight;
+    const startOffset = Math.max(
+      reportedOffset,
+      estimatedOffset,
+      lastNativeOffset,
+      viewableOffset,
+    );
+    const startSnapshot = {
+      startOffset,
+      lastNativeOffset,
+      viewableOffset,
+      ...captureScrollDiagnostics(),
+    };
+    const startedPayload = {
+      albumId: albumIdRef.current ?? null,
+      itemCount: itemsRef.current.length,
+      startOffset,
+      reportedOffset,
+      lastNativeOffset,
+      firstVisibleRow: firstVisibleRowRef.current,
+    };
+
+    captureAppEvent('scroll_to_top_started', startedPayload);
+    addErrorStep('scroll_to_top', {
+      ...startedPayload,
+      estimatedOffset,
+      viewableOffset,
+      platform: Platform.OS,
+    });
+
+    if (!list) {
+      captureAppEvent('scroll_to_top_failed', {
+        ...startedPayload,
+        reason: 'missing_list_ref',
+      });
+      reportError(new Error('Photo grid scroll-to-top missing list ref'), {
+        source: 'photo_grid',
+        operation: 'scroll_to_top',
+        ...captureScrollDiagnostics(),
+      });
       return;
     }
 
+    const startedAt = Date.now();
     isProgrammaticScrollRef.current = true;
     isScrollingRef.current = true;
-    // Programmatic flight would otherwise hydrate/load every window we pass.
-    ignoreViewabilityUntilRef.current =
-      Date.now() + SCROLL_TO_TOP_DURATION_MS + SCROLL_SETTLE_MS;
+    onProgrammaticScrollChangeRef.current?.(true);
+    programmaticGraceUntilRef.current =
+      Date.now() + PROGRAMMATIC_SCROLL_GRACE_MS;
+    lastPreloadRangeRef.current = '';
+    lastHydrateRangeRef.current = '';
+    lastThumbnailRangeRef.current = '';
+    pendingViewableRef.current = null;
 
-    const startTime = Date.now();
-
-    const finish = () => {
-      list.scrollToOffset({offset: 0, animated: false});
-      scrollOffsetRef.current = 0;
-      scrollAnimationFrameRef.current = null;
+    const endProgrammaticScroll = (
+      clampReleaseMs = CLAMP_RELEASE_NORMAL_MS,
+    ) => {
       isProgrammaticScrollRef.current = false;
-      ignoreViewabilityUntilRef.current = 0;
       isScrollingRef.current = false;
+      onProgrammaticScrollChangeRef.current?.(false);
+      if (convergenceTimerRef.current) {
+        clearTimeout(convergenceTimerRef.current);
+        convergenceTimerRef.current = null;
+      }
+      if (recoveryTimerRef.current) {
+        clearTimeout(recoveryTimerRef.current);
+        recoveryTimerRef.current = null;
+      }
+      if (nudgeFrameRef.current != null) {
+        cancelAnimationFrame(nudgeFrameRef.current);
+        nudgeFrameRef.current = null;
+      }
+      // Safeguard 3: the render window is only restored after the convergence
+      // phase has ended, and always on a later tick than any sibling setState.
+      releaseScrollJump(clampReleaseMs);
     };
 
-    const step = () => {
-      if (!isProgrammaticScrollRef.current) {
-        scrollAnimationFrameRef.current = null;
-        return;
+    const finishSuccess = (
+      gen: number,
+      viaRecovery: string | null = null,
+    ): boolean => {
+      if (gen !== scrollToTopGenerationRef.current) {
+        return false;
       }
-
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(1, elapsed / SCROLL_TO_TOP_DURATION_MS);
-      const nextOffset = startOffset * (1 - easeOutCubic(progress));
-
-      list.scrollToOffset({offset: nextOffset, animated: false});
-      scrollOffsetRef.current = nextOffset;
-
-      if (progress < 1) {
-        scrollAnimationFrameRef.current = requestAnimationFrame(step);
-        return;
+      const lastScroll = lastScrollEventRef.current;
+      const nativeY = lastScroll?.contentOffsetY ?? 0;
+      const nativeFresh = lastScroll != null && lastScroll.at >= startedAt;
+      const viewableRow = lastViewableRangeRef.current?.minRow ?? 0;
+      // Native-settled and VirtualizedList-settled are tracked separately on
+      // purpose: "native moved but VL did not converge" must not look like
+      // "native never moved".
+      const nativeSettled = nativeFresh && nativeY <= NATIVE_TOP_THRESHOLD_PX;
+      const vlSettled = viewableRow <= SCROLL_JUMP_VIEWABILITY_ROW_LIMIT;
+      if (!nativeSettled || !vlSettled) {
+        return false;
       }
-
-      finish();
+      completeScrollToTopRef.current = null;
+      firstVisibleRowRef.current = 0;
+      scrollOffsetRef.current = 0;
+      lastViewableRangeRef.current = {
+        minIndex: 0,
+        maxIndex: 0,
+        minRow: 0,
+        at: Date.now(),
+      };
+      captureAppEvent('scroll_to_top_completed', {
+        albumId: albumIdRef.current ?? null,
+        itemCount: itemsRef.current.length,
+        startOffset,
+        nativeOffset: nativeY,
+        viaRecovery,
+        elapsedMs: Date.now() - startedAt,
+      });
+      endProgrammaticScroll();
+      return true;
     };
 
-    scrollAnimationFrameRef.current = requestAnimationFrame(step);
-  }, []);
+    completeScrollToTopRef.current = finishSuccess;
+    engageScrollJump();
+
+    // Safeguard 2b: never capture the FlatList instance. A remount swaps it,
+    // and a captured handle would point at a dead list whose scrollToOffset
+    // silently no-ops, which looks like the fallback ran when it did not.
+    const currentList = (): FlatList<PhotoGridRow> | null => listRef.current;
+
+    const failWith = (
+      reason: string,
+      extra: Record<string, string | number | boolean | null> = {},
+    ) => {
+      if (generation !== scrollToTopGenerationRef.current) {
+        return;
+      }
+      completeScrollToTopRef.current = null;
+      const diagnostics = {
+        ...startSnapshot,
+        ...captureScrollDiagnostics(),
+        reason,
+        ...extra,
+        elapsedMs: Date.now() - startedAt,
+      };
+      captureAppEvent('scroll_to_top_failed', {
+        albumId: albumIdRef.current ?? null,
+        itemCount: itemsRef.current.length,
+        startOffset,
+        reason,
+        remainingViewableRow: lastViewableRangeRef.current?.minRow ?? 0,
+        lastNativeOffset: lastScrollEventRef.current?.contentOffsetY ?? 0,
+        elapsedMs: Date.now() - startedAt,
+        ...extra,
+      });
+      reportError(new Error(`Photo grid scroll-to-top failed: ${reason}`), {
+        source: 'photo_grid',
+        operation: 'scroll_to_top',
+        ...diagnostics,
+      });
+      endProgrammaticScroll();
+    };
+
+    // Safeguard 2, tier 2: forced remount. VirtualizedList derives its render
+    // window solely from _scrollMetrics, so if the synthetic event never lands
+    // there is no JS-side way to move the window. Remounting resets
+    // _scrollMetrics and cellsAroundViewport to the top.
+    const recoverByRemount = () => {
+      if (generation !== scrollToTopGenerationRef.current) {
+        return;
+      }
+      captureAppEvent('scroll_to_top_recovery', {
+        albumId: albumIdRef.current ?? null,
+        itemCount: itemsRef.current.length,
+        tier: 'remount',
+        elapsedMs: Date.now() - startedAt,
+      });
+      firstVisibleRowRef.current = 0;
+      scrollOffsetRef.current = 0;
+      lastScrollEventRef.current = null;
+      lastViewableRangeRef.current = {
+        minIndex: 0,
+        maxIndex: 0,
+        minRow: 0,
+        at: Date.now(),
+      };
+      lastPreloadRangeRef.current = '';
+      lastHydrateRangeRef.current = '';
+      lastThumbnailRangeRef.current = '';
+      // A remount clears mounted cells; reseed the first rows so the grid
+      // paints immediately instead of showing gray placeholders.
+      imageLoadStore.setIds(
+        new Set(
+          itemsRef.current
+            .slice(0, COLUMNS * PLACEHOLDER_INITIAL_ROWS)
+            .map(item => item.photoId),
+        ),
+      );
+      captureAppEvent('scroll_to_top_completed', {
+        albumId: albumIdRef.current ?? null,
+        itemCount: itemsRef.current.length,
+        startOffset,
+        nativeOffset: 0,
+        viaRecovery: 'remount',
+        elapsedMs: Date.now() - startedAt,
+      });
+      completeScrollToTopRef.current = null;
+
+      // CRITICAL — do not call endProgrammaticScroll() here. React 19
+      // auto-batches state updates inside timer callbacks, so setListResetKey
+      // and the clamp release would collapse into a single render and the new
+      // FlatList would mount at windowSize 7.
+      isProgrammaticScrollRef.current = false;
+      isScrollingRef.current = false;
+      onProgrammaticScrollChangeRef.current?.(false);
+      if (convergenceTimerRef.current) {
+        clearTimeout(convergenceTimerRef.current);
+        convergenceTimerRef.current = null;
+      }
+      if (recoveryTimerRef.current) {
+        clearTimeout(recoveryTimerRef.current);
+        recoveryTimerRef.current = null;
+      }
+      if (nudgeFrameRef.current != null) {
+        cancelAnimationFrame(nudgeFrameRef.current);
+        nudgeFrameRef.current = null;
+      }
+
+      setListResetKey(key => key + 1);
+      releaseScrollJump(CLAMP_RELEASE_AFTER_REMOUNT_MS);
+    };
+
+    // Safeguard 2, tier 1: a 1px nudge generates a genuine AppKit bounds
+    // change, which by this point is no longer inside a suppressed layout
+    // pass. This is a recovery step only, never the primary path.
+    const recoverByNudge = () => {
+      if (generation !== scrollToTopGenerationRef.current) {
+        return;
+      }
+      captureAppEvent('scroll_to_top_recovery', {
+        albumId: albumIdRef.current ?? null,
+        itemCount: itemsRef.current.length,
+        tier: 'nudge',
+        elapsedMs: Date.now() - startedAt,
+      });
+      const nudgeList = currentList();
+      if (nudgeList == null) {
+        recoverByRemount();
+        return;
+      }
+      nudgeList.scrollToOffset({
+        offset: SCROLL_TO_TOP_NUDGE_PX,
+        animated: false,
+      });
+      nudgeFrameRef.current = requestAnimationFrame(() => {
+        nudgeFrameRef.current = null;
+        if (generation !== scrollToTopGenerationRef.current) {
+          return;
+        }
+        currentList()?.scrollToOffset({offset: 0, animated: false});
+      });
+      recoveryTimerRef.current = setTimeout(() => {
+        recoveryTimerRef.current = null;
+        if (finishSuccess(generation, 'nudge')) {
+          return;
+        }
+        recoverByRemount();
+      }, RECOVERY_NUDGE_WINDOW_MS);
+    };
+
+    const startConvergencePhase = (native: NativeScrollResult) => {
+      if (generation !== scrollToTopGenerationRef.current) {
+        return;
+      }
+      if (finishSuccess(generation)) {
+        return;
+      }
+      convergenceTimerRef.current = setTimeout(() => {
+        convergenceTimerRef.current = null;
+        if (finishSuccess(generation)) {
+          return;
+        }
+        if (native.moved) {
+          recoverByNudge();
+          return;
+        }
+        failWith('native_position_unchanged', {
+          nativeBeforeY: native.beforeVisibleY,
+          nativeAfterY: native.afterVisibleY,
+        });
+      }, convergenceBudgetMs(itemsRef.current.length));
+    };
+
+    const runJsFallback = (reason: string) => {
+      if (generation !== scrollToTopGenerationRef.current) {
+        return;
+      }
+      captureAppEvent('scroll_to_top_native_fallback', {
+        albumId: albumIdRef.current ?? null,
+        itemCount: itemsRef.current.length,
+        reason,
+      });
+      const fallbackList = currentList();
+      if (fallbackList == null) {
+        recoverByRemount();
+        return;
+      }
+      fallbackList.scrollToOffset({offset: 0, animated: false});
+      try {
+        fallbackList.scrollToIndex({
+          index: 0,
+          animated: false,
+          viewPosition: 0,
+        });
+      } catch {
+        // Layout can be unknown before the first viewability pass.
+      }
+      convergenceTimerRef.current = setTimeout(() => {
+        convergenceTimerRef.current = null;
+        if (finishSuccess(generation, 'js_fallback')) {
+          return;
+        }
+        recoverByRemount();
+      }, convergenceBudgetMs(itemsRef.current.length));
+    };
+
+    // The native jump is the single owner. No competing scrollToOffset /
+    // scrollToIndex / nudge runs alongside it.
+    const nativeTimeout = new Promise<NativeScrollResult | null>(resolve => {
+      setTimeout(() => resolve(null), NATIVE_PHASE_TIMEOUT_MS);
+    });
+
+    Promise.race([
+      nativeScrollToOffset(currentList(), 0),
+      nativeTimeout,
+    ])
+      .then(native => {
+        if (generation !== scrollToTopGenerationRef.current) {
+          return;
+        }
+        captureAppEvent('scroll_to_top_clicked', {
+          albumId: albumIdRef.current ?? null,
+          itemCount: itemsRef.current.length,
+          platform: Platform.OS,
+          nativeResolved: native?.resolved === true,
+          nativeReason: native?.reason ?? 'native_timeout',
+        });
+        if (native == null) {
+          runJsFallback('native_timeout');
+          return;
+        }
+        captureAppEvent('scroll_to_top_native', {
+          albumId: albumIdRef.current ?? null,
+          itemCount: itemsRef.current.length,
+          resolved: native.resolved,
+          reason: native.reason,
+          viewClass: native.viewClass,
+          beforeVisibleY: native.beforeVisibleY,
+          afterVisibleY: native.afterVisibleY,
+          beforeClipY: native.beforeClipY,
+          afterClipY: native.afterClipY,
+          documentFlipped: native.documentFlipped,
+          clipFlipped: native.clipFlipped,
+          moved: native.moved,
+          atTarget: native.atTarget,
+          nativeElapsedMs: native.elapsedMs,
+        });
+        if (!native.resolved) {
+          runJsFallback(native.reason);
+          return;
+        }
+        startConvergencePhase(native);
+      })
+      .catch(() => undefined);
+  }, [
+    captureScrollDiagnostics,
+    engageScrollJump,
+    imageLoadStore,
+    releaseScrollJump,
+  ]);
 
   useImperativeHandle(
     ref,
@@ -536,6 +995,23 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
     return () => {
       cancelScrollImagePreload();
       cancelScrollAnimation();
+      completeScrollToTopRef.current = null;
+      if (convergenceTimerRef.current) {
+        clearTimeout(convergenceTimerRef.current);
+        convergenceTimerRef.current = null;
+      }
+      if (recoveryTimerRef.current) {
+        clearTimeout(recoveryTimerRef.current);
+        recoveryTimerRef.current = null;
+      }
+      if (clampReleaseTimerRef.current) {
+        clearTimeout(clampReleaseTimerRef.current);
+        clampReleaseTimerRef.current = null;
+      }
+      if (nudgeFrameRef.current != null) {
+        cancelAnimationFrame(nudgeFrameRef.current);
+        nudgeFrameRef.current = null;
+      }
       if (resizeTimerRef.current) {
         clearTimeout(resizeTimerRef.current);
       }
@@ -634,10 +1110,54 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const nextOffset = event.nativeEvent.contentOffset.y;
-      const delta = Math.abs(nextOffset - scrollOffsetRef.current);
+      const nativeEvent = event.nativeEvent;
+      const nextOffset = nativeEvent.contentOffset.y;
+      const previousOffset = scrollOffsetRef.current;
+      const delta = Math.abs(nextOffset - previousOffset);
+      lastScrollEventRef.current = {
+        contentOffsetY: nextOffset,
+        contentSizeHeight: nativeEvent.contentSize.height,
+        layoutHeight: nativeEvent.layoutMeasurement.height,
+        at: Date.now(),
+      };
       scrollOffsetRef.current = nextOffset;
       if (isProgrammaticScrollRef.current) {
+        if (
+          completeScrollToTopRef.current?.(scrollToTopGenerationRef.current)
+        ) {
+          return;
+        }
+        // Animation frames move toward 0. A jump downward after the grace
+        // window means the user grabbed the scrollbar thumb — onScrollBeginDrag
+        // does not fire for that. Ignore stale thumb events at the start;
+        // do not use |delta| > N: our own scrollToOffset steps are much larger.
+        if (
+          Date.now() >= programmaticGraceUntilRef.current &&
+          nextOffset > previousOffset + 30
+        ) {
+          scrollToTopGenerationRef.current += 1;
+          completeScrollToTopRef.current = null;
+          if (convergenceTimerRef.current) {
+            clearTimeout(convergenceTimerRef.current);
+            convergenceTimerRef.current = null;
+          }
+          if (recoveryTimerRef.current) {
+            clearTimeout(recoveryTimerRef.current);
+            recoveryTimerRef.current = null;
+          }
+          if (nudgeFrameRef.current != null) {
+            cancelAnimationFrame(nudgeFrameRef.current);
+            nudgeFrameRef.current = null;
+          }
+          captureAppEvent('scroll_to_top_failed', {
+            albumId: albumIdRef.current ?? null,
+            itemCount: itemsRef.current.length,
+            reason: 'user_cancelled',
+          });
+          cancelScrollAnimation();
+          releaseScrollJump(CLAMP_RELEASE_NORMAL_MS);
+          markScrolling();
+        }
         return;
       }
       if (delta < 1 && !isScrollingRef.current) {
@@ -645,13 +1165,35 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       }
       markScrolling();
     },
-    [markScrolling],
+    [cancelScrollAnimation, markScrolling, releaseScrollJump],
   );
 
   const handleScrollBeginDrag = useCallback(() => {
-    ignoreViewabilityUntilRef.current = 0;
+    if (isProgrammaticScrollRef.current) {
+      scrollToTopGenerationRef.current += 1;
+      completeScrollToTopRef.current = null;
+      if (convergenceTimerRef.current) {
+        clearTimeout(convergenceTimerRef.current);
+        convergenceTimerRef.current = null;
+      }
+      if (recoveryTimerRef.current) {
+        clearTimeout(recoveryTimerRef.current);
+        recoveryTimerRef.current = null;
+      }
+      if (nudgeFrameRef.current != null) {
+        cancelAnimationFrame(nudgeFrameRef.current);
+        nudgeFrameRef.current = null;
+      }
+      captureAppEvent('scroll_to_top_failed', {
+        albumId: albumIdRef.current ?? null,
+        itemCount: itemsRef.current.length,
+        reason: 'user_cancelled',
+      });
+      releaseScrollJump(CLAMP_RELEASE_NORMAL_MS);
+    }
+    cancelScrollAnimation();
     markScrolling();
-  }, [markScrolling]);
+  }, [cancelScrollAnimation, markScrolling, releaseScrollJump]);
 
   const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
     const width = event.nativeEvent.layout.width;
@@ -686,6 +1228,7 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       : 0;
   const itemHeight = itemWidth / ASPECT_RATIO;
   const rowHeight = itemHeight + gap;
+  rowHeightRef.current = rowHeight;
   const settledItemWidth = Math.round(itemWidth);
 
   const photoIdsKey = items.map(item => item.photoId).join('\0');
@@ -721,23 +1264,63 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
         return;
       }
 
-      if (Date.now() < ignoreViewabilityUntilRef.current) {
-        return;
-      }
-
       const currentItems = itemsRef.current;
       const minIndex = Math.min(...indices);
       const maxIndex = Math.max(...indices);
-      const {start, end} = getScrollPreloadRange(
+
+      // Track the first visible row for offset recovery.
+      // When macOS Sonoma throttles onScroll during thumb drag,
+      // scrollOffsetRef falls behind. onViewableItemsChanged gives
+      // us a second chance to estimate the real position.
+      const minRowIndex = Math.floor(minIndex / COLUMNS);
+      firstVisibleRowRef.current = minRowIndex;
+      lastViewableRangeRef.current = {
         minIndex,
         maxIndex,
-        currentItems.length,
-        COLUMNS,
-      );
+        minRow: minRowIndex,
+        at: Date.now(),
+      };
 
-      // Hold new image loads until scroll settles only while analysis is
-      // saturating the JS/native threads. After that, fling should paint.
-      if (deferHeavyMediaWorkRef.current && isScrollingRef.current) {
+      // While a jump is in flight, rows far from the target are throwaway: the
+      // clip view has already left them. Loading their images would fire
+      // thousands of disk reads for cells that are about to unmount. Only let
+      // viewability through once we have actually arrived near the top — which
+      // is also what makes the top cells paint immediately.
+      if (
+        scrollJumpActiveRef.current &&
+        minRowIndex > SCROLL_JUMP_VIEWABILITY_ROW_LIMIT
+      ) {
+        return;
+      }
+
+      const currentRowHeight = rowHeightRef.current;
+      if (currentRowHeight > 0) {
+        const estimatedOffset = minRowIndex * currentRowHeight;
+        if (estimatedOffset > scrollOffsetRef.current + currentRowHeight * 2) {
+          scrollOffsetRef.current = estimatedOffset;
+        }
+      }
+
+      // getScrollPreloadRange pads well beyond the viewport. During a jump we
+      // load strictly what is visible; the padding resumes once the jump
+      // completes.
+      const {start, end} = scrollJumpActiveRef.current
+        ? {start: minIndex, end: maxIndex}
+        : getScrollPreloadRange(
+            minIndex,
+            maxIndex,
+            currentItems.length,
+            COLUMNS,
+          );
+
+      // Hold image loads until scroll settles on macOS (thumb drags never fire
+      // onScrollBeginDrag) and while analysis is saturating the JS thread.
+      // Do not hold during an in-flight jump — top cells must paint immediately.
+      if (
+        isScrollingRef.current &&
+        !scrollJumpActiveRef.current &&
+        (deferHeavyMediaWorkRef.current || Platform.OS === 'macos')
+      ) {
         pendingViewableRef.current = {start, end, indices};
         return;
       }
@@ -793,6 +1376,7 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       {itemWidth > 0 ? (
         <PhotoGridImageLoadContext.Provider value={imageLoadStore}>
           <FlatList
+            key={`photo-grid-${listResetKey}`}
             ref={listRef}
             data={rows}
             renderItem={renderRow}
@@ -800,11 +1384,21 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
             getItemLayout={getItemLayout}
             extraData={settledItemWidth}
             windowSize={
-              deferHeavyMediaWork || Platform.OS === 'windows' ? 3 : 7
+              scrollJumpActive
+                ? SCROLL_JUMP_WINDOW_SIZE
+                : deferHeavyMediaWork || Platform.OS === 'windows'
+                  ? 3
+                  : 7
             }
             removeClippedSubviews={false}
             initialNumToRender={PLACEHOLDER_INITIAL_ROWS}
-            maxToRenderPerBatch={deferHeavyMediaWork ? 3 : 6}
+            maxToRenderPerBatch={
+              scrollJumpActive
+                ? SCROLL_JUMP_MAX_PER_BATCH
+                : deferHeavyMediaWork
+                  ? 3
+                  : 6
+            }
             updateCellsBatchingPeriod={GRAY_FILL_BATCH_PERIOD_MS}
             showsVerticalScrollIndicator
             onScroll={handleScroll}

@@ -11,6 +11,8 @@ import {
 } from './store';
 import {formatUploadError} from './formatUploadError';
 import {CulledAlbumPhoto} from './types';
+import {describeFileUri} from '@lib/observability/serializeError';
+import {reportError} from '@lib/observability/reportError';
 
 const QUEUE_YIELD_MS = Platform.OS === 'windows' ? 32 : 16;
 const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
@@ -301,11 +303,22 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
       const photoId = pendingPhotoIds[nextIndex]!;
 
       startUpload(albumId, photoId).catch(err => {
+        const photo = getPhoto(albumId, photoId);
         const errorMessage = formatUploadError(err) ?? 'Upload failed';
+        reportError(err, {
+          source: 'server_upload_queue',
+          operation: 'server_photo_upload',
+          albumId,
+          photoId,
+          fileName: photo?.file.name,
+          fileSize: photo?.file.size ?? null,
+          formattedError: errorMessage,
+          ...describeFileUri(photo?.file.uri),
+        });
         console.error('[serverUploadQueue] Upload failed', {
           albumId,
           photoId,
-          filename: getPhoto(albumId, photoId)?.file.name,
+          filename: photo?.file.name,
           error: errorMessage,
         });
         failPhoto(albumId, photoId, errorMessage);

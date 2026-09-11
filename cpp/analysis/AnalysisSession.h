@@ -41,10 +41,21 @@ struct AnalysisResult {
   std::string error;
 };
 
+struct InFlightPhoto {
+  std::string photoId;
+  std::string fileName;
+  int elapsedMs{0};
+};
+
 struct ProgressUpdate {
   int done{0};
   int total{0};
   int failed{0};
+  int queueRemaining{0};
+  int abandonedCount{0};
+  std::string lastCompletedPhotoId;
+  std::string lastCompletedFileName;
+  std::vector<InFlightPhoto> inFlight;
 };
 
 struct CompletionSummary {
@@ -69,7 +80,11 @@ struct SessionConfig {
   int maxDecodePixelSize{FaceDetection::kAnalysisMaxPixelSize};
   int measurementMaxPixelSize{FaceDetection::kMeasurementMaxPixelSize};
   int progressiveBatchSize{20};
+  // Wall-clock budget per photo. Hung decode/detect is skipped with an empty
+  // fallback so the rest of the album can finish. 0 disables the timeout.
+  int photoTimeoutMs{60000};
   bool adaptiveConcurrency{true};
+  bool logFallbacks{true};  // Log when fallback results are used
   
   std::string albumId;
   std::vector<PhotoInput> photos;

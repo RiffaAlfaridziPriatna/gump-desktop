@@ -1,4 +1,8 @@
-import {derivePhotoFlags} from '@lib/culling/cullingUtil';
+import {
+  CullFilterKey,
+  derivePhotoFlags,
+  normalizeCullFilters,
+} from '@lib/culling/cullingUtil';
 import {
   DEFAULT_LOOK_INTENSITY,
   isLookId,
@@ -140,6 +144,7 @@ export type CulledAlbum = {
   cullingStats?: APIResponse.CullingStats;
   cullingKeyFaces?: APIResponse.CullingKeyFace[];
   cullingDuplicateGroups?: CullingDuplicateGroup[];
+  lastCullFilters?: Record<CullFilterKey, boolean>;
   photos: CulledAlbumPhoto[];
 };
 
@@ -222,6 +227,7 @@ export function createCulledAlbumFromSelection(
     cullingStats: undefined,
     cullingKeyFaces: undefined,
     cullingDuplicateGroups: undefined,
+    lastCullFilters: undefined,
     photos: [],
   };
 }
@@ -255,12 +261,21 @@ export function sortPhotosByFilename(
   return [...photos].sort(comparePhotosByFilename);
 }
 
-export function recomputeAlbumTotals(album: CulledAlbum): CulledAlbum {
-  album.totalPhotos = album.photos.length;
-  album.totalStorage = album.photos.reduce(
-    (total, photo) => total + (photo.file.size ?? 0),
-    0,
-  );
+export function recomputeAlbumTotals(
+  album: CulledAlbum,
+  photos: CulledAlbumPhoto[] = album.photos,
+): CulledAlbum {
+  let totalPhotos = 0;
+  let totalStorage = 0;
+  for (const photo of photos) {
+    if (photo.status !== 'uploaded') {
+      continue;
+    }
+    totalPhotos += 1;
+    totalStorage += photo.file.size ?? 0;
+  }
+  album.totalPhotos = totalPhotos;
+  album.totalStorage = totalStorage;
   return album;
 }
 
@@ -371,14 +386,18 @@ export function countByAnalysisStatus(
   return photos.filter(photo => photo.analysisStatus === status).length;
 }
 
-export function hasStartedCulling(album: CulledAlbum | null | undefined): boolean {
+export function hasStartedCulling(
+  album: CulledAlbum | null | undefined,
+  photos?: CulledAlbumPhoto[],
+): boolean {
   if (!album) {
     return false;
   }
   if (album.cullingCompleted) {
     return true;
   }
-  return album.photos.some(photo => photo.analysisStatus !== 'idle');
+  const source = photos ?? album.photos;
+  return source.some(photo => photo.analysisStatus !== 'idle');
 }
 
 export function toCullingPhoto(photo: CulledAlbumPhoto): APIResponse.CullingPhoto {
@@ -449,6 +468,9 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.cullingStats ??= undefined;
   album.cullingKeyFaces ??= undefined;
   album.cullingDuplicateGroups ??= undefined;
+  album.lastCullFilters = album.lastCullFilters
+    ? normalizeCullFilters(album.lastCullFilters)
+    : undefined;
   album.createdAt ??= new Date(0).toISOString();
   album.totalPhotos ??= album.photos.length;
   album.totalStorage ??= 0;

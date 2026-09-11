@@ -1,6 +1,7 @@
 import {make} from '@di/tsyringe';
 import {APIService, APIResponse} from '@services/api';
 import {culledAlbumStore, persistAlbum} from './store';
+import {getPhotosSnapshot} from './photoStateStore';
 import {
   CulledAlbum,
   hasInFlightAnalysis,
@@ -66,9 +67,10 @@ export async function syncCulledAlbumsWithServer(
       if (!serverAlbum || !localAlbum) {
         continue;
       }
+      const livePhotos = getPhotosSnapshot(albumId);
       if (
-        hasInFlightUploads(localAlbum) ||
-        hasInFlightAnalysis(localAlbum)
+        hasInFlightUploads(localAlbum, livePhotos) ||
+        hasInFlightAnalysis(localAlbum, livePhotos)
       ) {
         continue;
       }

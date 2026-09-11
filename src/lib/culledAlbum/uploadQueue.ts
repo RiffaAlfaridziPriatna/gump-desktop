@@ -15,6 +15,8 @@ import {
 } from './store';
 import {FileAsset} from '@services/upload/types';
 import {CulledAlbumPhoto} from './types';
+import {describeFileUri} from '@lib/observability/serializeError';
+import {reportError} from '@lib/observability/reportError';
 
 const PERSIST_BATCH_SIZE = Platform.OS === 'windows' ? 20 : 40;
 const COPY_TIMEOUT_MS = 120_000;
@@ -196,6 +198,11 @@ export function createUploadQueue(deps: UploadQueueDeps) {
           await persistAlbum(albumId);
         }
       } catch (error) {
+        reportError(error, {
+          source: 'upload_queue',
+          operation: 'persist_album',
+          albumId,
+        });
         console.error('[uploadQueue] Failed to persist album', albumId, error);
       }
     })();
@@ -454,6 +461,16 @@ export function createUploadQueue(deps: UploadQueueDeps) {
       const photoId = pendingPhotoIds[nextIndex]!;
 
       uploadPhoto(albumId, photoId).catch(err => {
+        const photo = getPhoto(albumId, photoId);
+        reportError(err, {
+          source: 'upload_queue',
+          operation: 'local_photo_copy',
+          albumId,
+          photoId,
+          fileName: photo?.file.name,
+          fileSize: photo?.file.size ?? null,
+          ...describeFileUri(photo?.file.uri),
+        });
         const message =
           err instanceof Error && err.message ? err.message : undefined;
         failPhoto(albumId, photoId, message);

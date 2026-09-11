@@ -3,7 +3,11 @@ import {
   SelectionFilter,
   StarRatingFilter,
 } from '@lib/culling/culledAlbumPhotoFilters';
-import {CullFilterKey, matchesCullFilterKey} from '@lib/culling/cullingUtil';
+import {
+  CullFilterKey,
+  matchesCullFilterKey,
+  normalizeCullFilters,
+} from '@lib/culling/cullingUtil';
 import {CulledAlbumGridPhoto} from '@components/culling/CulledAlbumPhotoGrid';
 import {APIResponse} from '@services/api';
 import {useCallback, useMemo, useState} from 'react';
@@ -21,16 +25,11 @@ const FILTER_KEYS = Object.keys({
 export function useCulledAlbumFilters(
   gridPhotos: CulledAlbumGridPhoto[],
   stats: APIResponse.CullingStats | null,
+  savedFilters?: Partial<Record<FilterKey, boolean>> | null,
 ) {
   const [activeFilters, setActiveFilters] = useState<
     Record<FilterKey, boolean>
-  >({
-    aiSelected: true,
-    maybe: true,
-    blurred: false,
-    closedEyes: false,
-    duplicated: false,
-  });
+  >(() => normalizeCullFilters(savedFilters));
   const [selectionFilter, setSelectionFilter] = useState<SelectionFilter>(null);
   const [starRatingFilter, setStarRatingFilter] = useState<StarRatingFilter>(
     [],

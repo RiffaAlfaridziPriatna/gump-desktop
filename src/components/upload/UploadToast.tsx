@@ -83,7 +83,7 @@ function useInterpolatedRemaining(
           MIN_MS_PER_PHOTO,
           MAX_MS_PER_PHOTO,
         );
-        lastNativeGapRef.current = gap;
+        lastNativeGapRef.current = clampNumber(gap, 1, MAX_LEAD_PHOTOS);
       }
     }
 
@@ -341,7 +341,9 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     counts.completed === 0 &&
     counts.failed === 0 &&
     queueOperation.status === 'active'
-      ? (lastAnalyzeRemainingRef.current ?? batchTotal)
+      ? lastAnalyzeRemainingRef.current && lastAnalyzeRemainingRef.current > 0
+        ? lastAnalyzeRemainingRef.current
+        : batchTotal
       : analyzeRemaining;
 
   const shouldSnapAnalyzeCount =
@@ -353,7 +355,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     mode === 'analyze',
     targetAnalyzeRemaining,
     shouldSnapAnalyzeCount,
-    albumId,
+    `${albumId}:${queueOperation.status}:${queueOperation.batchTotal}`,
     batchTotal,
   );
 
@@ -433,7 +435,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   const completedLabel =
     mode === 'upload'
       ? queueOperation.failedCount > 0
-        ? `Uploaded ${uploadCompletedCount} of ${queueOperation.batchTotal} photos`
+        ? `Uploaded ${uploadCompletedCount} out of ${queueOperation.batchTotal} photos`
         : `Uploaded ${uploadCompletedCount} photos`
       : mode === 'analyze'
         ? allAnalyzeFailed

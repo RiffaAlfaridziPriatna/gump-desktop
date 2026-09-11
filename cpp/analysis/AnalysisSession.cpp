@@ -4,8 +4,11 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <future>
 #include <iostream>
+#include <memory>
 #include <queue>
+#include <system_error>
 
 namespace Analysis {
 namespace {
@@ -89,6 +92,11 @@ struct PhotoJob {
   int index{0};
 };
 
+struct AbandonedJob {
+  std::thread thread;
+  std::future<AnalysisResult> future;
+};
+
 struct AnalysisSession::Impl {
   SessionConfig config;
   FaceDetection::FaceDetectionPipeline pipeline;
@@ -114,16 +122,31 @@ struct AnalysisSession::Impl {
   std::atomic<int> failedCount{0};
   std::atomic<int> dynamicDelayMs{50};
 
+  std::mutex inFlightMutex;
+  std::map<std::string, std::chrono::steady_clock::time_point> inFlightStartedAt;
+  std::map<std::string, std::string> inFlightFileName;
+  std::string lastCompletedPhotoId;
+  std::string lastCompletedFileName;
+
   std::chrono::steady_clock::time_point lastProgressTime;
   std::chrono::steady_clock::time_point batchStartTime;
   std::mutex progressMutex;
   
   std::vector<std::thread> workerThreads;
   std::thread orchestratorThread;
+  std::mutex joinMutex;
+  std::vector<AbandonedJob> abandonedJobs;
+  std::mutex abandonedMutex;
 
   bool Initialize() {
     if (!config.decoder) {
       return false;
+    }
+
+    // Re-init destroys SCRFD/ORT workers. Abandoned ProcessPhoto threads
+    // from a cancelled session still call detectFaces on those objects.
+    if (pipeline.isReady()) {
+      return true;
     }
 
     if (!pipeline.initialize(config.pipelineConfig)) {
@@ -156,19 +179,45 @@ struct AnalysisSession::Impl {
     return true;
   }
 
-  void ProcessPhoto(const PhotoJob &job) {
+  AnalysisResult EmptyFallbackResult(
+      const PhotoJob &job,
+      const std::string &error) const {
+    AnalysisResult result;
+    result.photoId = job.input.photoId;
+    result.success = true;
+    result.error = error;
+    result.starRating = 0;
+    result.flags = PhotoFlags{};
+    if (!job.input.existingHash.empty()) {
+      result.perceptualHash = job.input.existingHash;
+    }
+    if (job.input.existingCapturedAt != 0) {
+      result.capturedAt = job.input.existingCapturedAt;
+    }
+    return result;
+  }
+
+  AnalysisResult ProcessPhoto(const PhotoJob &job) {
     AnalysisResult result;
     result.photoId = job.input.photoId;
     result.success = false;
+
+    if (cancelled.load() || !running.load()) {
+      return EmptyFallbackResult(job, "Cancelled");
+    }
 
     try {
       // 1. Decode analysis-sized buffer for SCRFD + tiling + dHash.
       auto decoded = config.decoder->DecodeImageToBgra(
           job.input.uri, config.maxDecodePixelSize);
       if (!decoded.success) {
-        result.error = "Decode failed: " + decoded.error;
-        StoreResult(result);
-        return;
+        auto fallback = EmptyFallbackResult(
+            job, "Decode failed (fallback used): " + decoded.error);
+        if (config.logFallbacks) {
+          std::cout << "[AnalysisSession] Fallback used for "
+                    << job.input.photoId << ": decode failed" << std::endl;
+        }
+        return fallback;
       }
 
       const int detectionLongEdge = std::max(decoded.width, decoded.height);
@@ -185,28 +234,38 @@ struct AnalysisSession::Impl {
 
       bool photometricsDone = false;
       if (result.faces.empty() && detectionLongEdge < measurementMax) {
-        auto retry = config.decoder->DecodeImageToBgra(
-            job.input.uri, measurementMax);
-        if (retry.success) {
-          result.faces = pipeline.detectFaces(
-              retry.bgraPixels,
-              retry.width,
-              retry.height,
-              retry.stride,
-              true);
-          photometricsDone = true;
+        // GRACEFUL: If retry fails, just continue with empty faces
+        try {
+          auto retry = config.decoder->DecodeImageToBgra(
+              job.input.uri, measurementMax);
+          if (retry.success) {
+            result.faces = pipeline.detectFaces(
+                retry.bgraPixels,
+                retry.width,
+                retry.height,
+                retry.stride,
+                true);
+            photometricsDone = true;
+          }
+        } catch (...) {
+          // Retry failed, but we already have the low-res decode
+          // Just continue with empty faces
         }
       }
 
       // Hash on the analysis buffer before dropping it for regional crops.
       if (job.input.existingHash.empty()) {
-        auto hashOpt = FaceDetection::differenceHashFromBgra(
-            decoded.bgraPixels,
-            decoded.width,
-            decoded.height,
-            decoded.stride);
-        if (hashOpt.has_value()) {
-          result.perceptualHash = FaceDetection::formatHashHex(hashOpt.value());
+        try {
+          auto hashOpt = FaceDetection::differenceHashFromBgra(
+              decoded.bgraPixels,
+              decoded.width,
+              decoded.height,
+              decoded.stride);
+          if (hashOpt.has_value()) {
+            result.perceptualHash = FaceDetection::formatHashHex(hashOpt.value());
+          }
+        } catch (...) {
+          // Hash computation failed, not critical
         }
       } else {
         result.perceptualHash = job.input.existingHash;
@@ -215,22 +274,37 @@ struct AnalysisSession::Impl {
       if (job.input.existingCapturedAt != 0) {
         result.capturedAt = job.input.existingCapturedAt;
       } else {
-        result.capturedAt = config.decoder->ReadCapturedAtMillis(job.input.uri);
+        try {
+          result.capturedAt = config.decoder->ReadCapturedAtMillis(job.input.uri);
+        } catch (...) {
+          // Timestamp read failed, use 0
+          result.capturedAt = 0;
+        }
       }
 
+      // GRACEFUL: Wrap face measurement in try-catch
       if (!result.faces.empty() && !photometricsDone) {
-        if (detectionLongEdge < measurementMax) {
-          decoded.bgraPixels = nullptr;
-          decoded.platformHandle.reset();
-          decoded.success = false;
-          MeasureFacesFromHiResCrops(
-              pipeline,
-              *config.decoder,
-              job.input.uri,
-              measurementMax,
-              result.faces);
-        } else {
-          MeasureFacesOnBuffer(pipeline, decoded, result.faces);
+        try {
+          if (detectionLongEdge < measurementMax) {
+            decoded.bgraPixels = nullptr;
+            decoded.platformHandle.reset();
+            decoded.success = false;
+            MeasureFacesFromHiResCrops(
+                pipeline,
+                *config.decoder,
+                job.input.uri,
+                measurementMax,
+                result.faces);
+          } else {
+            MeasureFacesOnBuffer(pipeline, decoded, result.faces);
+          }
+        } catch (const std::exception &e) {
+          // Measurement failed, but we still have face locations
+          // Just skip refinement, use basic detection data
+          if (config.logFallbacks) {
+            std::cout << "[AnalysisSession] Face measurement failed for " 
+                      << job.input.photoId << ": " << e.what() << std::endl;
+          }
         }
       }
 
@@ -239,12 +313,23 @@ struct AnalysisSession::Impl {
       result.success = true;
 
     } catch (const std::exception &e) {
-      result.error = std::string("Exception: ") + e.what();
+      auto fallback = EmptyFallbackResult(
+          job, std::string("Exception (fallback used): ") + e.what());
+      if (config.logFallbacks) {
+        std::cout << "[AnalysisSession] Critical exception, fallback used for "
+                  << job.input.photoId << ": " << e.what() << std::endl;
+      }
+      return fallback;
     } catch (...) {
-      result.error = "Unknown exception";
+      auto fallback = EmptyFallbackResult(job, "Unknown exception (fallback used)");
+      if (config.logFallbacks) {
+        std::cout << "[AnalysisSession] Unknown exception, fallback used for "
+                  << job.input.photoId << std::endl;
+      }
+      return fallback;
     }
 
-    StoreResult(result);
+    return result;
   }
 
   void StoreResult(const AnalysisResult &result) {
@@ -259,8 +344,153 @@ struct AnalysisSession::Impl {
       failedCount.fetch_add(1);
     }
 
+    {
+      std::lock_guard<std::mutex> lock(inFlightMutex);
+      lastCompletedPhotoId = result.photoId;
+      const auto inputIt = inputsByPhotoId.find(result.photoId);
+      lastCompletedFileName = inputIt != inputsByPhotoId.end()
+                                  ? inputIt->second.fileName
+                                  : std::string();
+    }
+
     SendProgressUpdate();
     EmitProgressiveBatch(false);
+  }
+
+  void ReapAbandonedJobs() {
+    std::lock_guard<std::mutex> lock(abandonedMutex);
+    for (auto it = abandonedJobs.begin(); it != abandonedJobs.end();) {
+      if (!it->future.valid() ||
+          it->future.wait_for(std::chrono::milliseconds(0)) !=
+              std::future_status::ready) {
+        ++it;
+        continue;
+      }
+      if (it->thread.joinable()) {
+        it->thread.join();
+      }
+      it = abandonedJobs.erase(it);
+    }
+  }
+
+  void DetachAbandonedJobs() {
+    std::lock_guard<std::mutex> lock(abandonedMutex);
+    for (auto &job : abandonedJobs) {
+      if (!job.thread.joinable()) {
+        continue;
+      }
+      if (job.future.valid() &&
+          job.future.wait_for(std::chrono::milliseconds(0)) ==
+              std::future_status::ready) {
+        job.thread.join();
+      } else {
+        job.thread.detach();
+      }
+    }
+    abandonedJobs.clear();
+  }
+
+  void MarkInFlightStart(const PhotoJob &job) {
+    std::lock_guard<std::mutex> lock(inFlightMutex);
+    inFlightStartedAt[job.input.photoId] = std::chrono::steady_clock::now();
+    inFlightFileName[job.input.photoId] = job.input.fileName;
+  }
+
+  void MarkInFlightEnd(const std::string &photoId) {
+    std::lock_guard<std::mutex> lock(inFlightMutex);
+    inFlightStartedAt.erase(photoId);
+    inFlightFileName.erase(photoId);
+  }
+
+  std::vector<InFlightPhoto> SnapshotInFlight() {
+    std::lock_guard<std::mutex> lock(inFlightMutex);
+    std::vector<InFlightPhoto> items;
+    const auto now = std::chrono::steady_clock::now();
+    items.reserve(inFlightStartedAt.size());
+    for (const auto &entry : inFlightStartedAt) {
+      InFlightPhoto item;
+      item.photoId = entry.first;
+      const auto nameIt = inFlightFileName.find(entry.first);
+      if (nameIt != inFlightFileName.end()) {
+        item.fileName = nameIt->second;
+      }
+      item.elapsedMs = static_cast<int>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              now - entry.second)
+              .count());
+      items.push_back(item);
+    }
+    return items;
+  }
+
+  bool WaitForFuture(std::future<AnalysisResult> &future, int timeoutMs) {
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(timeoutMs);
+    while (future.wait_for(std::chrono::milliseconds(50)) !=
+           std::future_status::ready) {
+      if (cancelled.load() || !running.load()) {
+        return false;
+      }
+      if (paused.load()) {
+        continue;
+      }
+      SendProgressUpdate();
+      if (std::chrono::steady_clock::now() >= deadline) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void ProcessPhotoJob(const PhotoJob &job) {
+    MarkInFlightStart(job);
+    const int timeoutMs = std::max(config.photoTimeoutMs, 0);
+    if (timeoutMs <= 0) {
+      StoreResult(ProcessPhoto(job));
+      MarkInFlightEnd(job.input.photoId);
+      return;
+    }
+
+    ReapAbandonedJobs();
+
+    auto promise = std::make_shared<std::promise<AnalysisResult>>();
+    auto future = promise->get_future();
+    std::thread jobThread([this, job, promise]() {
+      try {
+        promise->set_value(ProcessPhoto(job));
+      } catch (...) {
+        try {
+          promise->set_exception(std::current_exception());
+        } catch (...) {
+        }
+      }
+      MarkInFlightEnd(job.input.photoId);
+    });
+
+    if (WaitForFuture(future, timeoutMs)) {
+      try {
+        StoreResult(future.get());
+      } catch (...) {
+        StoreResult(EmptyFallbackResult(job, "Exception (fallback used)"));
+      }
+      MarkInFlightEnd(job.input.photoId);
+      if (jobThread.joinable()) {
+        jobThread.join();
+      }
+      return;
+    }
+
+    if (!cancelled.load() && running.load()) {
+      StoreResult(EmptyFallbackResult(job, "Timed out (fallback used)"));
+      if (config.logFallbacks) {
+        std::cout << "[AnalysisSession] Timeout fallback for "
+                  << job.input.photoId << " file=" << job.input.fileName
+                  << std::endl;
+      }
+    }
+
+    std::lock_guard<std::mutex> lock(abandonedMutex);
+    abandonedJobs.push_back({std::move(jobThread), std::move(future)});
   }
 
   void EmitProgressiveBatch(bool flushRemaining) {
@@ -358,6 +588,20 @@ struct AnalysisSession::Impl {
       update.done = completedCount.load();
       update.total = static_cast<int>(config.photos.size());
       update.failed = failedCount.load();
+      {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        update.queueRemaining = static_cast<int>(jobQueue.size());
+      }
+      {
+        std::lock_guard<std::mutex> lock(abandonedMutex);
+        update.abandonedCount = static_cast<int>(abandonedJobs.size());
+      }
+      {
+        std::lock_guard<std::mutex> lock(inFlightMutex);
+        update.lastCompletedPhotoId = lastCompletedPhotoId;
+        update.lastCompletedFileName = lastCompletedFileName;
+      }
+      update.inFlight = SnapshotInFlight();
       config.onProgress(update);
     }
   }
@@ -379,7 +623,7 @@ struct AnalysisSession::Impl {
       }
 
       const auto jobStarted = std::chrono::steady_clock::now();
-      ProcessPhoto(job);
+      ProcessPhotoJob(job);
       const auto jobMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                              std::chrono::steady_clock::now() - jobStarted)
                              .count();
@@ -413,9 +657,12 @@ struct AnalysisSession::Impl {
     }
 
     if (cancelled.load()) {
+      DetachAbandonedJobs();
       running.store(false);
       return;
     }
+
+    DetachAbandonedJobs();
 
     EmitProgressiveBatch(true);
 
@@ -440,22 +687,33 @@ struct AnalysisSession::Impl {
     running.store(false);
   }
 
+  static void JoinIfJoinable(std::thread &thread) {
+    if (!thread.joinable()) {
+      return;
+    }
+    try {
+      thread.join();
+    } catch (const std::system_error &) {
+      // Already joined by another waiter, or not joinable anymore.
+    }
+  }
+
   void JoinFinishedThreads() {
+    std::lock_guard<std::mutex> lock(joinMutex);
+    // Orchestrator already joins workers. Joining those same threads here
+    // throws std::system_error and aborts the process (SIGABRT).
+    JoinIfJoinable(orchestratorThread);
     for (auto &thread : workerThreads) {
-      if (thread.joinable()) {
-        thread.join();
-      }
+      JoinIfJoinable(thread);
     }
     workerThreads.clear();
-    if (orchestratorThread.joinable()) {
-      orchestratorThread.join();
-    }
   }
 
   void Start() {
     // A finished session still owns a joinable orchestrator thread. Assigning a
     // new std::thread over it (or destroying joinable threads) calls terminate.
     JoinFinishedThreads();
+    DetachAbandonedJobs();
 
     {
       std::lock_guard<std::mutex> queueLock(queueMutex);
@@ -473,6 +731,13 @@ struct AnalysisSession::Impl {
     completedCount.store(0);
     failedCount.store(0);
     dynamicDelayMs.store(std::max(config.interJobDelayMs, 0));
+    {
+      std::lock_guard<std::mutex> lock(inFlightMutex);
+      inFlightStartedAt.clear();
+      inFlightFileName.clear();
+      lastCompletedPhotoId.clear();
+      lastCompletedFileName.clear();
+    }
 
     EnqueueJobs();
 
@@ -492,6 +757,7 @@ struct AnalysisSession::Impl {
     running.store(false);
     queueCondition.notify_all();
     JoinFinishedThreads();
+    DetachAbandonedJobs();
   }
 };
 

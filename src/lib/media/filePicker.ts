@@ -1,5 +1,4 @@
 import {FileAsset} from '@services/upload/types';
-import {filterSupportedCullingImages} from '@lib/media/supportedImageFormats';
 import {parsePickerCaptureTime} from '@lib/media/imageCaptureTime';
 import {NativeModules} from 'react-native';
 import {launchImageLibrary, Asset} from 'react-native-image-picker';
@@ -44,13 +43,11 @@ async function pickImagesWithImagePicker(): Promise<FileAsset[]> {
 
 export async function pickImages(): Promise<FileAsset[]> {
   if (isDesktopPlatform() && NativeFilePicker?.pickImages) {
-    const files = await NativeFilePicker.pickImages();
-    return filterSupportedCullingImages(files);
+    return NativeFilePicker.pickImages();
   }
 
   if (isMobilePlatform()) {
-    const files = await pickImagesWithImagePicker();
-    return filterSupportedCullingImages(files);
+    return pickImagesWithImagePicker();
   }
 
   throw new Error('Image picker is not available on this platform.');

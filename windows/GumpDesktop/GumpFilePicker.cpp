@@ -49,8 +49,8 @@ void GumpFilePicker::PickImages(
     wchar_t fileBuffer[65536] = {};
 
     static constexpr wchar_t filter[] =
-        L"Images (*.jpg;*.jpeg;*.png;*.gif;*.heic;*.tiff)\0"
-        L"*.jpg;*.jpeg;*.png;*.gif;*.heic;*.tiff\0";
+        L"Images (*.jpg;*.jpeg;*.png;*.gif;*.heic;*.tiff;*.webp)\0"
+        L"*.jpg;*.jpeg;*.png;*.gif;*.heic;*.tiff;*.webp\0";
 
     OPENFILENAMEW ofn{};
     ofn.lStructSize = sizeof(ofn);

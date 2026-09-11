@@ -13,8 +13,6 @@ import {
   useCulledAlbumStore,
 } from '@context/culledAlbum';
 import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
-import {photoStateStore} from '@lib/culledAlbum/photoStateStore';
-import {useStateStore} from '@lib/react/state';
 import {pickImages} from '@lib/media/filePicker';
 import {useAlbumDetailGridPhotos} from '@hooks/useAlbumDetailGridPhotos';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
@@ -24,6 +22,8 @@ import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {useLayout} from '@hooks/useLayout';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
+import {captureAppEvent} from '@lib/observability/posthogClient';
+import {reportError} from '@lib/observability/reportError';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useIsFocused} from '@react-navigation/native';
@@ -39,6 +39,7 @@ import {
 import {TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -56,6 +57,7 @@ type AlbumDetailBodyProps = {
   showImportSkeleton: boolean;
   photoGridRef: RefObject<PhotoGridHandle | null>;
   deferHeavyMediaWork: boolean;
+  onProgrammaticScrollChange: (active: boolean) => void;
 };
 
 function AlbumDetailUploadingBody({
@@ -71,11 +73,13 @@ const AlbumDetailGridBody = memo(function AlbumDetailGridBody({
   screenPaddingHorizontal,
   photoGridRef,
   deferHeavyMediaWork,
+  onProgrammaticScrollChange,
 }: {
   albumId: string;
   screenPaddingHorizontal: number;
   photoGridRef: RefObject<PhotoGridHandle | null>;
   deferHeavyMediaWork: boolean;
+  onProgrammaticScrollChange: (active: boolean) => void;
 }) {
   const gridPhotos = useAlbumDetailGridPhotos(albumId);
   const {loadingPhotos, loadError} = useCulledAlbumPhotos(albumId, {
@@ -105,6 +109,7 @@ const AlbumDetailGridBody = memo(function AlbumDetailGridBody({
       albumId={albumId}
       horizontalPadding={screenPaddingHorizontal}
       deferHeavyMediaWork={deferHeavyMediaWork}
+      onProgrammaticScrollChange={onProgrammaticScrollChange}
     />
   );
 });
@@ -115,6 +120,7 @@ const AlbumDetailBody = memo(function AlbumDetailBody({
   showImportSkeleton,
   photoGridRef,
   deferHeavyMediaWork,
+  onProgrammaticScrollChange,
 }: AlbumDetailBodyProps) {
   if (showImportSkeleton) {
     return (
@@ -130,6 +136,7 @@ const AlbumDetailBody = memo(function AlbumDetailBody({
       screenPaddingHorizontal={screenPaddingHorizontal}
       photoGridRef={photoGridRef}
       deferHeavyMediaWork={deferHeavyMediaWork}
+      onProgrammaticScrollChange={onProgrammaticScrollChange}
     />
   );
 });
@@ -145,6 +152,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   const profileMenu = useProfileMenu();
   const planMenu = usePlanMenu();
   const [cullingActive, setCullingActive] = useState(false);
+  const [isScrollingToTop, setIsScrollingToTop] = useState(false);
   const photoGridRef = useRef<PhotoGridHandle | null>(null);
 
   const isUploading = useCulledAlbumStore(state => {
@@ -169,28 +177,14 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   const batchTotal = useCulledAlbumStore(
     state => state.albums[albumId]?.localImportBatchTotal ?? 0,
   );
-  const orderedPhotoCount = useStateStore(
-    photoStateStore,
-    state => state.photoOrder[albumId]?.length ?? 0,
-  );
-  const analysisBatchTotal = useCulledAlbumStore(
-    state =>
-      state.albums[albumId]?.analysisBatchCounts?.total ??
-      state.albums[albumId]?.analysisBatchPhotoIds.length ??
-      0,
+  const albumPhotoCount = useCulledAlbumStore(
+    state => state.albums[albumId]?.photos.length ?? 0,
   );
 
   // Show skeleton during entire upload to avoid grid rendering overhead while importing.
   // For append scenarios (adding to existing album), keep the grid visible.
-  const isAppendingToExistingAlbum = totalPhotos > batchTotal && batchTotal > 0;
+  const isAppendingToExistingAlbum = albumPhotoCount > batchTotal && batchTotal > 0;
   const showImportSkeleton = isUploading && !isAppendingToExistingAlbum;
-
-  const displayTotalPhotos = Math.max(
-    totalPhotos,
-    batchTotal,
-    orderedPhotoCount,
-    analysisBatchTotal,
-  );
 
   const analysisInProgress = useCulledAlbumStore(state => {
     if ((state.albums[albumId]?.analysisBatchPhotoIds.length ?? 0) === 0) {
@@ -217,6 +211,9 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   );
 
   const analysisQueue = useAlbumQueueOperation(albumId, 'analyze');
+  const localImportQueue = useAlbumQueueOperation(albumId, 'upload');
+  const isLocalImportInProgress =
+    isUploading || localImportQueue.status === 'active';
   const isAnalysisFinalizing = analysisQueue.status === 'finalizing';
   const isAnalysisQueueDone =
     analysisQueue.status === 'completed' || analysisQueue.status === 'failed';
@@ -287,7 +284,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
   ]);
 
   function handleStartCulling() {
-    if (!hasUploadedPhotos || isUploading || cullingActive) {
+    if (!hasUploadedPhotos || isUploading || cullingActive || isScrollingToTop) {
       return;
     }
     setCullingActive(true);
@@ -310,9 +307,33 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
     }
   }, [addPhotos, albumId, isCullingInProgress, isUploading]);
 
+  const lastScrollToTopClickRef = useRef(0);
   const handleScrollToTop = useCallback(() => {
-    photoGridRef.current?.scrollToTop();
-  }, []);
+    const now = Date.now();
+    if (now - lastScrollToTopClickRef.current < 200) {
+      return;
+    }
+    lastScrollToTopClickRef.current = now;
+    const grid = photoGridRef.current;
+    if (grid == null) {
+      captureAppEvent('scroll_to_top_clicked', {
+        albumId,
+        hasGridHandle: false,
+        platform: Platform.OS,
+      });
+      captureAppEvent('scroll_to_top_failed', {
+        albumId,
+        reason: 'grid_ref_null',
+      });
+      reportError(new Error('Photo grid scroll-to-top missing grid handle'), {
+        source: 'album_detail',
+        operation: 'scroll_to_top',
+        albumId,
+      });
+      return;
+    }
+    grid.scrollToTop();
+  }, [albumId]);
 
   return (
     <UploadAwareModalShell {...shellProps}>
@@ -352,22 +373,28 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
             styles.actionsColumn,
             isMobileLayout && styles.actionsColumnMobile,
           ]}>
-          <Text style={styles.totalPhotos}>
-            Total Photos{' '}
-            <Text style={styles.totalPhotosValue}>{displayTotalPhotos}</Text>
-          </Text>
+          {isLocalImportInProgress ? null : (
+            <Text style={styles.totalPhotos}>
+              Total Photos{' '}
+              <Text style={styles.totalPhotosValue}>{totalPhotos}</Text>
+            </Text>
+          )}
           <TouchableOpacity
             style={[
               styles.cullingButton,
               isCullingInProgress && styles.cullingButtonInProgress,
-              (isUploading || !hasUploadedPhotos || cullingActive) &&
+              (isUploading ||
+                !hasUploadedPhotos ||
+                cullingActive ||
+                isScrollingToTop) &&
                 !isCullingInProgress &&
                 styles.cullingButtonDisabled,
             ]}
             disabled={
               isUploading ||
               !hasUploadedPhotos ||
-              cullingActive
+              cullingActive ||
+              isScrollingToTop
             }
             onPress={handleStartCulling}
             activeOpacity={0.8}>
@@ -396,6 +423,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
           showImportSkeleton={showImportSkeleton}
           photoGridRef={photoGridRef}
           deferHeavyMediaWork={isCullingInProgress}
+          onProgrammaticScrollChange={setIsScrollingToTop}
         />
       </View>
       {isUploading ? null : (
@@ -406,9 +434,7 @@ export default function AlbumDetailScreen({navigation, route}: Props) {
         />
       )}
       <UploadToast mode="upload" albumId={albumId} />
-      {isCullingInProgress ? (
-        <UploadToast mode="analyze" albumId={albumId} />
-      ) : null}
+      <UploadToast mode="analyze" albumId={albumId} />
       <ProfileMenuPopup
         menu={profileMenu}
         rightOffset={screenPaddingHorizontal}

@@ -4,9 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 
+import { applyGumpBuildIdentity } from './gump-env.mjs';
+import { scrubWindowsSolutionOrDie } from './scrub-windows-solution.mjs';
+
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..');
-const DIST_DIR = path.join(ROOT_DIR, 'dist');
 const WINDOWS_MSIX_DIR = path.join(ROOT_DIR, 'windows/AppPackages');
 const REACT_NATIVE_CLI = path.join(ROOT_DIR, 'node_modules/react-native/cli.js');
 const REACT_NATIVE_WINDOWS_DIR = path.join(
@@ -22,15 +24,59 @@ const ARCH_ALIASES = {
   amd64: 'x64',
 };
 
-const variant = process.argv[2] ?? 'exe';
-
-function log(message) {
-  console.log(`\n▸ ${message}`);
-}
+const VALID_ENVS = new Set(['prod', 'local', 'staging']);
+const VALID_VARIANTS = new Set(['exe', 'zip', 'portable', 'msix']);
 
 function die(message) {
   console.error(`✗ ${message}`);
   process.exit(1);
+}
+
+/**
+ * Parse CLI: build-windows.mjs <variant> [env]
+ * Examples:
+ *   node scripts/build-windows.mjs zip
+ *   node scripts/build-windows.mjs zip staging
+ *   npm run build:windows:zip -- staging
+ */
+function parseArgs(argv) {
+  const positional = argv.slice(2).filter(arg => arg !== '--');
+  let variant = 'zip';
+  let envName = process.env.GUMP_ENV ?? 'prod';
+
+  for (const arg of positional) {
+    if (VALID_VARIANTS.has(arg)) {
+      variant = arg === 'portable' ? 'zip' : arg;
+      continue;
+    }
+    if (VALID_ENVS.has(arg)) {
+      envName = arg;
+      continue;
+    }
+    die(
+      `Unknown argument '${arg}'. Use: zip | msix, and optional env: prod | local | staging`,
+    );
+  }
+
+  if (!VALID_ENVS.has(envName)) {
+    die(`Unknown GUMP_ENV '${envName}'. Use: prod | local | staging`);
+  }
+
+  return {variant, envName};
+}
+
+const {variant, envName} = parseArgs(process.argv);
+
+applyGumpBuildIdentity({
+  platform: 'windows',
+  envName,
+});
+scrubWindowsSolutionOrDie();
+
+const DIST_WINDOWS_DIR = process.env.GUMP_DIST_DIR;
+
+function log(message) {
+  console.log(`\n▸ ${message}`);
 }
 
 function normalizeArch(value) {
@@ -303,7 +349,14 @@ function resolveMsbuildExe(requiredArchs) {
 }
 
 function runReactNativeWindows(args) {
-  run(process.execPath, [REACT_NATIVE_CLI, 'run-windows', ...args]);
+  const skipAutolink = args.includes('--no-autolink');
+  if (!skipAutolink) {
+    run(process.execPath, [REACT_NATIVE_CLI, 'autolink-windows']);
+  }
+  // Strip stale UWP projects that autolink may have left in the .sln earlier.
+  scrubWindowsSolutionOrDie();
+  const runArgs = skipAutolink ? args : ['--no-autolink', ...args];
+  run(process.execPath, [REACT_NATIVE_CLI, 'run-windows', ...runArgs]);
 }
 
 function copyArtifact(sourcePath, destinationDir) {
@@ -529,7 +582,7 @@ function packagePortableRelease(arch) {
   ensureAutolinkedDllsInReleaseDir(releaseDir, arch);
   ensureReleaseBundleInDir(releaseDir);
 
-  const distWindowsDir = path.join(DIST_DIR, 'windows');
+  const distWindowsDir = DIST_WINDOWS_DIR;
   const portableName = `GumpDesktop-windows-${arch}`;
   const portableDir = path.join(distWindowsDir, portableName);
   const zipPath = path.join(distWindowsDir, `${portableName}.zip`);
@@ -634,7 +687,7 @@ function buildMsix(archs) {
   const isMultiArch = archs.length > 1;
   const windowsDir = path.join(ROOT_DIR, 'windows');
   const solutionDir = `${windowsDir}${path.sep}`;
-  const appxPackageDir = `${path.join(DIST_DIR, 'windows', 'AppPackages')}${path.sep}`;
+  const appxPackageDir = `${path.join(DIST_WINDOWS_DIR, 'AppPackages')}${path.sep}`;
 
   ensureDir(appxPackageDir);
 
@@ -679,7 +732,7 @@ function buildMsix(archs) {
     );
   }
 
-  copyArtifact(latestPackage, path.join(DIST_DIR, 'windows'));
+  copyArtifact(latestPackage, DIST_WINDOWS_DIR);
 }
 
 if (process.platform !== 'win32') {
@@ -687,7 +740,7 @@ if (process.platform !== 'win32') {
 }
 
 ensureWindowsTooling();
-ensureDir(DIST_DIR);
+ensureDir(DIST_WINDOWS_DIR);
 
 const windowsArchs = resolveWindowsArchs();
 log(`Detected Windows target architecture(s): ${windowsArchs.join(', ')}`);
@@ -705,4 +758,4 @@ switch (variant) {
     die(`Unknown Windows variant: ${variant}. Use: zip | msix`);
 }
 
-log(`Done. Output directory: ${path.join(DIST_DIR, 'windows')}/`);
+log(`Done. Output directory: ${DIST_WINDOWS_DIR}/`);

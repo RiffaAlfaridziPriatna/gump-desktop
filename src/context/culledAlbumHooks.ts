@@ -174,13 +174,18 @@ export function useCulledAlbumPhoto(
   albumId: string | undefined,
   photoId: string,
 ): CulledAlbumPhoto | undefined {
-  return useStateStore(photoRenderStore, state => {
-    trackMemoDependencies(state.snapshotRevision);
-    if (!albumId || !photoId) {
-      return undefined;
-    }
-    return photoStateStore.getState().photoState[photoKey(albumId, photoId)];
-  });
+  // Subscribe to the primitive revision, not the photo object. Vanilla
+  // in-place mutation keeps the same object identity, so shallow-comparing
+  // the photo would skip the re-render that should pick up new uri/flags.
+  const snapshotRevision = useStateStore(
+    photoRenderStore,
+    state => state.snapshotRevision,
+  );
+  if (!albumId || !photoId) {
+    return undefined;
+  }
+  void snapshotRevision;
+  return photoStateStore.getState().photoState[photoKey(albumId, photoId)];
 }
 
 export function useCulledAlbumPhotosState(albumId: string): CulledAlbumPhoto[] {
@@ -196,21 +201,35 @@ export function useCulledAlbumPhotosState(albumId: string): CulledAlbumPhoto[] {
     photoStateStore,
     state => state.gridRevision[albumId] ?? 0,
   );
-  const albumPhotos = useCulledAlbumStore(
-    state => state.albums[albumId]?.photos ?? EMPTY_PHOTOS,
+  const hasPhotoOrder = photoOrder.length > 0;
+  const albumPhotos = useCulledAlbumStore(state =>
+    hasPhotoOrder
+      ? EMPTY_PHOTOS
+      : (state.albums[albumId]?.photos ?? EMPTY_PHOTOS),
   );
 
   return useMemo(() => {
-    if (photoOrder.length === 0) {
+    if (!hasPhotoOrder) {
       return albumPhotos;
     }
 
     const photoState = photoStateStore.getState().photoState;
-    const albumById = new Map(albumPhotos.map(photo => [photo.photoId, photo]));
+    const fallbackPhotos =
+      culledAlbumStore.getState().albums[albumId]?.photos ?? EMPTY_PHOTOS;
+    const albumById = new Map(
+      fallbackPhotos.map(photo => [photo.photoId, photo]),
+    );
     return photoOrder
       .map(photoId => photoState[photoKey(albumId, photoId)] ?? albumById.get(photoId))
       .filter((photo): photo is CulledAlbumPhoto => Boolean(photo));
-  }, [albumId, albumPhotos, gridRevision, photoOrder, snapshotRevision]);
+  }, [
+    albumId,
+    albumPhotos,
+    gridRevision,
+    hasPhotoOrder,
+    photoOrder,
+    snapshotRevision,
+  ]);
 }
 
 export function useCulledAlbumLocalImportProgress(

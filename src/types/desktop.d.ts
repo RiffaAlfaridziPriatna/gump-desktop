@@ -21,6 +21,12 @@ declare module 'react-native' {
   }
 
   interface NativeModulesStatic {
+    GumpScrollView?: {
+      scrollToOffset: (
+        reactTag: number,
+        offsetY: number,
+      ) => Promise<Record<string, unknown>>;
+    };
     GumpFilePicker?: {
       pickImages: () => Promise<
         Array<{
