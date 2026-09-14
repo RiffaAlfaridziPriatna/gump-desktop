@@ -16,12 +16,39 @@ export type UploadLookBakeState = {
   error?: string;
 };
 
-type AlbumBakeSession = UploadLookBakeState & {
+const IDLE_SNAPSHOT: UploadLookBakeState = Object.freeze({
+  status: 'idle',
+  completed: 0,
+  total: 0,
+  percent: 0,
+});
+
+type AlbumBakeSession = {
+  status: UploadLookBakeStatus;
+  completed: number;
+  total: number;
+  percent: number;
+  error?: string;
   uriByPhotoId: Map<string, string>;
   listeners: Set<() => void>;
+  snapshot: UploadLookBakeState;
 };
 
 const sessions = new Map<string, AlbumBakeSession>();
+
+function buildSnapshot(session: AlbumBakeSession): UploadLookBakeState {
+  return {
+    status: session.status,
+    completed: session.completed,
+    total: session.total,
+    percent: session.percent,
+    error: session.error,
+  };
+}
+
+function refreshSnapshot(session: AlbumBakeSession): void {
+  session.snapshot = buildSnapshot(session);
+}
 
 function getOrCreateSession(albumId: string): AlbumBakeSession {
   const existing = sessions.get(albumId);
@@ -35,6 +62,7 @@ function getOrCreateSession(albumId: string): AlbumBakeSession {
     percent: 0,
     uriByPhotoId: new Map(),
     listeners: new Set(),
+    snapshot: IDLE_SNAPSHOT,
   };
   sessions.set(albumId, created);
   return created;
@@ -45,20 +73,14 @@ function emit(albumId: string): void {
   if (!session) {
     return;
   }
+  refreshSnapshot(session);
   for (const listener of session.listeners) {
     listener();
   }
 }
 
 export function getUploadLookBakeState(albumId: string): UploadLookBakeState {
-  const session = getOrCreateSession(albumId);
-  return {
-    status: session.status,
-    completed: session.completed,
-    total: session.total,
-    percent: session.percent,
-    error: session.error,
-  };
+  return sessions.get(albumId)?.snapshot ?? IDLE_SNAPSHOT;
 }
 
 export function subscribeUploadLookBake(

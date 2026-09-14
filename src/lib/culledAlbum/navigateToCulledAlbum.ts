@@ -49,12 +49,11 @@ function navigateToServerUploadProgressIfActive(
     return false;
   }
 
-  navigation.navigate('CulledAlbumUploadProgress', {
-    albumId,
-    photoCount: batchPhotoIds.length,
-    albumName: album.title ?? album.name,
-    albumLink: album.link ?? storedAlbum?.link ?? '',
-  });
+  preloadUploadedThumbnails(albumId);
+  navigation.navigate(
+    'CulledAlbumDetail',
+    uploadAwareParams({albumId, openUploadProgress: true}),
+  );
   return true;
 }
 
