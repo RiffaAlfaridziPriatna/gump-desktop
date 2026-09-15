@@ -1,13 +1,36 @@
 import {deleteLocalAlbumFiles} from '@lib/storage/localStorage';
 import {getPhotosSnapshot, photoStateStore} from './photoStateStore';
 import {gumpPerfMark} from './perfDebug';
+import {readAllAlbumMeta} from './storage';
 import {clearAlbumData, culledAlbumStore, loadAlbumIntoStore} from './store';
+import {clearAllUploadQueues, clearAlbumQueues} from './uploadQueueStore';
 import {CulledAlbum, hasInFlightAnalysis} from './types';
 
 export async function purgeLocalCulledAlbum(albumId: string): Promise<void> {
   await clearAlbumData(albumId);
   void deleteLocalAlbumFiles(albumId).catch(error => {
     console.error('[purgeLocalCulledAlbum] Failed to delete album files', error);
+  });
+}
+
+/**
+ * Remove every local culled album from SQLite, memory, queues, and files.
+ * Used on logout so Home does not leak albums across accounts.
+ */
+export async function purgeAllLocalCulledAlbums(): Promise<void> {
+  const fromStore = Object.keys(culledAlbumStore.getState().albums);
+  const persisted = await readAllAlbumMeta();
+  const albumIds = new Set([...fromStore, ...Object.keys(persisted)]);
+
+  for (const albumId of albumIds) {
+    await purgeLocalCulledAlbum(albumId);
+    clearAlbumQueues(albumId);
+  }
+
+  clearAllUploadQueues();
+  culledAlbumStore.setState(state => {
+    state.albums = {};
+    state.error = null;
   });
 }
 
