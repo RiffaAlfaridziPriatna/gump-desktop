@@ -10,6 +10,7 @@ import {
   getAuthToken,
   setAuthToken,
 } from '@lib/auth/authTokenStorage';
+import {purgeAllLocalCulledAlbums} from '@lib/culledAlbum/service';
 import {createStateStore, StateStore, useStateStore} from '@lib/react/state';
 import {useContextOrThrow} from '@lib/react/context';
 import {make} from '@di/tsyringe';
@@ -72,6 +73,15 @@ export function AuthProvider({children}: PropsWithChildren) {
   );
 
   const logout = useCallback(async () => {
+    try {
+      await purgeAllLocalCulledAlbums();
+    } catch (error) {
+      reportError(error, {
+        source: 'auth',
+        operation: 'purge_local_albums_on_logout',
+      });
+    }
+
     await deleteAuthToken();
     make(APIService).agent.setToken(null);
 
