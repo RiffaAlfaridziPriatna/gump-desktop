@@ -70,7 +70,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
     }, [refreshLocalAlbums]),
   );
 
-  const emptyAlbums = useMemo(
+  const availableAlbums = useMemo(
     () => filterAvailableSourceAlbums(albums.results, localAlbumIds),
     [albums.results, localAlbumIds],
   );
@@ -79,7 +79,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
   // Full-page loading only until we have enough selectable albums to scroll.
   // Pagination fetch-more must not cover the list.
   const waitingForAlbums =
-    emptyAlbums.length < prefetchThreshold &&
+    availableAlbums.length < prefetchThreshold &&
     (loadingAlbums || hasMore);
 
   const hasSelection = selectedId !== null;
@@ -90,7 +90,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
 
   function handleNext() {
     if (!selectedId) return;
-    const album = emptyAlbums.find(item => item.id === selectedId) ?? null;
+    const album = availableAlbums.find(item => item.id === selectedId) ?? null;
     if (!album) return;
     setSelectedAlbum(album);
     setShowUploadModal(true);
@@ -155,7 +155,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
         ]}>
         <View style={styles.titleColumn}>
           <Text style={styles.title}>Select Your Album</Text>
-          <Text style={styles.subtitle}>Showing albums with no photos yet.</Text>
+          <Text style={styles.subtitle}>Choose an album to start culling.</Text>
         </View>
         <TouchableOpacity
           style={[
@@ -209,7 +209,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
           }}
           scrollEventThrottle={200}>
           <AlbumGrid columns={albumGridColumns} gap={12}>
-            {emptyAlbums.map(album => (
+            {availableAlbums.map(album => (
               <AlbumCard
                 key={album.id}
                 variant="select"
@@ -220,9 +220,9 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
               />
             ))}
           </AlbumGrid>
-          {!waitingForAlbums && emptyAlbums.length === 0 && (
+          {!waitingForAlbums && availableAlbums.length === 0 && (
             <Text style={styles.emptyText}>
-              No empty albums available. Create an album on the web app first.
+              No albums left. Create an album on the web app first.
             </Text>
           )}
         </ScrollView>

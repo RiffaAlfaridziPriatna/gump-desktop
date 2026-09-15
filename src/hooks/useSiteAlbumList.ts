@@ -32,8 +32,8 @@ export function siteAlbumListQueryKey(search: SiteAlbumListSearchValues = {}) {
 
 type UseSiteAlbumListOptions = SiteAlbumListSearchValues & {
   /**
-   * Keep fetching cursor pages until this many selectable empty albums are
-   * cached, or until there are no more pages.
+   * Keep fetching cursor pages until this many selectable (non-local) albums
+   * are cached, or until there are no more pages.
    */
   prefetchUntilSelectable?: number;
   localAlbumIds?: ReadonlySet<string>;
@@ -151,7 +151,7 @@ export function useSiteAlbumList(options: UseSiteAlbumListOptions = {}) {
 
 const EMPTY_LOCAL_ALBUM_IDS: ReadonlySet<string> = new Set();
 
-/** Warm enough selectable empty albums for Select Album scroll pagination. */
+/** Warm enough selectable site albums for Select Album scroll pagination. */
 export function usePrefetchSelectableSiteAlbums() {
   const {albumGridColumns} = useLayout();
   const {localAlbumIds} = useLocalCulledAlbumList();
