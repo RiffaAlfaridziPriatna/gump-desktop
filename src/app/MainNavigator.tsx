@@ -1,3 +1,4 @@
+import {usePrefetchSelectableSiteAlbums} from '@hooks/useSiteAlbumList';
 import {colors} from '@lib/ui/colors';
 import {
   InstantNavParams,
@@ -49,6 +50,9 @@ export type MainStackParamList = {
 const Stack = createStackNavigator<MainStackParamList>();
 
 export function MainNavigator() {
+  // Warm enough empty albums so Select Album can scroll-paginate the rest.
+  usePrefetchSelectableSiteAlbums();
+
   return (
     <Stack.Navigator
       screenOptions={{

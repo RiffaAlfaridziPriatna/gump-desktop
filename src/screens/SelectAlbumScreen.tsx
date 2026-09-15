@@ -7,7 +7,10 @@ import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useSiteAlbumList} from '@hooks/useSiteAlbumList';
 import {useLayout} from '@hooks/useLayout';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
-import {filterAvailableSourceAlbums} from '@lib/culledAlbum/selectAlbum';
+import {
+  filterAvailableSourceAlbums,
+  getSelectAlbumPrefetchThreshold,
+} from '@lib/culledAlbum/selectAlbum';
 import {registerLocalAlbum} from '@lib/culledAlbum/store';
 import {uploadAwareParams} from '@lib/navigation/uploadAwareNavigation';
 import {createCulledAlbumFromSelection} from '@lib/culledAlbum/types';
@@ -62,15 +65,22 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
       if (isLeavingRef.current) {
         return;
       }
-      refresh();
+      // Site albums are prefetched on app auth; only refresh local exclusions.
       refreshLocalAlbums();
-    }, [refresh, refreshLocalAlbums]),
+    }, [refreshLocalAlbums]),
   );
 
   const emptyAlbums = useMemo(
     () => filterAvailableSourceAlbums(albums.results, localAlbumIds),
     [albums.results, localAlbumIds],
   );
+
+  const prefetchThreshold = getSelectAlbumPrefetchThreshold(albumGridColumns);
+  // Full-page loading only until we have enough selectable albums to scroll.
+  // Pagination fetch-more must not cover the list.
+  const waitingForAlbums =
+    emptyAlbums.length < prefetchThreshold &&
+    (loadingAlbums || hasMore);
 
   const hasSelection = selectedId !== null;
 
@@ -167,9 +177,10 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
         </TouchableOpacity>
       </View>
 
-      {loadingAlbums && emptyAlbums.length === 0 ? (
+      {waitingForAlbums ? (
         <View style={styles.loading}>
           <ActivityIndicator size="large" color={colors.accent} />
+          <Text style={styles.loadingHint}>Loading albums…</Text>
         </View>
       ) : (
         <ScrollView
@@ -209,7 +220,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
               />
             ))}
           </AlbumGrid>
-          {!loadingAlbums && emptyAlbums.length === 0 && (
+          {!waitingForAlbums && emptyAlbums.length === 0 && (
             <Text style={styles.emptyText}>
               No empty albums available. Create an album on the web app first.
             </Text>
@@ -323,6 +334,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
+  },
+  loadingHint: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textMuted,
   },
   emptyText: {
     fontFamily: fonts.sans,
