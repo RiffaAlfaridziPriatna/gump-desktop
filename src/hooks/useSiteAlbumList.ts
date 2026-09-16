@@ -17,6 +17,10 @@ export type SiteAlbumListSearchValues = {
   order?: 'asc' | 'desc';
 };
 
+/** Match web album list: /albums?sort=default&order=desc */
+export const DEFAULT_SITE_ALBUM_SORT = 'default' as const;
+export const DEFAULT_SITE_ALBUM_ORDER = 'desc' as const;
+
 export const SITE_ALBUM_LIST_STALE_TIME_MS = 300_000;
 
 export function siteAlbumListQueryKey(search: SiteAlbumListSearchValues = {}) {
@@ -25,8 +29,8 @@ export function siteAlbumListQueryKey(search: SiteAlbumListSearchValues = {}) {
     search.keyword,
     search.year,
     search.month,
-    search.sort,
-    search.order,
+    search.sort ?? DEFAULT_SITE_ALBUM_SORT,
+    search.order ?? DEFAULT_SITE_ALBUM_ORDER,
   ] as const;
 }
 
@@ -45,8 +49,10 @@ export function useSiteAlbumList(options: UseSiteAlbumListOptions = {}) {
     localAlbumIds = EMPTY_LOCAL_ALBUM_IDS,
     ...search
   } = options;
+  const sort = search.sort ?? DEFAULT_SITE_ALBUM_SORT;
+  const order = search.order ?? DEFAULT_SITE_ALBUM_ORDER;
   const api = make(APIService);
-  const queryKey = siteAlbumListQueryKey(search);
+  const queryKey = siteAlbumListQueryKey({...search, sort, order});
 
   const {
     data,
@@ -65,8 +71,8 @@ export function useSiteAlbumList(options: UseSiteAlbumListOptions = {}) {
           keyword: search.keyword,
           year: search.year,
           month: search.month,
-          sort: search.sort,
-          order: search.order,
+          sort,
+          order,
         });
       } catch (err) {
         assertAPIException(err);
