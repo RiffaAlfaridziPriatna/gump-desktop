@@ -35,11 +35,11 @@
 		D1A2C3D40123456700000012 /* face_landmarks_2d106det.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */; };
 		D1A2C3D40123456700000013 /* face_detection_scrfd_10g_bnkps.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000013 /* face_detection_scrfd_10g_bnkps.onnx */; };
 		E2B3C4D50123456700000001 /* GumpAnalysisSession.mm in Sources */ = {isa = PBXBuildFile; fileRef = E2B3C4D51123456700000001 /* GumpAnalysisSession.mm */; };
-		F1A2C3D40123456700000001 /* GumpScrollView.mm in Sources */ = {isa = PBXBuildFile; fileRef = F1A2C3D41123456700000001 /* GumpScrollView.mm */; };
 		E3A4B5C60123456700000001 /* AnalysisSession.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000001 /* AnalysisSession.cpp */; };
 		E3A4B5C60123456700000002 /* PhotoFlags.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000003 /* PhotoFlags.cpp */; };
 		E3A4B5C60123456700000003 /* FaceCluster.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000005 /* FaceCluster.cpp */; };
 		E3A4B5C60123456700000004 /* DuplicateDetection.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000007 /* DuplicateDetection.cpp */; };
+		F1A2C3D40123456700000001 /* GumpScrollView.mm in Sources */ = {isa = PBXBuildFile; fileRef = F1A2C3D41123456700000001 /* GumpScrollView.mm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -90,8 +90,6 @@
 		D1A2C3D41123456700000019 /* MediaDerivatives.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MediaDerivatives.h; path = "../cpp/face-detection/MediaDerivatives.h"; sourceTree = SOURCE_ROOT; };
 		E2B3C4D51123456700000001 /* GumpAnalysisSession.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpAnalysisSession.mm; sourceTree = "<group>"; };
 		E2B3C4D51123456700000002 /* GumpAnalysisSession.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpAnalysisSession.h; sourceTree = "<group>"; };
-		F1A2C3D41123456700000001 /* GumpScrollView.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpScrollView.mm; sourceTree = "<group>"; };
-		F1A2C3D41123456700000002 /* GumpScrollView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpScrollView.h; sourceTree = "<group>"; };
 		E3A4B5C61123456700000001 /* AnalysisSession.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = AnalysisSession.cpp; path = ../cpp/analysis/AnalysisSession.cpp; sourceTree = SOURCE_ROOT; };
 		E3A4B5C61123456700000002 /* AnalysisSession.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = AnalysisSession.h; path = ../cpp/analysis/AnalysisSession.h; sourceTree = SOURCE_ROOT; };
 		E3A4B5C61123456700000003 /* PhotoFlags.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PhotoFlags.cpp; path = ../cpp/analysis/PhotoFlags.cpp; sourceTree = SOURCE_ROOT; };
@@ -102,6 +100,8 @@
 		E3A4B5C61123456700000008 /* DuplicateDetection.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DuplicateDetection.h; path = ../cpp/analysis/DuplicateDetection.h; sourceTree = SOURCE_ROOT; };
 		E3A4B5C61123456700000009 /* PlatformDecoder.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PlatformDecoder.h; path = ../cpp/analysis/PlatformDecoder.h; sourceTree = SOURCE_ROOT; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		F1A2C3D41123456700000001 /* GumpScrollView.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpScrollView.mm; sourceTree = "<group>"; };
+		F1A2C3D41123456700000002 /* GumpScrollView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpScrollView.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
