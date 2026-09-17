@@ -23,6 +23,7 @@ import {
 import {readAlbumMeta, readAllAlbumMeta, removeAlbum, saveAlbum, type SaveAlbumOptions} from './storage';
 import {toPersistableAlbum} from './toPersistableAlbum';
 import {syncAlbumWithDisk} from './sync';
+import {markLocalAlbumAccessible} from './localAlbumAccess';
 import {
   ensurePhotoOrder,
   getPhotoIdsForAlbum,
@@ -383,6 +384,7 @@ export async function registerLocalAlbum(album: CulledAlbum): Promise<void> {
   culledAlbumStore.setState(state => {
     state.albums[album.albumId] = {...album, photos: []};
   });
+  markLocalAlbumAccessible(album.albumId);
   const stored = getAlbumFromState(album.albumId) ?? album;
   await saveAlbum(toPersistableAlbum(stored), {includePhotos: true});
 }
