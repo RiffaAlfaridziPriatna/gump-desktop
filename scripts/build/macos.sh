@@ -70,7 +70,7 @@ sync_dist_app() {
 
 package_zip() {
   local source_app="${1:-$DIST_APP_PATH}"
-  local zip_path="${DIST_OUT}/GumpDesktop-macOS.zip"
+  local zip_path="${DIST_OUT}/Gump-MacOS-v${APP_VERSION}.zip"
 
   if [[ ! -d "$source_app" ]]; then
     die "App not found for zip: ${source_app}"
@@ -80,6 +80,46 @@ package_zip() {
   rm -f "$zip_path"
   ditto -c -k --keepParent --norsrc --noextattr "$source_app" "$zip_path"
   log "ZIP created at ${zip_path}"
+}
+
+sign_sparkle_zip() {
+  local zip_path="${DIST_OUT}/Gump-MacOS-v${APP_VERSION}.zip"
+  local signature_path="${DIST_OUT}/sparkle_signature.txt"
+  local sparkle_key_file=""
+  local sign_update_bin=""
+  local signature=""
+
+  if [[ ! -f "$zip_path" ]]; then
+    die "ZIP not found for Sparkle signing: ${zip_path}"
+  fi
+
+  if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
+    log "SPARKLE_PRIVATE_KEY unset — skipping Sparkle EdDSA signature"
+    return 0
+  fi
+
+  if command -v sign_update >/dev/null 2>&1; then
+    sign_update_bin="$(command -v sign_update)"
+  elif [[ -x "${ROOT_DIR}/tools/sparkle/bin/sign_update" ]]; then
+    sign_update_bin="${ROOT_DIR}/tools/sparkle/bin/sign_update"
+  elif [[ -x "${SPARKLE_BIN_DIR:-}/sign_update" ]]; then
+    sign_update_bin="${SPARKLE_BIN_DIR}/sign_update"
+  else
+    die "sign_update not found. Install Sparkle tools or set SPARKLE_BIN_DIR."
+  fi
+
+  sparkle_key_file="$(mktemp)"
+  printf '%s\n' "$SPARKLE_PRIVATE_KEY" >"$sparkle_key_file"
+  # shellcheck disable=SC2064
+  trap 'rm -f "$sparkle_key_file"' RETURN
+
+  signature="$("$sign_update_bin" --ed-key-file "$sparkle_key_file" "$zip_path" | tr -d '\n')"
+  if [[ -z "$signature" ]]; then
+    die "Sparkle sign_update returned empty signature"
+  fi
+
+  printf '%s\n' "$signature" >"$signature_path"
+  log "Sparkle signature written to ${signature_path}"
 }
 
 sign_app() {
@@ -167,9 +207,10 @@ distribute_app() {
   notarize_and_staple
   verify_distribution
   package_zip "$DIST_APP_PATH"
+  sign_sparkle_zip
   log "Distribution bundle ready:"
   log "  App: ${DIST_APP_PATH}"
-  log "  ZIP: ${DIST_OUT}/GumpDesktop-macOS.zip"
+  log "  ZIP: ${DIST_OUT}/Gump-MacOS-v${APP_VERSION}.zip"
 }
 
 case "$VARIANT" in
