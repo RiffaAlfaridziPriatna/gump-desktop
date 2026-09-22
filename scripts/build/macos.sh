@@ -43,13 +43,28 @@ build_app() {
   log "Building macOS release app..."
   ensure_dir "$DERIVED_DATA_PATH"
 
+  local -a sign_args=()
+  if [[ "$VARIANT" == "distribute" ]]; then
+    # CI only has Developer ID in the keychain. Skip Xcode automatic "Apple
+    # Development" signing; sign_app() re-signs with Developer ID afterwards.
+    sign_args=(
+      CODE_SIGN_IDENTITY=""
+      CODE_SIGNING_REQUIRED=NO
+      CODE_SIGNING_ALLOWED=NO
+    )
+  else
+    sign_args=(
+      DEVELOPMENT_TEAM="${APPLE_TEAM_ID:-$DEFAULT_TEAM_ID}"
+      CODE_SIGN_STYLE=Automatic
+    )
+  fi
+
   xcodebuild \
     -workspace "$MACOS_WORKSPACE" \
     -scheme "$MACOS_SCHEME" \
     -configuration Release \
     -derivedDataPath "$DERIVED_DATA_PATH" \
-    DEVELOPMENT_TEAM="${APPLE_TEAM_ID:-$DEFAULT_TEAM_ID}" \
-    CODE_SIGN_STYLE=Automatic \
+    "${sign_args[@]}" \
     CURRENT_PROJECT_VERSION="${APP_BUILD_NUMBER}" \
     MARKETING_VERSION="${APP_VERSION}" \
     APP_VERSION="${APP_VERSION}" \
