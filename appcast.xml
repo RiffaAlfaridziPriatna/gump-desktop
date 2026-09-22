@@ -14,7 +14,7 @@
     <enclosure
       url="https://github.com/RiffaAlfaridziPriatna/gump-desktop/releases/download/2026-09-22/Gump-MacOS-v1.0.2.zip"
       sparkle:os="macos"
-      sparkle:edSignature="sparkle:edSignature="LenTY6FeYwaSm/g1TE5m6wE2wxb4TVMWHNrU9CtjkYqwj8okr+9Ab0TVPDgX16yLcFCd6AaCjX5oMjLRT2x4Ag==" length="39795319""
+      sparkle:edSignature="LenTY6FeYwaSm/g1TE5m6wE2wxb4TVMWHNrU9CtjkYqwj8okr+9Ab0TVPDgX16yLcFCd6AaCjX5oMjLRT2x4Ag=="
       length="39795319"
       type="application/octet-stream"/>
   </item>
