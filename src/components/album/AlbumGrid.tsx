@@ -41,7 +41,11 @@ type AlbumGridProps<T> = {
   gap?: number;
   style?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
-  /** Applied outside the measured grid width so card sizing stays accurate. */
+  /**
+   * Horizontal inset for grid content only (via contentContainerStyle).
+   * Kept off the FlatList frame so the scroll indicator stays flush to the
+   * screen edge — same pattern as PhotoGrid.
+   */
   contentPaddingHorizontal?: number;
   scrollEnabled?: boolean;
   refreshing?: boolean;
@@ -73,18 +77,19 @@ export function AlbumGrid<T>({
   ListHeaderComponent,
   ListFooterComponent,
 }: AlbumGridProps<T>) {
-  const [gridWidth, setGridWidth] = useState(0);
+  const [containerWidth, setContainerWidth] = useState(0);
 
   const itemWidth = useMemo(() => {
-    if (gridWidth <= 0) {
+    const contentWidth = containerWidth - contentPaddingHorizontal * 2;
+    if (contentWidth <= 0) {
       return 0;
     }
-    return (gridWidth - (columns - 1) * gap) / columns;
-  }, [gridWidth, columns, gap]);
+    return (contentWidth - (columns - 1) * gap) / columns;
+  }, [containerWidth, contentPaddingHorizontal, columns, gap]);
 
   const onLayout = useCallback((event: LayoutChangeEvent) => {
     const width = event.nativeEvent.layout.width;
-    setGridWidth(prev => (prev === width ? prev : width));
+    setContainerWidth(prev => (prev === width ? prev : width));
   }, []);
 
   const renderFlatItem = useCallback(
@@ -117,8 +122,14 @@ export function AlbumGrid<T>({
   );
 
   const listContentStyle = useMemo(
-    () => [styles.listContent, contentContainerStyle],
-    [contentContainerStyle],
+    () => [
+      styles.listContent,
+      contentPaddingHorizontal > 0 && {
+        paddingHorizontal: contentPaddingHorizontal,
+      },
+      contentContainerStyle,
+    ],
+    [contentContainerStyle, contentPaddingHorizontal],
   );
 
   const refreshControl = onRefresh ? (
@@ -131,48 +142,35 @@ export function AlbumGrid<T>({
   ) : undefined;
 
   return (
-    <View
-      style={[
-        styles.container,
-        style,
-        contentPaddingHorizontal > 0 && {
-          paddingHorizontal: contentPaddingHorizontal,
-        },
-      ]}>
-      {/*
-        Measure the inner width (after horizontal padding). Padding on the same
-        node as onLayout would inflate card widths and overflow the row.
-      */}
-      <View style={styles.measure} onLayout={onLayout}>
-        <AlbumGridContext.Provider value={{itemWidth}}>
-          {itemWidth > 0 ? (
-            <FlatList
-              key={`album-grid-${columns}`}
-              data={data as T[]}
-              keyExtractor={keyExtractor}
-              renderItem={wrappedRenderItem}
-              numColumns={columns}
-              columnWrapperStyle={columnWrapperStyle}
-              style={styles.list}
-              contentContainerStyle={listContentStyle}
-              scrollEnabled={scrollEnabled}
-              refreshControl={refreshControl}
-              onEndReached={onEndReached}
-              onEndReachedThreshold={onEndReachedThreshold}
-              extraData={extraData}
-              ListEmptyComponent={ListEmptyComponent}
-              ListHeaderComponent={ListHeaderComponent}
-              ListFooterComponent={ListFooterComponent}
-              windowSize={7}
-              maxToRenderPerBatch={columns * 2}
-              initialNumToRender={columns * 3}
-              updateCellsBatchingPeriod={50}
-              removeClippedSubviews={false}
-              showsVerticalScrollIndicator
-            />
-          ) : null}
-        </AlbumGridContext.Provider>
-      </View>
+    <View style={[styles.container, style]} onLayout={onLayout}>
+      <AlbumGridContext.Provider value={{itemWidth}}>
+        {itemWidth > 0 ? (
+          <FlatList
+            key={`album-grid-${columns}`}
+            data={data as T[]}
+            keyExtractor={keyExtractor}
+            renderItem={wrappedRenderItem}
+            numColumns={columns}
+            columnWrapperStyle={columnWrapperStyle}
+            style={styles.list}
+            contentContainerStyle={listContentStyle}
+            scrollEnabled={scrollEnabled}
+            refreshControl={refreshControl}
+            onEndReached={onEndReached}
+            onEndReachedThreshold={onEndReachedThreshold}
+            extraData={extraData}
+            ListEmptyComponent={ListEmptyComponent}
+            ListHeaderComponent={ListHeaderComponent}
+            ListFooterComponent={ListFooterComponent}
+            windowSize={7}
+            maxToRenderPerBatch={columns * 2}
+            initialNumToRender={columns * 3}
+            updateCellsBatchingPeriod={50}
+            removeClippedSubviews={false}
+            showsVerticalScrollIndicator
+          />
+        ) : null}
+      </AlbumGridContext.Provider>
     </View>
   );
 }
@@ -185,11 +183,6 @@ const styles = StyleSheet.create({
     minHeight: 0,
     minWidth: 0,
     overflow: 'hidden',
-  },
-  measure: {
-    flex: 1,
-    minHeight: 0,
-    minWidth: 0,
   },
   list: {
     flex: 1,
