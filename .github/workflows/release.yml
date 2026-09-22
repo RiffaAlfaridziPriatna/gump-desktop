@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   build-macos:
@@ -258,26 +259,57 @@ jobs:
           gh release upload "$TAG" \
             "dist/prod/macos/Gump-MacOS-v${MAC_VERSION}.zip" \
             "dist/prod/windows/Gump-Windows-v${WIN_VERSION}.zip" \
+            "dist/appcast.xml" \
             --clobber
 
           rm -f "$NOTES_FILE"
+
+      # main is protected (PR + required "test"). Push via bot PR, wait for Test, merge.
       - name: Update appcast.xml on main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           TAG="${{ steps.tag.outputs.tag }}"
+          BRANCH="chore/appcast-${TAG}"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git fetch origin main
-          git checkout main
+          git checkout -B "$BRANCH" origin/main
           cp dist/appcast.xml appcast.xml
           git add appcast.xml
+
           if git diff --staged --quiet; then
             echo "appcast.xml unchanged"
-          else
-            git commit -m "chore: update appcast.xml for ${TAG}"
-            git push origin main
+            exit 0
           fi
+
+          git commit -m "chore: update appcast.xml for ${TAG}"
+          git push -u origin "HEAD:refs/heads/${BRANCH}" --force
+
+          PR_URL="$(gh pr list --head "$BRANCH" --base main --json url --jq '.[0].url // empty')"
+          if [[ -z "$PR_URL" ]]; then
+            PR_URL="$(
+              gh pr create \
+                --base main \
+                --head "$BRANCH" \
+                --title "chore: update appcast.xml for ${TAG}" \
+                --body "$(cat <<EOF
+Automated appcast update from Release \`${TAG}\`.
+
+Sparkle clients read \`appcast.xml\` on \`main\`. This PR only updates that feed file.
+EOF
+)"
+            )"
+          fi
+          echo "PR: $PR_URL"
+
+          # Wait for required status checks (Test), then merge — no direct push to main.
+          gh pr checks --watch --fail-fast "$PR_URL"
+          gh pr merge "$PR_URL" --squash --delete-branch --subject "chore: update appcast.xml for ${TAG}"
+          echo "appcast.xml merged to main"
 
       - name: Summary
         run: |
