@@ -7,6 +7,7 @@ import {CulledAlbumPhotoGrid} from '@components/culling/CulledAlbumPhotoGrid';
 import {CulledAlbumDetailHeader} from '@components/culling/CulledAlbumDetailHeader';
 import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
 import {DeletePhotoModal} from '@components/modals/DeletePhotoModal';
+import {UploadModal} from '@components/modals/UploadModal';
 import {UploadSelectedConfirmModal} from '@components/modals/UploadSelectedConfirmModal';
 import {UploadToast} from '@components/upload/UploadToast';
 import {FaceStatusTooltip} from '@components/culling/FaceStatusTooltip';
@@ -24,6 +25,7 @@ import {useProfileMenu} from '@hooks/useProfileMenu';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {getPhotoById, saveLastCullFilters} from '@lib/culledAlbum/store';
+import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
 import {preloadImage, preloadImages} from '@lib/media/imagePreload';
 import {
   resolveDetailDisplayUri,
@@ -31,6 +33,7 @@ import {
 } from '@lib/storage/localStorage';
 import {stabilizeGridPhotos} from '@lib/culledAlbum/stableGridPhotos';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
+import {FileAsset} from '@services/upload/types';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
@@ -56,15 +59,13 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   );
   const isFocused = useIsFocused();
   const profileMenu = useProfileMenu();
-  const {resumeInFlightWork, startSelectedUpload} = useCulledAlbumActions();
+  const {resumeInFlightWork, startSelectedUpload, addPhotos} =
+    useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
   const {loadError, loadingPhotos} = useCulledAlbumPhotos(albumId);
   const albumPhotos = useCulledAlbumPhotosState(albumId);
   const cullingCompleted = useCulledAlbumStore(
     state => state.albums[albumId]?.cullingCompleted ?? false,
-  );
-  const cullingHasUploads = useCulledAlbumStore(
-    state => state.albums[albumId]?.cullingHasUploads ?? false,
   );
   const albumName = useCulledAlbumStore(
     state =>
@@ -90,7 +91,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     toggleSelection,
     updateStarRating,
     deletePhoto,
-    photoMap,
   } = useCulledAlbumDetailData(albumId, albumPhotos, !loadingPhotos);
 
   const {
@@ -117,8 +117,10 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const [cullFiltersExpanded, setCullFiltersExpanded] = useState(true);
   const [keyFacesExpanded, setKeyFacesExpanded] = useState(true);
   const [showUploadConfirm, setShowUploadConfirm] = useState(false);
+  const [showAddPhotosModal, setShowAddPhotosModal] = useState(false);
   const [mainContentWidth, setMainContentWidth] = useState(0);
-  const isBlockingModalOpen = photoToDelete !== null || showUploadConfirm;
+  const isBlockingModalOpen =
+    photoToDelete !== null || showUploadConfirm || showAddPhotosModal;
 
   useEffect(() => {
     if (!isBlockingModalOpen) {
@@ -154,22 +156,30 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
   usePreloadGridImages(initialPreloadUris);
 
-  const canDeletePhoto = cullingCompleted && !isAnalyzing && !cullingHasUploads;
+  const localImportQueue = useAlbumQueueOperation(albumId, 'upload');
+  const isLocalImporting =
+    localImportQueue.status === 'active' ||
+    localImportQueue.status === 'finalizing';
+  const cullingBusy = isAnalyzing || isLocalImporting;
+  const canDeletePhoto = cullingCompleted && !cullingBusy;
 
+  // Keep the detail grid on already-culled photos only. Newly imported files
+  // stay out of the grid until analysis finishes, so local import feels like
+  // "nothing happened" besides the toast / progress pill.
   const rawGridPhotos = useMemo(() => {
     return albumPhotos
-      .filter(photo => photo.status === 'uploaded')
+      .filter(
+        photo =>
+          photo.status === 'uploaded' && photo.analysisStatus === 'analyzed',
+      )
       .map(photo => ({
         photoId: photo.photoId,
-        disabled: isCulledPhotoDisabled(photo, cullingHasUploads),
-        analysis:
-          photo.analysisStatus === 'analyzed'
-            ? toCullingPhoto(photo)
-            : photoMap.get(photo.photoId),
+        disabled: isCulledPhotoDisabled(photo),
+        analysis: toCullingPhoto(photo),
       }));
-  }, [albumPhotos, cullingHasUploads, photoMap]);
+  }, [albumPhotos]);
 
-  const gridPhotos = useMemo(() => {
+  const liveGridPhotos = useMemo(() => {
     const stablePhotos = stabilizeGridPhotos(
       gridPhotosCacheRef.current,
       rawGridPhotos,
@@ -178,6 +188,25 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     previousGridPhotosRef.current = stablePhotos;
     return stablePhotos;
   }, [rawGridPhotos]);
+
+  const frozenGridPhotosRef = useRef(liveGridPhotos);
+  const wasCullingBusyRef = useRef(false);
+  if (cullingBusy) {
+    if (!wasCullingBusyRef.current && liveGridPhotos.length > 0) {
+      frozenGridPhotosRef.current = liveGridPhotos;
+    }
+    wasCullingBusyRef.current = true;
+  } else {
+    wasCullingBusyRef.current = false;
+    if (liveGridPhotos.length > 0) {
+      frozenGridPhotosRef.current = liveGridPhotos;
+    }
+  }
+
+  const gridPhotos =
+    cullingBusy && frozenGridPhotosRef.current.length > 0
+      ? frozenGridPhotosRef.current
+      : liveGridPhotos;
 
   const totalPhotos = gridPhotos.length;
 
@@ -194,6 +223,16 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     setSelectionFilter,
     setStarRatingFilter,
   } = useCulledAlbumFilters(gridPhotos, stats, lastCullFilters);
+
+  const pendingUploadPhotos = useMemo(
+    () =>
+      actionPhotos.filter(photo => {
+        const source = getPhotoById(albumId, photo.photoId);
+        return source?.serverUploadStatus !== 'uploaded';
+      }),
+    [actionPhotos, albumId, albumPhotos],
+  );
+  const pendingUploadCount = pendingUploadPhotos.length;
 
   const handleOpenPhotoDetail = useCallback(
     (photoId: string, faceIndex?: number) => {
@@ -235,7 +274,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   }, [deletePhoto, photoToDelete]);
 
   const handleStartUpload = useCallback(async () => {
-    const photoIds = actionPhotos.map(photo => photo.photoId);
+    const photoIds = pendingUploadPhotos.map(photo => photo.photoId);
     if (photoIds.length === 0) {
       return;
     }
@@ -257,7 +296,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       throw error;
     }
   }, [
-    actionPhotos,
+    pendingUploadPhotos,
     activeFilters,
     albumId,
     albumLink,
@@ -265,6 +304,31 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     navigation,
     startSelectedUpload,
   ]);
+
+  const handleUploadSelectedPress = useCallback(() => {
+    setShowUploadConfirm(true);
+  }, []);
+
+  const handleAddPhotosPress = useCallback(() => {
+    if (cullingBusy) {
+      return;
+    }
+    setShowAddPhotosModal(true);
+  }, [cullingBusy]);
+
+  const handleAddPhotosSelected = useCallback(
+    (files: FileAsset[]) => {
+      setShowAddPhotosModal(false);
+      if (files.length === 0) {
+        return;
+      }
+      addPhotos(albumId, files, {
+        autoStartAnalysis: true,
+        stabilizeDetailUiDuringImport: true,
+      });
+    },
+    [addPhotos, albumId],
+  );
 
   const handleCullFiltersToggle = useCallback(() => {
     setCullFiltersExpanded(current => !current);
@@ -277,7 +341,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   useEffect(() => {
     syncScreenOrigin();
   }, [cullFiltersExpanded, keyFacesExpanded, syncScreenOrigin]);
-
 
   const keyFaceDisplayUrisKey = useMemo(
     () =>
@@ -353,10 +416,12 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             starRatingFilter={starRatingFilter}
             onSelectionFilterChange={setSelectionFilter}
             onStarRatingFilterChange={setStarRatingFilter}
-            onUploadSelected={() => setShowUploadConfirm(true)}
-            selectedCount={actionCount}
-            uploaded={cullingHasUploads}
-            uploadDisabled={actionCount === 0}
+            onUploadSelected={handleUploadSelectedPress}
+            onAddPhotos={handleAddPhotosPress}
+            selectedCount={pendingUploadCount}
+            uploadDisabled={pendingUploadCount === 0 || cullingBusy}
+            addPhotosDisabled={cullingBusy}
+            cullingInProgress={cullingBusy}
             isMobileLayout={isMobileLayout}
           />
         </View>
@@ -389,9 +454,15 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           )}
           <View
             style={styles.mainColumn}
-            onLayout={event =>
-              setMainContentWidth(event.nativeEvent.layout.width)
-            }>
+            onLayout={event => {
+              const width = event.nativeEvent.layout.width;
+              // Ignore collapsed layouts during import/analysis re-render storms
+              // (near-zero width makes the grid render an empty black area).
+              if (width < 80) {
+                return;
+              }
+              setMainContentWidth(width);
+            }}>
             {filteredPhotos.length === 0 ? (
               <View style={styles.emptyState}>
                 <IconNoPhoto width={40} height={40} />
@@ -404,8 +475,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
                 containerWidth={layoutWidth}
                 isMobileLayout={isMobileLayout}
                 canDeletePhoto={canDeletePhoto}
-                cullingHasUploads={cullingHasUploads}
-                hoverEnabled={!isBlockingModalOpen}
+                hoverEnabled={!isBlockingModalOpen && !cullingBusy}
+                deferHeavyMediaWork={cullingBusy}
                 contentContainerStyle={[
                   styles.grid,
                   isMobileLayout && styles.gridMobile,
@@ -454,10 +525,16 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
         <UploadSelectedConfirmModal
           visible={showUploadConfirm}
-          photoCount={actionCount}
+          photoCount={pendingUploadCount}
           albumName={albumName}
           onClose={() => setShowUploadConfirm(false)}
           onStartUpload={handleStartUpload}
+        />
+
+        <UploadModal
+          visible={showAddPhotosModal}
+          onClose={() => setShowAddPhotosModal(false)}
+          onSelect={handleAddPhotosSelected}
         />
 
         {keyFaceTooltip && (

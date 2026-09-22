@@ -10,7 +10,15 @@ export type CulledAlbumUiState = {
 };
 
 export type CulledAlbumActions = {
-  addPhotos: (albumId: string, files: FileAsset[]) => void;
+  addPhotos: (
+    albumId: string,
+    files: FileAsset[],
+    options?: {
+      autoStartAnalysis?: boolean;
+      /** CulledAlbumDetail Add Photos: soft UI sync during local import only. */
+      stabilizeDetailUiDuringImport?: boolean;
+    },
+  ) => void;
   resumeLocalImport: (albumId: string) => void;
   resumeInFlightWork: (albumId: string) => void;
   startAnalysis: (albumId: string) => void;
@@ -18,6 +26,7 @@ export type CulledAlbumActions = {
   purgeAlbum: (albumId: string) => Promise<void>;
   hideToast: (mode: CulledAlbumToastMode, albumId: string) => void;
   clearCompleted: (mode: CulledAlbumToastMode, albumId: string) => void;
+  clearFilenameDuplicates: (albumId: string) => void;
   requestCancelUpload: (albumId: string) => void;
   requestCancelAnalysis: (albumId: string) => void;
   failNotUploadedItems: (albumId: string, error?: string) => Promise<void>;

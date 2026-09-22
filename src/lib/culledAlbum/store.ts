@@ -60,6 +60,7 @@ import {
 import {APIResponse} from '@services/api';
 import {getPhotosSnapshot, photoKey, photoStateStore} from './photoStateStore';
 import {flushRenderSync, scheduleRenderSync} from './photoRenderStore';
+import {bumpPhotoVersions} from './photoVersionStore';
 import {gumpPerfMark} from './perfDebug';
 import {
   flushPendingPhotoUpdates as flushBatchedPhotoUpdates,
@@ -128,6 +129,7 @@ export function syncPhotoStateForAlbum(
       },
     };
   });
+  bumpPhotoVersions(photos.map(photo => photoKey(albumId, photo.photoId)));
   scheduleRenderSync();
 }
 
@@ -289,6 +291,12 @@ export type UpdatePhotoOptions = {
     to: AnalysisCountKey;
   };
   immediate?: boolean;
+  /**
+   * When set with `immediate`, apply store updates now but skip UI snapshot
+   * bumps. Used by local import: toast progress comes from album batch counts,
+   * and the detail grid is frozen to already-analyzed photos.
+   */
+  softRenderSync?: boolean;
 };
 
 export function shiftLocalImportBatchCount(
@@ -652,6 +660,15 @@ export async function checkServerUploadBatchComplete(
 const BATCH_COMPLETE_DEBOUNCE_MS = 120;
 const pendingBatchCompleteChecks = new Set<string>();
 let batchCompleteCheckTimer: ReturnType<typeof setTimeout> | null = null;
+let autoStartAnalysisAfterImportHandler:
+  | ((albumId: string) => void)
+  | null = null;
+
+export function setAutoStartAnalysisAfterImportHandler(
+  handler: ((albumId: string) => void) | null,
+): void {
+  autoStartAnalysisAfterImportHandler = handler;
+}
 
 export function scheduleLocalImportBatchCompleteCheck(albumId: string): void {
   pendingBatchCompleteChecks.add(albumId);
@@ -731,6 +748,23 @@ export async function checkLocalImportBatchComplete(
 
   await syncPhotosFromStoreAwait(albumId, [...batchPhotoIds]);
   await persistAlbum(albumId);
+
+  let shouldAutoStartAnalysis = false;
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (!album) {
+      return;
+    }
+    album.stabilizeDetailUiDuringImport = false;
+    if (!album.autoStartAnalysisAfterImport) {
+      return;
+    }
+    album.autoStartAnalysisAfterImport = false;
+    shouldAutoStartAnalysis = hasUploaded;
+  });
+  if (shouldAutoStartAnalysis) {
+    autoStartAnalysisAfterImportHandler?.(albumId);
+  }
 }
 
 export function clearLocalImportBatch(albumId: string): void {
@@ -740,6 +774,27 @@ export function clearLocalImportBatch(albumId: string): void {
       album.localImportBatchPhotoIds = [];
       album.localImportBatchTotal = 0;
       album.localImportBatchCounts = undefined;
+    }
+  });
+}
+
+export function setFilenameDuplicateNames(
+  albumId: string,
+  names: string[],
+): void {
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (album) {
+      album.filenameDuplicateNames = names;
+    }
+  });
+}
+
+export function clearFilenameDuplicateNames(albumId: string): void {
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (album) {
+      album.filenameDuplicateNames = [];
     }
   });
 }
@@ -845,12 +900,21 @@ export function addPhotosToAlbum(
     return [];
   }
 
+  const albumBefore = getAlbumFromState(albumId)!;
+  const batchId =
+    typeof albumBefore.nextPhotoBatchId === 'number' &&
+    Number.isFinite(albumBefore.nextPhotoBatchId) &&
+    albumBefore.nextPhotoBatchId >= 1
+      ? albumBefore.nextPhotoBatchId
+      : 1;
+
   const baseUploadedAt = Date.now();
   const addedPhotos: CulledAlbumPhoto[] = files.map((file, index) =>
     createCulledAlbumPhoto(
       file,
       createCullingPhotoId(),
       baseUploadedAt + index,
+      batchId,
     ),
   );
   const addedPhotoIds = addedPhotos.map(photo => photo.photoId);
@@ -865,6 +929,7 @@ export function addPhotosToAlbum(
     album.localImportBatchPhotoIds = addedPhotoIds;
     album.localImportBatchTotal = addedPhotoIds.length;
     album.localImportBatchCounts = createLocalImportBatchCounts(addedPhotoIds.length);
+    album.nextPhotoBatchId = batchId + 1;
     recomputeAlbumTotals(album, getPhotosSnapshot(albumId));
   });
 
@@ -995,7 +1060,15 @@ function applyPhotoUpdatesBatch(updates: PendingPhotoUpdate[]): boolean {
     });
   }
 
-  scheduleRenderSync();
+  const needsUiSnapshot = updates.some(
+    update => !update.options?.softRenderSync,
+  );
+  if (foundKeys.size > 0) {
+    bumpPhotoVersions([...foundKeys]);
+  }
+  if (needsUiSnapshot) {
+    scheduleRenderSync();
+  }
 
   const albumsToReconcile = new Set<string>();
   for (const update of updates) {
@@ -1038,7 +1111,9 @@ export function updatePhoto(
   if (options?.immediate) {
     flushAllPendingPhotoUpdates();
     const applied = applyPhotoUpdatesBatch([{albumId, photoId, updater, options}]);
-    flushRenderSync();
+    if (!options.softRenderSync) {
+      flushRenderSync();
+    }
     return applied;
   }
 
@@ -1153,24 +1228,22 @@ export function queuePhotosForAnalysis(albumId: string): number {
   }
 
   const nextPhotoState = photoStateStore.getState().photoState;
-  const uploadedPhotoIds: string[] = [];
-  let pending = 0;
-  let analyzed = 0;
+  const queuedPhotoIds: string[] = [];
 
   for (const photoId of photoIds) {
     const photo = nextPhotoState[photoKey(albumId, photoId)];
     if (!photo || photo.status !== 'uploaded') {
       continue;
     }
-    uploadedPhotoIds.push(photoId);
+    // Already-culled photos stay out of this pass so toast/progress reflect
+    // only newly queued work (e.g. 148 adds, not 148 + 178 prior).
     if (photo.analysisStatus === 'analyzed') {
-      analyzed += 1;
       continue;
     }
     photo.analysisProgress = 0;
     photo.analysisStatus = 'pending';
     photo.analysisError = undefined;
-    pending += 1;
+    queuedPhotoIds.push(photoId);
   }
 
   culledAlbumStore.setState(state => {
@@ -1178,17 +1251,17 @@ export function queuePhotosForAnalysis(albumId: string): number {
     if (!album) {
       return;
     }
-    album.analysisBatchPhotoIds = uploadedPhotoIds;
+    album.analysisBatchPhotoIds = queuedPhotoIds;
     album.analysisBatchCounts = {
-      total: uploadedPhotoIds.length,
-      pending,
+      total: queuedPhotoIds.length,
+      pending: queuedPhotoIds.length,
       analyzing: 0,
-      analyzed,
+      analyzed: 0,
       failed: 0,
     };
   });
 
-  return uploadedPhotoIds.length;
+  return queuedPhotoIds.length;
 }
 
 export function clearAnalysisBatch(albumId: string): void {
