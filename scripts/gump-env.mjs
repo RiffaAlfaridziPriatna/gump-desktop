@@ -173,6 +173,12 @@ export function applyGumpBuildIdentity(options = {}) {
   );
   console.log(`▸ Dist output: ${process.env.GUMP_DIST_DIR}`);
 
+  if (envName === 'prod' && !process.env.API_BASE_URL) {
+    throw new Error(
+      'API_BASE_URL is empty for GUMP_ENV=prod. Add it to .env (local) or secrets.API_BASE_URL (CI).',
+    );
+  }
+
   if (platform === 'windows') {
     const identityVersion = syncWindowsPackageVersion(process.env.APP_VERSION);
     if (identityVersion) {
