@@ -1,0 +1,327 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., 2026-09-15). Empty = today UTC.'
+        required: false
+        default: ''
+  push:
+    tags:
+      - '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build-macos:
+    name: Build macOS
+    runs-on: macos-14
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact_name: ${{ steps.version.outputs.artifact_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Fail in seconds if Xcode Resources point at missing/gitignored files
+      # (avoids ~30m compile+notarize for a CpResource miss).
+      - name: Verify macOS bundle resources
+        run: bash scripts/build/verify-macos-resources.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # macos-14 default Xcode is 15.4; react-native-macos requires >= 16.1
+      - name: Select Xcode 16.2
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
+      - name: Install JS dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Install CocoaPods
+        run: |
+          cd macos
+          LANG=en_US.UTF-8 pod install
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(tr -d '\n\r' < VERSION.macos)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=Gump-MacOS-v${VERSION}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Import Developer ID certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          echo "$MACOS_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          # Keep unlocked for the whole job (default lock is ~5m → codesign can hang
+          # waiting for a keychain prompt that never appears on headless runners).
+          security set-keychain-settings -lut 21600 build.keychain
+          security list-keychains -d user -s build.keychain $(security list-keychains -d user | sed -e s/\"//g)
+          security import certificate.p12 -k build.keychain \
+            -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+          rm -f certificate.p12
+
+      # Split so Actions shows which phase is running (and log stay small).
+      - name: Build Release app
+        env:
+          GUMP_ENV: prod
+        run: bash scripts/build.sh macos distribute-build
+
+      - name: Codesign (Developer ID)
+        env:
+          GUMP_ENV: prod
+          MACOS_CODESIGN_IDENTITY: 'Developer ID Application: Gump Ai Limited (FWQ2YTUNN4)'
+          MACOS_KEYCHAIN: build.keychain
+          MACOS_KEYCHAIN_PASSWORD: ''
+        run: |
+          security unlock-keychain -p "" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          bash scripts/build.sh macos distribute-sign
+
+      - name: Notarize + staple
+        env:
+          GUMP_ENV: prod
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: bash scripts/build.sh macos distribute-notarize
+
+      - name: Package zip
+        env:
+          GUMP_ENV: prod
+        run: bash scripts/build.sh macos distribute-package
+
+      - name: Sign zip for Sparkle
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          curl -fsSL -o sparkle.tar.xz \
+            "https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-2.6.4.tar.xz"
+          mkdir -p tools/sparkle
+          tar -xf sparkle.tar.xz -C tools/sparkle
+          SIGN_UPDATE="$(find tools/sparkle -type f -name sign_update | head -n 1)"
+          if [[ -z "$SIGN_UPDATE" ]]; then
+            echo "sign_update not found in Sparkle archive" >&2
+            exit 1
+          fi
+          ZIP_PATH="dist/prod/macos/${{ steps.version.outputs.artifact_name }}"
+          printf '%s\n' "$SPARKLE_PRIVATE_KEY" > /tmp/sparkle_key
+          SIGNATURE="$("$SIGN_UPDATE" --ed-key-file /tmp/sparkle_key "$ZIP_PATH" | tr -d '\n')"
+          rm -f /tmp/sparkle_key
+          printf '%s\n' "$SIGNATURE" > dist/prod/macos/sparkle_signature.txt
+          echo "Sparkle signature: $SIGNATURE"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: |
+            dist/prod/macos/${{ steps.version.outputs.artifact_name }}
+            dist/prod/macos/sparkle_signature.txt
+          retention-days: 7
+
+  build-windows:
+    name: Build Windows
+    # Pin to windows-2022: RNW 0.81 looks for VS [17.11, 18.0).
+    # windows-latest (2025) ships VS 2026 only → same NoMSBuild failure as windows-build.yml.
+    runs-on: windows-2022
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact_name: ${{ steps.version.outputs.artifact_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(tr -d '\n\r' < VERSION.windows)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=Gump-Windows-v${VERSION}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Build Windows portable zip
+        env:
+          GUMP_ENV: prod
+        run: npm run build:windows
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: dist/prod/windows/${{ steps.version.outputs.artifact_name }}
+          retention-days: 7
+
+  release:
+    name: Create Release
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          elif [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="$(date -u +%Y-%m-%d)"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: dist/prod/macos/
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: dist/prod/windows/
+
+      - name: Generate appcast.xml
+        env:
+          GITHUB_RELEASES_REPO: ${{ github.repository }}
+        run: node scripts/generate-appcast.mjs --tag "${{ steps.tag.outputs.tag }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          MAC_VERSION="$(tr -d '\n\r' < VERSION.macos)"
+          WIN_VERSION="$(tr -d '\n\r' < VERSION.windows)"
+          chmod +x scripts/generate-release-notes.sh
+
+          PREV_TAG="$(
+            git tag -l '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' \
+              | sort \
+              | awk -v d="$TAG" '$0 < d { print }' \
+              | tail -n 1 || true
+          )"
+
+          NOTES_FILE="$(mktemp)"
+          {
+            echo "## Versions"
+            echo ""
+            echo "- **macOS**: v${MAC_VERSION}"
+            echo "- **Windows**: v${WIN_VERSION}"
+            echo ""
+            bash scripts/generate-release-notes.sh "${PREV_TAG}" "HEAD"
+            echo ""
+            echo "---"
+            echo "*Auto-generated release*"
+          } >"$NOTES_FILE"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists; uploading assets (notes left as-is)"
+          else
+            # Tag should already exist when triggered by push:tags; create release only.
+            gh release create "$TAG" --title "Release $TAG" --notes-file "$NOTES_FILE"
+          fi
+
+          gh release upload "$TAG" \
+            "dist/prod/macos/Gump-MacOS-v${MAC_VERSION}.zip" \
+            "dist/prod/windows/Gump-Windows-v${WIN_VERSION}.zip" \
+            "dist/appcast.xml" \
+            --clobber
+
+          rm -f "$NOTES_FILE"
+
+      # main is protected (PR + required "test"). Push via bot PR, wait for Test, merge.
+      - name: Update appcast.xml on main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          BRANCH="chore/appcast-${TAG}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin main
+          git checkout -B "$BRANCH" origin/main
+          cp dist/appcast.xml appcast.xml
+          git add appcast.xml
+
+          if git diff --staged --quiet; then
+            echo "appcast.xml unchanged"
+            exit 0
+          fi
+
+          git commit -m "chore: update appcast.xml for ${TAG}"
+          git push -u origin "HEAD:refs/heads/${BRANCH}" --force
+
+          PR_URL="$(gh pr list --head "$BRANCH" --base main --json url --jq '.[0].url // empty')"
+          if [[ -z "$PR_URL" ]]; then
+            PR_URL="$(
+              gh pr create \
+                --base main \
+                --head "$BRANCH" \
+                --title "chore: update appcast.xml for ${TAG}" \
+                --body "$(cat <<EOF
+Automated appcast update from Release \`${TAG}\`.
+
+Sparkle clients read \`appcast.xml\` on \`main\`. This PR only updates that feed file.
+EOF
+)"
+            )"
+          fi
+          echo "PR: $PR_URL"
+
+          # Wait for required status checks (Test), then merge — no direct push to main.
+          gh pr checks --watch --fail-fast "$PR_URL"
+          gh pr merge "$PR_URL" --squash --delete-branch --subject "chore: update appcast.xml for ${TAG}"
+          echo "appcast.xml merged to main"
+
+      - name: Summary
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          {
+            echo "## Release Complete"
+            echo ""
+            echo "- **Tag**: $TAG"
+            echo "- **macOS**: v$(tr -d '\n\r' < VERSION.macos)"
+            echo "- **Windows**: v$(tr -d '\n\r' < VERSION.windows)"
+            echo ""
+            echo "**Links:**"
+            echo "- [GitHub Release](https://github.com/${{ github.repository }}/releases/tag/$TAG)"
+            echo "- [Appcast URL](https://raw.githubusercontent.com/${{ github.repository }}/main/appcast.xml)"
+          } >> "$GITHUB_STEP_SUMMARY"

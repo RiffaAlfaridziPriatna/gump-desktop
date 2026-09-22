@@ -583,7 +583,7 @@ function packagePortableRelease(arch) {
   ensureReleaseBundleInDir(releaseDir);
 
   const distWindowsDir = DIST_WINDOWS_DIR;
-  const portableName = `GumpDesktop-windows-${arch}`;
+  const portableName = `Gump-Windows-v${process.env.APP_VERSION || '0.0.0.1'}`;
   const portableDir = path.join(distWindowsDir, portableName);
   const zipPath = path.join(distWindowsDir, `${portableName}.zip`);
 
