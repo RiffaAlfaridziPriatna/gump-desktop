@@ -65,8 +65,12 @@ jobs:
           security create-keychain -p "" build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "" build.keychain
+          # Keep unlocked for the whole job (default lock is ~5m → codesign can hang
+          # waiting for a keychain prompt that never appears on headless runners).
+          security set-keychain-settings -lut 21600 build.keychain
+          security list-keychains -d user -s build.keychain $(security list-keychains -d user | sed -e s/\"//g)
           security import certificate.p12 -k build.keychain \
-            -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign -T /usr/bin/security
+            -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign -T /usr/bin/security -T /usr/bin/productsign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
           rm -f certificate.p12
 
@@ -80,7 +84,12 @@ jobs:
         env:
           GUMP_ENV: prod
           MACOS_CODESIGN_IDENTITY: 'Developer ID Application: Gump Ai Limited (FWQ2YTUNN4)'
-        run: bash scripts/build.sh macos distribute-sign
+          MACOS_KEYCHAIN: build.keychain
+          MACOS_KEYCHAIN_PASSWORD: ''
+        run: |
+          security unlock-keychain -p "" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          bash scripts/build.sh macos distribute-sign
 
       - name: Notarize + staple
         env:

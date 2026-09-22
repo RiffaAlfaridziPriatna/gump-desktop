@@ -206,21 +206,108 @@ sign_sparkle_zip() {
 
 sign_app() {
   local identity="${MACOS_CODESIGN_IDENTITY:-$DEFAULT_CODESIGN_IDENTITY}"
+  local list_file=""
+  local total=0
+  local idx=0
+  local rel=""
 
   require_command codesign
+  require_command file
+
+  if [[ ! -d "$DIST_APP_PATH" ]]; then
+    die "App not found for signing: ${DIST_APP_PATH}"
+  fi
 
   if [[ ! -f "$ENTITLEMENTS_PATH" ]]; then
     die "Entitlements not found: ${ENTITLEMENTS_PATH}"
+  fi
+
+  # CI keychains can re-lock; unlock if MACOS_KEYCHAIN is set (Release workflow).
+  if [[ -n "${MACOS_KEYCHAIN:-}" ]]; then
+    security unlock-keychain -p "${MACOS_KEYCHAIN_PASSWORD:-}" "$MACOS_KEYCHAIN" || true
+    security set-keychain-settings -lut 21600 "$MACOS_KEYCHAIN" || true
   fi
 
   if ! security find-identity -v -p codesigning | grep -Fq "$identity"; then
     die "Codesign identity not found in keychain: ${identity}"
   fi
 
-  log "Signing with ${identity}..."
+  # Avoid `codesign --deep`: on CI it often looks hung for ~1h because it
+  # silently walks every nested Mach-O and hits Apple's timestamp server
+  # per object, sometimes also blocking on keychain UI that can't appear.
+  # Apple recommends signing inside-out explicitly (TN2206).
+  log "Signing with ${identity} (inside-out, no --deep)..."
+
+  list_file="$(mktemp)"
+  # shellcheck disable=SC2064
+  trap 'rm -f "'"$list_file"'"' RETURN
+
+  # Collect Mach-O files under the .app (exclude the bundle path itself).
+  # Sort deepest paths first so frameworks/helpers are sealed before parents.
+  while IFS= read -r -d '' candidate; do
+    if file -b "$candidate" 2>/dev/null | grep -q 'Mach-O'; then
+      printf '%s\n' "$candidate"
+    fi
+  done < <(find "$DIST_APP_PATH" -type f -print0) \
+    | awk '{
+        n = split($0, a, "/")
+        printf "%04d\t%s\n", n, $0
+      }' \
+    | sort -rn \
+    | cut -f2- >"$list_file"
+
+  total="$(wc -l <"$list_file" | tr -d ' ')"
+  log "Found ${total} Mach-O object(s) to sign"
+
+  idx=0
+  while IFS= read -r target; do
+    [[ -z "$target" ]] && continue
+    # Nested code: hardened runtime + timestamp, no app entitlements.
+    idx=$((idx + 1))
+    rel="${target#"${DIST_APP_PATH}/"}"
+    printf '▸ [%s/%s] codesign %s\n' "$idx" "$total" "$rel"
+    codesign \
+      --force \
+      --options runtime \
+      --timestamp \
+      --sign "$identity" \
+      "$target"
+  done <"$list_file"
+
+  # Seal nested bundles after their Mach-O contents (deepest first).
+  list_file_bundles="$(mktemp)"
+  find "$DIST_APP_PATH" \
+    \( -name '*.framework' -o -name '*.appex' -o -name '*.xpc' -o -name '*.bundle' \) \
+    -print \
+    | awk '{
+        n = split($0, a, "/")
+        printf "%04d\t%s\n", n, $0
+      }' \
+    | sort -rn \
+    | cut -f2- >"$list_file_bundles"
+
+  total_bundles="$(wc -l <"$list_file_bundles" | tr -d ' ')"
+  if [[ "$total_bundles" -gt 0 ]]; then
+    log "Sealing ${total_bundles} nested bundle(s)..."
+    idx=0
+    while IFS= read -r target; do
+      [[ -z "$target" ]] && continue
+      idx=$((idx + 1))
+      rel="${target#"${DIST_APP_PATH}/"}"
+      printf '▸ bundle [%s/%s] codesign %s\n' "$idx" "$total_bundles" "$rel"
+      codesign \
+        --force \
+        --options runtime \
+        --timestamp \
+        --sign "$identity" \
+        "$target"
+    done <"$list_file_bundles"
+  fi
+  rm -f "$list_file_bundles"
+
+  log "Sealing outer .app bundle..."
   codesign \
     --force \
-    --deep \
     --options runtime \
     --timestamp \
     --entitlements "$ENTITLEMENTS_PATH" \
