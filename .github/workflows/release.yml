@@ -291,18 +291,20 @@ jobs:
 
           PR_URL="$(gh pr list --head "$BRANCH" --base main --json url --jq '.[0].url // empty')"
           if [[ -z "$PR_URL" ]]; then
+            BODY_FILE="$(mktemp)"
+            printf '%s\n' \
+              "Automated appcast update from Release \`${TAG}\`." \
+              "" \
+              "Sparkle clients read \`appcast.xml\` on \`main\`. This PR only updates that feed file." \
+              >"$BODY_FILE"
             PR_URL="$(
               gh pr create \
                 --base main \
                 --head "$BRANCH" \
                 --title "chore: update appcast.xml for ${TAG}" \
-                --body "$(cat <<EOF
-Automated appcast update from Release \`${TAG}\`.
-
-Sparkle clients read \`appcast.xml\` on \`main\`. This PR only updates that feed file.
-EOF
-)"
+                --body-file "$BODY_FILE"
             )"
+            rm -f "$BODY_FILE"
           fi
           echo "PR: $PR_URL"
 
