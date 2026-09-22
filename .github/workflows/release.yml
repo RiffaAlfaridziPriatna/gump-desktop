@@ -70,14 +70,30 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
           rm -f certificate.p12
 
-      - name: Build, sign, notarize
+      # Split so Actions shows which phase is running (and log stay small).
+      - name: Build Release app
+        env:
+          GUMP_ENV: prod
+        run: bash scripts/build.sh macos distribute-build
+
+      - name: Codesign (Developer ID)
         env:
           GUMP_ENV: prod
           MACOS_CODESIGN_IDENTITY: 'Developer ID Application: Gump Ai Limited (FWQ2YTUNN4)'
+        run: bash scripts/build.sh macos distribute-sign
+
+      - name: Notarize + staple
+        env:
+          GUMP_ENV: prod
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: npm run build:macos:distribute
+        run: bash scripts/build.sh macos distribute-notarize
+
+      - name: Package zip
+        env:
+          GUMP_ENV: prod
+        run: bash scripts/build.sh macos distribute-package
 
       - name: Sign zip for Sparkle
         env:

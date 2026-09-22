@@ -15,14 +15,32 @@ APP_PATH="${DERIVED_DATA_PATH}/Build/Products/Release/${APP_NAME}"
 ENTITLEMENTS_PATH="${ROOT_DIR}/macos/GumpDesktop-macOS/GumpDesktop.entitlements"
 DEFAULT_CODESIGN_IDENTITY="Developer ID Application: Gump Ai Limited (FWQ2YTUNN4)"
 DEFAULT_TEAM_ID="FWQ2YTUNN4"
+XCODEBUILD_LOG="${DERIVED_DATA_PATH}/xcodebuild.log"
+
+# distribute / distribute-* → unsigned xcodebuild, then Developer ID later
+IS_DISTRIBUTE=false
+case "$VARIANT" in
+  distribute | distribute-*) IS_DISTRIBUTE=true ;;
+esac
 
 require_command xcodebuild
 
-# Catch missing Copy Bundle Resources (e.g. gitignored models) before xcodebuild.
-bash "${SCRIPT_DIR}/verify-macos-resources.sh"
+# Catch missing Copy Bundle Resources before xcodebuild (build phases only).
+case "$VARIANT" in
+  app | zip | distribute | distribute-build)
+    bash "${SCRIPT_DIR}/verify-macos-resources.sh"
+    ;;
+esac
 
 if [[ ! -d "${ROOT_DIR}/macos/Pods" ]]; then
-  die "macOS Pods not installed. Run: cd macos && pod install"
+  case "$VARIANT" in
+    distribute-sign | distribute-notarize | distribute-package)
+      # Pods not required; app already built in a prior CI step.
+      ;;
+    *)
+      die "macOS Pods not installed. Run: cd macos && pod install"
+      ;;
+  esac
 fi
 
 require_env() {
@@ -42,12 +60,25 @@ fi
 DIST_OUT="${GUMP_DIST_DIR:?GUMP_DIST_DIR unset — call ensure_app_build_identity first}"
 DIST_APP_PATH="${DIST_OUT}/${APP_NAME}"
 
+print_xcodebuild_summary() {
+  local log_file="$1"
+  if [[ ! -f "$log_file" ]]; then
+    return 0
+  fi
+  echo "::group::xcodebuild summary (errors / warnings / result)"
+  # Keep the Actions UI readable: no full clang command lines.
+  grep -E 'error: |warning: |\*\* BUILD |fatal error:|❌|✗' "$log_file" | tail -n 120 || true
+  echo "::endgroup::"
+  echo "▸ Full xcodebuild log: ${log_file}"
+}
+
 build_app() {
   log "Building macOS release app..."
   ensure_dir "$DERIVED_DATA_PATH"
+  rm -f "$XCODEBUILD_LOG"
 
   local -a sign_args=()
-  if [[ "$VARIANT" == "distribute" ]]; then
+  if [[ "$IS_DISTRIBUTE" == true ]]; then
     # CI only has Developer ID in the keychain. Skip Xcode automatic "Apple
     # Development" signing; sign_app() re-signs with Developer ID afterwards.
     sign_args=(
@@ -62,11 +93,31 @@ build_app() {
     )
   fi
 
+  local status=0
+  local heartbeat_pid=""
+
+  # -quiet still prints errors to the log file; avoid megabytes of clang in Actions.
+  # Heartbeat keeps the step visibly alive (quiet mode has almost no stdout).
+  (
+    local mins=0
+    while sleep 60; do
+      mins=$((mins + 1))
+      printf '▸ xcodebuild still running… %sm\n' "$mins"
+      if [[ -f "$XCODEBUILD_LOG" ]] && grep -qE 'error: |fatal error:' "$XCODEBUILD_LOG" 2>/dev/null; then
+        echo "▸ errors seen so far (latest):"
+        grep -E 'error: |fatal error:' "$XCODEBUILD_LOG" | tail -n 8 || true
+      fi
+    done
+  ) &
+  heartbeat_pid=$!
+
+  set +e
   xcodebuild \
     -workspace "$MACOS_WORKSPACE" \
     -scheme "$MACOS_SCHEME" \
     -configuration Release \
     -derivedDataPath "$DERIVED_DATA_PATH" \
+    -quiet \
     "${sign_args[@]}" \
     CURRENT_PROJECT_VERSION="${APP_BUILD_NUMBER}" \
     MARKETING_VERSION="${APP_VERSION}" \
@@ -74,7 +125,20 @@ build_app() {
     APP_BUILD_ID="${APP_BUILD_ID}" \
     GIT_SHA="${GIT_SHA}" \
     EXTRA_PACKAGER_ARGS="${EXTRA_PACKAGER_ARGS}" \
-    build
+    build >"$XCODEBUILD_LOG" 2>&1
+  status=$?
+  set -e
+
+  kill "$heartbeat_pid" 2>/dev/null || true
+  wait "$heartbeat_pid" 2>/dev/null || true
+
+  print_xcodebuild_summary "$XCODEBUILD_LOG"
+  if [[ "$status" -ne 0 ]]; then
+    echo "::error::xcodebuild failed (exit ${status}). Tail of log:"
+    tail -n 80 "$XCODEBUILD_LOG" || true
+    die "xcodebuild failed — see ${XCODEBUILD_LOG}"
+  fi
+  log "xcodebuild OK"
 }
 
 sync_dist_app() {
@@ -200,7 +264,9 @@ notarize_and_staple() {
     log "Notarizing via Apple ID..."
   fi
 
-  xcrun notarytool submit "$notarize_zip" "${submit_args[@]}" --wait
+  log "Notarizing submission started (notarytool --wait)..."
+  # Progress lines from Apple; avoid dumping unrelated noise.
+  xcrun notarytool submit "$notarize_zip" "${submit_args[@]}" --wait --timeout 45m
   rm -f "$notarize_zip"
 
   log "Stapling notarization ticket..."
@@ -244,7 +310,26 @@ case "$VARIANT" in
   distribute)
     distribute_app
     ;;
+  # CI-split phases (same runner; keeps Actions step list readable)
+  distribute-build)
+    build_app
+    sync_dist_app
+    ;;
+  distribute-sign)
+    sign_app
+    ;;
+  distribute-notarize)
+    notarize_and_staple
+    verify_distribution
+    ;;
+  distribute-package)
+    package_zip "$DIST_APP_PATH"
+    sign_sparkle_zip
+    log "Distribution bundle ready:"
+    log "  App: ${DIST_APP_PATH}"
+    log "  ZIP: ${DIST_OUT}/Gump-MacOS-v${APP_VERSION}.zip"
+    ;;
   *)
-    die "Unknown macOS variant: ${VARIANT}. Use: app | zip | distribute"
+    die "Unknown macOS variant: ${VARIANT}. Use: app | zip | distribute | distribute-build | distribute-sign | distribute-notarize | distribute-package"
     ;;
 esac
