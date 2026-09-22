@@ -8,6 +8,7 @@ typedef NS_ENUM(NSInteger, GumpUpdateMenuState) {
   GumpUpdateMenuStateChecking,
   GumpUpdateMenuStateDownloading,
   GumpUpdateMenuStateReady,
+  GumpUpdateMenuStateInstalling,
 };
 
 @interface GumpUpdateController () <SPUUpdaterDelegate>
@@ -55,6 +56,8 @@ static GumpUpdateController *s_shared = nil;
         initWithStartingUpdater:YES
                 updaterDelegate:self
              userDriverDelegate:nil];
+    // Silent download → extract → willInstallUpdateOnQuit (menu Restart).
+    self.updaterController.updater.automaticallyDownloadsUpdates = YES;
     [self installMenuItemIfNeeded];
   }
   return self;
@@ -111,31 +114,47 @@ static GumpUpdateController *s_shared = nil;
     return;
   }
 
+  // Clearing `action` is required: AppKit menu validation re-enables items that
+  // still have a valid target/action when the menu is reopened (enabled=NO alone
+  // is not enough — matches "disabled after click, enabled after reopen").
   switch (self.menuState) {
     case GumpUpdateMenuStateChecking:
       self.updateMenuItem.title = @"Checking for Updates…";
+      self.updateMenuItem.action = nil;
       self.updateMenuItem.enabled = NO;
       break;
     case GumpUpdateMenuStateDownloading:
       self.updateMenuItem.title = @"Downloading Update…";
+      self.updateMenuItem.action = nil;
       self.updateMenuItem.enabled = NO;
       break;
     case GumpUpdateMenuStateReady: {
-      if (self.pendingVersion.length > 0) {
-        self.updateMenuItem.title =
-            [NSString stringWithFormat:@"Restart to Update (v%@)", self.pendingVersion];
-      } else {
-        self.updateMenuItem.title = @"Restart to Update";
-      }
+      self.updateMenuItem.title = @"Restart to Update";
+      self.updateMenuItem.action = @selector(updateMenuAction:);
       self.updateMenuItem.enabled = YES;
       break;
     }
+    case GumpUpdateMenuStateInstalling:
+      self.updateMenuItem.title = @"Installing Update…";
+      self.updateMenuItem.action = nil;
+      self.updateMenuItem.enabled = NO;
+      break;
     case GumpUpdateMenuStateIdle:
     default:
       self.updateMenuItem.title = @"Check for Updates…";
+      self.updateMenuItem.action = @selector(updateMenuAction:);
       self.updateMenuItem.enabled = YES;
       break;
   }
+}
+
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem
+{
+  if (menuItem != self.updateMenuItem) {
+    return YES;
+  }
+  return self.menuState == GumpUpdateMenuStateIdle ||
+         self.menuState == GumpUpdateMenuStateReady;
 }
 
 - (void)updateMenuAction:(id)sender
@@ -157,18 +176,22 @@ static GumpUpdateController *s_shared = nil;
   if (self.updaterController == nil || self.menuState != GumpUpdateMenuStateIdle) {
     return;
   }
-  // Background check — status lives in the menu, not Sparkle's dialog.
+  // Menu-driven status only — no Sparkle dialogs.
   self.menuState = GumpUpdateMenuStateChecking;
   [self.updaterController.updater checkForUpdatesInBackground];
 }
 
 - (void)restartToUpdate
 {
-  if (self.immediateInstallBlock) {
-    self.immediateInstallBlock();
+  // Must invoke Sparkle's block (from willInstallUpdateOnQuit). Bare terminate
+  // closes the app without installing/relaunching when we returned YES there.
+  if (self.immediateInstallBlock == nil) {
+    NSLog(@"[GumpUpdateController] Restart ignored — install block not armed yet");
     return;
   }
-  [[NSApplication sharedApplication] terminate:nil];
+  void (^install)(void) = self.immediateInstallBlock;
+  self.immediateInstallBlock = nil;
+  install();
 }
 
 - (void)resetToIdleUnlessReady
@@ -185,7 +208,8 @@ static GumpUpdateController *s_shared = nil;
 {
   self.pendingVersion = item.displayVersionString;
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (self.menuState != GumpUpdateMenuStateReady) {
+    if (self.menuState != GumpUpdateMenuStateReady &&
+        self.menuState != GumpUpdateMenuStateInstalling) {
       self.menuState = GumpUpdateMenuStateDownloading;
     }
   });
@@ -193,6 +217,7 @@ static GumpUpdateController *s_shared = nil;
 
 - (void)updaterDidNotFindUpdate:(SPUUpdater *)updater
 {
+  NSLog(@"[GumpUpdateController] No update found");
   dispatch_async(dispatch_get_main_queue(), ^{
     [self resetToIdleUnlessReady];
   });
@@ -204,6 +229,10 @@ static GumpUpdateController *s_shared = nil;
 {
   self.pendingVersion = item.displayVersionString;
   dispatch_async(dispatch_get_main_queue(), ^{
+    if (self.menuState == GumpUpdateMenuStateReady ||
+        self.menuState == GumpUpdateMenuStateInstalling) {
+      return;
+    }
     self.menuState = GumpUpdateMenuStateDownloading;
   });
 }
@@ -211,7 +240,38 @@ static GumpUpdateController *s_shared = nil;
 - (void)updater:(SPUUpdater *)updater didDownloadUpdate:(SUAppcastItem *)item
 {
   self.pendingVersion = item.displayVersionString;
-  // Keep "Downloading…" until install-on-quit is armed (extraction may still run).
+  NSLog(@"[GumpUpdateController] Download finished (v%@) — extracting next",
+        item.displayVersionString ?: @"?");
+  // Stay on Downloading until willExtractUpdate; that is the real pre-Restart work.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (self.menuState != GumpUpdateMenuStateReady &&
+        self.menuState != GumpUpdateMenuStateInstalling) {
+      self.menuState = GumpUpdateMenuStateDownloading;
+    }
+  });
+}
+
+- (void)updater:(SPUUpdater *)updater willExtractUpdate:(SUAppcastItem *)item
+{
+  self.pendingVersion = item.displayVersionString;
+  NSLog(@"[GumpUpdateController] Extracting update (v%@)", item.displayVersionString ?: @"?");
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (self.menuState != GumpUpdateMenuStateReady) {
+      self.menuState = GumpUpdateMenuStateInstalling;
+    }
+  });
+}
+
+- (void)updater:(SPUUpdater *)updater didExtractUpdate:(SUAppcastItem *)item
+{
+  self.pendingVersion = item.displayVersionString;
+  NSLog(@"[GumpUpdateController] Extract finished (v%@) — waiting for install arm",
+        item.displayVersionString ?: @"?");
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (self.menuState != GumpUpdateMenuStateReady) {
+      self.menuState = GumpUpdateMenuStateInstalling;
+    }
+  });
 }
 
 - (BOOL)updater:(SPUUpdater *)updater
@@ -220,10 +280,14 @@ static GumpUpdateController *s_shared = nil;
 {
   self.pendingVersion = item.displayVersionString;
   self.immediateInstallBlock = [immediateInstallBlock copy];
+  NSLog(@"[GumpUpdateController] Install armed (v%@) — Restart will install + relaunch",
+        item.displayVersionString ?: @"?");
+  // Avoid sudden termination killing the process before Sparkle's installer runs.
+  [[NSProcessInfo processInfo] disableSuddenTermination];
   dispatch_async(dispatch_get_main_queue(), ^{
     self.menuState = GumpUpdateMenuStateReady;
   });
-  // Take control so menu "Restart to Update" drives install/relaunch.
+  // YES = we own install timing; must call immediateInstallBlock on Restart.
   return YES;
 }
 
@@ -231,6 +295,7 @@ static GumpUpdateController *s_shared = nil;
     failedToDownloadUpdate:(SUAppcastItem *)item
                      error:(NSError *)error
 {
+  NSLog(@"[GumpUpdateController] Download failed: %@", error);
   dispatch_async(dispatch_get_main_queue(), ^{
     self.immediateInstallBlock = nil;
     self.menuState = GumpUpdateMenuStateIdle;
@@ -242,6 +307,11 @@ static GumpUpdateController *s_shared = nil;
   if (error == nil) {
     return;
   }
+  NSLog(@"[GumpUpdateController] Update aborted: %@", error);
+  NSLog(@"[GumpUpdateController] Update aborted detail: %@ | %@",
+        error.localizedDescription ?: @"(nil)",
+        error.localizedFailureReason ?: @"(nil)");
+  NSLog(@"[GumpUpdateController] Update aborted userInfo: %@", error.userInfo);
   NSInteger code = error.code;
   if (code == 1001 /* SUNoUpdateError */ || code == 1002) {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -250,7 +320,10 @@ static GumpUpdateController *s_shared = nil;
     return;
   }
   dispatch_async(dispatch_get_main_queue(), ^{
+    // Clear Checking/Downloading/Installing on real failures — previously
+    // Installing was protected and could stick forever after an abort.
     if (self.menuState != GumpUpdateMenuStateReady) {
+      self.immediateInstallBlock = nil;
       self.menuState = GumpUpdateMenuStateIdle;
     }
   });

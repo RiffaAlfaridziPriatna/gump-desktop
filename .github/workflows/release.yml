@@ -45,6 +45,25 @@ jobs:
       - name: Install JS dependencies
         run: npm ci --legacy-peer-deps
 
+      # .env is gitignored; babel inlines API_BASE_URL at bundle time. Without this,
+      # prod builds fall back to http://localhost:3000 (see src/lib/config/constants.ts).
+      - name: Write prod .env
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+        run: |
+          if [[ -z "${API_BASE_URL:-}" ]]; then
+            echo "Missing secret API_BASE_URL (required for prod JS bundle)" >&2
+            exit 1
+          fi
+          {
+            echo "API_BASE_URL=${API_BASE_URL}"
+            echo "POSTHOG_API_KEY=${POSTHOG_API_KEY:-}"
+            echo "POSTHOG_HOST=${POSTHOG_HOST:-https://us.i.posthog.com}"
+          } > .env
+          echo "Wrote .env (API_BASE_URL length=${#API_BASE_URL})"
+
       - name: Install CocoaPods
         run: |
           cd macos
@@ -160,6 +179,24 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
+
+      - name: Write prod .env
+        shell: bash
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+        run: |
+          if [[ -z "${API_BASE_URL:-}" ]]; then
+            echo "Missing secret API_BASE_URL (required for prod JS bundle)" >&2
+            exit 1
+          fi
+          {
+            echo "API_BASE_URL=${API_BASE_URL}"
+            echo "POSTHOG_API_KEY=${POSTHOG_API_KEY:-}"
+            echo "POSTHOG_HOST=${POSTHOG_HOST:-https://us.i.posthog.com}"
+          } > .env
+          echo "Wrote .env (API_BASE_URL length=${#API_BASE_URL})"
 
       - name: Read version
         id: version

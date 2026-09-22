@@ -119,7 +119,7 @@ build_app() {
     -derivedDataPath "$DERIVED_DATA_PATH" \
     -quiet \
     "${sign_args[@]}" \
-    CURRENT_PROJECT_VERSION="${APP_BUILD_NUMBER}" \
+    CURRENT_PROJECT_VERSION="${APP_VERSION}" \
     MARKETING_VERSION="${APP_VERSION}" \
     APP_VERSION="${APP_VERSION}" \
     APP_BUILD_ID="${APP_BUILD_ID}" \
@@ -306,11 +306,34 @@ sign_app() {
   rm -f "$list_file_bundles"
 
   log "Sealing outer .app bundle..."
+  # Expand any leftover Xcode-style vars — codesign embeds entitlements verbatim.
+  local bundle_id
+  local entitlements_for_sign
+  bundle_id="$(
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+      "${DIST_APP_PATH}/Contents/Info.plist" 2>/dev/null || true
+  )"
+  if [[ -z "$bundle_id" ]]; then
+    die "Could not read CFBundleIdentifier from ${DIST_APP_PATH}"
+  fi
+  entitlements_for_sign="$(mktemp "${TMPDIR:-/tmp}/gump-entitlements.XXXXXX.plist")"
+  # shellcheck disable=SC2064
+  trap 'rm -f "'"$list_file"'" "'"$entitlements_for_sign"'"' RETURN
+  sed "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/${bundle_id}/g" \
+    "$ENTITLEMENTS_PATH" >"$entitlements_for_sign"
+  if grep -q '\$(' "$entitlements_for_sign"; then
+    die "Entitlements still contain unexpanded \$() after substitution: ${entitlements_for_sign}"
+  fi
+  if ! grep -q "${bundle_id}-spks" "$entitlements_for_sign" ||
+     ! grep -q "${bundle_id}-spki" "$entitlements_for_sign"; then
+    die "Sparkle sandbox mach-lookup entries missing for ${bundle_id}-spks/-spki"
+  fi
+
   codesign \
     --force \
     --options runtime \
     --timestamp \
-    --entitlements "$ENTITLEMENTS_PATH" \
+    --entitlements "$entitlements_for_sign" \
     --sign "$identity" \
     "$DIST_APP_PATH"
 
