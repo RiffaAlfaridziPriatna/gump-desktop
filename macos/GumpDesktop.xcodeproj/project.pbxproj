@@ -32,8 +32,6 @@
 		D1A2C3D40123456700000008 /* MediaDerivatives.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000018 /* MediaDerivatives.cpp */; };
 		D1A2C3D40123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx */; };
 		D1A2C3D40123456700000011 /* eye_state_ocec_s.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000011 /* eye_state_ocec_s.onnx */; };
-		D1A2C3D40123456700000012 /* face_landmarks_2d106det.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */; };
-		D1A2C3D40123456700000013 /* face_detection_scrfd_10g_bnkps.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D1A2C3D41123456700000013 /* face_detection_scrfd_10g_bnkps.onnx */; };
 		E2B3C4D50123456700000001 /* GumpAnalysisSession.mm in Sources */ = {isa = PBXBuildFile; fileRef = E2B3C4D51123456700000001 /* GumpAnalysisSession.mm */; };
 		E3A4B5C60123456700000001 /* AnalysisSession.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000001 /* AnalysisSession.cpp */; };
 		E3A4B5C60123456700000002 /* PhotoFlags.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000003 /* PhotoFlags.cpp */; };
@@ -81,8 +79,6 @@
 		D1A2C3D4112345670000000A /* FaceLabeling.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FaceLabeling.h; path = "../cpp/face-detection/FaceLabeling.h"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = face_detection_scrfd_2.5g_bnkps.onnx; sourceTree = "<group>"; };
 		D1A2C3D41123456700000011 /* eye_state_ocec_s.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = eye_state_ocec_s.onnx; sourceTree = "<group>"; };
-		D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = face_landmarks_2d106det.onnx; sourceTree = "<group>"; };
-		D1A2C3D41123456700000013 /* face_detection_scrfd_10g_bnkps.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = face_detection_scrfd_10g_bnkps.onnx; sourceTree = "<group>"; };
 		D1A2C3D41123456700000014 /* DifferenceHash.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = DifferenceHash.cpp; path = "../cpp/face-detection/DifferenceHash.cpp"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000015 /* DifferenceHash.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DifferenceHash.h; path = "../cpp/face-detection/DifferenceHash.h"; sourceTree = SOURCE_ROOT; };
 		D1A2C3D41123456700000016 /* ExifDateTime.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ExifDateTime.cpp; path = "../cpp/face-detection/ExifDateTime.cpp"; sourceTree = SOURCE_ROOT; };
@@ -222,9 +218,7 @@
 			isa = PBXGroup;
 			children = (
 				D1A2C3D41123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx */,
-				D1A2C3D41123456700000013 /* face_detection_scrfd_10g_bnkps.onnx */,
 				D1A2C3D41123456700000011 /* eye_state_ocec_s.onnx */,
-				D1A2C3D41123456700000012 /* face_landmarks_2d106det.onnx */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -367,9 +361,7 @@
 				B1A2C3D40123456700000003 /* RedHatDisplay-Medium.ttf in Resources */,
 				B1A2C3D40123456700000004 /* RedHatDisplay-Bold.ttf in Resources */,
 				D1A2C3D40123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx in Resources */,
-				D1A2C3D40123456700000013 /* face_detection_scrfd_10g_bnkps.onnx in Resources */,
 				D1A2C3D40123456700000011 /* eye_state_ocec_s.onnx in Resources */,
-				D1A2C3D40123456700000012 /* face_landmarks_2d106det.onnx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
