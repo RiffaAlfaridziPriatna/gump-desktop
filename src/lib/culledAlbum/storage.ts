@@ -31,6 +31,7 @@ function legacyAlbumToDomainAlbum(album: LegacyCulledAlbum): CulledAlbum {
     cullingCompleted: album.cullingCompleted,
     cullingHasUploads: album.cullingHasUploads,
     nextFaceClusterId: album.nextFaceClusterId,
+    nextPhotoBatchId: album.nextPhotoBatchId,
     totalPhotos: album.totalPhotos,
     totalStorage: album.totalStorage,
     syncedMediaCount: album.syncedMediaCount,
@@ -67,6 +68,7 @@ function domainAlbumToLegacy(
     localImportBatchTotal: 0,
     analysisBatchPhotoIds: [],
     nextFaceClusterId: album.nextFaceClusterId,
+    nextPhotoBatchId: album.nextPhotoBatchId,
     createdAt: album.createdAt,
     totalPhotos: album.totalPhotos,
     totalStorage: album.totalStorage,
@@ -121,6 +123,7 @@ async function ensureMigrated(): Promise<void> {
           cullingCompleted: normalized.cullingCompleted,
           cullingHasUploads: normalized.cullingHasUploads,
           nextFaceClusterId: normalized.nextFaceClusterId,
+          nextPhotoBatchId: normalized.nextPhotoBatchId,
           totalPhotos: normalized.totalPhotos,
           totalStorage: normalized.totalStorage,
           syncedMediaCount: normalized.syncedMediaCount,
@@ -164,6 +167,7 @@ async function ensureMigrated(): Promise<void> {
             blurred: legacyPhoto.blurred,
             closedEyes: legacyPhoto.closedEyes,
             duplicated: legacyPhoto.duplicated,
+            batchId: legacyPhoto.batchId,
           })
         );
 
@@ -218,6 +222,7 @@ export async function writeAllAlbums(
       cullingCompleted: legacyAlbum.cullingCompleted,
       cullingHasUploads: legacyAlbum.cullingHasUploads,
       nextFaceClusterId: legacyAlbum.nextFaceClusterId,
+      nextPhotoBatchId: legacyAlbum.nextPhotoBatchId,
       totalPhotos: legacyAlbum.totalPhotos,
       totalStorage: legacyAlbum.totalStorage,
       syncedMediaCount: legacyAlbum.syncedMediaCount,
@@ -261,6 +266,7 @@ export async function writeAllAlbums(
         blurred: legacyPhoto.blurred,
         closedEyes: legacyPhoto.closedEyes,
         duplicated: legacyPhoto.duplicated,
+        batchId: legacyPhoto.batchId,
       })
     );
 

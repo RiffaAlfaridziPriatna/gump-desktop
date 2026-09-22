@@ -24,8 +24,6 @@ import {useCallback, useMemo, useRef, useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
-  RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -70,7 +68,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
     }, [refreshLocalAlbums]),
   );
 
-  const emptyAlbums = useMemo(
+  const availableAlbums = useMemo(
     () => filterAvailableSourceAlbums(albums.results, localAlbumIds),
     [albums.results, localAlbumIds],
   );
@@ -79,18 +77,36 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
   // Full-page loading only until we have enough selectable albums to scroll.
   // Pagination fetch-more must not cover the list.
   const waitingForAlbums =
-    emptyAlbums.length < prefetchThreshold &&
+    availableAlbums.length < prefetchThreshold &&
     (loadingAlbums || hasMore);
 
   const hasSelection = selectedId !== null;
 
-  function toggleSelection(albumId: string) {
+  const toggleSelection = useCallback((albumId: string) => {
     setSelectedId(current => (current === albumId ? null : albumId));
-  }
+  }, []);
+
+  const keyExtractor = useCallback(
+    (album: APIResponse.Album) => album.id,
+    [],
+  );
+
+  const renderAlbum = useCallback(
+    ({item: album}: {item: APIResponse.Album}) => (
+      <AlbumCard
+        variant="select"
+        album={album}
+        ownerName={user && user.role !== 'guest' ? user.name : undefined}
+        isSelected={selectedId === album.id}
+        onToggleSelect={toggleSelection}
+      />
+    ),
+    [selectedId, toggleSelection, user],
+  );
 
   function handleNext() {
     if (!selectedId) return;
-    const album = emptyAlbums.find(item => item.id === selectedId) ?? null;
+    const album = availableAlbums.find(item => item.id === selectedId) ?? null;
     if (!album) return;
     setSelectedAlbum(album);
     setShowUploadModal(true);
@@ -155,7 +171,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
         ]}>
         <View style={styles.titleColumn}>
           <Text style={styles.title}>Select Your Album</Text>
-          <Text style={styles.subtitle}>Showing albums with no photos yet.</Text>
+          <Text style={styles.subtitle}>Choose an album to start culling.</Text>
         </View>
         <TouchableOpacity
           style={[
@@ -183,49 +199,26 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
           <Text style={styles.loadingHint}>Loading albums…</Text>
         </View>
       ) : (
-        <ScrollView
+        <AlbumGrid
+          data={availableAlbums}
+          keyExtractor={keyExtractor}
+          renderItem={renderAlbum}
+          columns={albumGridColumns}
+          gap={12}
           style={styles.scroll}
-          contentContainerStyle={[
-            styles.scrollContent,
-            {paddingHorizontal: screenPaddingHorizontal},
-          ]}
+          contentPaddingHorizontal={screenPaddingHorizontal}
+          contentContainerStyle={styles.scrollContent}
           scrollEnabled={!loadingAlbums}
-          refreshControl={
-            <RefreshControl
-              refreshing={loadingAlbums}
-              onRefresh={refresh}
-              colors={[colors.accent]}
-              tintColor={colors.accent}
-            />
-          }
-          onScroll={({nativeEvent}) => {
-            const {layoutMeasurement, contentOffset, contentSize} = nativeEvent;
-            const isNearBottom =
-              layoutMeasurement.height + contentOffset.y >=
-              contentSize.height - 120;
-            if (isNearBottom && hasMore) {
-              loadMore();
-            }
-          }}
-          scrollEventThrottle={200}>
-          <AlbumGrid columns={albumGridColumns} gap={12}>
-            {emptyAlbums.map(album => (
-              <AlbumCard
-                key={album.id}
-                variant="select"
-                album={album}
-                ownerName={user && user.role !== 'guest' ? user.name : undefined}
-                isSelected={selectedId === album.id}
-                onToggleSelect={() => toggleSelection(album.id)}
-              />
-            ))}
-          </AlbumGrid>
-          {!waitingForAlbums && emptyAlbums.length === 0 && (
+          refreshing={loadingAlbums}
+          onRefresh={refresh}
+          onEndReached={hasMore ? loadMore : undefined}
+          extraData={selectedId}
+          ListEmptyComponent={
             <Text style={styles.emptyText}>
-              No empty albums available. Create an album on the web app first.
+              No albums left. Create an album on the web app first.
             </Text>
-          )}
-        </ScrollView>
+          }
+        />
       )}
 
       {startError && (
@@ -251,6 +244,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+    minHeight: 0,
     backgroundColor: colors.background,
   },
   header: {
@@ -323,11 +317,11 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
+    minHeight: 0,
   },
   scrollContent: {
     paddingTop: 24,
     paddingBottom: 32,
-    gap: 16,
   },
   loading: {
     flex: 1,

@@ -37,6 +37,8 @@ struct DuplicateDetectionPhoto {
   bool closedEyes{false};
   int starRating{0};
   bool duplicated{false};
+  int batchId{1};
+  bool serverUploaded{false};
 };
 
 struct DuplicateGroup {
