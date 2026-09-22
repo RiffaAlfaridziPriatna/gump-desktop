@@ -308,8 +308,30 @@ jobs:
           fi
           echo "PR: $PR_URL"
 
-          # Wait for required status checks (Test), then merge — no direct push to main.
-          gh pr checks --watch --fail-fast "$PR_URL"
+          # After create/force-push, Test may not be registered yet. `gh pr checks
+          # --fail-fast` exits 1 with "no checks reported" — wait first.
+          echo "Waiting for status checks to appear..."
+          for i in $(seq 1 60); do
+            set +e
+            checks_err="$(gh pr checks "$PR_URL" 2>&1)"
+            checks_rc=$?
+            set -e
+            if printf '%s\n' "$checks_err" | grep -qi 'no checks reported'; then
+              printf '  (%s/60) still waiting…\n' "$i"
+              sleep 5
+              continue
+            fi
+            # Checks exist (pending/pass/fail) — stop waiting to appear
+            break
+          done
+
+          if printf '%s\n' "$(gh pr checks "$PR_URL" 2>&1 || true)" | grep -qi 'no checks reported'; then
+            echo "::error::No CI checks appeared on ${PR_URL}. Merge the PR manually after Test runs."
+            exit 1
+          fi
+
+          echo "Watching status checks..."
+          gh pr checks --watch "$PR_URL"
           gh pr merge "$PR_URL" --squash --delete-branch --subject "chore: update appcast.xml for ${TAG}"
           echo "appcast.xml merged to main"
 
