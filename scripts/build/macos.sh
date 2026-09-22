@@ -18,6 +18,9 @@ DEFAULT_TEAM_ID="FWQ2YTUNN4"
 
 require_command xcodebuild
 
+# Catch missing Copy Bundle Resources (e.g. gitignored models) before xcodebuild.
+bash "${SCRIPT_DIR}/verify-macos-resources.sh"
+
 if [[ ! -d "${ROOT_DIR}/macos/Pods" ]]; then
   die "macOS Pods not installed. Run: cd macos && pod install"
 fi

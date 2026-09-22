@@ -26,6 +26,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Fail in seconds if Xcode Resources point at missing/gitignored files
+      # (avoids ~30m compile+notarize for a CpResource miss).
+      - name: Verify macOS bundle resources
+        run: bash scripts/build/verify-macos-resources.sh
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -196,12 +201,33 @@ jobs:
           TAG="${{ steps.tag.outputs.tag }}"
           MAC_VERSION="$(tr -d '\n\r' < VERSION.macos)"
           WIN_VERSION="$(tr -d '\n\r' < VERSION.windows)"
-          NOTES="$(printf '## Versions\n\n- **macOS**: v%s\n- **Windows**: v%s\n\n---\n*Auto-generated release*' "$MAC_VERSION" "$WIN_VERSION")"
+          chmod +x scripts/generate-release-notes.sh
+
+          PREV_TAG="$(
+            git tag -l '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' \
+              | sort \
+              | awk -v d="$TAG" '$0 < d { print }' \
+              | tail -n 1 || true
+          )"
+
+          NOTES_FILE="$(mktemp)"
+          {
+            echo "## Versions"
+            echo ""
+            echo "- **macOS**: v${MAC_VERSION}"
+            echo "- **Windows**: v${WIN_VERSION}"
+            echo ""
+            bash scripts/generate-release-notes.sh "${PREV_TAG}" "HEAD"
+            echo ""
+            echo "---"
+            echo "*Auto-generated release*"
+          } >"$NOTES_FILE"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG exists; uploading assets"
+            echo "Release $TAG exists; uploading assets (notes left as-is)"
           else
-            gh release create "$TAG" --title "Release $TAG" --notes "$NOTES"
+            # Tag should already exist when triggered by push:tags; create release only.
+            gh release create "$TAG" --title "Release $TAG" --notes-file "$NOTES_FILE"
           fi
 
           gh release upload "$TAG" \
@@ -209,6 +235,7 @@ jobs:
             "dist/prod/windows/Gump-Windows-v${WIN_VERSION}.zip" \
             --clobber
 
+          rm -f "$NOTES_FILE"
       - name: Update appcast.xml on main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
