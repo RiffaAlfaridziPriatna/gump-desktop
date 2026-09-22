@@ -40,9 +40,26 @@ const macSigPath = path.join(
   ROOT_DIR,
   'dist/prod/macos/sparkle_signature.txt',
 );
-const macSig = fs.existsSync(macSigPath)
+const macSigRaw = fs.existsSync(macSigPath)
   ? fs.readFileSync(macSigPath, 'utf8').trim()
   : '';
+
+/** sign_update prints: sparkle:edSignature="…" length="…" — store bare value only. */
+function parseEdSignature(raw) {
+  if (!raw) return '';
+  const fromAttr = raw.match(/edSignature="([^"]+)"/);
+  if (fromAttr) return fromAttr[1];
+  // Already a bare EdDSA signature (no spaces / attributes)
+  if (!/[\s=]/.test(raw)) return raw;
+  return '';
+}
+
+function parseSignedLength(raw) {
+  const m = raw && raw.match(/\blength="(\d+)"/);
+  return m ? Number(m[1]) : 0;
+}
+
+const macSig = parseEdSignature(macSigRaw);
 
 function getFileSize(filePath) {
   try {
@@ -54,7 +71,7 @@ function getFileSize(filePath) {
 
 const macZipPath = path.join(ROOT_DIR, `dist/prod/macos/${macZip}`);
 const winZipPath = path.join(ROOT_DIR, `dist/prod/windows/${winZip}`);
-const macSize = getFileSize(macZipPath);
+const macSize = parseSignedLength(macSigRaw) || getFileSize(macZipPath);
 const winSize = getFileSize(winZipPath);
 const pubDate = new Date().toUTCString();
 

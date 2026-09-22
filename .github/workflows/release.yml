@@ -120,10 +120,12 @@ jobs:
           fi
           ZIP_PATH="dist/prod/macos/${{ steps.version.outputs.artifact_name }}"
           printf '%s\n' "$SPARKLE_PRIVATE_KEY" > /tmp/sparkle_key
-          SIGNATURE="$("$SIGN_UPDATE" --ed-key-file /tmp/sparkle_key "$ZIP_PATH" | tr -d '\n')"
+          # sign_update prints: sparkle:edSignature="…" length="…"
+          SIGN_LINE="$("$SIGN_UPDATE" --ed-key-file /tmp/sparkle_key "$ZIP_PATH" | tr -d '\n')"
           rm -f /tmp/sparkle_key
-          printf '%s\n' "$SIGNATURE" > dist/prod/macos/sparkle_signature.txt
-          echo "Sparkle signature: $SIGNATURE"
+          # Persist full line (generator parses edSignature + length)
+          printf '%s\n' "$SIGN_LINE" > dist/prod/macos/sparkle_signature.txt
+          echo "Sparkle sign_update: $SIGN_LINE"
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
