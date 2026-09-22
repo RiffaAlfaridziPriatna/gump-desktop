@@ -2374,6 +2374,7 @@ PODS:
   - RNSVG (15.15.5):
     - React-Core
   - SocketRocket (0.7.1)
+  - Sparkle (2.9.6)
   - Yoga (0.0.0)
 
 DEPENDENCIES:
@@ -2457,12 +2458,14 @@ DEPENDENCIES:
   - RNLocalize (from `../node_modules/react-native-localize`)
   - RNSVG (from `../node_modules/react-native-svg`)
   - SocketRocket (~> 0.7.1)
+  - Sparkle (~> 2.6)
   - Yoga (from `../node_modules/react-native-macos/ReactCommon/yoga`)
 
 SPEC REPOS:
   trunk:
     - onnxruntime-c
     - SocketRocket
+    - Sparkle
 
 EXTERNAL SOURCES:
   AsyncStorage:
@@ -2703,8 +2706,9 @@ SPEC CHECKSUMS:
   RNLocalize: 5b24342fb7288242c2215756412d8dcb8dadf31e
   RNSVG: 7ee150379dc2a5ed4c9fdac92a5d6efab98e9cf7
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
+  Sparkle: b8c9cf4ced217ffc708a1ca5f988a7ba877658db
   Yoga: 8a0df683a71bee13fe0b9d8b653d1a062ff65b2e
 
-PODFILE CHECKSUM: dc96efa96b56524a831501a256538981c1a3dd99
+PODFILE CHECKSUM: f68e25f7761e0b4ba5314891702c7e3d9e6b81ae
 
 COCOAPODS: 1.16.2

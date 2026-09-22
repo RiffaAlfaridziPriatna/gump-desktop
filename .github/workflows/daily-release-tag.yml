@@ -1,0 +1,47 @@
+name: Daily release tag
+
+# Batches main into at most one date tag per Asia/Jakarta day.
+# Creating the tag/release triggers the existing Release workflow (push tags).
+
+on:
+  schedule:
+    # 23:59 Asia/Jakarta (WIB, UTC+7) = 16:59 UTC
+    - cron: '59 16 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Tag date YYYY-MM-DD (default: today WIB)'
+        required: false
+        default: ''
+      force:
+        description: 'Create tag even if no meaningful commits that day'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Print notes only; do not create tag/release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  create-tag:
+    name: Create daily tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create daily release tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_DATE: ${{ github.event.inputs.date || '' }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          chmod +x scripts/create-daily-release-tag.sh scripts/generate-release-notes.sh
+          bash scripts/create-daily-release-tag.sh
