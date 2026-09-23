@@ -5,72 +5,32 @@ import {
   POSTHOG_API_KEY,
   POSTHOG_HOST,
 } from '@lib/config/constants';
+import {PostHog} from 'posthog-react-native';
 import {Platform} from 'react-native';
 import type {ErrorCaptureClient} from './reportError';
 import {setErrorCaptureClient} from './reportError';
 
-/**
- * PostHog React Native is not an officially supported Windows target (docs cover
- * iOS/Android + Web/macOS). Loading it on RNW Release hangs startup via peers
- * like react-native-localize. Keep the SDK off Windows entirely.
- */
-export const isPostHogEnabled =
-  Platform.OS !== 'windows' && POSTHOG_API_KEY.length > 0;
+export const isPostHogEnabled = POSTHOG_API_KEY.length > 0;
 
-/** Minimal client surface used by this app (avoids static import of the SDK). */
-type PostHogClient = {
-  register: (properties: Record<string, string>) => void | Promise<void>;
-  identify: (id: string, properties?: Record<string, string>) => void;
-  reset: () => void;
-  capture: (
-    event: string,
-    properties?: Record<string, string | number | boolean | null>,
-  ) => void;
-  flush: () => void | Promise<void>;
-  addExceptionStep: (
-    message: string,
-    properties?: Record<string, string | number | boolean | null>,
-  ) => void;
-  captureException: (
-    error: Error | unknown,
-    additionalProperties?: Record<string, unknown>,
-  ) => void;
-};
-
-function createPostHogClient(): PostHogClient | null {
-  if (!isPostHogEnabled) {
-    return null;
-  }
-
-  // Dynamic require so Windows never evaluates posthog-react-native.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const {PostHog} = require('posthog-react-native') as {
-    PostHog: new (
-      apiKey: string,
-      options: Record<string, unknown>,
-    ) => PostHogClient;
-  };
-
-  return new PostHog(POSTHOG_API_KEY, {
-    host: POSTHOG_HOST,
-    captureAppLifecycleEvents: false,
-    enableSessionReplay: false,
-    preloadFeatureFlags: false,
-    disableRemoteFeatureFlags: true,
-    disableSurveys: true,
-    setDefaultPersonProperties: false,
-    errorTracking: {
-      autocapture: {
-        uncaughtExceptions: true,
-        unhandledRejections: true,
-        console: false,
-        nativeCrashes: false,
+export const posthog: PostHog | null = isPostHogEnabled
+  ? new PostHog(POSTHOG_API_KEY, {
+      host: POSTHOG_HOST,
+      captureAppLifecycleEvents: false,
+      enableSessionReplay: false,
+      preloadFeatureFlags: false,
+      disableRemoteFeatureFlags: true,
+      disableSurveys: true,
+      setDefaultPersonProperties: false,
+      errorTracking: {
+        autocapture: {
+          uncaughtExceptions: true,
+          unhandledRejections: true,
+          console: false,
+          nativeCrashes: false,
+        },
       },
-    },
-  });
-}
-
-export const posthog: PostHogClient | null = createPostHogClient();
+    })
+  : null;
 
 export function appBuildProperties(): Record<string, string> {
   return {
