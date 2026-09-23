@@ -17,8 +17,8 @@ function writeStartupLog(message: string): void {
  * Release Hermes builds do not reliably forward console.* to NativeLogger.
  * Write breadcrumbs to %LocalAppData%\\GumpDesktop\\react-native.log via native.
  *
- * IMPORTANT: never call REACT_SYNC_METHOD synchronously during React render —
- * that can deadlock RNW Composition. Always defer off the render stack.
+ * Defer off the React render stack — sync native calls during Fabric commit
+ * can deadlock on Windows.
  */
 export function startupLog(message: string): void {
   if (Platform.OS !== 'windows') {

@@ -24,8 +24,7 @@ import {
   QueryClient,
   QueryClientProvider,
 } from '@tanstack/react-query';
-import {PostHogProvider} from 'posthog-react-native';
-import {useEffect, useState} from 'react';
+import {useEffect, useState, type ComponentType, type ReactNode} from 'react';
 import {AuthNavigator} from './AuthNavigator';
 import {MainNavigator} from './MainNavigator';
 
@@ -105,9 +104,29 @@ const AppRoot =
     ? View
     : require('react-native-gesture-handler').GestureHandlerRootView;
 
+function wrapWithPostHog(tree: ReactNode): ReactNode {
+  if (Platform.OS === 'windows' || !isPostHogEnabled || !posthog) {
+    return tree;
+  }
+  // Lazy require so Windows bundles never pull PostHogProvider.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const {PostHogProvider} = require('posthog-react-native') as {
+    PostHogProvider: ComponentType<{
+      client: NonNullable<typeof posthog>;
+      autocapture: boolean;
+      children: ReactNode;
+    }>;
+  };
+  return (
+    <PostHogProvider client={posthog} autocapture={false}>
+      {tree}
+    </PostHogProvider>
+  );
+}
+
 function AppTree() {
   startupLog('AppTree render');
-  const tree = (
+  return wrapWithPostHog(
     <AppRoot style={styles.root}>
       <AppErrorBoundary>
         <QueryClientProvider client={queryClient}>
@@ -123,27 +142,12 @@ function AppTree() {
           </ErrorProvider>
         </QueryClientProvider>
       </AppErrorBoundary>
-    </AppRoot>
-  );
-
-  // PostHogProvider has hung first paint on Windows Release before; mount
-  // the rest of the tree without it, then wrap only when explicitly enabled
-  // on non-Windows (Windows skips the provider shell for now).
-  if (Platform.OS === 'windows' || !isPostHogEnabled || !posthog) {
-    return tree;
-  }
-
-  return (
-    <PostHogProvider client={posthog} autocapture={false}>
-      {tree}
-    </PostHogProvider>
+    </AppRoot>,
   );
 }
 
 export default function App() {
   // On Windows Release, paint a trivial root once before mounting providers.
-  // Sync native calls / heavy provider init during the first Fabric commit
-  // have left the window permanently white after AppRegistry factory.
   const [bootstrapped, setBootstrapped] = useState(Platform.OS !== 'windows');
 
   useEffect(() => {

@@ -5,32 +5,51 @@ import {
   POSTHOG_API_KEY,
   POSTHOG_HOST,
 } from '@lib/config/constants';
-import {PostHog} from 'posthog-react-native';
+import type {PostHog} from 'posthog-react-native';
 import {Platform} from 'react-native';
 import type {ErrorCaptureClient} from './reportError';
 import {setErrorCaptureClient} from './reportError';
 
-export const isPostHogEnabled = POSTHOG_API_KEY.length > 0;
+/**
+ * Windows Release has repeatedly hung / whitescreened when posthog-react-native
+ * loads at startup (RNLocalize turbo module, provider first paint). Keep
+ * analytics on macOS/mobile only until Windows is stable.
+ */
+export const isPostHogEnabled =
+  Platform.OS !== 'windows' && POSTHOG_API_KEY.length > 0;
 
-export const posthog: PostHog | null = isPostHogEnabled
-  ? new PostHog(POSTHOG_API_KEY, {
-      host: POSTHOG_HOST,
-      captureAppLifecycleEvents: false,
-      enableSessionReplay: false,
-      preloadFeatureFlags: false,
-      disableRemoteFeatureFlags: true,
-      disableSurveys: true,
-      setDefaultPersonProperties: false,
-      errorTracking: {
-        autocapture: {
-          uncaughtExceptions: true,
-          unhandledRejections: true,
-          console: false,
-          nativeCrashes: false,
-        },
+function createPostHogClient(): PostHog | null {
+  if (!isPostHogEnabled) {
+    return null;
+  }
+  // Dynamic require so Windows never evaluates posthog-react-native.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const {PostHog: PostHogCtor} = require('posthog-react-native') as {
+    PostHog: new (
+      apiKey: string,
+      options: Record<string, unknown>,
+    ) => PostHog;
+  };
+  return new PostHogCtor(POSTHOG_API_KEY, {
+    host: POSTHOG_HOST,
+    captureAppLifecycleEvents: false,
+    enableSessionReplay: false,
+    preloadFeatureFlags: false,
+    disableRemoteFeatureFlags: true,
+    disableSurveys: true,
+    setDefaultPersonProperties: false,
+    errorTracking: {
+      autocapture: {
+        uncaughtExceptions: true,
+        unhandledRejections: true,
+        console: false,
+        nativeCrashes: false,
       },
-    })
-  : null;
+    },
+  });
+}
+
+export const posthog: PostHog | null = createPostHogClient();
 
 export function appBuildProperties(): Record<string, string> {
   return {

@@ -1,21 +1,11 @@
 const ReactNative = require('react-native');
 
 function startupLog(message) {
+  // Sync on the index.js boot path so a hang before AppRegistry still leaves
+  // a breadcrumb. Component-level logs go through startupLog.ts (deferred).
   try {
     if (ReactNative.Platform?.OS === 'windows') {
-      const write = () => {
-        try {
-          ReactNative.NativeModules?.GumpLocalStorage?.appendStartupLog?.(
-            message,
-          );
-        } catch (_) {}
-      };
-      // Defer so we never sync-call native during AppRegistry/React render.
-      if (typeof queueMicrotask === 'function') {
-        queueMicrotask(write);
-      } else {
-        setTimeout(write, 0);
-      }
+      ReactNative.NativeModules?.GumpLocalStorage?.appendStartupLog?.(message);
     }
   } catch (_) {
     // Never throw from diagnostics.
