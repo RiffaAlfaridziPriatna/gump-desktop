@@ -190,7 +190,7 @@ void GumpUpdateMenu::Bootstrap(HWND hwnd) noexcept {
   InstallMenu(hwnd);
 
   win_sparkle_set_appcast_url(
-      "https://raw.githubusercontent.com/RiffaAlfaridziPriatna/gump-desktop/main/appcast.xml");
+      "https://raw.githubusercontent.com/RiffaAlfaridziPriatna/gump-desktop-releases/main/appcast.xml");
   win_sparkle_set_app_details(L"Gump", L"GUMP Desktop", GUMP_APP_VERSION_STR);
   win_sparkle_set_eddsa_public_key(kEdDsaPublicKey);
   win_sparkle_set_automatic_check_for_updates(1);

@@ -29,8 +29,10 @@ const RELEASE_TAG =
     ? args[tagIndex + 1]
     : new Date().toISOString().split('T')[0];
 
+// Public feed + binaries (source repo may be private). Override with env if needed.
 const GITHUB_REPO =
-  process.env.GITHUB_RELEASES_REPO || 'RiffaAlfaridziPriatna/gump-desktop';
+  process.env.GITHUB_RELEASES_REPO ||
+  'RiffaAlfaridziPriatna/gump-desktop-releases';
 const BASE_URL = `https://github.com/${GITHUB_REPO}/releases/download`;
 
 const macZip = `Gump-MacOS-v${MAC_VERSION}.zip`;
