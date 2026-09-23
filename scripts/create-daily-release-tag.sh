@@ -3,18 +3,18 @@
 # main had meaningful commits that day.
 #
 # Flow:
-#   1) Create + push the tag on tip of origin/main
-#   2) Explicitly workflow_dispatch the Release workflow
+#   1) Create + push the tag on tip of origin/main with GITHUB_TOKEN
+#      (GITHUB_TOKEN tag pushes do NOT cascade — intentional, avoids double runs)
+#   2) Explicitly workflow_dispatch the Release workflow (reliable single trigger)
 #
-# Tag pushes (even with a PAT) often do NOT cascade to on: push tags workflows.
-# workflow_dispatch is the reliable trigger (GITHUB_TOKEN may use it).
+# Do NOT push the tag with a PAT: a PAT push can fire on: push tags AND our
+# dispatch, which starts Release twice.
 #
 # Env:
 #   TAG_DATE            optional YYYY-MM-DD (default: today WIB)
 #   FORCE               "true" to tag even with no meaningful commits
 #   DRY_RUN             "true" to print actions without creating
-#   RELEASE_BOT_TOKEN   optional PAT for tag push (else GH_TOKEN / GITHUB_TOKEN)
-#   GH_TOKEN            used for `gh workflow run` (GITHUB_TOKEN is fine)
+#   GH_TOKEN            tag push + gh workflow run (GITHUB_TOKEN is fine)
 #   GITHUB_REPOSITORY   owner/name (set automatically on Actions)
 set -euo pipefail
 
@@ -35,8 +35,9 @@ TAG_DATE="${TAG_DATE:-}"
 FORCE="${FORCE:-false}"
 DRY_RUN="${DRY_RUN:-false}"
 REPO="${GITHUB_REPOSITORY:-RiffaAlfaridziPriatna/gump-desktop}"
-PUSH_TOKEN="${RELEASE_BOT_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN:-}}}"
-GH_API_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-${RELEASE_BOT_TOKEN:-}}}"
+# Prefer GITHUB_TOKEN / GH_TOKEN only — never RELEASE_BOT_TOKEN for tag push.
+PUSH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+GH_API_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 
 if [[ -z "$TAG_DATE" ]]; then
   TAG_DATE="$(TZ=Asia/Jakarta date +%Y-%m-%d)"
@@ -165,7 +166,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
 fi
 
 if [[ -z "$PUSH_TOKEN" ]]; then
-  echo "✗ No token to push tag. Set RELEASE_BOT_TOKEN or GH_TOKEN." >&2
+  echo "✗ No token to push tag. Set GH_TOKEN / GITHUB_TOKEN." >&2
   exit 1
 fi
 
