@@ -1,18 +1,19 @@
-import {mapUserPlan} from '@application/plan/mapUserPlan';
 import type {APIResponse} from '@services/api';
 
 /**
  * Resolves whether the user has a paid plan for export quality.
- * Uses the same mapper as the Your Plan modal.
+ *
+ * Plan gating is disabled for now — treat all users as paid so original
+ * quality stays available without upgrade UI.
  */
 export function isPaidPlan(
-  user: APIResponse.User | APIResponse.Guest | null,
+  _user: APIResponse.User | APIResponse.Guest | null,
 ): boolean {
-  return mapUserPlan(user)?.plan.isPaid ?? false;
+  return true;
 }
 
 /**
  * @deprecated Prefer isPaidPlan(user). Kept for temporary preview flips.
- * Flip to `true` to force paid-plan export UI regardless of subscription.
+ * Flip to `false` to force free-plan export UI regardless of subscription.
  */
-export const IS_PAID_PLAN: boolean | null = null;
+export const IS_PAID_PLAN: boolean | null = true;

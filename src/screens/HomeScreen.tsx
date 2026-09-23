@@ -1,15 +1,11 @@
 import {AlbumCard, AlbumGrid} from '@components/album';
 import {DeleteAlbumModal} from '@components/modals/DeleteAlbumModal';
 import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
-import {
-  HeaderAccountCluster,
-  HeaderPlanModal,
-} from '@components/plan';
+import {HeaderAccountCluster} from '@components/plan';
 import {useAuthState} from '@context/auth';
 import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useDeleteCulledAlbum} from '@hooks/useDeleteCulledAlbum';
 import {useLayout} from '@hooks/useLayout';
-import {usePlanMenu} from '@hooks/usePlanMenu';
 import {useProfileMenu} from '@hooks/useProfileMenu';
 import {
   LocalAlbumCardModel,
@@ -51,7 +47,6 @@ type HomeAlbumRow = {
 export default function HomeScreen({navigation}: Props) {
   const user = useAuthState(state => state.user);
   const profileMenu = useProfileMenu();
-  const planMenu = usePlanMenu();
   const {loadingAlbums, albums, refresh, count} = useLocalCulledAlbumList();
   const deleteCulledAlbum = useDeleteCulledAlbum();
   const {
@@ -186,7 +181,7 @@ export default function HomeScreen({navigation}: Props) {
             </View>
           )}
         </View>
-        <HeaderAccountCluster profileMenu={profileMenu} planMenu={planMenu} />
+        <HeaderAccountCluster profileMenu={profileMenu} />
       </View>
 
       {loadingAlbums && !hasAlbums ? (
@@ -230,7 +225,7 @@ export default function HomeScreen({navigation}: Props) {
             style={styles.scroll}
             contentPaddingHorizontal={screenPaddingHorizontal}
             contentContainerStyle={styles.scrollContent}
-            scrollEnabled={!loadingAlbums && !planMenu.isOpen}
+            scrollEnabled={!loadingAlbums}
             refreshing={loadingAlbums}
             onRefresh={refresh}
             extraData={expandedCardId}
@@ -243,7 +238,7 @@ export default function HomeScreen({navigation}: Props) {
             styles.emptyScrollContent,
             {paddingHorizontal: screenPaddingHorizontal},
           ]}
-          scrollEnabled={!planMenu.isOpen}
+          scrollEnabled
           refreshControl={
             <RefreshControl
               refreshing={loadingAlbums}
@@ -288,7 +283,6 @@ export default function HomeScreen({navigation}: Props) {
         menu={profileMenu}
         rightOffset={screenPaddingHorizontal}
       />
-      <HeaderPlanModal planMenu={planMenu} />
     </SafeAreaView>
   );
 }

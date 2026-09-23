@@ -6,7 +6,6 @@ import {
 import {CulledAlbumPhotoGrid} from '@components/culling/CulledAlbumPhotoGrid';
 import {CulledAlbumDetailHeader} from '@components/culling/CulledAlbumDetailHeader';
 import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
-import {HeaderPlanModal} from '@components/plan';
 import {ApplyLookModal} from '@components/modals/ApplyLookModal';
 import {DeletePhotoModal} from '@components/modals/DeletePhotoModal';
 import {ExportPhotosModal} from '@components/modals/ExportPhotosModal';
@@ -32,7 +31,6 @@ import {useCulledAlbumDetailData} from '@hooks/useCulledAlbumDetailData';
 import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
 import {usePreloadGridImages} from '@hooks/usePreloadGridImages';
 import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
-import {usePlanMenu} from '@hooks/usePlanMenu';
 import {useProfileMenu} from '@hooks/useProfileMenu';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {cullingEngine} from '@lib/culling/cullingEngine';
@@ -99,7 +97,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   );
   const isFocused = useIsFocused();
   const profileMenu = useProfileMenu();
-  const planMenu = usePlanMenu();
   const {resumeInFlightWork, startSelectedUpload} = useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
   const {loadError, loadingPhotos} = useCulledAlbumPhotos(albumId);
@@ -165,8 +162,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     photoToDelete !== null ||
     showUploadModal ||
     showExportModal ||
-    showApplyLookModal ||
-    planMenu.isOpen;
+    showApplyLookModal;
 
   useEffect(() => {
     if (!isBlockingModalOpen) {
@@ -354,11 +350,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     setUploadPhase('confirm');
   }, [uploadPhase]);
 
-  const handleUpgradeStorage = useCallback(() => {
-    handleCloseUploadModal();
-    planMenu.open();
-  }, [handleCloseUploadModal, planMenu.open]);
-
   const handleOpenAlbum = useCallback(async () => {
     if (albumLink) {
       try {
@@ -374,17 +365,14 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     handleCloseUploadModal();
   }, [albumLink, handleCloseUploadModal]);
 
-  const storageUsedGb = planMenu.snapshot?.usage.storageGb.used ?? 0;
-  const storageLimitGb = planMenu.snapshot?.usage.storageGb.limit ?? null;
   const confirmUploadSizeGb = useMemo(() => {
     const photoIds = new Set(actionPhotos.map(photo => photo.photoId));
     return estimateUploadSizeGb(
       albumPhotos.filter(photo => photoIds.has(photo.photoId)),
     );
   }, [actionPhotos, albumPhotos]);
-  const exportLabel = planMenu.plan
-    ? exportQualityLabel(planMenu.plan.exportQuality)
-    : 'Compressed JPG';
+  // Plan gating is disabled for now — always present original-quality upload label.
+  const exportLabel = exportQualityLabel('original');
 
   const isApplyingLook = lookBake.status === 'baking';
   const byteProgress = useMemo(
@@ -580,7 +568,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           isMobileLayout={isMobileLayout}
           paddingHorizontal={screenPaddingHorizontal}
           profileMenu={profileMenu}
-          planMenu={planMenu}
         />
 
         {mainContentWidth === 0 && (
@@ -726,8 +713,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           visible={showUploadModal}
           phase={uploadPhase}
           photoCount={modalPhotoCount}
-          storageUsedGb={storageUsedGb}
-          storageLimitGb={storageLimitGb}
           uploadSizeGb={modalUploadSizeGb}
           uploadedBytes={uploadedBytes}
           totalUploadBytes={totalUploadBytes}
@@ -736,7 +721,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           exportQualityLabel={exportLabel}
           onClose={handleCloseUploadModal}
           onUploadNow={handleStartUpload}
-          onUpgradeStorage={handleUpgradeStorage}
           onOpenAlbum={handleOpenAlbum}
         />
 
@@ -801,7 +785,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         menu={profileMenu}
         rightOffset={screenPaddingHorizontal}
       />
-      <HeaderPlanModal planMenu={planMenu} />
     </SafeAreaView>
     </UploadAwareModalShell>
   );

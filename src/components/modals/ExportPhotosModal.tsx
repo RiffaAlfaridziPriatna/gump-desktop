@@ -1,6 +1,5 @@
 import { Modal, Pressable, ProgressBar, TouchableOpacity } from '@components/ui';
 import type { CulledAlbumPhoto } from '@lib/culledAlbum/types';
-import { IS_PAID_PLAN, isPaidPlan as resolveIsPaidPlan } from '@lib/export/exportPlan';
 import { formatByteSize } from '@lib/export/formatByteSize';
 import {
   openInFileManager,
@@ -18,15 +17,12 @@ import type {
   ExportZipResult,
 } from '@lib/export/types';
 import { photoNeedsLookBake } from '@lib/look/bakeLook';
-import { openUpgradePlan } from '@lib/plan/billingLinks';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
-import { useAuthState } from '@hooks/useAuth';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
-import IconChevronRight from '../../assets/images/icon_chevron_right.svg';
 import IconFolder from '../../assets/images/icon_folder.svg';
 import IconFolderZip from '../../assets/images/icon_folder_zip.svg';
 import IconLock from '../../assets/images/icon_lock.svg';
@@ -137,12 +133,8 @@ export function ExportPhotosModal({
   selectedPhotos,
   onClose,
 }: ExportPhotosModalProps) {
-  const user = useAuthState(state => state.user);
-  const isPaidPlan =
-    IS_PAID_PLAN !== null ? IS_PAID_PLAN : resolveIsPaidPlan(user);
   const [step, setStep] = useState<ExportPhotosModalStep>('options');
   const [quality, setQuality] = useState<ExportQuality>('compressed');
-  const [showUpgradeHint, setShowUpgradeHint] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
   const [preparedExport, setPreparedExport] = useState<PreparedExport | null>(
     null,
@@ -162,7 +154,6 @@ export function ExportPhotosModal({
     }
     setStep('options');
     setQuality('compressed');
-    setShowUpgradeHint(false);
     setProgressPercent(0);
     setPreparedExport(null);
     setDownloadedExport(null);
@@ -172,17 +163,11 @@ export function ExportPhotosModal({
 
   const handleSelectCompressed = useCallback(() => {
     setQuality('compressed');
-    setShowUpgradeHint(false);
   }, []);
 
   const handleSelectOriginal = useCallback(() => {
-    if (!isPaidPlan) {
-      setShowUpgradeHint(true);
-      return;
-    }
     setQuality('original');
-    setShowUpgradeHint(false);
-  }, [isPaidPlan]);
+  }, []);
 
   const looksNeedBake = useMemo(
     () => selectedPhotos.some(photoNeedsLookBake),
@@ -203,7 +188,7 @@ export function ExportPhotosModal({
         albumId,
         albumName,
         photos: selectedPhotos,
-        quality: isPaidPlan ? quality : 'compressed',
+        quality,
         onProgress: progress => {
           if (prepareRequestIdRef.current !== requestId) {
             return;
@@ -232,7 +217,7 @@ export function ExportPhotosModal({
       setFailureKind('prepare');
       setStep('failed');
     }
-  }, [albumId, albumName, isPaidPlan, looksNeedBake, quality, selectedPhotos]);
+  }, [albumId, albumName, looksNeedBake, quality, selectedPhotos]);
 
   const runDownload = useCallback(
     async (directory?: ExportDirectoryInfo | null) => {
@@ -313,7 +298,7 @@ export function ExportPhotosModal({
 
   const modalSize =
     step === 'options'
-      ? { width: 720, height: showUpgradeHint ? 540 : 500 }
+      ? { width: 720, height: 500 }
       : { width: 720, height: 440 };
      
 
@@ -340,10 +325,7 @@ export function ExportPhotosModal({
               <QualityOption
                 title="Compressed JPG"
                 description="Looks great for online viewing, smaller files."
-                statusLabels={[
-                  isPaidPlan ? "Smaller file size" : "",
-                  "Included in your plan",
-                ].filter(Boolean)}
+                statusLabels={['Smaller file size']}
                 selected={quality === 'compressed'}
                 onPress={handleSelectCompressed}
               />
@@ -351,39 +333,10 @@ export function ExportPhotosModal({
                 <QualityOption
                   title="Original JPG"
                   description="Full resolution, best for editing and large prints."
-                  statusLabels={
-                    isPaidPlan ? [
-                      "Full resolution",
-                      "Included in your plan",
-                    ] : [
-                      "Available on paid plans",
-                    ]
-                  }
+                  statusLabels={['Full resolution']}
                   selected={quality === 'original'}
-                  locked={!isPaidPlan}
                   onPress={handleSelectOriginal}
                 />
-                {showUpgradeHint && !isPaidPlan && (
-                  <View style={styles.upgradeRow}>
-                    <Text style={styles.upgradeText}>
-                      Upgrade to export original-quality photos.
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => {
-                        void openUpgradePlan().catch(error => {
-                          console.error(
-                            '[ExportPhotosModal] Failed to open upgrade',
-                            error,
-                          );
-                        });
-                      }}
-                      activeOpacity={0.8}
-                      style={styles.upgradeCtaButton}>
-                      <Text style={styles.upgradeCta}>Upgrade Plan</Text>
-                      <IconChevronRight width={24} height={24} color={colors.accent} />
-                    </TouchableOpacity>
-                  </View>
-                )}
               </View>
             </View>
 
@@ -645,34 +598,6 @@ const styles = StyleSheet.create({
   },
   qualityPaidWrapper: {
     gap: 8,
-  },
-  upgradeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: colors.cardGrayLight,
-  },
-  upgradeText: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    lineHeight: 14 * 1.2,
-    color: colors.textDark,
-  },
-  upgradeCtaButton: {
-    gap: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  upgradeCta: {
-    ...sansBoldStyle,
-    fontSize: 14,
-    lineHeight: 14 * 1.2,
-    fontWeight: '600',
-    color: colors.accent,
   },
   formatRow: {
     flexDirection: 'row',

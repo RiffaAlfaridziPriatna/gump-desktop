@@ -9,7 +9,6 @@ const POPUP_AVATAR_SIZE = 70;
 type ProfilePopupProps = {
   userName: string;
   pictureUrl: string | null;
-  onUpgrade: () => void;
   onLogout: () => void;
   onDismiss: () => void;
   topOffset?: number;
@@ -19,7 +18,6 @@ type ProfilePopupProps = {
 export function ProfilePopup({
   userName,
   pictureUrl,
-  onUpgrade,
   onLogout,
   onDismiss,
   topOffset = 96,
@@ -41,13 +39,6 @@ export function ProfilePopup({
         </View>
         <View style={styles.divider} />
         <View style={styles.menu}>
-          <TouchableOpacity
-            onPress={onUpgrade}
-            activeOpacity={0.7}
-            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-          >
-            <Text style={styles.menuItem}>Upgrade My Plan</Text>
-          </TouchableOpacity>
           <TouchableOpacity
             onPress={onLogout}
             activeOpacity={0.7}

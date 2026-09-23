@@ -3,17 +3,12 @@ import {
   formatStorageGb,
 } from '@application/plan/formatPlanNumbers';
 import {Modal, ProgressBar, TouchableOpacity} from '@components/ui';
-import {
-  resolveStorageProjectionState,
-  type StorageProjectionState,
-} from '@domain/plan';
 import {bytesToGigabytes} from '@lib/culledAlbum/format';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
-import IconInfo from '../../assets/images/icon_info.svg';
 import CircleBlue from '../../assets/images/upload/blue_circle.svg';
 import HalfCircle from '../../assets/images/upload/half_circle.svg';
 import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
@@ -26,8 +21,6 @@ type UploadSelectedModalProps = {
   visible: boolean;
   phase: UploadSelectedPhase;
   photoCount: number;
-  storageUsedGb: number;
-  storageLimitGb: number | null;
   uploadSizeGb: number;
   uploadedBytes?: number;
   totalUploadBytes?: number;
@@ -36,7 +29,6 @@ type UploadSelectedModalProps = {
   exportQualityLabel: string;
   onClose: () => void;
   onUploadNow: () => Promise<void>;
-  onUpgradeStorage: () => void;
   onOpenAlbum: () => void;
 };
 
@@ -60,136 +52,19 @@ function ModalDecor() {
   );
 }
 
-function formatQuota(usedGb: number, limitGb: number | null): string {
-  if (limitGb == null) {
-    return `${formatStorageGb(usedGb)} GB`;
-  }
-  return `${formatStorageGb(usedGb)} GB / ${formatStorageGb(limitGb)} GB`;
-}
-
-function StorageAlertBanner({
-  variant,
-}: {
-  variant: Extract<StorageProjectionState, 'warning' | 'exceeded'>;
-}) {
-  const isExceeded = variant === 'exceeded';
-  return (
-    <View
-      style={[
-        styles.alertBanner,
-        isExceeded ? styles.alertBannerExceeded : styles.alertBannerWarning,
-      ]}>
-      <IconInfo
-        width={16}
-        height={16}
-        color={isExceeded ? colors.error : colors.accent}
-      />
-      <Text style={styles.alertMessage}>
-        {isExceeded
-          ? 'This upload would exceed your storage limit for this plan. Delete existing albums, reduce upload size, or upgrade storage to continue.'
-          : "You'll be close to your storage limit after this upload"}
-      </Text>
-    </View>
-  );
-}
-
-function StorageBreakdownCard({
-  storageUsedGb,
-  storageLimitGb,
-  uploadSizeGb,
-  projection,
-}: {
-  storageUsedGb: number;
-  storageLimitGb: number | null;
-  uploadSizeGb: number;
-  projection: StorageProjectionState;
-}) {
-  const afterGb = storageUsedGb + uploadSizeGb;
-  const progressPercent =
-    storageLimitGb != null && storageLimitGb > 0
-      ? (afterGb / storageLimitGb) * 100
-      : 0;
-  const isExceeded = projection === 'exceeded';
-  const fillColor = isExceeded ? colors.error : colors.accent;
-
-  return (
-    <View style={styles.breakdown}>
-      <View style={styles.breakdownRow}>
-        <Text style={styles.breakdownLabel}>Current storage</Text>
-        <Text style={styles.breakdownValue}>
-          {formatQuota(storageUsedGb, storageLimitGb)}
-        </Text>
-      </View>
-      <View style={styles.breakdownRow}>
-        <Text style={styles.breakdownLabel}>This upload</Text>
-        <Text style={styles.breakdownValue}>
-          {formatStorageGb(uploadSizeGb)} GB
-        </Text>
-      </View>
-
-      <View style={styles.usageSection}>
-        <View style={styles.breakdownRow}>
-          <Text style={styles.breakdownLabel}>Storage after upload</Text>
-          <Text
-            style={[
-              styles.breakdownValue,
-              isExceeded && styles.breakdownValueExceeded,
-            ]}>
-            {formatQuota(afterGb, storageLimitGb)}
-          </Text>
-        </View>
-        <View style={styles.storageProgressBar}>
-          <View
-            style={[
-              styles.storageProgressFill,
-              {
-                width: `${Math.min(100, progressPercent)}%`,
-                backgroundColor: fillColor,
-              },
-            ]}
-          />
-          {progressPercent > 100 && (
-            <View
-              style={[
-                styles.storageProgressOverflow,
-                {width: `${progressPercent - 100}%`},
-              ]}
-            />
-          )}
-        </View>
-      </View>
-    </View>
-  );
-}
-
 function ConfirmPhase({
   photoCount,
-  storageUsedGb,
-  storageLimitGb,
   uploadSizeGb,
   exportQualityLabel,
   starting,
   onUploadNow,
-  onUpgradeStorage,
-  onCancel,
 }: {
   photoCount: number;
-  storageUsedGb: number;
-  storageLimitGb: number | null;
   uploadSizeGb: number;
   exportQualityLabel: string;
   starting: boolean;
   onUploadNow: () => void;
-  onUpgradeStorage: () => void;
-  onCancel: () => void;
 }) {
-  const projection = resolveStorageProjectionState(
-    storageUsedGb,
-    uploadSizeGb,
-    storageLimitGb,
-  );
-  const isExceeded = projection === 'exceeded';
-
   return (
     <View style={styles.container}>
       <View style={styles.titleBlock}>
@@ -200,53 +75,34 @@ function ConfirmPhase({
       </View>
 
       <View style={styles.body}>
-        <StorageBreakdownCard
-          storageUsedGb={storageUsedGb}
-          storageLimitGb={storageLimitGb}
-          uploadSizeGb={uploadSizeGb}
-          projection={projection}
-        />
+        <View style={styles.breakdown}>
+          <View style={styles.breakdownRow}>
+            <Text style={styles.breakdownLabel}>Upload size</Text>
+            <Text style={styles.breakdownValue}>
+              {formatStorageGb(uploadSizeGb)} GB
+            </Text>
+          </View>
+        </View>
 
-        {projection === 'warning' || projection === 'exceeded' ? (
-          <StorageAlertBanner variant={projection} />
-        ) : (
-          <Text style={styles.exportHint}>
-            Exports as{' '}
-            <Text style={styles.exportHintEmphasis}>{exportQualityLabel}</Text>
-          </Text>
-        )}
+        <Text style={styles.exportHint}>
+          Exports as{' '}
+          <Text style={styles.exportHintEmphasis}>{exportQualityLabel}</Text>
+        </Text>
       </View>
 
       <View style={styles.actions}>
-        {isExceeded ? (
-          <>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={onUpgradeStorage}
-              activeOpacity={0.8}>
-              <Text style={styles.primaryButtonText}>Upgrade storage</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={onCancel}
-              activeOpacity={0.7}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <TouchableOpacity
-            style={[
-              styles.primaryButton,
-              starting && styles.primaryButtonDisabled,
-            ]}
-            onPress={onUploadNow}
-            disabled={starting}
-            activeOpacity={0.8}>
-            <Text style={styles.primaryButtonText}>
-              {starting ? 'Starting...' : 'Upload Now'}
-            </Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          style={[
+            styles.primaryButton,
+            starting && styles.primaryButtonDisabled,
+          ]}
+          onPress={onUploadNow}
+          disabled={starting}
+          activeOpacity={0.8}>
+          <Text style={styles.primaryButtonText}>
+            {starting ? 'Starting...' : 'Upload Now'}
+          </Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -293,8 +149,8 @@ function UploadingPhase({
           style={styles.uploadProgressBar}
         />
         <Text style={styles.uploadProgressMeta}>
-          <Text style={styles.uploadProgressMetaValue}>{percent}%</Text> · {formatStorageGb(uploadedGb)} GB of{' '}
-          {formatStorageGb(totalGb)} GB
+          <Text style={styles.uploadProgressMetaValue}>{percent}%</Text> ·{' '}
+          {formatStorageGb(uploadedGb)} GB of {formatStorageGb(totalGb)} GB
         </Text>
       </View>
     </View>
@@ -303,23 +159,11 @@ function UploadingPhase({
 
 function CompletePhase({
   photoCount,
-  storageUsedGb,
-  storageLimitGb,
-  uploadSizeGb,
   onOpenAlbum,
 }: {
   photoCount: number;
-  storageUsedGb: number;
-  storageLimitGb: number | null;
-  uploadSizeGb: number;
   onOpenAlbum: () => void;
 }) {
-  const usedAfter = storageUsedGb + uploadSizeGb;
-  const progress =
-    storageLimitGb != null && storageLimitGb > 0
-      ? Math.min(1, usedAfter / storageLimitGb)
-      : 0;
-
   return (
     <View style={styles.container}>
       <View style={styles.completeHeader}>
@@ -333,24 +177,6 @@ function CompletePhase({
         </View>
       </View>
 
-      <View style={styles.completeStorageCard}>
-        <View style={styles.breakdownRow}>
-          <Text style={styles.breakdownLabel}>Storage used</Text>
-          <Text style={styles.breakdownValue}>
-            {storageLimitGb != null
-              ? `${formatStorageGb(usedAfter)} / ${formatStorageGb(storageLimitGb)} GB`
-              : `${formatStorageGb(usedAfter)} GB`}
-          </Text>
-        </View>
-        <ProgressBar
-          progress={progress}
-          height={9}
-          trackColor={colors.progressTrack}
-          fillColor={colors.accent}
-          style={styles.uploadProgressBar}
-        />
-      </View>
-
       <TouchableOpacity
         style={styles.primaryButton}
         onPress={onOpenAlbum}
@@ -361,31 +187,20 @@ function CompletePhase({
   );
 }
 
-function modalHeightForPhase(
-  phase: UploadSelectedPhase,
-  projection: StorageProjectionState,
-): number {
+function modalHeightForPhase(phase: UploadSelectedPhase): number {
   if (phase === 'uploading') {
     return 360;
   }
   if (phase === 'complete') {
-    return 480;
+    return 400;
   }
-  if (projection === 'exceeded') {
-    return 560;
-  }
-  if (projection === 'warning') {
-    return 520;
-  }
-  return 520;
+  return 440;
 }
 
 export function UploadSelectedModal({
   visible,
   phase,
   photoCount,
-  storageUsedGb,
-  storageLimitGb,
   uploadSizeGb,
   uploadedBytes = 0,
   totalUploadBytes = 0,
@@ -394,15 +209,9 @@ export function UploadSelectedModal({
   exportQualityLabel,
   onClose,
   onUploadNow,
-  onUpgradeStorage,
   onOpenAlbum,
 }: UploadSelectedModalProps) {
   const [starting, setStarting] = useState(false);
-  const projection = resolveStorageProjectionState(
-    storageUsedGb,
-    uploadSizeGb,
-    storageLimitGb,
-  );
 
   async function handleUploadNow() {
     if (starting) {
@@ -423,20 +232,16 @@ export function UploadSelectedModal({
       visible={visible}
       onClose={onClose}
       width={740}
-      height={modalHeightForPhase(phase, projection)}
+      height={modalHeightForPhase(phase)}
       contentStyle={styles.modalContent}>
       <ModalDecor />
       {phase === 'confirm' && (
         <ConfirmPhase
           photoCount={photoCount}
-          storageUsedGb={storageUsedGb}
-          storageLimitGb={storageLimitGb}
           uploadSizeGb={uploadSizeGb}
           exportQualityLabel={exportQualityLabel}
           starting={starting}
           onUploadNow={handleUploadNow}
-          onUpgradeStorage={onUpgradeStorage}
-          onCancel={onClose}
         />
       )}
       {phase === 'uploading' && (
@@ -449,13 +254,7 @@ export function UploadSelectedModal({
         />
       )}
       {phase === 'complete' && (
-        <CompletePhase
-          photoCount={photoCount}
-          storageUsedGb={storageUsedGb}
-          storageLimitGb={storageLimitGb}
-          uploadSizeGb={uploadSizeGb}
-          onOpenAlbum={onOpenAlbum}
-        />
+        <CompletePhase photoCount={photoCount} onOpenAlbum={onOpenAlbum} />
       )}
     </Modal>
   );
@@ -524,35 +323,6 @@ const styles = StyleSheet.create({
     color: colors.textDark,
     fontWeight: 600,
   },
-  breakdownValueExceeded: {
-    color: colors.error,
-  },
-  usageSection: {
-    gap: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  storageProgressBar: {
-    height: 9,
-    backgroundColor: colors.progressTrack,
-    borderRadius: 9999,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  storageProgressFill: {
-    height: '100%',
-    borderRadius: 9999,
-  },
-  storageProgressOverflow: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    height: '100%',
-    backgroundColor: colors.error,
-    opacity: 0.3,
-    borderRadius: 9999,
-  },
   exportHint: {
     fontFamily: fonts.sans,
     fontSize: 14,
@@ -561,30 +331,6 @@ const styles = StyleSheet.create({
   },
   exportHintEmphasis: {
     ...sansBoldStyle,
-    color: colors.textDark,
-  },
-  alertBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderLeftWidth: 5,
-  },
-  alertBannerWarning: {
-    backgroundColor: '#FFF3E8',
-    borderLeftColor: colors.accent,
-  },
-  alertBannerExceeded: {
-    backgroundColor: '#FF6E5A1A',
-    borderLeftColor: colors.error,
-  },
-  alertMessage: {
-    flex: 1,
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    lineHeight: 14 * 1.3,
     color: colors.textDark,
   },
   actions: {
@@ -599,33 +345,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     height: 48,
-    alignSelf: 'center',
+    width: '100%',
   },
   primaryButtonDisabled: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
   primaryButtonText: {
     ...sansBoldStyle,
     fontSize: 16,
     color: colors.white,
   },
-  cancelButton: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  cancelButtonText: {
-    ...sansBoldStyle,
-    fontSize: 16,
-    color: colors.accent,
-  },
   uploadProgressBlock: {
     width: '100%',
     gap: 12,
-    alignItems: 'center',
   },
   uploadProgressBar: {
     width: '100%',
-    borderRadius: 9999,
   },
   uploadProgressMeta: {
     fontFamily: fonts.sans,
@@ -634,43 +369,36 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   uploadProgressMetaValue: {
-    fontWeight: 600,
+    ...sansBoldStyle,
+    color: colors.textDark,
   },
   completeHeader: {
-    gap: 16,
     alignItems: 'center',
-  },
-  completeStorageCard: {
-    width: '100%',
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    borderRadius: 8,
-    padding: 24,
-    gap: 12,
+    gap: 16,
   },
   halfCircleDecor: {
     position: 'absolute',
-    top: 0,
-    left: 0,
+    top: -20,
+    left: -28,
   },
   quarterOrangeDecor: {
     position: 'absolute',
-    top: 0,
-    right: 0,
+    top: -24,
+    right: -20,
   },
   quarterRedDecor: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
+    bottom: -18,
+    right: -10,
   },
   circleBlueDecor: {
     position: 'absolute',
-    bottom: 24,
-    left: 24,
+    bottom: 48,
+    left: 18,
   },
   circleLightBlueDecor: {
     position: 'absolute',
-    top: 80,
-    right: 0,
+    top: 72,
+    right: 28,
   },
 });
