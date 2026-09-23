@@ -292,10 +292,11 @@ jobs:
 
       - name: Generate appcast.xml
         env:
-          GITHUB_RELEASES_REPO: ${{ github.repository }}
+          # Public binaries + feed live in gump-desktop-releases (source may be private).
+          GITHUB_RELEASES_REPO: RiffaAlfaridziPriatna/gump-desktop-releases
         run: node scripts/generate-appcast.mjs --tag "${{ steps.tag.outputs.tag }}"
 
-      - name: Create GitHub Release
+      - name: Create source-repo GitHub Release (audit)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -318,16 +319,18 @@ jobs:
             echo "- **macOS**: v${MAC_VERSION}"
             echo "- **Windows**: v${WIN_VERSION}"
             echo ""
+            echo "Sparkle/WinSparkle clients use the **public** releases repo:"
+            echo "https://github.com/RiffaAlfaridziPriatna/gump-desktop-releases"
+            echo ""
             bash scripts/generate-release-notes.sh "${PREV_TAG}" "HEAD"
             echo ""
             echo "---"
-            echo "*Auto-generated release*"
+            echo "*Auto-generated release (source audit copy)*"
           } >"$NOTES_FILE"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG exists; uploading assets (notes left as-is)"
+            echo "Source release $TAG exists; uploading assets (notes left as-is)"
           else
-            # Tag should already exist when triggered by push:tags; create release only.
             gh release create "$TAG" --title "Release $TAG" --notes-file "$NOTES_FILE"
           fi
 
@@ -337,95 +340,96 @@ jobs:
             "dist/appcast.xml" \
             --clobber
 
+          gh release edit "$TAG" --draft=false
           rm -f "$NOTES_FILE"
 
-      # main is protected (PR + required "test"). Push via bot PR, wait for Test, merge.
-      #
-      # IMPORTANT: PRs created with the default GITHUB_TOKEN put pull_request
-      # workflows in "Approve workflows to run" (manual). Use a PAT or GitHub App
-      # token (secret RELEASE_BOT_TOKEN) so Test starts alone.
-      # Token needs: contents:write, pull-requests:write (fine-grained) or repo (classic).
-      - name: Update appcast.xml on main
+      # Sparkle feed + public download URLs (works even if this source repo is private).
+      - name: Publish to gump-desktop-releases
         env:
-          RELEASE_BOT_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
-          GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+          RELEASES_REPO: RiffaAlfaridziPriatna/gump-desktop-releases
         run: |
           set -euo pipefail
-          TAG="${{ steps.tag.outputs.tag }}"
-          BRANCH="chore/appcast-${TAG}"
-
-          if [[ -z "${RELEASE_BOT_TOKEN}" ]]; then
-            echo "::warning::RELEASE_BOT_TOKEN is not set. Appcast PR CI will wait for manual 'Approve workflows to run'."
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Push/PR as the bot token identity so CI auto-runs (no manual approve).
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-
-          git fetch origin main
-          git checkout -B "$BRANCH" origin/main
-          cp dist/appcast.xml appcast.xml
-          git add appcast.xml
-
-          if git diff --staged --quiet; then
-            echo "appcast.xml unchanged"
-            exit 0
-          fi
-
-          git commit -m "chore: update appcast.xml for ${TAG}"
-          git push -u origin "HEAD:refs/heads/${BRANCH}" --force
-
-          PR_URL="$(gh pr list --head "$BRANCH" --base main --json url --jq '.[0].url // empty')"
-          if [[ -z "$PR_URL" ]]; then
-            BODY_FILE="$(mktemp)"
-            printf '%s\n' \
-              "Automated appcast update from Release \`${TAG}\`." \
-              "" \
-              "Sparkle clients read \`appcast.xml\` on \`main\`. This PR only updates that feed file." \
-              >"$BODY_FILE"
-            PR_URL="$(
-              gh pr create \
-                --base main \
-                --head "$BRANCH" \
-                --title "chore: update appcast.xml for ${TAG}" \
-                --body-file "$BODY_FILE"
-            )"
-            rm -f "$BODY_FILE"
-          fi
-          echo "PR: $PR_URL"
-
-          # After create/force-push, Test may not be registered yet. `gh pr checks
-          # --fail-fast` exits 1 with "no checks reported" — wait first.
-          echo "Waiting for status checks to appear..."
-          for i in $(seq 1 60); do
-            set +e
-            checks_err="$(gh pr checks "$PR_URL" 2>&1)"
-            checks_rc=$?
-            set -e
-            if printf '%s\n' "$checks_err" | grep -qi 'no checks reported'; then
-              printf '  (%s/60) still waiting…\n' "$i"
-              sleep 5
-              continue
-            fi
-            # Checks exist (pending/pass/fail) — stop waiting to appear
-            break
-          done
-
-          if printf '%s\n' "$(gh pr checks "$PR_URL" 2>&1 || true)" | grep -qi 'no checks reported'; then
-            echo "::error::No CI checks appeared on ${PR_URL}. Merge the PR manually after Test runs."
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "::error::RELEASE_BOT_TOKEN is required to publish gump-desktop-releases"
             exit 1
           fi
 
-          echo "Watching status checks..."
-          gh pr checks --watch "$PR_URL"
-          gh pr merge "$PR_URL" --squash --delete-branch --subject "chore: update appcast.xml for ${TAG}"
-          echo "appcast.xml merged to main"
+          TAG="${{ steps.tag.outputs.tag }}"
+          MAC_VERSION="$(tr -d '\n\r' < VERSION.macos)"
+          WIN_VERSION="$(tr -d '\n\r' < VERSION.windows)"
+          MAC_ZIP="dist/prod/macos/Gump-MacOS-v${MAC_VERSION}.zip"
+          WIN_ZIP="dist/prod/windows/Gump-Windows-v${WIN_VERSION}.zip"
+
+          NOTES_FILE="$(mktemp)"
+          {
+            echo "## GUMP Desktop ${TAG}"
+            echo ""
+            echo "- **macOS**: v${MAC_VERSION}"
+            echo "- **Windows**: v${WIN_VERSION}"
+            echo ""
+            echo "Appcast: https://raw.githubusercontent.com/${RELEASES_REPO}/main/appcast.xml"
+            echo ""
+            echo "Built from \`${{ github.repository }}\` @ \`${{ github.sha }}\`."
+          } >"$NOTES_FILE"
+
+          if gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
+            echo "Public release $TAG exists; uploading assets"
+          else
+            gh release create "$TAG" \
+              --repo "$RELEASES_REPO" \
+              --target main \
+              --title "Release $TAG" \
+              --notes-file "$NOTES_FILE"
+          fi
+
+          gh release upload "$TAG" \
+            --repo "$RELEASES_REPO" \
+            "$MAC_ZIP" \
+            "$WIN_ZIP" \
+            "dist/appcast.xml" \
+            --clobber
+
+          # Never leave Sparkle pointing at a draft (404 for clients).
+          gh release edit "$TAG" --repo "$RELEASES_REPO" --draft=false
+          rm -f "$NOTES_FILE"
+          echo "Published https://github.com/${RELEASES_REPO}/releases/tag/${TAG}"
+
+      - name: Update appcast.xml on gump-desktop-releases
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+          RELEASES_REPO: RiffaAlfaridziPriatna/gump-desktop-releases
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "::error::RELEASE_BOT_TOKEN is required to update public appcast.xml"
+            exit 1
+          fi
+
+          TAG="${{ steps.tag.outputs.tag }}"
+          WORK="$(mktemp -d)"
+          git clone --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${RELEASES_REPO}.git" \
+            "$WORK"
+
+          cp dist/appcast.xml "$WORK/appcast.xml"
+          git -C "$WORK" config user.name "github-actions[bot]"
+          git -C "$WORK" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$WORK" add appcast.xml
+
+          if git -C "$WORK" diff --staged --quiet; then
+            echo "Public appcast.xml unchanged"
+            exit 0
+          fi
+
+          git -C "$WORK" commit -m "chore: update appcast.xml for ${TAG}"
+          git -C "$WORK" push origin HEAD:main
+          echo "Updated https://raw.githubusercontent.com/${RELEASES_REPO}/main/appcast.xml"
 
       - name: Summary
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
+          RELEASES_REPO="RiffaAlfaridziPriatna/gump-desktop-releases"
           {
             echo "## Release Complete"
             echo ""
@@ -433,7 +437,10 @@ jobs:
             echo "- **macOS**: v$(tr -d '\n\r' < VERSION.macos)"
             echo "- **Windows**: v$(tr -d '\n\r' < VERSION.windows)"
             echo ""
-            echo "**Links:**"
-            echo "- [GitHub Release](https://github.com/${{ github.repository }}/releases/tag/$TAG)"
-            echo "- [Appcast URL](https://raw.githubusercontent.com/${{ github.repository }}/main/appcast.xml)"
+            echo "**Public (Sparkle / WinSparkle):**"
+            echo "- [Release](https://github.com/${RELEASES_REPO}/releases/tag/$TAG)"
+            echo "- [Appcast](https://raw.githubusercontent.com/${RELEASES_REPO}/main/appcast.xml)"
+            echo ""
+            echo "**Source audit copy:**"
+            echo "- [Release](https://github.com/${{ github.repository }}/releases/tag/$TAG)"
           } >> "$GITHUB_STEP_SUMMARY"
