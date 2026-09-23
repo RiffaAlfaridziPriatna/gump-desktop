@@ -16,8 +16,43 @@ permissions:
   pull-requests: write
 
 jobs:
+  # Refuse tags / workflow_dispatch commits that are not on origin/main.
+  # (Daily tag script already uses --target main; this blocks accidental
+  # staging/feature tags from producing production artifacts + appcast.)
+  assert-on-main:
+    name: Assert release commit is on main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require github.sha is an ancestor of origin/main
+        run: |
+          set -euo pipefail
+          git fetch origin main --prune
+          COMMIT="${{ github.sha }}"
+          echo "Release commit: ${COMMIT}"
+          echo "origin/main:    $(git rev-parse origin/main)"
+
+          if ! git merge-base --is-ancestor "$COMMIT" origin/main; then
+            echo "::error::Release refused: ${COMMIT} is not on origin/main."
+            echo "Create date tags only from main (after staging → main)."
+            echo "Daily tag workflow already targets main; do not tag staging/feature tips."
+            exit 1
+          fi
+
+          # Helpful context: tip vs historical commit on main.
+          if [[ "$(git rev-parse "$COMMIT")" == "$(git rev-parse origin/main)" ]]; then
+            echo "OK: tag/dispatch points at tip of origin/main"
+          else
+            echo "OK: commit is on origin/main history (not current tip)"
+          fi
+
   build-macos:
     name: Build macOS
+    needs: [assert-on-main]
     runs-on: macos-14
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -157,6 +192,7 @@ jobs:
 
   build-windows:
     name: Build Windows
+    needs: [assert-on-main]
     # Pin to windows-2022: RNW 0.81 looks for VS [17.11, 18.0).
     # windows-latest (2025) ships VS 2026 only → same NoMSBuild failure as windows-build.yml.
     runs-on: windows-2022
