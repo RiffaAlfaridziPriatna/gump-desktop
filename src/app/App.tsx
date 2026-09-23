@@ -10,7 +10,7 @@ import {
 } from '@lib/observability';
 import {colors} from '@lib/ui/colors';
 import {DefaultTheme, NavigationContainer} from '@react-navigation/native';
-import {ActivityIndicator, Platform, StyleSheet, View} from 'react-native';
+import {ActivityIndicator, Platform, StyleSheet, Text, View} from 'react-native';
 import {
   MutationCache,
   QueryCache,
@@ -22,6 +22,9 @@ import {AuthNavigator} from './AuthNavigator';
 import {MainNavigator} from './MainNavigator';
 
 installGlobalErrorReporting();
+console.warn(
+  `[gump] App module load platform=${Platform.OS} posthog=${isPostHogEnabled}`,
+);
 
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
@@ -81,6 +84,7 @@ function RootNavigator() {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color={colors.accent} />
+        <Text style={styles.loadingText}>Loading…</Text>
       </View>
     );
   }
@@ -94,6 +98,7 @@ const AppRoot =
     : require('react-native-gesture-handler').GestureHandlerRootView;
 
 export default function App() {
+  console.warn('[gump] App render');
   const tree = (
     <AppRoot style={styles.root}>
       <AppErrorBoundary>
@@ -134,5 +139,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,
+    gap: 12,
+  },
+  loadingText: {
+    color: colors.textMuted,
+    fontSize: 14,
   },
 });

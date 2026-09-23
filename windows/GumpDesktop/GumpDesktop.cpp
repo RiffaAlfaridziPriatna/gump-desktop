@@ -369,13 +369,24 @@ static void ConfigureUnpackagedAsyncStoragePath() noexcept {
 
 static std::wstring ToBundleRootFileUri(PCWSTR appDirectory) {
   // Windows file URIs need file:///C:/path/ form, not file://C:\path\.
+  // Also percent-encode spaces — paths like "Tahu Kriptzy" otherwise break
+  // secondary asset loads (and some RNW URI parsers).
   std::wstring path(appDirectory);
   for (wchar_t &ch : path) {
     if (ch == L'\\') {
       ch = L'/';
     }
   }
-  return std::wstring(L"file:///") + path + L"/Bundle/";
+  std::wstring encoded;
+  encoded.reserve(path.size() + 16);
+  for (wchar_t ch : path) {
+    if (ch == L' ') {
+      encoded += L"%20";
+    } else {
+      encoded.push_back(ch);
+    }
+  }
+  return std::wstring(L"file:///") + encoded + L"/Bundle/";
 }
 
 static bool EnsureReleaseBundlePresent(PCWSTR appDirectory) noexcept {

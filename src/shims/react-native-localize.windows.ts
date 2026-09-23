@@ -30,7 +30,13 @@ export const getNumberFormatSettings = () => ({
 
 export const getTemperatureUnit = () => 'celsius';
 
-export const getTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+export const getTimeZone = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+};
 
 export const uses24HourClock = () => false;
 
