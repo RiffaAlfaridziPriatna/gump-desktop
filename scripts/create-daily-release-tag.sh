@@ -2,18 +2,19 @@
 # Create at most one date tag (YYYY-MM-DD) for Asia/Jakarta calendar day when
 # main had meaningful commits that day.
 #
-# Flow: this script ONLY creates + pushes the tag on tip of origin/main.
-# The Release workflow (on: push tags) builds artifacts and creates GitHub Releases.
+# Flow:
+#   1) Create + push the tag on tip of origin/main
+#   2) Explicitly workflow_dispatch the Release workflow
 #
-# Use RELEASE_BOT_TOKEN (PAT), not GITHUB_TOKEN alone — tag pushes authenticated
-# with GITHUB_TOKEN do not trigger other workflows.
+# Tag pushes (even with a PAT) often do NOT cascade to on: push tags workflows.
+# workflow_dispatch is the reliable trigger (GITHUB_TOKEN may use it).
 #
 # Env:
 #   TAG_DATE            optional YYYY-MM-DD (default: today WIB)
 #   FORCE               "true" to tag even with no meaningful commits
 #   DRY_RUN             "true" to print actions without creating
-#   RELEASE_BOT_TOKEN   preferred PAT (contents:write) so Release CI is triggered
-#   GH_TOKEN / GITHUB_TOKEN  fallback (will NOT trigger Release workflow)
+#   RELEASE_BOT_TOKEN   optional PAT for tag push (else GH_TOKEN / GITHUB_TOKEN)
+#   GH_TOKEN            used for `gh workflow run` (GITHUB_TOKEN is fine)
 #   GITHUB_REPOSITORY   owner/name (set automatically on Actions)
 set -euo pipefail
 
@@ -35,6 +36,7 @@ FORCE="${FORCE:-false}"
 DRY_RUN="${DRY_RUN:-false}"
 REPO="${GITHUB_REPOSITORY:-RiffaAlfaridziPriatna/gump-desktop}"
 PUSH_TOKEN="${RELEASE_BOT_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN:-}}}"
+GH_API_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-${RELEASE_BOT_TOKEN:-}}}"
 
 if [[ -z "$TAG_DATE" ]]; then
   TAG_DATE="$(TZ=Asia/Jakarta date +%Y-%m-%d)"
@@ -47,15 +49,40 @@ fi
 
 echo "▸ Daily release tag date (WIB): ${TAG_DATE}"
 
+dispatch_release() {
+  local tag="$1"
+  require_cmd gh
+  if [[ -z "$GH_API_TOKEN" ]]; then
+    echo "✗ No token for gh workflow run (set GH_TOKEN / GITHUB_TOKEN)." >&2
+    exit 1
+  fi
+  export GH_TOKEN="$GH_API_TOKEN"
+  echo "▸ Dispatching Release workflow (workflow_dispatch) for tag ${tag}"
+  # --ref must be the tag so github.sha is the tagged commit on main.
+  gh workflow run release.yml \
+    --repo "$REPO" \
+    --ref "$tag" \
+    -f "tag=${tag}"
+  echo "▸ Dispatched. Check Actions → Release for tag ${tag}"
+}
+
 git fetch origin main --tags --force
 
+tag_exists=false
 if git rev-parse "refs/tags/${TAG_DATE}" >/dev/null 2>&1; then
-  echo "▸ Tag ${TAG_DATE} already exists locally — nothing to do"
-  exit 0
+  tag_exists=true
+elif git ls-remote --tags origin "refs/tags/${TAG_DATE}" | grep -q .; then
+  tag_exists=true
 fi
 
-if git ls-remote --tags origin "refs/tags/${TAG_DATE}" | grep -q .; then
-  echo "▸ Tag ${TAG_DATE} already exists on origin — nothing to do"
+if [[ "$tag_exists" == "true" ]]; then
+  echo "▸ Tag ${TAG_DATE} already exists"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "▸ DRY_RUN=true — would dispatch Release for existing tag"
+    exit 0
+  fi
+  # Recover when a prior tag push never cascaded into Release.
+  dispatch_release "$TAG_DATE"
   exit 0
 fi
 
@@ -129,7 +156,7 @@ echo "▸ Previous date tag: ${PREV_TAG:-"(none)"}"
 echo "▸ Versions: macOS v${MAC_VERSION} / Windows v${WIN_VERSION}"
 
 if [[ "$DRY_RUN" == "true" ]]; then
-  echo "▸ DRY_RUN=true — not creating or pushing tag"
+  echo "▸ DRY_RUN=true — not creating/pushing tag or dispatching Release"
   if [[ -x "${ROOT_DIR}/scripts/generate-release-notes.sh" ]]; then
     echo "▸ Notes preview (Release workflow will author the GitHub Release):"
     bash "${ROOT_DIR}/scripts/generate-release-notes.sh" "${PREV_TAG}" "origin/main" | sed -n '1,40p'
@@ -138,16 +165,12 @@ if [[ "$DRY_RUN" == "true" ]]; then
 fi
 
 if [[ -z "$PUSH_TOKEN" ]]; then
-  echo "✗ No token to push tag. Set RELEASE_BOT_TOKEN (recommended) or GH_TOKEN." >&2
+  echo "✗ No token to push tag. Set RELEASE_BOT_TOKEN or GH_TOKEN." >&2
   exit 1
-fi
-
-if [[ -z "${RELEASE_BOT_TOKEN:-}" ]]; then
-  echo "::warning::RELEASE_BOT_TOKEN unset — pushing with GITHUB_TOKEN will NOT trigger the Release workflow."
 fi
 
 git tag "$TAG_DATE" "$MAIN_SHA"
 git push "https://x-access-token:${PUSH_TOKEN}@github.com/${REPO}.git" "refs/tags/${TAG_DATE}"
 
 echo "▸ Pushed tag ${TAG_DATE} → ${REPO}"
-echo "▸ Release workflow should run next (on: push tags) to build + create GitHub Releases"
+dispatch_release "$TAG_DATE"
