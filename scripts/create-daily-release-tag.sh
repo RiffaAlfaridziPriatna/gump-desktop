@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
 # Create at most one date tag (YYYY-MM-DD) for Asia/Jakarta calendar day when
-# main had meaningful commits that day. Pushing/creating the tag triggers Release.
+# main had meaningful commits that day.
+#
+# Flow: this script ONLY creates + pushes the tag on tip of origin/main.
+# The Release workflow (on: push tags) builds artifacts and creates GitHub Releases.
+#
+# Use RELEASE_BOT_TOKEN (PAT), not GITHUB_TOKEN alone — tag pushes authenticated
+# with GITHUB_TOKEN do not trigger other workflows.
 #
 # Env:
-#   TAG_DATE   optional YYYY-MM-DD (default: today WIB)
-#   FORCE      "true" to tag even with no meaningful commits
-#   DRY_RUN    "true" to print actions without creating
-#   GH_TOKEN   required for gh release create / pr view
+#   TAG_DATE            optional YYYY-MM-DD (default: today WIB)
+#   FORCE               "true" to tag even with no meaningful commits
+#   DRY_RUN             "true" to print actions without creating
+#   RELEASE_BOT_TOKEN   preferred PAT (contents:write) so Release CI is triggered
+#   GH_TOKEN / GITHUB_TOKEN  fallback (will NOT trigger Release workflow)
+#   GITHUB_REPOSITORY   owner/name (set automatically on Actions)
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,6 +33,8 @@ require_cmd date
 TAG_DATE="${TAG_DATE:-}"
 FORCE="${FORCE:-false}"
 DRY_RUN="${DRY_RUN:-false}"
+REPO="${GITHUB_REPOSITORY:-RiffaAlfaridziPriatna/gump-desktop}"
+PUSH_TOKEN="${RELEASE_BOT_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN:-}}}"
 
 if [[ -z "$TAG_DATE" ]]; then
   TAG_DATE="$(TZ=Asia/Jakarta date +%Y-%m-%d)"
@@ -40,19 +50,13 @@ echo "▸ Daily release tag date (WIB): ${TAG_DATE}"
 git fetch origin main --tags --force
 
 if git rev-parse "refs/tags/${TAG_DATE}" >/dev/null 2>&1; then
-  echo "▸ Tag ${TAG_DATE} already exists — nothing to do"
+  echo "▸ Tag ${TAG_DATE} already exists locally — nothing to do"
   exit 0
 fi
 
-if [[ "$DRY_RUN" != "true" ]]; then
-  require_cmd gh
-fi
-
-if command -v gh >/dev/null 2>&1 && [[ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]]; then
-  if gh release view "$TAG_DATE" >/dev/null 2>&1; then
-    echo "▸ GitHub Release ${TAG_DATE} already exists — nothing to do"
-    exit 0
-  fi
+if git ls-remote --tags origin "refs/tags/${TAG_DATE}" | grep -q .; then
+  echo "▸ Tag ${TAG_DATE} already exists on origin — nothing to do"
+  exit 0
 fi
 
 # Window: [TAG_DATE 00:00, TAG_DATE 23:59:59] in Asia/Jakarta, as UTC for git
@@ -116,37 +120,34 @@ PREV_TAG="$(
     | tail -n 1 || true
 )"
 
+MAIN_SHA="$(git rev-parse origin/main)"
+MAC_VERSION="$(tr -d '\n\r' < VERSION.macos 2>/dev/null || echo "?")"
+WIN_VERSION="$(tr -d '\n\r' < VERSION.windows 2>/dev/null || echo "?")"
+
+echo "▸ Will tag origin/main @ ${MAIN_SHA}"
 echo "▸ Previous date tag: ${PREV_TAG:-"(none)"}"
-
-NOTES_FILE="$(mktemp)"
-trap 'rm -f "$NOTES_FILE"' EXIT
-
-{
-  MAC_VERSION="$(tr -d '\n\r' < VERSION.macos 2>/dev/null || echo "?")"
-  WIN_VERSION="$(tr -d '\n\r' < VERSION.windows 2>/dev/null || echo "?")"
-  echo "## Versions"
-  echo ""
-  echo "- **macOS**: v${MAC_VERSION}"
-  echo "- **Windows**: v${WIN_VERSION}"
-  echo ""
-  bash "${ROOT_DIR}/scripts/generate-release-notes.sh" "${PREV_TAG}" "origin/main"
-  echo ""
-  echo "---"
-  echo "*Daily tag for ${TAG_DATE} (Asia/Jakarta). Builds run via the Release workflow.*"
-} >"$NOTES_FILE"
-
-echo "▸ Notes preview:"
-sed -n '1,80p' "$NOTES_FILE"
+echo "▸ Versions: macOS v${MAC_VERSION} / Windows v${WIN_VERSION}"
 
 if [[ "$DRY_RUN" == "true" ]]; then
-  echo "▸ DRY_RUN=true — not creating tag/release"
+  echo "▸ DRY_RUN=true — not creating or pushing tag"
+  if [[ -x "${ROOT_DIR}/scripts/generate-release-notes.sh" ]]; then
+    echo "▸ Notes preview (Release workflow will author the GitHub Release):"
+    bash "${ROOT_DIR}/scripts/generate-release-notes.sh" "${PREV_TAG}" "origin/main" | sed -n '1,40p'
+  fi
   exit 0
 fi
 
-# Creates lightweight/annotated tag at main tip and a Release; triggers push:tags → Release workflow
-gh release create "$TAG_DATE" \
-  --target main \
-  --title "Release ${TAG_DATE}" \
-  --notes-file "$NOTES_FILE"
+if [[ -z "$PUSH_TOKEN" ]]; then
+  echo "✗ No token to push tag. Set RELEASE_BOT_TOKEN (recommended) or GH_TOKEN." >&2
+  exit 1
+fi
 
-echo "▸ Created GitHub Release + tag ${TAG_DATE}"
+if [[ -z "${RELEASE_BOT_TOKEN:-}" ]]; then
+  echo "::warning::RELEASE_BOT_TOKEN unset — pushing with GITHUB_TOKEN will NOT trigger the Release workflow."
+fi
+
+git tag "$TAG_DATE" "$MAIN_SHA"
+git push "https://x-access-token:${PUSH_TOKEN}@github.com/${REPO}.git" "refs/tags/${TAG_DATE}"
+
+echo "▸ Pushed tag ${TAG_DATE} → ${REPO}"
+echo "▸ Release workflow should run next (on: push tags) to build + create GitHub Releases"
