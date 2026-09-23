@@ -6,8 +6,8 @@ import {
 import {colors} from '@lib/ui/colors';
 import {sansBoldStyle} from '@lib/ui/typography';
 import {Pressable} from '@components/ui';
+import {memo} from 'react';
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +15,8 @@ import {
 } from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 import IconCheckCircleOutlined from '../../assets/images/icon_check_circle_outlined.svg';
+import IconPlus from '../../assets/images/icon_plus.svg';
+import IconScissors from '../../assets/images/icon_scissors.svg';
 import IconUpload from '../../assets/images/icon_upload.svg';
 import IconStar from '../../assets/images/icon_star.svg';
 
@@ -26,9 +28,11 @@ type CulledAlbumFilterBarProps = {
   onSelectionFilterChange: (filter: SelectionFilter) => void;
   onStarRatingFilterChange: (filter: StarRatingFilter) => void;
   onUploadSelected: () => void;
+  onAddPhotos?: () => void;
   selectedCount?: number;
-  uploaded?: boolean;
   uploadDisabled?: boolean;
+  addPhotosDisabled?: boolean;
+  cullingInProgress?: boolean;
   isMobileLayout?: boolean;
 };
 
@@ -90,15 +94,17 @@ function StarFilterButton({
   );
 }
 
-export function CulledAlbumFilterBar({
+export const CulledAlbumFilterBar = memo(function CulledAlbumFilterBar({
   selectionFilter,
   starRatingFilter,
   onSelectionFilterChange,
   onStarRatingFilterChange,
   onUploadSelected,
+  onAddPhotos,
   selectedCount = 0,
-  uploaded = false,
   uploadDisabled = false,
+  addPhotosDisabled = false,
+  cullingInProgress = false,
   isMobileLayout = false,
 }: CulledAlbumFilterBarProps) {
   function toggleSelectionFilter(next: Exclude<SelectionFilter, null>) {
@@ -127,10 +133,8 @@ export function CulledAlbumFilterBar({
           onPress={() => toggleSelectionFilter('unselected')}
         />
       </View>
-
       <View style={styles.divider} />
-
-      <View style={styles.starRow}>
+      <View style={styles.starButtons}>
         {STAR_RATINGS.map(rating => (
           <StarFilterButton
             key={rating}
@@ -156,38 +160,76 @@ export function CulledAlbumFilterBar({
         filterControls
       )}
 
-      <Pressable
-        onPress={onUploadSelected}
-        disabled={uploaded || uploadDisabled}
-        style={[
-          styles.uploadButton,
-          uploaded && styles.uploadButtonUploaded,
-          uploadDisabled && styles.uploadButtonDisabled,
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Upload selected photos">
-        {uploaded ? (
-          <IconCheckCircle width={24} height={24} color={colors.accent} />
-        ) : (
-          <IconUpload width={24} height={24} color={colors.white} />
-        )}
-        <Text
-          style={[
-            styles.uploadButtonText,
-            uploaded && styles.uploadButtonTextUploaded,
-          ]}
-        >
-          {uploaded
-            ? 'Uploaded'
-            : selectedCount > 0
-              ? `Upload Selected (${selectedCount})`
-              : 'Upload Selected'}
-        </Text>
-   
-      </Pressable>
+      {cullingInProgress ? (
+        <View
+          style={styles.cullingInProgressPill}
+          accessibilityRole="text"
+          accessibilityLabel="Culling in progress">
+          <IconScissors width={16} height={16} color={colors.accent} />
+          <Text style={styles.cullingInProgressText}>
+            Culling in Progress...
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.actions}>
+          {onAddPhotos ? (
+            <Pressable
+              onPress={onAddPhotos}
+              disabled={addPhotosDisabled}
+              style={[
+                styles.addPhotosButton,
+                addPhotosDisabled && styles.addPhotosButtonDisabled,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Add photos to cull">
+              <IconPlus
+                width={16}
+                height={16}
+                color={addPhotosDisabled ? colors.textGray : colors.accent}
+              />
+              <Text
+                style={[
+                  styles.addPhotosButtonText,
+                  addPhotosDisabled && styles.addPhotosButtonTextDisabled,
+                ]}>
+                Add Photos to Cull
+              </Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            onPress={onUploadSelected}
+            disabled={uploadDisabled}
+            style={[
+              styles.uploadButton,
+              uploadDisabled && styles.uploadButtonDisabled,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Upload selected photos">
+            <IconUpload width={24} height={24} color={colors.white} />
+            <Text style={styles.uploadButtonText}>
+              {selectedCount > 0
+                ? `Upload Selected (${selectedCount})`
+                : 'Upload Selected'}
+            </Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
-}
+},
+(prev, next) =>
+  prev.selectionFilter === next.selectionFilter &&
+  prev.starRatingFilter === next.starRatingFilter &&
+  prev.selectedCount === next.selectedCount &&
+  prev.uploadDisabled === next.uploadDisabled &&
+  prev.addPhotosDisabled === next.addPhotosDisabled &&
+  prev.cullingInProgress === next.cullingInProgress &&
+  prev.isMobileLayout === next.isMobileLayout &&
+  prev.onSelectionFilterChange === next.onSelectionFilterChange &&
+  prev.onStarRatingFilterChange === next.onStarRatingFilterChange &&
+  prev.onUploadSelected === next.onUploadSelected &&
+  prev.onAddPhotos === next.onAddPhotos,
+);
 
 const styles = StyleSheet.create({
   container: {
@@ -230,7 +272,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.divider,
     marginHorizontal: 4,
   },
-  starRow: {
+  starButtons: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -254,6 +296,40 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 3,
   },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flexShrink: 0,
+  },
+  addPhotosButton: {
+    minHeight: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    backgroundColor: 'transparent',
+    paddingLeft: 20,
+    paddingRight: 24,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  addPhotosButtonDisabled: {
+    borderColor: colors.border,
+    opacity: 0.4,
+  },
+  addPhotosButtonText: {
+    ...sansBoldStyle,
+    fontSize: 16,
+    color: colors.accent,
+    flexShrink: 0,
+  },
+  addPhotosButtonTextDisabled: {
+    color: colors.textGray,
+  },
   uploadButton: {
     minHeight: 48,
     minWidth: 180,
@@ -271,16 +347,28 @@ const styles = StyleSheet.create({
   uploadButtonDisabled: {
     opacity: 0.4,
   },
-  uploadButtonUploaded: {
-    backgroundColor: colors.accent + '14',
-  },
   uploadButtonText: {
     ...sansBoldStyle,
     fontSize: 16,
     color: colors.white,
     flexShrink: 0,
   },
-  uploadButtonTextUploaded: {
+  cullingInProgressPill: {
+    minHeight: 48,
+    borderRadius: 24,
+    backgroundColor: colors.accent + '14',
+    paddingLeft: 20,
+    paddingRight: 24,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  cullingInProgressText: {
+    ...sansBoldStyle,
+    fontSize: 16,
     color: colors.accent,
   },
 });

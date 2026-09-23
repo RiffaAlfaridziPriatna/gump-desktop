@@ -1,35 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-<channel>
-  <title>GUMP Desktop Updates</title>
-  <link>https://gump.app</link>
-  <description>GUMP Desktop application updates</description>
-
-  <!-- macOS (Sparkle reads this) -->
-  <item>
-    <title>Version 1.0.2 (macOS)</title>
-    <sparkle:version>1.0.2</sparkle:version>
-    <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
-    <pubDate>Wed, 23 Sep 2026 05:42:10 GMT</pubDate>
-    <enclosure
-      url="https://github.com/RiffaAlfaridziPriatna/gump-desktop/releases/download/2026-09-23/Gump-MacOS-v1.0.2.zip"
-      sparkle:os="macos"
-      sparkle:edSignature="M38GHi9bzS/Dz+AsN1SFIvWl7zhtlxZe+nNbx0DStfRIOBXmbdiphlhqvfjj6oDiQ9jjVR/pEXJNEff03LmoBQ=="
-      length="39795716"
-      type="application/octet-stream"/>
-  </item>
-
-  <!-- Windows (WinSparkle reads this) -->
-  <item>
-    <title>Version 0.0.0.1 (Windows)</title>
-    <sparkle:version>0.0.0.1</sparkle:version>
-    <sparkle:shortVersionString>0.0.0.1</sparkle:shortVersionString>
-    <pubDate>Wed, 23 Sep 2026 05:42:10 GMT</pubDate>
-    <enclosure
-      url="https://github.com/RiffaAlfaridziPriatna/gump-desktop/releases/download/2026-09-23/Gump-Windows-v0.0.0.1.zip"
-      sparkle:os="windows"
-      length="28137594"
-      type="application/octet-stream"/>
-  </item>
-</channel>
+  <channel>
+    <title>GUMP Desktop Updates (moved)</title>
+    <link>https://gump.app</link>
+    <description>
+      The live Sparkle/WinSparkle feed is published on the public repo
+      https://github.com/RiffaAlfaridziPriatna/gump-desktop-releases
+      (raw main/appcast.xml). This file in the source repo is no longer updated by Release CI.
+    </description>
+  </channel>
 </rss>

@@ -19,6 +19,9 @@ target 'GumpDesktop-macOS' do
   # ONNX Runtime C API for shared SCRFD + OCEC face detection pipeline
   pod 'onnxruntime-c', '~> 1.20'
 
+  # Silent auto-update (sandboxed apps need Sparkle 2.x + InstallerLauncher XPC)
+  pod 'Sparkle', '~> 2.6'
+
   use_react_native!(
     :path => '../node_modules/react-native-macos',
     :fabric_enabled => ENV['RCT_NEW_ARCH_ENABLED'] == '1',
@@ -27,6 +30,20 @@ target 'GumpDesktop-macOS' do
 
   post_install do |installer|
     react_native_post_install(installer)
+
+    # Xcode 27+ only supports MACOSX_DEPLOYMENT_TARGET >= 12.0. Some pods
+    # (notably RNSVG-RNSVGFilters) still declare 10.14 and fail the build.
+    min_macos = Gem::Version.new('12.0')
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        current = config.build_settings['MACOSX_DEPLOYMENT_TARGET']
+        next if current.nil? || current.empty?
+        if Gem::Version.new(current) < min_macos
+          config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = min_macos.to_s
+        end
+      end
+    end
+
     system('ruby', File.join(__dir__, 'scripts', 'patch_secure_text_field.rb'))
     system('ruby', File.join(__dir__, 'scripts', 'patch_third_party_fabric_components.rb'))
     system('ruby', File.join(__dir__, 'scripts', 'patch_fmt_consteval.rb'))

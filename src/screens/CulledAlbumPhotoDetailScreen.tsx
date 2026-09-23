@@ -160,9 +160,6 @@ export default function CulledAlbumPhotoDetailScreen({
   );
   const {isMobileLayout, screenPaddingHorizontal} = useLayout();
   const albumPhotos = useCulledAlbumPhotosState(albumId);
-  const cullingHasUploads = useCulledAlbumStore(
-    state => state.albums[albumId]?.cullingHasUploads ?? false,
-  );
   const photo = useMemo(
     () => albumPhotos.find(entry => entry.photoId === photoId),
     [albumPhotos, photoId],
@@ -329,7 +326,7 @@ export default function CulledAlbumPhotoDetailScreen({
   }, []);
   const isSelected = analysis?.selected ?? false;
   const starRating = analysis?.starRating ?? 0;
-  const disabled = photo ? isCulledPhotoDisabled(photo, cullingHasUploads) : false;
+  const disabled = photo ? isCulledPhotoDisabled(photo) : false;
 
   async function toggleSelection() {
     if (!analysis || disabled) {

@@ -92,6 +92,44 @@ export function syncWindowsPackageVersion(semver) {
   return identityVersion;
 }
 
+/** Write GumpVersion.h macros from VERSION.windows + APP_BUILD_ID for WinSparkle. */
+export function syncWindowsNativeVersionHeader(semver, buildId = 'local') {
+  const identityVersion = toWindowsIdentityVersion(semver);
+  const parts = identityVersion.split('.').map(part => Number(part) || 0);
+  while (parts.length < 4) {
+    parts.push(0);
+  }
+  const fileVersionCsv = parts.slice(0, 4).join(',');
+  const channel = String(buildId || 'local').trim() || 'local';
+  const isProd = channel === 'prod' ? '1' : '0';
+  const headerPath = path.join(ROOT_DIR, 'windows/GumpDesktop/GumpVersion.h');
+  const contents = `#pragma once
+
+// Synced from VERSION.windows + APP_BUILD_ID by scripts/gump-env.mjs during Windows builds.
+#ifndef GUMP_APP_VERSION_STR
+#define GUMP_APP_VERSION_STR L"${identityVersion}"
+#endif
+
+#ifndef GUMP_APP_BUILD_ID_STR
+#define GUMP_APP_BUILD_ID_STR L"${channel}"
+#endif
+
+#ifndef GUMP_UPDATES_ENABLED
+#define GUMP_UPDATES_ENABLED ${isProd}
+#endif
+
+#ifndef GUMP_FILE_VERSION
+#define GUMP_FILE_VERSION ${fileVersionCsv}
+#endif
+
+#ifndef GUMP_FILE_VERSION_STR
+#define GUMP_FILE_VERSION_STR "${identityVersion}\\0"
+#endif
+`;
+  fs.writeFileSync(headerPath, contents);
+  return identityVersion;
+}
+
 /**
  * Load dotenv for GUMP_ENV and stamp APP_VERSION / GIT_SHA / APP_BUILD_ID.
  * @param {{platform?: 'macos' | 'windows', envName?: string}} options
@@ -135,10 +173,23 @@ export function applyGumpBuildIdentity(options = {}) {
   );
   console.log(`▸ Dist output: ${process.env.GUMP_DIST_DIR}`);
 
+  if (envName === 'prod' && !process.env.API_BASE_URL) {
+    throw new Error(
+      'API_BASE_URL is empty for GUMP_ENV=prod. Add it to .env (local) or secrets.API_BASE_URL (CI).',
+    );
+  }
+
   if (platform === 'windows') {
     const identityVersion = syncWindowsPackageVersion(process.env.APP_VERSION);
     if (identityVersion) {
       console.log(`▸ Windows Package.appxmanifest Version=${identityVersion}`);
+    }
+    const nativeVersion = syncWindowsNativeVersionHeader(
+      process.env.APP_VERSION,
+      process.env.APP_BUILD_ID,
+    );
+    if (nativeVersion) {
+      console.log(`▸ Windows GumpVersion.h Version=${nativeVersion}`);
     }
   }
 

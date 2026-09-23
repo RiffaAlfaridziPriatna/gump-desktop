@@ -7,12 +7,12 @@ import {
   shouldYieldUploadQueueForNavigation,
 } from '@lib/navigation/uploadAwareNavigation';
 import {Platform} from 'react-native';
-import {scheduleGridRevisionBump} from './photoStateStore';
 import {
   getAlbum,
   scheduleLocalImportBatchCompleteCheck,
   type UpdatePhotoOptions,
 } from './store';
+import {scheduleGridRevisionBump} from './photoStateStore';
 import {FileAsset} from '@services/upload/types';
 import {CulledAlbumPhoto} from './types';
 import {describeFileUri} from '@lib/observability/serializeError';
@@ -275,6 +275,10 @@ export function createUploadQueue(deps: UploadQueueDeps) {
     const previousSize = sourceFile.size ?? 0;
     const inFlight = getInFlightPhotoIds(albumId);
     inFlight.add(photoId);
+    // CulledAlbumDetail Add Photos only — AlbumDetailScreen keeps full UI sync.
+    const softRenderSync = Boolean(
+      getAlbum(albumId)?.stabilizeDetailUiDuringImport,
+    );
 
     updatePhoto(
       albumId,
@@ -285,6 +289,7 @@ export function createUploadQueue(deps: UploadQueueDeps) {
         entry.error = undefined;
       },
       {
+        softRenderSync,
         recomputeTotals: false,
         batchCountShift: {from: 'pending', to: 'uploading'},
       },
@@ -313,12 +318,15 @@ export function createUploadQueue(deps: UploadQueueDeps) {
           },
           {
             immediate: true,
+            softRenderSync,
             recomputeTotals: false,
             storageDelta: nextSize - previousSize,
             batchCountShift: {from: 'uploading', to: 'uploaded'},
           },
         );
-        scheduleGridRevisionBump(albumId);
+        if (!softRenderSync) {
+          scheduleGridRevisionBump(albumId);
+        }
         void enrichPhotoCaptureTime(
           albumId,
           photoId,

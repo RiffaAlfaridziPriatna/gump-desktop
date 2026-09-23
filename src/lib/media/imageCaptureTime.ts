@@ -1,4 +1,4 @@
-import {getPhotoById, updatePhoto} from '@lib/culledAlbum/store';
+import {getAlbum, getPhotoById, updatePhoto} from '@lib/culledAlbum/store';
 import {readImageCaptureTime as readNativeImageCaptureTime} from '@lib/storage/localStorage';
 
 export function parsePickerCaptureTime(timestamp?: string): number | null {
@@ -50,7 +50,12 @@ export async function enrichPhotoCaptureTime(
     entry => {
       entry.capturedAt = capturedAt;
     },
-    {recomputeTotals: false},
+    {
+      recomputeTotals: false,
+      softRenderSync: Boolean(
+        getAlbum(albumId)?.stabilizeDetailUiDuringImport,
+      ),
+    },
   );
 
   return capturedAt;

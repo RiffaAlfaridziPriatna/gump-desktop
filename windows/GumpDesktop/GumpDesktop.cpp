@@ -3,12 +3,16 @@
 
 #include "pch.h"
 #include "GumpDesktop.h"
+#include "GumpUpdateMenu.h"
+#include "GumpVersion.h"
 
 #include "resource.h"
 
 #include "AutolinkedNativeModules.g.h"
 
 #include "NativeModules.h"
+
+#include "winsparkle.h"
 
 #include <appmodel.h>
 
@@ -76,6 +80,10 @@ static void ApplyMinTrackSize(MINMAXINFO *mmi, HWND hwnd) noexcept {
 }
 
 static LRESULT CALLBACK MinSizeWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  if (GumpDesktop::GumpUpdateMenu::HandleWindowMessage(hwnd, msg, wParam, lParam)) {
+    return 0;
+  }
+
   if (msg == WM_GETMINMAXINFO) {
     auto *mmi = reinterpret_cast<MINMAXINFO *>(lParam);
     ApplyMinTrackSize(mmi, hwnd);
@@ -495,6 +503,7 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
     if (const HWND hwnd = GetHwnd(appWindow)) {
       ApplyWindowIcons(hwnd, instance);
       ApplyInitialWindowPlacement(appWindow, hwnd);
+      GumpDesktop::GumpUpdateMenu::Bootstrap(hwnd);
     } else {
       appWindow.Resize({1000, 800});
     }
@@ -505,6 +514,9 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
 
     // Start the app
     reactNativeWin32App.Start();
+#if GUMP_UPDATES_ENABLED
+    win_sparkle_cleanup();
+#endif
     return 0;
   } catch (winrt::hresult_error const &ex) {
     wchar_t message[1024];

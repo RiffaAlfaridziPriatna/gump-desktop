@@ -2,7 +2,7 @@ import {yieldToMain} from '@lib/async/yieldToMain';
 import {syncPhotoFromStore} from '@/application/syncPhotoRepository';
 import {hydratePhotos} from '@lib/culledAlbum/photoLoader';
 import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
-import {scheduleRenderSync} from '@lib/culledAlbum/photoRenderStore';
+import {bumpPhotoVersion} from '@lib/culledAlbum/photoVersionStore';
 import {getPhotoById} from '@lib/culledAlbum/store';
 import {
   getFileThumbnailDimensions,
@@ -77,7 +77,7 @@ function applyThumbnailUri(
   });
 
   if (applied) {
-    scheduleRenderSync();
+    bumpPhotoVersion(photoKey(albumId, photoId));
     if (hasDimensions) {
       putCachedImageDimensions(thumbnailUri, {
         width: nextWidth,
