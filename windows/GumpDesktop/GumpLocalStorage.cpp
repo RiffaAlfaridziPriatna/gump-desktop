@@ -2113,30 +2113,4 @@ void GumpLocalStorage::IsAnalysisRunning(ReactPromiseJS &&promise) noexcept {
   }
 }
 
-bool GumpLocalStorage::AppendStartupLog(std::string message) noexcept {
-  try {
-    PWSTR localAppData = nullptr;
-    const HRESULT hr = SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppData);
-    if (FAILED(hr) || localAppData == nullptr) {
-      return false;
-    }
-    const std::filesystem::path dir =
-        std::filesystem::path(localAppData) / L"GumpDesktop";
-    CoTaskMemFree(localAppData);
-
-    std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    const auto path = dir / L"react-native.log";
-    std::ofstream out(path, std::ios::app | std::ios::binary);
-    if (!out) {
-      return false;
-    }
-    out << "[js] " << message << '\n';
-    out.flush();
-    return true;
-  } catch (...) {
-    return false;
-  }
-}
-
 } // namespace GumpDesktop

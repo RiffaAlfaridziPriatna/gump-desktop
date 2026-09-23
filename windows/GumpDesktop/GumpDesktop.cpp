@@ -256,79 +256,6 @@ static bool IsRunningAsPackagedApp() noexcept {
   return GetCurrentPackageFullName(&length, nullptr) != APPMODEL_ERROR_NO_PACKAGE;
 }
 
-// Release builds hide RedBox; JS failures then look like a blank white window.
-// Mirror RN logs to %LocalAppData%\GumpDesktop\react-native.log for diagnosis.
-static std::filesystem::path ResolveGumpLogDirectory() noexcept {
-  try {
-    PWSTR localAppData = nullptr;
-    const HRESULT hr = SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppData);
-    if (FAILED(hr) || localAppData == nullptr) {
-      return {};
-    }
-    const std::filesystem::path dir =
-        std::filesystem::path(localAppData) / L"GumpDesktop";
-    CoTaskMemFree(localAppData);
-    std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    return dir;
-  } catch (...) {
-    return {};
-  }
-}
-
-static void AppendGumpLogLine(std::wstring const &line) noexcept {
-  try {
-    const auto dir = ResolveGumpLogDirectory();
-    if (dir.empty()) {
-      return;
-    }
-    const auto path = dir / L"react-native.log";
-    std::ofstream out(path, std::ios::app | std::ios::binary);
-    if (!out) {
-      return;
-    }
-    // UTF-8 body is fine for ASCII RN log lines; keep it simple for notepad.
-    for (wchar_t ch : line) {
-      if (ch < 128) {
-        out.put(static_cast<char>(ch));
-      } else {
-        out.put('?');
-      }
-    }
-    out.put('\n');
-  } catch (...) {
-  }
-}
-
-static void InstallNativeJsLogger(
-    winrt::Microsoft::ReactNative::ReactInstanceSettings const &settings) noexcept {
-  settings.NativeLogger([](winrt::Microsoft::ReactNative::LogLevel level,
-                           winrt::hstring const &message) {
-    const wchar_t *levelName = L"INFO";
-    switch (level) {
-      case winrt::Microsoft::ReactNative::LogLevel::Trace:
-        levelName = L"TRACE";
-        break;
-      case winrt::Microsoft::ReactNative::LogLevel::Info:
-        levelName = L"INFO";
-        break;
-      case winrt::Microsoft::ReactNative::LogLevel::Warning:
-        levelName = L"WARN";
-        break;
-      case winrt::Microsoft::ReactNative::LogLevel::Error:
-        levelName = L"ERROR";
-        break;
-      case winrt::Microsoft::ReactNative::LogLevel::Fatal:
-        levelName = L"FATAL";
-        break;
-    }
-    AppendGumpLogLine(std::wstring(L"[") + levelName + L"] " + std::wstring(message));
-    OutputDebugStringW((std::wstring(L"[GUMP][") + levelName + L"] " +
-                        std::wstring(message) + L"\n")
-                           .c_str());
-  });
-}
-
 // AsyncStorage's Windows native module defaults to ApplicationData::Current(),
 // which only exists for packaged (MSIX) apps. For unpackaged/portable builds it
 // fails to open the DB and never invokes the JS callback — AuthProvider then
@@ -510,17 +437,12 @@ struct CompReactPackageProvider
 
 // The entry point of the Win32 application
 _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR /* commandLine */, int showCmd) {
-  AppendGumpLogLine(L"[native] WinMain enter");
-
   WindowsAppSdkBootstrap windowsAppSdk;
   if (!windowsAppSdk.TryInitialize()) {
-    AppendGumpLogLine(L"[native] Windows App SDK bootstrap FAILED");
     return 1;
   }
-  AppendGumpLogLine(L"[native] Windows App SDK bootstrap OK");
 
   ConfigureUnpackagedAsyncStoragePath();
-  AppendGumpLogLine(L"[native] AsyncStorage path configured (or skipped if packaged)");
 
   try {
     // Initialize WinRT
@@ -533,9 +455,7 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
     WCHAR appDirectory[MAX_PATH];
     GetModuleFileNameW(NULL, appDirectory, MAX_PATH);
     PathCchRemoveFileSpec(appDirectory, MAX_PATH);
-    AppendGumpLogLine(std::wstring(L"[native] appDirectory=") + appDirectory);
     if (!EnsureReleaseBundlePresent(appDirectory)) {
-      AppendGumpLogLine(L"[native] Release bundle MISSING");
       return 1;
     }
     RegisterCustomFonts(appDirectory);
@@ -545,8 +465,6 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
 
     // Configure the initial InstanceSettings for the app's ReactNativeHost
     auto settings{reactNativeWin32App.ReactNativeHost().InstanceSettings()};
-    AppendGumpLogLine(L"[native] WinMain InstanceSettings ready");
-    InstallNativeJsLogger(settings);
     // Ensure autolinked WinRT module DLLs are loaded before package registration.
     PreloadAutolinkedModuleDlls(appDirectory);
     // Register any autolinked native modules
@@ -557,7 +475,6 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
 #if BUNDLE
     // Load the JS bundle from a file (not Metro):
     settings.BundleRootPath(ToBundleRootFileUri(appDirectory).c_str());
-    AppendGumpLogLine(L"[native] BundleRootPath=" + ToBundleRootFileUri(appDirectory));
     // Set the name of the bundle file (without the .bundle extension)
     settings.JavaScriptBundleFile(L"index.windows");
     // Disable hot reload
@@ -578,9 +495,8 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
     // For Release builds:
     // Disable Direct Debugging of JS
     settings.UseDirectDebugger(false);
-    // Surface JS errors (otherwise Release shows a blank white window).
-    // TODO: flip back to false once the Release white-screen root cause is fixed.
-    settings.UseDeveloperSupport(true);
+    // Disable the Developer Menu
+    settings.UseDeveloperSupport(false);
 #endif
 
     // Get the AppWindow so we can configure its initial title and size
@@ -597,14 +513,11 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
     // Get the ReactViewOptions so we can set the initial RN component to load
     auto viewOptions{reactNativeWin32App.ReactViewOptions()};
     viewOptions.ComponentName(L"GumpDesktop");
-    AppendGumpLogLine(L"[native] Starting ReactNativeWin32App (component=GumpDesktop)");
 
     // Start the app
     reactNativeWin32App.Start();
-    AppendGumpLogLine(L"[native] ReactNativeWin32App.Start() returned");
     return 0;
   } catch (winrt::hresult_error const &ex) {
-    AppendGumpLogLine(std::wstring(L"[native] hresult_error: ") + std::wstring(ex.message()));
     wchar_t message[1024];
     swprintf_s(
         message,
@@ -614,7 +527,6 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
     ShowStartupError(L"GUMP Desktop", message);
     return 1;
   } catch (std::exception const &ex) {
-    AppendGumpLogLine(L"[native] std::exception (see MessageBox)");
     wchar_t message[1024];
     swprintf_s(message, L"GUMP Desktop failed to start.\n\n%hs", ex.what());
     ShowStartupError(L"GUMP Desktop", message);

@@ -15,7 +15,6 @@ import {createStateStore, StateStore, useStateStore} from '@lib/react/state';
 import {useContextOrThrow} from '@lib/react/context';
 import {make} from '@di/tsyringe';
 import {identifyUser, reportError, resetIdentifiedUser} from '@lib/observability';
-import {startupLog} from '@lib/observability/startupLog';
 import {APIService, APIResponse} from '@services/api';
 import {useQuery, useQueryClient} from '@tanstack/react-query';
 
@@ -99,7 +98,6 @@ export function AuthProvider({children}: PropsWithChildren) {
 
   const loadStoredAuth = useCallback(async () => {
     const AUTH_RESTORE_TIMEOUT_MS = 8_000;
-    startupLog('auth: restore start');
     try {
       const token = await Promise.race([
         getAuthToken(),
@@ -115,7 +113,6 @@ export function AuthProvider({children}: PropsWithChildren) {
           );
         }),
       ]);
-      startupLog(`auth: token ${token ? 'present' : 'missing'}`);
       if (token) {
         const api = make(APIService);
         api.agent.setToken(token);
@@ -141,17 +138,11 @@ export function AuthProvider({children}: PropsWithChildren) {
             isAuthenticated: true,
             isLoading: false,
           });
-          startupLog('auth: restored session');
           identifyUser(user);
           return;
         }
       }
     } catch (error) {
-      startupLog(
-        `auth: restore failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
       reportError(error, {source: 'auth', operation: 'restore_session'});
       try {
         await Promise.race([
@@ -168,7 +159,6 @@ export function AuthProvider({children}: PropsWithChildren) {
       }
     }
 
-    startupLog('auth: restore done (unauthenticated)');
     storeRef.current!.setState({isLoading: false});
   }, []);
 

@@ -122,11 +122,6 @@ struct GumpLocalStorage {
   void IsAnalysisRunning(
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
 
-  // Writes a line to %LocalAppData%\GumpDesktop\react-native.log (sync).
-  // console.* does not reliably reach NativeLogger in Release Hermes builds.
-  REACT_SYNC_METHOD(AppendStartupLog, L"appendStartupLog");
-  bool AppendStartupLog(std::string message) noexcept;
-
   REACT_INIT(Initialize);
   void Initialize(winrt::Microsoft::ReactNative::ReactContext const &reactContext) noexcept;
 

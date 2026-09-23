@@ -8,30 +8,20 @@ import {
   posthog,
   reportError,
 } from '@lib/observability';
-import {startupLog} from '@lib/observability/startupLog';
 import {colors} from '@lib/ui/colors';
 import {DefaultTheme, NavigationContainer} from '@react-navigation/native';
-import {
-  ActivityIndicator,
-  Platform,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import {ActivityIndicator, Platform, StyleSheet, View} from 'react-native';
 import {
   MutationCache,
   QueryCache,
   QueryClient,
   QueryClientProvider,
 } from '@tanstack/react-query';
-import {useEffect, useState, type ComponentType, type ReactNode} from 'react';
+import type {ComponentType, ReactNode} from 'react';
 import {AuthNavigator} from './AuthNavigator';
 import {MainNavigator} from './MainNavigator';
 
 installGlobalErrorReporting();
-startupLog(
-  `App module load platform=${Platform.OS} posthog=${isPostHogEnabled}`,
-);
 
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
@@ -91,7 +81,6 @@ function RootNavigator() {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color={colors.accent} />
-        <Text style={styles.loadingText}>Loading…</Text>
       </View>
     );
   }
@@ -105,10 +94,11 @@ const AppRoot =
     : require('react-native-gesture-handler').GestureHandlerRootView;
 
 function wrapWithPostHog(tree: ReactNode): ReactNode {
-  if (Platform.OS === 'windows' || !isPostHogEnabled || !posthog) {
+  if (!isPostHogEnabled || !posthog) {
     return tree;
   }
-  // Lazy require so Windows bundles never pull PostHogProvider.
+
+  // Lazy require — Windows never enables PostHog, so the SDK stays unloaded.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const {PostHogProvider} = require('posthog-react-native') as {
     PostHogProvider: ComponentType<{
@@ -117,6 +107,7 @@ function wrapWithPostHog(tree: ReactNode): ReactNode {
       children: ReactNode;
     }>;
   };
+
   return (
     <PostHogProvider client={posthog} autocapture={false}>
       {tree}
@@ -124,8 +115,7 @@ function wrapWithPostHog(tree: ReactNode): ReactNode {
   );
 }
 
-function AppTree() {
-  startupLog('AppTree render');
+export default function App() {
   return wrapWithPostHog(
     <AppRoot style={styles.root}>
       <AppErrorBoundary>
@@ -146,33 +136,6 @@ function AppTree() {
   );
 }
 
-export default function App() {
-  // On Windows Release, paint a trivial root once before mounting providers.
-  const [bootstrapped, setBootstrapped] = useState(Platform.OS !== 'windows');
-
-  useEffect(() => {
-    startupLog('App mounted (effect)');
-    if (Platform.OS !== 'windows') {
-      return;
-    }
-    const timer = setTimeout(() => {
-      startupLog('App windows bootstrap → full tree');
-      setBootstrapped(true);
-    }, 0);
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (!bootstrapped) {
-    return (
-      <View style={styles.loading}>
-        <Text style={styles.loadingText}>Starting…</Text>
-      </View>
-    );
-  }
-
-  return <AppTree />;
-}
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -183,10 +146,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,
-    gap: 12,
-  },
-  loadingText: {
-    color: colors.textMuted,
-    fontSize: 14,
   },
 });

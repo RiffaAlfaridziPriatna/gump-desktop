@@ -5,32 +5,53 @@ import {
   POSTHOG_API_KEY,
   POSTHOG_HOST,
 } from '@lib/config/constants';
-import type {PostHog} from 'posthog-react-native';
 import {Platform} from 'react-native';
 import type {ErrorCaptureClient} from './reportError';
 import {setErrorCaptureClient} from './reportError';
 
 /**
- * Windows Release has repeatedly hung / whitescreened when posthog-react-native
- * loads at startup (RNLocalize turbo module, provider first paint). Keep
- * analytics on macOS/mobile only until Windows is stable.
+ * PostHog React Native is not an officially supported Windows target (docs cover
+ * iOS/Android + Web/macOS). Loading it on RNW Release hangs startup via peers
+ * like react-native-localize. Keep the SDK off Windows entirely.
  */
 export const isPostHogEnabled =
   Platform.OS !== 'windows' && POSTHOG_API_KEY.length > 0;
 
-function createPostHogClient(): PostHog | null {
+/** Minimal client surface used by this app (avoids static import of the SDK). */
+type PostHogClient = {
+  register: (properties: Record<string, string>) => void | Promise<void>;
+  identify: (id: string, properties?: Record<string, string>) => void;
+  reset: () => void;
+  capture: (
+    event: string,
+    properties?: Record<string, string | number | boolean | null>,
+  ) => void;
+  flush: () => void | Promise<void>;
+  addExceptionStep: (
+    message: string,
+    properties?: Record<string, string | number | boolean | null>,
+  ) => void;
+  captureException: (
+    error: Error | unknown,
+    additionalProperties?: Record<string, unknown>,
+  ) => void;
+};
+
+function createPostHogClient(): PostHogClient | null {
   if (!isPostHogEnabled) {
     return null;
   }
+
   // Dynamic require so Windows never evaluates posthog-react-native.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const {PostHog: PostHogCtor} = require('posthog-react-native') as {
+  const {PostHog} = require('posthog-react-native') as {
     PostHog: new (
       apiKey: string,
       options: Record<string, unknown>,
-    ) => PostHog;
+    ) => PostHogClient;
   };
-  return new PostHogCtor(POSTHOG_API_KEY, {
+
+  return new PostHog(POSTHOG_API_KEY, {
     host: POSTHOG_HOST,
     captureAppLifecycleEvents: false,
     enableSessionReplay: false,
@@ -49,7 +70,7 @@ function createPostHogClient(): PostHog | null {
   });
 }
 
-export const posthog: PostHog | null = createPostHogClient();
+export const posthog: PostHogClient | null = createPostHogClient();
 
 export function appBuildProperties(): Record<string, string> {
   return {
