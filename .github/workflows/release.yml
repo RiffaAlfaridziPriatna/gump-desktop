@@ -304,16 +304,29 @@ jobs:
           rm -f "$NOTES_FILE"
 
       # main is protected (PR + required "test"). Push via bot PR, wait for Test, merge.
+      #
+      # IMPORTANT: PRs created with the default GITHUB_TOKEN put pull_request
+      # workflows in "Approve workflows to run" (manual). Use a PAT or GitHub App
+      # token (secret RELEASE_BOT_TOKEN) so Test starts alone.
+      # Token needs: contents:write, pull-requests:write (fine-grained) or repo (classic).
       - name: Update appcast.xml on main
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_BOT_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           TAG="${{ steps.tag.outputs.tag }}"
           BRANCH="chore/appcast-${TAG}"
 
+          if [[ -z "${RELEASE_BOT_TOKEN}" ]]; then
+            echo "::warning::RELEASE_BOT_TOKEN is not set. Appcast PR CI will wait for manual 'Approve workflows to run'."
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Push/PR as the bot token identity so CI auto-runs (no manual approve).
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
 
           git fetch origin main
           git checkout -B "$BRANCH" origin/main
