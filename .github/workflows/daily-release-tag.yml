@@ -1,7 +1,11 @@
 name: Daily release tag
 
 # Batches main into at most one date tag per Asia/Jakarta day.
-# Creating the tag/release triggers the existing Release workflow (push tags).
+# This workflow ONLY pushes the tag. The Release workflow (on: push tags)
+# builds artifacts and creates GitHub Releases (source + gump-desktop-releases).
+#
+# Tag push must use RELEASE_BOT_TOKEN (PAT). GITHUB_TOKEN tag pushes do not
+# trigger other workflows.
 
 on:
   schedule:
@@ -18,7 +22,7 @@ on:
         type: boolean
         default: false
       dry_run:
-        description: 'Print notes only; do not create tag/release'
+        description: 'Print plan only; do not create/push tag'
         type: boolean
         default: false
 
@@ -38,10 +42,17 @@ jobs:
 
       - name: Create daily release tag
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PAT so the tag push triggers workflow Release (GITHUB_TOKEN cannot).
+          RELEASE_BOT_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
           TAG_DATE: ${{ github.event.inputs.date || '' }}
           FORCE: ${{ github.event.inputs.force || 'false' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
+          if [[ -z "${RELEASE_BOT_TOKEN}" ]]; then
+            echo "::error::RELEASE_BOT_TOKEN is required so Daily release tag can trigger the Release workflow"
+            exit 1
+          fi
           chmod +x scripts/create-daily-release-tag.sh scripts/generate-release-notes.sh
           bash scripts/create-daily-release-tag.sh
