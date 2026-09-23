@@ -11,7 +11,13 @@ import {
 import {startupLog} from '@lib/observability/startupLog';
 import {colors} from '@lib/ui/colors';
 import {DefaultTheme, NavigationContainer} from '@react-navigation/native';
-import {ActivityIndicator, Platform, StyleSheet, Text, View} from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import {
   MutationCache,
   QueryCache,
@@ -19,6 +25,7 @@ import {
   QueryClientProvider,
 } from '@tanstack/react-query';
 import {PostHogProvider} from 'posthog-react-native';
+import {useEffect, useState} from 'react';
 import {AuthNavigator} from './AuthNavigator';
 import {MainNavigator} from './MainNavigator';
 
@@ -98,8 +105,8 @@ const AppRoot =
     ? View
     : require('react-native-gesture-handler').GestureHandlerRootView;
 
-export default function App() {
-  startupLog('App render');
+function AppTree() {
+  startupLog('AppTree render');
   const tree = (
     <AppRoot style={styles.root}>
       <AppErrorBoundary>
@@ -119,7 +126,10 @@ export default function App() {
     </AppRoot>
   );
 
-  if (!isPostHogEnabled || !posthog) {
+  // PostHogProvider has hung first paint on Windows Release before; mount
+  // the rest of the tree without it, then wrap only when explicitly enabled
+  // on non-Windows (Windows skips the provider shell for now).
+  if (Platform.OS === 'windows' || !isPostHogEnabled || !posthog) {
     return tree;
   }
 
@@ -128,6 +138,35 @@ export default function App() {
       {tree}
     </PostHogProvider>
   );
+}
+
+export default function App() {
+  // On Windows Release, paint a trivial root once before mounting providers.
+  // Sync native calls / heavy provider init during the first Fabric commit
+  // have left the window permanently white after AppRegistry factory.
+  const [bootstrapped, setBootstrapped] = useState(Platform.OS !== 'windows');
+
+  useEffect(() => {
+    startupLog('App mounted (effect)');
+    if (Platform.OS !== 'windows') {
+      return;
+    }
+    const timer = setTimeout(() => {
+      startupLog('App windows bootstrap → full tree');
+      setBootstrapped(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!bootstrapped) {
+    return (
+      <View style={styles.loading}>
+        <Text style={styles.loadingText}>Starting…</Text>
+      </View>
+    );
+  }
+
+  return <AppTree />;
 }
 
 const styles = StyleSheet.create({
