@@ -197,6 +197,12 @@ export function clearAlbumQueues(albumId: string) {
   });
 }
 
+export function clearAllUploadQueues() {
+  uploadQueueStore.setState(state => {
+    state.queues = {};
+  });
+}
+
 export function hasActiveQueueWork(): boolean {
   for (const queue of Object.values(uploadQueueStore.getState().queues)) {
     if (

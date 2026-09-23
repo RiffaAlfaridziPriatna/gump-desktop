@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>GUMP Desktop Updates (moved)</title>
+    <link>https://gump.app</link>
+    <description>
+      The live Sparkle/WinSparkle feed is published on the public repo
+      https://github.com/RiffaAlfaridziPriatna/gump-desktop-releases
+      (raw main/appcast.xml). This file in the source repo is no longer updated by Release CI.
+    </description>
+  </channel>
+</rss>

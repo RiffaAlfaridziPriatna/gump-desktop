@@ -3,7 +3,7 @@ import {
   syncPhotoFromStore,
   syncPhotosFromStore,
 } from '@/application/syncPhotoRepository';
-import { hydratePhotos } from '@lib/culledAlbum/photoLoader';
+import { hydratePhotos, getPhotoIdsForAlbum } from '@lib/culledAlbum/photoLoader';
 import { photoKey, photoStateStore } from '@lib/culledAlbum/photoStateStore';
 import {
   flushRenderSync,
@@ -244,10 +244,11 @@ function createPlatformDetector(): PlatformDetector {
 const detector = createPlatformDetector();
 
 function hydrateAnalyzedBatch(albumId: string): CulledAlbumPhoto[] {
-  const album = getAlbum(albumId);
-  const batchIds = album?.analysisBatchPhotoIds ?? [];
-  if (batchIds.length > 0) {
-    return hydratePhotos(albumId, batchIds);
+  // Post-process (duplicates, finalize) must see every analyzed photo in the
+  // album — not only the current work queue — so earlier batches stay in scope.
+  const photoIds = getPhotoIdsForAlbum(albumId);
+  if (photoIds.length > 0) {
+    return hydratePhotos(albumId, photoIds);
   }
   return getPhotosForAlbum(albumId);
 }
@@ -271,6 +272,8 @@ async function applyDuplicateFlags(albumId: string): Promise<void> {
       ...toCullingPhoto(photo),
       capturedAt: photo.capturedAt,
       perceptualHash: photo.perceptualHash,
+      batchId: photo.batchId,
+      serverUploaded: photo.serverUploadStatus === 'uploaded',
     };
   }
 
@@ -283,14 +286,16 @@ async function applyDuplicateFlags(albumId: string): Promise<void> {
       if (!entry) {
         continue;
       }
-      const nextSelected = photo.duplicated ? false : entry.selected;
+      const isServerUploaded = entry.serverUploadStatus === 'uploaded';
+      const nextDuplicated = isServerUploaded ? false : photo.duplicated;
+      const nextSelected = nextDuplicated ? false : entry.selected;
       if (
-        entry.duplicated === photo.duplicated &&
+        entry.duplicated === nextDuplicated &&
         entry.selected === nextSelected
       ) {
         continue;
       }
-      entry.duplicated = photo.duplicated;
+      entry.duplicated = nextDuplicated;
       entry.selected = nextSelected;
       syncedPhotoIds.push(photo.photoId);
     }
@@ -304,7 +309,6 @@ async function applyDuplicateFlags(albumId: string): Promise<void> {
     if (!album) {
       return;
     }
-
     album.cullingDuplicateGroups = groups;
   });
 
@@ -856,7 +860,7 @@ export const cullingEngine = {
       throw new Error('Photo analysis not found');
     }
     const album = getAlbum(albumId);
-    if (isCulledPhotoDisabled(existing, album?.cullingHasUploads ?? false)) {
+    if (isCulledPhotoDisabled(existing)) {
       throw new Error('Cannot modify photos after upload');
     }
     const previousSelected = existing.selected;
@@ -947,7 +951,7 @@ export const cullingEngine = {
       throw new Error('Photo not found');
     }
     const album = getAlbum(albumId);
-    if (isCulledPhotoDisabled(photo, album?.cullingHasUploads ?? false)) {
+    if (isCulledPhotoDisabled(photo)) {
       throw new Error('Cannot delete photos after upload');
     }
 
@@ -1037,17 +1041,17 @@ export const cullingEngine = {
       throw new Error('No analyzed photos');
     }
 
-    const nativeDuplicatesApplied =
-      nativeDuplicatesAppliedAlbums.delete(albumId);
+    nativeDuplicatesAppliedAlbums.delete(albumId);
     const nativePostProcessed = nativePostProcessedAlbums.delete(albumId);
 
     if (!nativePostProcessed) {
       reconcileFaceClusterIdsForAlbum(albumId);
     }
 
-    if (!nativeDuplicatesApplied) {
-      await applyDuplicateFlags(albumId);
-    }
+    // Always run album-wide JS duplicate detection so batchId / serverUploaded
+    // priority applies across multi-batch re-culls (native session may only
+    // include newly analyzed photos).
+    await applyDuplicateFlags(albumId);
 
     await backfillMissingAnalyzedPhotoAssets(albumId, albumPhotos, {
       regenerateFaceCrops: false,

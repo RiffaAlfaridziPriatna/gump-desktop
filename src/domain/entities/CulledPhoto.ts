@@ -39,6 +39,7 @@ export class CulledPhoto {
   private _blurred: boolean;
   private _closedEyes: boolean;
   private _duplicated: boolean;
+  private _batchId: number;
 
   constructor(data: {
     photoId: string;
@@ -67,6 +68,7 @@ export class CulledPhoto {
     blurred?: boolean;
     closedEyes?: boolean;
     duplicated?: boolean;
+    batchId?: number;
   }) {
     this.photoId = data.photoId;
     this.albumId = data.albumId;
@@ -100,6 +102,12 @@ export class CulledPhoto {
     this._blurred = data.blurred ?? false;
     this._closedEyes = data.closedEyes ?? false;
     this._duplicated = data.duplicated ?? false;
+    this._batchId =
+      typeof data.batchId === 'number' &&
+      Number.isFinite(data.batchId) &&
+      data.batchId >= 1
+        ? data.batchId
+        : 1;
   }
 
   get perceptualHash(): string | null {
@@ -184,6 +192,10 @@ export class CulledPhoto {
 
   get duplicated(): boolean {
     return this._duplicated;
+  }
+
+  get batchId(): number {
+    return this._batchId;
   }
 
   markUploading(progress: number): void {
@@ -316,6 +328,7 @@ export class CulledPhoto {
       blurred: this._blurred,
       closedEyes: this._closedEyes,
       duplicated: this._duplicated,
+      batchId: this._batchId,
     };
   }
 
@@ -349,6 +362,7 @@ export class CulledPhoto {
       blurred: data.blurred,
       closedEyes: data.closedEyes,
       duplicated: data.duplicated,
+      batchId: data.batchId,
     });
   }
 }

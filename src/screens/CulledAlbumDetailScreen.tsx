@@ -42,6 +42,7 @@ import {
   isServerUploadBatchFinished,
 } from '@lib/culledAlbum/serverUploadProgress';
 import {getPhotoById, saveLastCullFilters} from '@lib/culledAlbum/store';
+import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
 import {
   getUploadLookBakeState,
   subscribeUploadLookBake,
@@ -126,7 +127,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     toggleSelection,
     updateStarRating,
     deletePhoto,
-    photoMap,
   } = useCulledAlbumDetailData(albumId, albumPhotos, !loadingPhotos);
 
   const {
@@ -202,24 +202,32 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
   usePreloadGridImages(initialPreloadUris);
 
-  const canDeletePhoto = cullingCompleted && !isAnalyzing && !cullingHasUploads;
+  const localImportQueue = useAlbumQueueOperation(albumId, 'upload');
+  const isLocalImporting =
+    localImportQueue.status === 'active' ||
+    localImportQueue.status === 'finalizing';
+  const cullingBusy = isAnalyzing || isLocalImporting;
+  const canDeletePhoto = cullingCompleted && !cullingBusy;
 
+  // Keep the detail grid on already-culled photos only. Newly imported files
+  // stay out of the grid until analysis finishes, so local import feels like
+  // "nothing happened" besides the toast / progress pill.
   const rawGridPhotos = useMemo(() => {
     return albumPhotos
-      .filter(photo => photo.status === 'uploaded')
+      .filter(
+        photo =>
+          photo.status === 'uploaded' && photo.analysisStatus === 'analyzed',
+      )
       .map(photo => ({
         photoId: photo.photoId,
         lookId: photo.lookId,
         lookIntensity: photo.lookIntensity,
-        disabled: isCulledPhotoDisabled(photo, cullingHasUploads),
-        analysis:
-          photo.analysisStatus === 'analyzed'
-            ? toCullingPhoto(photo)
-            : photoMap.get(photo.photoId),
+        disabled: isCulledPhotoDisabled(photo),
+        analysis: toCullingPhoto(photo),
       }));
-  }, [albumPhotos, cullingHasUploads, photoMap]);
+  }, [albumPhotos]);
 
-  const gridPhotos = useMemo(() => {
+  const liveGridPhotos = useMemo(() => {
     const stablePhotos = stabilizeGridPhotos(
       gridPhotosCacheRef.current,
       rawGridPhotos,
@@ -228,6 +236,25 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     previousGridPhotosRef.current = stablePhotos;
     return stablePhotos;
   }, [rawGridPhotos]);
+
+  const frozenGridPhotosRef = useRef(liveGridPhotos);
+  const wasCullingBusyRef = useRef(false);
+  if (cullingBusy) {
+    if (!wasCullingBusyRef.current && liveGridPhotos.length > 0) {
+      frozenGridPhotosRef.current = liveGridPhotos;
+    }
+    wasCullingBusyRef.current = true;
+  } else {
+    wasCullingBusyRef.current = false;
+    if (liveGridPhotos.length > 0) {
+      frozenGridPhotosRef.current = liveGridPhotos;
+    }
+  }
+
+  const gridPhotos =
+    cullingBusy && frozenGridPhotosRef.current.length > 0
+      ? frozenGridPhotosRef.current
+      : liveGridPhotos;
 
   const totalPhotos = gridPhotos.length;
 
@@ -244,6 +271,15 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     setSelectionFilter,
     setStarRatingFilter,
   } = useCulledAlbumFilters(gridPhotos, stats, lastCullFilters);
+
+  const pendingUploadPhotos = useMemo(
+    () =>
+      actionPhotos.filter(photo => {
+        const source = getPhotoById(albumId, photo.photoId);
+        return source?.serverUploadStatus !== 'uploaded';
+      }),
+    [actionPhotos, albumId, albumPhotos],
+  );
 
   const handleOpenPhotoDetail = useCallback(
     (photoId: string, faceIndex?: number) => {
@@ -285,7 +321,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   }, [deletePhoto, photoToDelete]);
 
   const handleStartUpload = useCallback(async () => {
-    const photoIds = actionPhotos.map(photo => photo.photoId);
+    const photoIds = pendingUploadPhotos.map(photo => photo.photoId);
     if (photoIds.length === 0) {
       return;
     }
@@ -507,7 +543,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     syncScreenOrigin();
   }, [cullFiltersExpanded, keyFacesExpanded, syncScreenOrigin]);
 
-
   const keyFaceDisplayUrisKey = useMemo(
     () =>
       [...new Set(
@@ -583,6 +618,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             starRatingFilter={starRatingFilter}
             onSelectionFilterChange={setSelectionFilter}
             onStarRatingFilterChange={setStarRatingFilter}
+
             isMobileLayout={isMobileLayout}
           />
         </View>
@@ -616,9 +652,15 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           )}
           <View
             style={styles.mainColumn}
-            onLayout={event =>
-              setMainContentWidth(event.nativeEvent.layout.width)
-            }>
+            onLayout={event => {
+              const width = event.nativeEvent.layout.width;
+              // Ignore collapsed layouts during import/analysis re-render storms
+              // (near-zero width makes the grid render an empty black area).
+              if (width < 80) {
+                return;
+              }
+              setMainContentWidth(width);
+            }}>
             {filteredPhotos.length === 0 ? (
               <View style={styles.emptyState}>
                 <IconNoPhoto width={40} height={40} />
@@ -631,8 +673,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
                 containerWidth={layoutWidth}
                 isMobileLayout={isMobileLayout}
                 canDeletePhoto={canDeletePhoto}
-                cullingHasUploads={cullingHasUploads}
-                hoverEnabled={!isBlockingModalOpen}
+                hoverEnabled={!isBlockingModalOpen && !cullingBusy}
+                deferHeavyMediaWork={cullingBusy}
                 contentContainerStyle={[
                   styles.grid,
                   isMobileLayout && styles.gridMobile,

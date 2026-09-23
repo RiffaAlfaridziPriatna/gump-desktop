@@ -7,6 +7,7 @@ import {addErrorStep, captureAppEvent} from '@lib/observability/posthogClient';
 import {
   addPhotosToAlbum,
   clearAnalysisBatch,
+  clearFilenameDuplicateNames,
   clearLocalImportBatch,
   culledAlbumStore,
   flushAllPendingPhotoUpdates,
@@ -20,9 +21,12 @@ import {
   reconcileAnalysisBatchCounts,
   reconcileLocalImportBatchCounts,
   pruneCancelledLocalImportPhotos,
+  setAutoStartAnalysisAfterImportHandler,
+  setFilenameDuplicateNames,
   startServerUploadBatch,
   updatePhoto,
 } from '@lib/culledAlbum/store';
+import {partitionFilesByFilename} from '@lib/culledAlbum/filenameDuplicates';
 import {flushRenderSync} from '@lib/culledAlbum/photoRenderStore';
 import {countLocalImportBatchForAlbum} from '@lib/culledAlbum/localImportProgress';
 import {
@@ -276,8 +280,46 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     [resumeInFlightWork],
   );
 
-  const addPhotos = useCallback((albumId: string, files: FileAsset[]) => {
-    const added = addPhotosToAlbum(albumId, files);
+  const addPhotos = useCallback((
+    albumId: string,
+    files: FileAsset[],
+    options?: {
+      autoStartAnalysis?: boolean;
+      stabilizeDetailUiDuringImport?: boolean;
+    },
+  ) => {
+    const existingNames = new Set(
+      getPhotosForAlbum(albumId).map(photo => photo.file.name),
+    );
+    const {accepted, rejectedNames} = partitionFilesByFilename(
+      existingNames,
+      files,
+    );
+    setFilenameDuplicateNames(albumId, rejectedNames);
+
+    if (accepted.length === 0) {
+      return;
+    }
+
+    const added = addPhotosToAlbum(albumId, accepted);
+    if (added.length === 0) {
+      return;
+    }
+
+    if (options?.autoStartAnalysis || options?.stabilizeDetailUiDuringImport) {
+      culledAlbumStore.setState(state => {
+        const album = state.albums[albumId];
+        if (!album) {
+          return;
+        }
+        if (options.autoStartAnalysis) {
+          album.autoStartAnalysisAfterImport = true;
+        }
+        if (options.stabilizeDetailUiDuringImport) {
+          album.stabilizeDetailUiDuringImport = true;
+        }
+      });
+    }
 
     uiStoreRef.current!.setState({uploadError: null});
     beginLocalImportQueue(albumId, added.length);
@@ -308,6 +350,18 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       analysisQueueRef.current?.beginBatch(albumId);
       analysisQueueRef.current?.processPending(albumId);
     }, 0);
+  }, []);
+
+  const startAnalysisRef = useRef(startAnalysis);
+  startAnalysisRef.current = startAnalysis;
+
+  useEffect(() => {
+    setAutoStartAnalysisAfterImportHandler(albumId => {
+      startAnalysisRef.current(albumId);
+    });
+    return () => {
+      setAutoStartAnalysisAfterImportHandler(null);
+    };
   }, []);
 
   const startSelectedUpload = useCallback((albumId: string, photoIds: string[]) => {
@@ -363,10 +417,15 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       persistAlbum(albumId).catch(() => undefined);
     } else if (mode === 'analyze') {
       clearAnalysisBatch(albumId);
+      clearFilenameDuplicateNames(albumId);
       persistAlbum(albumId).catch(() => undefined);
     }
 
     resetQueueOperation(albumId, operation);
+  }, []);
+
+  const clearFilenameDuplicates = useCallback((albumId: string) => {
+    clearFilenameDuplicateNames(albumId);
   }, []);
 
   const requestCancelUpload = useCallback((albumId: string) => {
@@ -412,6 +471,20 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       failedCount,
     });
 
+    let shouldAutoStartAnalysis = false;
+    culledAlbumStore.setState(state => {
+      const album = state.albums[albumId];
+      if (!album) {
+        return;
+      }
+      album.stabilizeDetailUiDuringImport = false;
+      if (!album.autoStartAnalysisAfterImport) {
+        return;
+      }
+      album.autoStartAnalysisAfterImport = false;
+      shouldAutoStartAnalysis = uploadedCount > 0;
+    });
+
     if (uploadedPhotoIds.length > 0) {
       try {
         await syncPhotosFromStoreAwait(albumId, uploadedPhotoIds);
@@ -436,6 +509,10 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     }
 
     await persistAlbum(albumId).catch(() => undefined);
+
+    if (shouldAutoStartAnalysis) {
+      startAnalysisRef.current(albumId);
+    }
   }, []);
 
   const failNotAnalyzedItems = useCallback(async (albumId: string, error?: string) => {
@@ -494,6 +571,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     purgeAlbum,
     hideToast,
     clearCompleted,
+    clearFilenameDuplicates,
     requestCancelUpload,
     requestCancelAnalysis,
     failNotUploadedItems,

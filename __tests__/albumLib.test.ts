@@ -161,10 +161,15 @@ describe('album totals and in-flight flags', () => {
     expect(album.totalStorage).toBe(10);
   });
 
-  it('locks the album once anything has been uploaded', () => {
-    const photo = makeCulledAlbumPhoto({photoId: 'p1'});
-    expect(isCulledPhotoDisabled(photo, false)).toBe(false);
-    expect(isCulledPhotoDisabled(photo, true)).toBe(true);
+  it('locks only photos already uploaded to the server', () => {
+    const idle = makeCulledAlbumPhoto({photoId: 'p1'});
+    expect(isCulledPhotoDisabled(idle)).toBe(false);
+
+    const uploaded = makeCulledAlbumPhoto({
+      photoId: 'p2',
+      serverUploadStatus: 'uploaded',
+    });
+    expect(isCulledPhotoDisabled(uploaded)).toBe(true);
   });
 
   it('detects in-flight import and analysis from batch counts', () => {

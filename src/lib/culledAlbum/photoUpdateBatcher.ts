@@ -18,6 +18,11 @@ export type PhotoUpdateOptions = {
     to: AnalysisCountKey;
   };
   immediate?: boolean;
+  /**
+   * Skip UI snapshot bumps. When merging updates, stays soft only if both
+   * sides are soft — otherwise a hard sync wins.
+   */
+  softRenderSync?: boolean;
 };
 
 export type PendingPhotoUpdate = {
@@ -106,6 +111,7 @@ function mergeOptions(
       right.analysisCountShift,
     ),
     immediate: right.immediate ?? left.immediate,
+    softRenderSync: Boolean(left.softRenderSync && right.softRenderSync),
   };
 }
 

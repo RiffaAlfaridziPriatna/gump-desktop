@@ -10,6 +10,7 @@ import {
   getAuthToken,
   setAuthToken,
 } from '@lib/auth/authTokenStorage';
+import {unloadAllLocalCulledAlbumsFromMemory} from '@lib/culledAlbum/service';
 import {createStateStore, StateStore, useStateStore} from '@lib/react/state';
 import {useContextOrThrow} from '@lib/react/context';
 import {make} from '@di/tsyringe';
@@ -72,6 +73,17 @@ export function AuthProvider({children}: PropsWithChildren) {
   );
 
   const logout = useCallback(async () => {
+    try {
+      // Keep SQLite/files so the same user still has culled albums after login.
+      // Home filters by getByIds; memory unload avoids leaking the prior session UI.
+      unloadAllLocalCulledAlbumsFromMemory();
+    } catch (error) {
+      reportError(error, {
+        source: 'auth',
+        operation: 'unload_local_albums_on_logout',
+      });
+    }
+
     await deleteAuthToken();
     make(APIService).agent.setToken(null);
 

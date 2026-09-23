@@ -1,0 +1,54 @@
+name: Daily release tag
+
+# Batches main into at most one date tag per Asia/Jakarta day.
+# Pushes the date tag, then explicitly workflow_dispatch-es Release.
+# (Tag pushes — even with a PAT — often do not cascade to on: push tags.)
+
+on:
+  schedule:
+    # 23:59 Asia/Jakarta (WIB, UTC+7) = 16:59 UTC
+    - cron: '59 16 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Tag date YYYY-MM-DD (default: today WIB)'
+        required: false
+        default: ''
+      force:
+        description: 'Create tag even if no meaningful commits that day'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Print plan only; do not create/push tag or dispatch'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: read
+
+jobs:
+  create-tag:
+    name: Create daily tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Avoid persisting GITHUB_TOKEN into git config (can steal `git push`).
+          persist-credentials: false
+
+      - name: Create daily release tag
+        env:
+          RELEASE_BOT_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+          # GITHUB_TOKEN may workflow_dispatch other workflows; PAT tag push often cannot cascade.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_DATE: ${{ github.event.inputs.date || '' }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          chmod +x scripts/create-daily-release-tag.sh scripts/generate-release-notes.sh
+          bash scripts/create-daily-release-tag.sh

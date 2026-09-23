@@ -2,7 +2,8 @@ import {Badge} from '@components/ui';
 import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
 import {formatStorageSizeGb, LocalAlbumCardModel} from '@lib/culledAlbum/format';
 import {
-  getCoverImageLayout,
+  getCachedImageDimensions,
+  getCulledAlbumThumbnailLayout,
   loadImageDimensions,
 } from '@lib/media/imageDimensions';
 import {colors} from '@lib/ui/colors';
@@ -18,7 +19,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import AlbumPlaceholder from '../../assets/images/album_placeholder.svg';
 import IconCloud from '../../assets/images/icon_cloud.svg';
 import IconMore from '../../assets/images/icon_more.svg';
@@ -41,53 +42,112 @@ type HomepageAlbumCardProps = AlbumCardBaseProps & {
   isExpanded?: boolean;
   mediaCount?: number;
   storageSizeGb?: number;
-  onPress?: () => void;
-  onPressMore?: () => void;
-  onPressDelete?: () => void;
+  onPress?: (albumId: string) => void;
+  onPressMore?: (albumId: string) => void;
+  onPressDelete?: (albumId: string) => void;
 };
 
 type SelectAlbumCardProps = AlbumCardBaseProps & {
   variant: 'select';
   isSelected?: boolean;
-  onToggleSelect?: () => void;
+  onToggleSelect?: (albumId: string) => void;
 };
 
 export type AlbumCardProps = HomepageAlbumCardProps | SelectAlbumCardProps;
 
 const COVER_HEIGHT = 220;
 
-function AlbumCover({album, width}: {album: AlbumCardAlbum; width: number}) {
-  const coverUrl = album.cover?.preview?.large?.url;
-  const [imageSize, setImageSize] = useState<{
+type CoverPreview = {
+  url: string;
+  width: number;
+  height: number;
+};
+
+/** Prefer medium/small for list covers — large is detail-sized and costly to decode. */
+function getListCoverPreview(album: AlbumCardAlbum): CoverPreview | null {
+  const previewMap = album.cover?.preview;
+  if (!previewMap) {
+    return null;
+  }
+
+  const preview =
+    previewMap.medium ??
+    previewMap.small ??
+    previewMap.large ??
+    previewMap.optimized ??
+    previewMap.thumbnail ??
+    null;
+
+  if (!preview?.url) {
+    return null;
+  }
+
+  const width = preview.width || album.cover?.width || 0;
+  const height = preview.height || album.cover?.height || 0;
+
+  return {
+    url: preview.url,
+    width,
+    height,
+  };
+}
+
+function getListCoverUrl(album: AlbumCardAlbum): string | undefined {
+  return getListCoverPreview(album)?.url;
+}
+
+const AlbumCover = memo(function AlbumCover({
+  album,
+  width,
+}: {
+  album: AlbumCardAlbum;
+  width: number;
+}) {
+  const preview = getListCoverPreview(album);
+  const coverUrl = preview?.url;
+  const metadataWidth = preview?.width ?? 0;
+  const metadataHeight = preview?.height ?? 0;
+  const hasMetadataSize = metadataWidth > 0 && metadataHeight > 0;
+  const cachedSize = !hasMetadataSize && coverUrl
+    ? getCachedImageDimensions(coverUrl)
+    : undefined;
+
+  const [fetchedSize, setFetchedSize] = useState<{
     width: number;
     height: number;
   } | null>(null);
 
   useEffect(() => {
-    if (!coverUrl) {
+    if (!coverUrl || hasMetadataSize || cachedSize) {
+      setFetchedSize(null);
       return;
     }
 
     let cancelled = false;
-    setImageSize(null);
+    setFetchedSize(null);
 
     loadImageDimensions(coverUrl).then(dimensions => {
       if (!cancelled && dimensions) {
-        setImageSize(dimensions);
+        setFetchedSize(dimensions);
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [coverUrl]);
+  }, [cachedSize, coverUrl, hasMetadataSize]);
+
+  const imageSize = hasMetadataSize
+    ? {width: metadataWidth, height: metadataHeight}
+    : cachedSize ?? fetchedSize;
 
   const imageLayout = useMemo(() => {
-    if (!imageSize) {
+    if (!imageSize || width <= 0) {
       return null;
     }
 
-    return getCoverImageLayout(
+    // Same cover/contain rules as CulledAlbumPhotoThumbnail grid cells.
+    return getCulledAlbumThumbnailLayout(
       width,
       COVER_HEIGHT,
       imageSize.width,
@@ -125,24 +185,84 @@ function AlbumCover({album, width}: {album: AlbumCardAlbum; width: number}) {
       />
     </View>
   );
-}
+});
 
-export function AlbumCard(props: AlbumCardProps) {
-  const itemWidth = useAlbumGridItemWidth();
+const SelectAlbumCard = memo(function SelectAlbumCard({
+  album,
+  ownerName,
+  isSelected,
+  onToggleSelect,
+  itemWidth,
+}: {
+  album: AlbumCardAlbum;
+  ownerName: string;
+  isSelected?: boolean;
+  onToggleSelect?: (albumId: string) => void;
+  itemWidth: number;
+}) {
+  const handlePress = useCallback(() => {
+    onToggleSelect?.(album.id);
+  }, [album.id, onToggleSelect]);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={handlePress}
+      style={[
+        styles.card,
+        {width: itemWidth},
+        isSelected && styles.cardSelected,
+      ]}>
+      <View style={styles.coverWrapper}>
+        <AlbumCover album={album} width={itemWidth} />
+        <View style={styles.checkbox}>
+          <Checkbox checked={!!isSelected} onToggle={handlePress} />
+        </View>
+      </View>
+      <View style={styles.footer}>
+        <View>
+          <Text style={styles.ownerName} numberOfLines={1}>
+            {ownerName}
+          </Text>
+          <Text style={styles.albumTitle} numberOfLines={1}>
+            {album.title ?? album.name}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
+const HomepageAlbumCard = memo(function HomepageAlbumCard({
+  album,
+  ownerName,
+  isExpanded,
+  mediaCount: mediaCountProp,
+  storageSizeGb: storageSizeGbProp,
+  onPress,
+  onPressMore,
+  onPressDelete,
+  itemWidth,
+}: {
+  album: AlbumCardAlbum;
+  ownerName: string;
+  isExpanded?: boolean;
+  mediaCount?: number;
+  storageSizeGb?: number;
+  onPress?: (albumId: string) => void;
+  onPressMore?: (albumId: string) => void;
+  onPressDelete?: (albumId: string) => void;
+  itemWidth: number;
+}) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const ownerName = props.ownerName ?? props.album.name;
-  const localImportQueue = useAlbumQueueOperation(props.album.id, 'upload');
-  const serverUploadQueue = useAlbumQueueOperation(props.album.id, 'serverUpload');
-  const analysisQueue = useAlbumQueueOperation(props.album.id, 'analyze');
-  const isHomepage = props.variant === 'homepage';
+  const localImportQueue = useAlbumQueueOperation(album.id, 'upload');
+  const serverUploadQueue = useAlbumQueueOperation(album.id, 'serverUpload');
+  const analysisQueue = useAlbumQueueOperation(album.id, 'analyze');
   const isUploading =
-    isHomepage &&
-    (localImportQueue.status === 'active' ||
-      serverUploadQueue.status === 'active');
+    localImportQueue.status === 'active' ||
+    serverUploadQueue.status === 'active';
   const isAnalyzing =
-    isHomepage &&
-    (analysisQueue.status === 'active' ||
-      analysisQueue.status === 'finalizing');
+    analysisQueue.status === 'active' || analysisQueue.status === 'finalizing';
   const isBusy = isUploading || isAnalyzing;
   const busyLabel = isAnalyzing
     ? 'Analyzing...'
@@ -151,7 +271,7 @@ export function AlbumCard(props: AlbumCardProps) {
       : null;
 
   useEffect(() => {
-    if (props.variant === 'homepage' && props.isExpanded) {
+    if (isExpanded) {
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 150,
@@ -160,52 +280,17 @@ export function AlbumCard(props: AlbumCardProps) {
     } else {
       fadeAnim.setValue(0);
     }
-  }, [fadeAnim, props]);
-
-  if (itemWidth <= 0) {
-    return null;
-  }
-
-  if (props.variant === 'select') {
-    return (
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPress={props.onToggleSelect}
-        style={[
-          styles.card,
-          {width: itemWidth},
-          props.isSelected && styles.cardSelected,
-        ]}>
-        <View style={styles.coverWrapper}>
-          <AlbumCover album={props.album} width={itemWidth} />
-          <View style={styles.checkbox}>
-            <Checkbox
-              checked={!!props.isSelected}
-              onToggle={() => props.onToggleSelect?.()}
-            />
-          </View>
-        </View>
-        <View style={styles.footer}>
-          <View>
-            <Text style={styles.ownerName} numberOfLines={1}>
-              {ownerName}
-            </Text>
-            <Text style={styles.albumTitle} numberOfLines={1}>
-              {props.album.title ?? props.album.name}
-            </Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  }
+  }, [fadeAnim, isExpanded]);
 
   const showUploaded =
-    'cullingHasUploads' in props.album && props.album.cullingHasUploads === true;
+    'cullingHasUploads' in album && album.cullingHasUploads === true;
   const showCulled =
-    'cullingCompleted' in props.album && props.album.cullingCompleted === true;
-  const coverUrl = props.album.cover?.preview?.large?.url;
+    'cullingCompleted' in album && album.cullingCompleted === true;
+  const coverUrl = getListCoverUrl(album);
   const coverRef = useRef<View>(null);
-  const [coverBackdrop, setCoverBackdrop] = useState<FrostedBackdrop | undefined>();
+  const [coverBackdrop, setCoverBackdrop] = useState<
+    FrostedBackdrop | undefined
+  >();
 
   const syncCoverBackdrop = useCallback(() => {
     coverRef.current?.measureInWindow((x, y, width, height) => {
@@ -219,11 +304,23 @@ export function AlbumCard(props: AlbumCardProps) {
     });
   }, [coverUrl]);
 
-  const mediaCount = props.mediaCount ?? props.album.totalMediaCount;
-  const storageSizeGb = props.storageSizeGb ?? props.album.size;
-  const CardWrapper = props.onPress ? TouchableOpacity : View;
-  const cardWrapperProps = props.onPress
-    ? {activeOpacity: 0.85, onPress: props.onPress}
+  const handlePress = useCallback(() => {
+    onPress?.(album.id);
+  }, [album.id, onPress]);
+
+  const handlePressMore = useCallback(() => {
+    onPressMore?.(album.id);
+  }, [album.id, onPressMore]);
+
+  const handlePressDelete = useCallback(() => {
+    onPressDelete?.(album.id);
+  }, [album.id, onPressDelete]);
+
+  const mediaCount = mediaCountProp ?? album.totalMediaCount;
+  const storageSizeGb = storageSizeGbProp ?? album.size;
+  const CardWrapper = onPress ? TouchableOpacity : View;
+  const cardWrapperProps = onPress
+    ? {activeOpacity: 0.85, onPress: handlePress}
     : {};
 
   return (
@@ -232,10 +329,13 @@ export function AlbumCard(props: AlbumCardProps) {
       style={[
         styles.card,
         {width: itemWidth},
-        props.isExpanded && styles.cardExpanded,
+        isExpanded && styles.cardExpanded,
       ]}>
-      <View ref={coverRef} style={styles.coverWrapper} onLayout={syncCoverBackdrop}>
-        <AlbumCover album={props.album} width={itemWidth} />
+      <View
+        ref={coverRef}
+        style={styles.coverWrapper}
+        onLayout={syncCoverBackdrop}>
+        <AlbumCover album={album} width={itemWidth} />
         {busyLabel && (
           <View style={styles.analyzingOverlay}>
             <ActivityIndicator size="small" color={colors.accent} />
@@ -251,44 +351,33 @@ export function AlbumCard(props: AlbumCardProps) {
           </View>
         )}
       </View>
-      <View
-        style={[
-          styles.footer,
-          props.isExpanded && styles.footerExpanded,
-        ]}>
+      <View style={[styles.footer, isExpanded && styles.footerExpanded]}>
         <View>
-          <View
-            style={[
-              styles.infoRow,
-              props.isExpanded && styles.infoRowExpanded,
-            ]}>
+          <View style={[styles.infoRow, isExpanded && styles.infoRowExpanded]}>
             <Text style={styles.ownerName} numberOfLines={1}>
               {ownerName}
             </Text>
             <View style={styles.moreMenu}>
               <TouchableOpacity
-                onPress={isBusy ? undefined : props.onPressMore}
+                onPress={isBusy ? undefined : handlePressMore}
                 disabled={isBusy}
                 hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
                 activeOpacity={0.7}>
                 <IconMore
                   width={20}
                   height={20}
-                  color={
-                    props.isExpanded ? colors.textDark : colors.iconMuted
-                  }
+                  color={isExpanded ? colors.textDark : colors.iconMuted}
                 />
               </TouchableOpacity>
             </View>
           </View>
           <Text style={styles.albumTitle} numberOfLines={1}>
-            {props.album.title ?? props.album.name}
+            {album.title ?? album.name}
           </Text>
         </View>
         <View style={styles.statsRow}>
           <Text style={styles.statText}>
-            Total{' '}
-            <Text style={styles.statTextValue}>{mediaCount}</Text>
+            Total <Text style={styles.statTextValue}>{mediaCount}</Text>
           </Text>
           <View style={styles.storageRow}>
             <IconCloud width={14} height={14} color={colors.textGray} />
@@ -298,13 +387,13 @@ export function AlbumCard(props: AlbumCardProps) {
           </View>
         </View>
 
-        {props.isExpanded && !isBusy && (
+        {isExpanded && !isBusy && (
           <Animated.View
             style={[styles.deletePopup, {opacity: fadeAnim}]}
             pointerEvents="box-none">
             <TouchableOpacity
               style={styles.deleteButton}
-              onPress={props.onPressDelete}
+              onPress={handlePressDelete}
               activeOpacity={0.7}>
               <IconTrash width={20} height={20} color={colors.error} />
               <Text style={styles.deleteText}>Delete</Text>
@@ -314,7 +403,42 @@ export function AlbumCard(props: AlbumCardProps) {
       </View>
     </CardWrapper>
   );
-}
+});
+
+export const AlbumCard = memo(function AlbumCard(props: AlbumCardProps) {
+  const itemWidth = useAlbumGridItemWidth();
+  const ownerName = props.ownerName ?? props.album.name;
+
+  if (itemWidth <= 0) {
+    return null;
+  }
+
+  if (props.variant === 'select') {
+    return (
+      <SelectAlbumCard
+        album={props.album}
+        ownerName={ownerName}
+        isSelected={props.isSelected}
+        onToggleSelect={props.onToggleSelect}
+        itemWidth={itemWidth}
+      />
+    );
+  }
+
+  return (
+    <HomepageAlbumCard
+      album={props.album}
+      ownerName={ownerName}
+      isExpanded={props.isExpanded}
+      mediaCount={props.mediaCount}
+      storageSizeGb={props.storageSizeGb}
+      onPress={props.onPress}
+      onPressMore={props.onPressMore}
+      onPressDelete={props.onPressDelete}
+      itemWidth={itemWidth}
+    />
+  );
+});
 
 const styles = StyleSheet.create({
   cardSelected: {
@@ -323,6 +447,7 @@ const styles = StyleSheet.create({
   cover: {
     height: COVER_HEIGHT,
     overflow: 'hidden',
+    backgroundColor: colors.cardBackgroundSecondary,
   },
   coverImage: {
     position: 'absolute',
@@ -331,6 +456,7 @@ const styles = StyleSheet.create({
     height: COVER_HEIGHT,
     overflow: 'hidden',
     position: 'relative',
+    backgroundColor: colors.cardBackground,
   },
   checkbox: {
     position: 'absolute',
@@ -349,7 +475,7 @@ const styles = StyleSheet.create({
   coverWrapper: {
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: colors.cardBackground
+    backgroundColor: colors.cardBackground,
   },
   badges: {
     position: 'absolute',
@@ -373,7 +499,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.white,
   },
-  
+
   footer: {
     position: 'relative',
     backgroundColor: colors.cardBackground,
@@ -420,7 +546,7 @@ const styles = StyleSheet.create({
     fontWeight: 600,
     color: colors.textDark,
   },
-  
+
   statText: {
     fontFamily: fonts.sans,
     fontSize: 12,

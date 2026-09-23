@@ -2,6 +2,7 @@ import {useContextOrThrow} from '@lib/react/context';
 import {culledAlbumStore, getPhotoById} from '@lib/culledAlbum/store';
 import {photoKey, photoStateStore} from '@lib/culledAlbum/photoStateStore';
 import {photoRenderStore} from '@lib/culledAlbum/photoRenderStore';
+import {photoVersionStore} from '@lib/culledAlbum/photoVersionStore';
 import {getServerUploadBatchPhotos} from '@lib/culledAlbum/serverUploadProgress';
 import {getAnalysisBatchPhotos} from '@lib/culledAlbum/analysisProgress';
 import {
@@ -174,17 +175,18 @@ export function useCulledAlbumPhoto(
   albumId: string | undefined,
   photoId: string,
 ): CulledAlbumPhoto | undefined {
-  // Subscribe to the primitive revision, not the photo object. Vanilla
-  // in-place mutation keeps the same object identity, so shallow-comparing
-  // the photo would skip the re-render that should pick up new uri/flags.
-  const snapshotRevision = useStateStore(
-    photoRenderStore,
-    state => state.snapshotRevision,
+  // Subscribe to this photo's version slice only (selector-based — not a
+  // per-cell EventEmitter). Structural list changes still use gridRevision /
+  // snapshotRevision on list-level hooks.
+  const version = useStateStore(photoVersionStore, state =>
+    albumId && photoId
+      ? (state.versions[photoKey(albumId, photoId)] ?? 0)
+      : 0,
   );
   if (!albumId || !photoId) {
     return undefined;
   }
-  void snapshotRevision;
+  void version;
   return photoStateStore.getState().photoState[photoKey(albumId, photoId)];
 }
 
@@ -256,6 +258,22 @@ export function useCulledAlbumLocalImportProgress(
       album.localImportBatchPhotoIds,
       batchTotal,
       photoId => getPhotoById(albumId, photoId),
+    );
+  });
+}
+
+const EMPTY_FILENAME_DUPLICATES: string[] = [];
+
+export function useCulledAlbumFilenameDuplicates(
+  albumId: string | null,
+): string[] {
+  return useCulledAlbumStore(state => {
+    if (!albumId) {
+      return EMPTY_FILENAME_DUPLICATES;
+    }
+    return (
+      state.albums[albumId]?.filenameDuplicateNames ??
+      EMPTY_FILENAME_DUPLICATES
     );
   });
 }

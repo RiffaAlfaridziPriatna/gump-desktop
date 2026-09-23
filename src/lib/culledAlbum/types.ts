@@ -113,6 +113,12 @@ export type CulledAlbumPhoto = {
   blurred: boolean;
   closedEyes: boolean;
   duplicated: boolean;
+  /**
+   * Cohort assigned when the photo is added to the album.
+   * Earlier batches (lower ids) that are already server-uploaded win
+   * duplicate keeper preference over later batches.
+   */
+  batchId: number;
 };
 
 export type CulledAlbumSource = Pick<
@@ -135,6 +141,24 @@ export type CulledAlbum = {
   localImportBatchCounts?: LocalImportBatchCounts;
   analysisBatchPhotoIds: string[];
   analysisBatchCounts?: AnalysisBatchCounts;
+  /** Next cohort id to stamp on newly added photos (starts at 1). */
+  nextPhotoBatchId: number;
+  /**
+   * When true, analysis starts automatically after the current local-import
+   * batch finishes successfully (used by CulledAlbumDetail "Add Photos").
+   */
+  autoStartAnalysisAfterImport?: boolean;
+  /**
+   * CulledAlbumDetail-only: keep the already-analyzed grid interactive during
+   * local import by skipping per-file UI snapshot bumps. AlbumDetailScreen
+   * create→upload→analyze flow must leave this false.
+   */
+  stabilizeDetailUiDuringImport?: boolean;
+  /**
+   * Exact filenames skipped on the latest Add Photos (same name as an existing
+   * album photo or a later pick in the same batch). Runtime toast state only.
+   */
+  filenameDuplicateNames?: string[];
   nextFaceClusterId: number;
   createdAt: string;
   totalPhotos: number;
@@ -175,6 +199,7 @@ export function createCulledAlbumPhoto(
   file: FileAsset,
   photoId: string,
   uploadedAt: number = Date.now(),
+  batchId: number = 1,
 ): CulledAlbumPhoto {
   return {
     photoId,
@@ -199,6 +224,7 @@ export function createCulledAlbumPhoto(
     blurred: false,
     closedEyes: false,
     duplicated: false,
+    batchId,
   };
 }
 
@@ -220,6 +246,10 @@ export function createCulledAlbumFromSelection(
     localImportBatchCounts: undefined,
     analysisBatchPhotoIds: [],
     analysisBatchCounts: undefined,
+    nextPhotoBatchId: 1,
+    autoStartAnalysisAfterImport: false,
+    stabilizeDetailUiDuringImport: false,
+    filenameDuplicateNames: [],
     nextFaceClusterId: 0,
     createdAt: new Date().toISOString(),
     totalPhotos: 0,
@@ -279,13 +309,10 @@ export function recomputeAlbumTotals(
   return album;
 }
 
-export function isCulledPhotoDisabled(
-  _photo: CulledAlbumPhoto,
-  cullingHasUploads: boolean,
-): boolean {
-  // Once any photos have been uploaded to the server, the whole album is
-  // read-only: no selection, star rating, or delete changes.
-  return cullingHasUploads;
+export function isCulledPhotoDisabled(photo: CulledAlbumPhoto): boolean {
+  // Only photos already uploaded to the server are locked; newer batches
+  // remain editable so residual Upload Selected can continue.
+  return photo.serverUploadStatus === 'uploaded';
 }
 
 export function isUploadInFlight(photo: CulledAlbumPhoto): boolean {
@@ -441,6 +468,13 @@ export function normalizePersistedPhoto(
   photo.lookIntensity = normalizeLookIntensity(
     photo.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
   );
+  if (
+    typeof photo.batchId !== 'number' ||
+    !Number.isFinite(photo.batchId) ||
+    photo.batchId < 1
+  ) {
+    photo.batchId = 1;
+  }
   if (photo.analysisStatus === 'analyzed') {
     const flags = derivePhotoFlags(photo.faces);
     photo.aiSelected = flags.aiSelected;
@@ -465,6 +499,9 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.localImportBatchCounts = undefined;
   album.analysisBatchPhotoIds ??= [];
   album.analysisBatchCounts = undefined;
+  album.autoStartAnalysisAfterImport ??= false;
+  album.stabilizeDetailUiDuringImport ??= false;
+  album.filenameDuplicateNames ??= [];
   album.cullingStats ??= undefined;
   album.cullingKeyFaces ??= undefined;
   album.cullingDuplicateGroups ??= undefined;
@@ -477,6 +514,19 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.photos = sortPhotosByFilename(
     (album.photos ?? []).map(normalizePersistedPhoto),
   );
+  if (
+    typeof album.nextPhotoBatchId !== 'number' ||
+    !Number.isFinite(album.nextPhotoBatchId) ||
+    album.nextPhotoBatchId < 1
+  ) {
+    let maxBatchId = 0;
+    for (const photo of album.photos) {
+      if (photo.batchId > maxBatchId) {
+        maxBatchId = photo.batchId;
+      }
+    }
+    album.nextPhotoBatchId = maxBatchId > 0 ? maxBatchId + 1 : 1;
+  }
   if (album.photos.length > 0) {
     recomputeAlbumTotals(album);
   }

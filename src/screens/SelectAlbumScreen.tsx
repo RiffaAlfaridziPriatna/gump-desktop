@@ -7,7 +7,10 @@ import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useSiteAlbumList} from '@hooks/useSiteAlbumList';
 import {useLayout} from '@hooks/useLayout';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
-import {filterAvailableSourceAlbums} from '@lib/culledAlbum/selectAlbum';
+import {
+  filterAvailableSourceAlbums,
+  getSelectAlbumPrefetchThreshold,
+} from '@lib/culledAlbum/selectAlbum';
 import {registerLocalAlbum} from '@lib/culledAlbum/store';
 import {uploadAwareParams} from '@lib/navigation/uploadAwareNavigation';
 import {createCulledAlbumFromSelection} from '@lib/culledAlbum/types';
@@ -21,8 +24,6 @@ import {useCallback, useMemo, useRef, useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
   ActivityIndicator,
-  RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -62,25 +63,50 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
       if (isLeavingRef.current) {
         return;
       }
-      refresh();
+      // Site albums are prefetched on app auth; only refresh local exclusions.
       refreshLocalAlbums();
-    }, [refresh, refreshLocalAlbums]),
+    }, [refreshLocalAlbums]),
   );
 
-  const emptyAlbums = useMemo(
+  const availableAlbums = useMemo(
     () => filterAvailableSourceAlbums(albums.results, localAlbumIds),
     [albums.results, localAlbumIds],
   );
 
+  const prefetchThreshold = getSelectAlbumPrefetchThreshold(albumGridColumns);
+  // Full-page loading only until we have enough selectable albums to scroll.
+  // Pagination fetch-more must not cover the list.
+  const waitingForAlbums =
+    availableAlbums.length < prefetchThreshold &&
+    (loadingAlbums || hasMore);
+
   const hasSelection = selectedId !== null;
 
-  function toggleSelection(albumId: string) {
+  const toggleSelection = useCallback((albumId: string) => {
     setSelectedId(current => (current === albumId ? null : albumId));
-  }
+  }, []);
+
+  const keyExtractor = useCallback(
+    (album: APIResponse.Album) => album.id,
+    [],
+  );
+
+  const renderAlbum = useCallback(
+    ({item: album}: {item: APIResponse.Album}) => (
+      <AlbumCard
+        variant="select"
+        album={album}
+        ownerName={user && user.role !== 'guest' ? user.name : undefined}
+        isSelected={selectedId === album.id}
+        onToggleSelect={toggleSelection}
+      />
+    ),
+    [selectedId, toggleSelection, user],
+  );
 
   function handleNext() {
     if (!selectedId) return;
-    const album = emptyAlbums.find(item => item.id === selectedId) ?? null;
+    const album = availableAlbums.find(item => item.id === selectedId) ?? null;
     if (!album) return;
     setSelectedAlbum(album);
     setShowUploadModal(true);
@@ -145,7 +171,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
         ]}>
         <View style={styles.titleColumn}>
           <Text style={styles.title}>Select Your Album</Text>
-          <Text style={styles.subtitle}>Showing albums with no photos yet.</Text>
+          <Text style={styles.subtitle}>Choose an album to start culling.</Text>
         </View>
         <TouchableOpacity
           style={[
@@ -167,54 +193,32 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
         </TouchableOpacity>
       </View>
 
-      {loadingAlbums && emptyAlbums.length === 0 ? (
+      {waitingForAlbums ? (
         <View style={styles.loading}>
           <ActivityIndicator size="large" color={colors.accent} />
+          <Text style={styles.loadingHint}>Loading albums…</Text>
         </View>
       ) : (
-        <ScrollView
+        <AlbumGrid
+          data={availableAlbums}
+          keyExtractor={keyExtractor}
+          renderItem={renderAlbum}
+          columns={albumGridColumns}
+          gap={12}
           style={styles.scroll}
-          contentContainerStyle={[
-            styles.scrollContent,
-            {paddingHorizontal: screenPaddingHorizontal},
-          ]}
+          contentPaddingHorizontal={screenPaddingHorizontal}
+          contentContainerStyle={styles.scrollContent}
           scrollEnabled={!loadingAlbums}
-          refreshControl={
-            <RefreshControl
-              refreshing={loadingAlbums}
-              onRefresh={refresh}
-              colors={[colors.accent]}
-              tintColor={colors.accent}
-            />
-          }
-          onScroll={({nativeEvent}) => {
-            const {layoutMeasurement, contentOffset, contentSize} = nativeEvent;
-            const isNearBottom =
-              layoutMeasurement.height + contentOffset.y >=
-              contentSize.height - 120;
-            if (isNearBottom && hasMore) {
-              loadMore();
-            }
-          }}
-          scrollEventThrottle={200}>
-          <AlbumGrid columns={albumGridColumns} gap={12}>
-            {emptyAlbums.map(album => (
-              <AlbumCard
-                key={album.id}
-                variant="select"
-                album={album}
-                ownerName={user && user.role !== 'guest' ? user.name : undefined}
-                isSelected={selectedId === album.id}
-                onToggleSelect={() => toggleSelection(album.id)}
-              />
-            ))}
-          </AlbumGrid>
-          {!loadingAlbums && emptyAlbums.length === 0 && (
+          refreshing={loadingAlbums}
+          onRefresh={refresh}
+          onEndReached={hasMore ? loadMore : undefined}
+          extraData={selectedId}
+          ListEmptyComponent={
             <Text style={styles.emptyText}>
-              No empty albums available. Create an album on the web app first.
+              No albums left. Create an album on the web app first.
             </Text>
-          )}
-        </ScrollView>
+          }
+        />
       )}
 
       {startError && (
@@ -240,6 +244,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+    minHeight: 0,
     backgroundColor: colors.background,
   },
   header: {
@@ -312,17 +317,22 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
+    minHeight: 0,
   },
   scrollContent: {
     paddingTop: 24,
     paddingBottom: 32,
-    gap: 16,
   },
   loading: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
+  },
+  loadingHint: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.textMuted,
   },
   emptyText: {
     fontFamily: fonts.sans,
