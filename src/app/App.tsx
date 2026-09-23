@@ -8,6 +8,7 @@ import {
   posthog,
   reportError,
 } from '@lib/observability';
+import {startupLog} from '@lib/observability/startupLog';
 import {colors} from '@lib/ui/colors';
 import {DefaultTheme, NavigationContainer} from '@react-navigation/native';
 import {ActivityIndicator, Platform, StyleSheet, Text, View} from 'react-native';
@@ -22,8 +23,8 @@ import {AuthNavigator} from './AuthNavigator';
 import {MainNavigator} from './MainNavigator';
 
 installGlobalErrorReporting();
-console.warn(
-  `[gump] App module load platform=${Platform.OS} posthog=${isPostHogEnabled}`,
+startupLog(
+  `App module load platform=${Platform.OS} posthog=${isPostHogEnabled}`,
 );
 
 const queryClient = new QueryClient({
@@ -98,7 +99,7 @@ const AppRoot =
     : require('react-native-gesture-handler').GestureHandlerRootView;
 
 export default function App() {
-  console.warn('[gump] App render');
+  startupLog('App render');
   const tree = (
     <AppRoot style={styles.root}>
       <AppErrorBoundary>

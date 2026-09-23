@@ -15,6 +15,7 @@ import {createStateStore, StateStore, useStateStore} from '@lib/react/state';
 import {useContextOrThrow} from '@lib/react/context';
 import {make} from '@di/tsyringe';
 import {identifyUser, reportError, resetIdentifiedUser} from '@lib/observability';
+import {startupLog} from '@lib/observability/startupLog';
 import {APIService, APIResponse} from '@services/api';
 import {useQuery, useQueryClient} from '@tanstack/react-query';
 
@@ -98,7 +99,7 @@ export function AuthProvider({children}: PropsWithChildren) {
 
   const loadStoredAuth = useCallback(async () => {
     const AUTH_RESTORE_TIMEOUT_MS = 8_000;
-    console.warn('[gump] auth: restore start');
+    startupLog('auth: restore start');
     try {
       const token = await Promise.race([
         getAuthToken(),
@@ -114,9 +115,7 @@ export function AuthProvider({children}: PropsWithChildren) {
           );
         }),
       ]);
-      console.warn(
-        `[gump] auth: token ${token ? 'present' : 'missing'}`,
-      );
+      startupLog(`auth: token ${token ? 'present' : 'missing'}`);
       if (token) {
         const api = make(APIService);
         api.agent.setToken(token);
@@ -142,14 +141,14 @@ export function AuthProvider({children}: PropsWithChildren) {
             isAuthenticated: true,
             isLoading: false,
           });
-          console.warn('[gump] auth: restored session');
+          startupLog('auth: restored session');
           identifyUser(user);
           return;
         }
       }
     } catch (error) {
-      console.warn(
-        `[gump] auth: restore failed: ${
+      startupLog(
+        `auth: restore failed: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -169,7 +168,7 @@ export function AuthProvider({children}: PropsWithChildren) {
       }
     }
 
-    console.warn('[gump] auth: restore done (unauthenticated)');
+    startupLog('auth: restore done (unauthenticated)');
     storeRef.current!.setState({isLoading: false});
   }, []);
 
