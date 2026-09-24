@@ -11,8 +11,10 @@ import type {ErrorCaptureClient} from './reportError';
 import {setErrorCaptureClient} from './reportError';
 
 /**
- * PostHog React Native is unsupported on Windows. This module talks to the
- * PostHog Capture HTTP API directly so analytics still works without the SDK.
+ * Windows PostHog client using the public Capture HTTP API only
+ * (no posthog-react-native). Shape follows:
+ * - https://posthog.com/docs/api/capture
+ * - https://posthog.com/docs/error-tracking/installation/manual
  */
 
 const DISTINCT_ID_KEY = '@gump/posthog.distinct_id';
@@ -24,8 +26,10 @@ const LIB_NAME = 'gump-windows-http';
 type PropertyValue = string | number | boolean | null;
 type Properties = Record<string, PropertyValue | unknown>;
 
+/** Batch event shape from PostHog Capture API docs. */
 type CaptureEvent = {
   event: string;
+  distinct_id: string;
   properties: Properties;
   timestamp: string;
 };
@@ -34,6 +38,16 @@ type ExceptionStep = {
   $message: string;
   $timestamp: string;
   [key: string]: PropertyValue;
+};
+
+type StackFrame = {
+  platform: 'custom';
+  lang: 'javascript';
+  function: string;
+  filename?: string;
+  lineno?: number;
+  colno?: number;
+  in_app?: boolean;
 };
 
 export const isPostHogEnabled = POSTHOG_API_KEY.length > 0;
@@ -89,29 +103,41 @@ export function identifyUser(user: {
   void (async () => {
     await ensureReady();
 
-    const properties: Record<string, string> = {...appBuildProperties()};
+    const personProperties: Record<string, string> = {
+      ...appBuildProperties(),
+    };
     if (user.email) {
-      properties.email = user.email;
+      personProperties.email = user.email;
     }
     if (user.name) {
-      properties.name = user.name;
+      personProperties.name = user.name;
     }
     if (user.role) {
-      properties.role = user.role;
+      personProperties.role = user.role;
     }
 
     Object.assign(superProperties, appBuildProperties());
 
     const previousDistinctId = distinctId;
-    const wasAnonymous = !identified;
+    const wasAnonymous = !identified && previousDistinctId !== user.id;
+
+    // Capture API: merge anon → identified via $create_alias
+    // (distinct_id = previous id, alias = surviving id).
+    // https://posthog.com/docs/api/capture#alias
+    if (wasAnonymous) {
+      enqueue('$create_alias', previousDistinctId, {
+        alias: user.id,
+      });
+    }
+
     distinctId = user.id;
     identified = true;
-
     await persistIds();
 
-    enqueue('$identify', {
-      ...(wasAnonymous ? {$anon_distinct_id: previousDistinctId} : {}),
-      $set: properties,
+    // Capture API: $identify updates person properties with $set.
+    // https://posthog.com/docs/api/capture#identify
+    enqueue('$identify', user.id, {
+      $set: personProperties,
     });
     scheduleFlush(true);
   })();
@@ -154,7 +180,10 @@ export function addErrorStep(
     ) {
       const removed = exceptionSteps.shift();
       if (removed) {
-        exceptionStepsBytes = Math.max(0, exceptionStepsBytes - roughSize(removed));
+        exceptionStepsBytes = Math.max(
+          0,
+          exceptionStepsBytes - roughSize(removed),
+        );
       }
     }
     exceptionSteps.push(step);
@@ -173,7 +202,10 @@ export function captureAppEvent(
   }
 
   try {
-    enqueue(event, {...appBuildProperties(), ...properties});
+    enqueue(event, distinctId, {
+      ...appBuildProperties(),
+      ...properties,
+    });
     scheduleFlush(true);
   } catch {
     // Never throw from tracing.
@@ -198,24 +230,26 @@ function captureException(
       exceptionSteps.length > 0 ? [...exceptionSteps] : undefined;
     clearExceptionSteps();
 
-    enqueue('$exception', {
+    const frames = err.stack ? parseStackFrames(err.stack) : [];
+
+    // Manual Error Tracking installation schema:
+    // https://posthog.com/docs/error-tracking/installation/manual
+    enqueue('$exception', distinctId, {
       ...appBuildProperties(),
       ...additionalProperties,
-      $exception_level: 'error',
       $exception_list: [
         {
           type: err.name || 'Error',
           value: err.message || 'Unknown error',
           mechanism: {
-            type: 'generic',
             handled: true,
             synthetic: false,
           },
-          ...(err.stack
+          ...(frames.length > 0
             ? {
                 stacktrace: {
                   type: 'raw',
-                  frames: parseStackFrames(err.stack),
+                  frames,
                 },
               }
             : {}),
@@ -229,15 +263,27 @@ function captureException(
   }
 }
 
-function enqueue(event: string, properties: Properties): void {
+function enqueue(
+  event: string,
+  eventDistinctId: string,
+  properties: Properties,
+): void {
   queue.push({
     event,
+    // Prefer top-level distinct_id per Capture API docs.
+    distinct_id: eventDistinctId,
     timestamp: new Date().toISOString(),
     properties: {
       ...superProperties,
       ...properties,
-      distinct_id: distinctId,
-      token: POSTHOG_API_KEY,
+      // Anonymous custom events should not create/update person profiles.
+      // Skip $-system events ($create_alias, $identify, $exception, …).
+      // https://posthog.com/docs/api/capture#anonymous-event-capture
+      ...(!identified &&
+      eventDistinctId === anonymousId &&
+      !event.startsWith('$')
+        ? {$process_person_profile: false}
+        : {}),
     },
   });
 }
@@ -265,13 +311,9 @@ async function flush(): Promise<void> {
   flushing = true;
   const batch = queue.splice(0, queue.length);
 
-  // Stamp current distinct_id in case identify raced with enqueue.
-  for (const item of batch) {
-    item.properties.distinct_id = distinctId;
-  }
-
   try {
     const host = POSTHOG_HOST.replace(/\/$/, '');
+    // https://posthog.com/docs/api/capture#batch-events
     await fetch(`${host}/batch/`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -364,24 +406,8 @@ function roughSize(value: unknown): number {
   }
 }
 
-function parseStackFrames(stack: string): Array<{
-  platform: string;
-  filename?: string;
-  function?: string;
-  lineno?: number;
-  colno?: number;
-  in_app: boolean;
-  raw_id?: string;
-}> {
-  const frames: Array<{
-    platform: string;
-    filename?: string;
-    function?: string;
-    lineno?: number;
-    colno?: number;
-    in_app: boolean;
-    raw_id?: string;
-  }> = [];
+function parseStackFrames(stack: string): StackFrame[] {
+  const frames: StackFrame[] = [];
 
   for (const line of stack.split('\n')) {
     const trimmed = line.trim();
@@ -394,7 +420,8 @@ function parseStackFrames(stack: string): Array<{
     );
     if (withParens) {
       frames.push({
-        platform: 'javascript',
+        platform: 'custom',
+        lang: 'javascript',
         function: withParens[1],
         filename: withParens[2],
         lineno: Number(withParens[3]),
@@ -407,7 +434,9 @@ function parseStackFrames(stack: string): Array<{
     const bare = trimmed.match(/^at\s+(.+?):(\d+):(\d+)$/);
     if (bare) {
       frames.push({
-        platform: 'javascript',
+        platform: 'custom',
+        lang: 'javascript',
+        function: '<anonymous>',
         filename: bare[1],
         lineno: Number(bare[2]),
         colno: Number(bare[3]),
@@ -417,10 +446,10 @@ function parseStackFrames(stack: string): Array<{
     }
 
     frames.push({
-      platform: 'javascript',
-      function: trimmed.replace(/^at\s+/, ''),
+      platform: 'custom',
+      lang: 'javascript',
+      function: trimmed.replace(/^at\s+/, '') || '<anonymous>',
       in_app: true,
-      raw_id: trimmed,
     });
   }
 
