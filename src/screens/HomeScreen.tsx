@@ -9,6 +9,7 @@ import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useDeleteCulledAlbum} from '@hooks/useDeleteCulledAlbum';
 import {useLayout} from '@hooks/useLayout';
 import {useProfileMenu} from '@hooks/useProfileMenu';
+import {resetSiteAlbumList} from '@hooks/useSiteAlbumList';
 import {toAlbumCardModel} from '@lib/culledAlbum/format';
 import {navigateToCulledAlbum} from '@lib/culledAlbum/navigateToCulledAlbum';
 import {CulledAlbumListItem} from '@lib/culledAlbum/types';
@@ -21,6 +22,7 @@ import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useFocusEffect} from '@react-navigation/native';
+import {useQueryClient} from '@tanstack/react-query';
 import {useCallback, useMemo, useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
@@ -41,6 +43,7 @@ type Props = StackScreenProps<MainStackParamList, 'Home'>;
 export default function HomeScreen({navigation}: Props) {
   const user = useAuthState(state => state.user);
   const profileMenu = useProfileMenu();
+  const queryClient = useQueryClient();
   const {loadingAlbums, albums, refresh, count} = useLocalCulledAlbumList();
   const deleteCulledAlbum = useDeleteCulledAlbum();
   const {
@@ -102,6 +105,14 @@ export default function HomeScreen({navigation}: Props) {
     });
   }
 
+  function handleOpenSelectAlbum() {
+    // Reset before navigate so Select Album does not depend on focus events
+    // (unreliable with the Windows transparent modal) and always starts from
+    // the latest-first /albums?sort=default&order=desc page.
+    void resetSiteAlbumList(queryClient);
+    navigation.navigate('SelectAlbum', uploadAwareRouteParams());
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <View
@@ -150,9 +161,7 @@ export default function HomeScreen({navigation}: Props) {
             </View>
             <TouchableOpacity
               style={styles.cullingButton}
-              onPress={() =>
-                navigation.navigate('SelectAlbum', uploadAwareRouteParams())
-              }
+              onPress={handleOpenSelectAlbum}
               activeOpacity={0.8}>
               <Text style={styles.cullingButtonText}>Start New Culling</Text>
               <IconChevronRight width={24} height={24} color={colors.white} />
@@ -221,9 +230,7 @@ export default function HomeScreen({navigation}: Props) {
 
             <TouchableOpacity
               style={styles.emptyCard}
-              onPress={() =>
-                navigation.navigate('SelectAlbum', uploadAwareRouteParams())
-              }
+              onPress={handleOpenSelectAlbum}
               activeOpacity={0.7}>
               <ImageCheckIcon width={40} height={40} color={colors.accent} />
               <Text style={styles.emptyCardLabel}>Select Existing Album</Text>
