@@ -6,7 +6,11 @@ import {
 } from '@lib/culledAlbum/selectAlbum';
 import {make} from '@di/tsyringe';
 import {APIService, APIResponse, assertAPIException} from '@services/api';
-import {useInfiniteQuery} from '@tanstack/react-query';
+import {
+  QueryClient,
+  useInfiniteQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import {useCallback, useEffect, useMemo} from 'react';
 
 export type SiteAlbumListSearchValues = {
@@ -30,6 +34,20 @@ export function siteAlbumListQueryKey(search: SiteAlbumListSearchValues = {}) {
   ] as const;
 }
 
+/**
+ * Drop cached pages and reload from the first cursor.
+ * Needed after albums change on web — plain refetch keeps old page cursors
+ * and can miss newly created empty albums.
+ */
+export function resetSiteAlbumList(
+  queryClient: QueryClient,
+  search: SiteAlbumListSearchValues = {},
+) {
+  return queryClient.resetQueries({
+    queryKey: siteAlbumListQueryKey(search),
+  });
+}
+
 type UseSiteAlbumListOptions = SiteAlbumListSearchValues & {
   /**
    * Keep fetching cursor pages until this many selectable empty albums are
@@ -46,6 +64,7 @@ export function useSiteAlbumList(options: UseSiteAlbumListOptions = {}) {
     ...search
   } = options;
   const api = make(APIService);
+  const queryClient = useQueryClient();
   const queryKey = siteAlbumListQueryKey(search);
 
   const {
@@ -56,7 +75,6 @@ export function useSiteAlbumList(options: UseSiteAlbumListOptions = {}) {
     isFetching,
     isFetchingNextPage,
     isPending,
-    refetch,
   } = useInfiniteQuery({
     queryKey,
     queryFn: async ({pageParam}) => {
@@ -135,8 +153,15 @@ export function useSiteAlbumList(options: UseSiteAlbumListOptions = {}) {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const refresh = useCallback(() => {
-    return refetch();
-  }, [refetch]);
+    return resetSiteAlbumList(queryClient, search);
+  }, [
+    queryClient,
+    search.keyword,
+    search.year,
+    search.month,
+    search.sort,
+    search.order,
+  ]);
 
   return {
     // Full-screen load only while there is no cached page yet.

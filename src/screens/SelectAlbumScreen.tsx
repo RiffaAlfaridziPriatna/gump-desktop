@@ -4,7 +4,10 @@ import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShel
 import {useAuthState} from '@context/auth';
 import {useCulledAlbumActions} from '@context/culledAlbum';
 import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
-import {useSiteAlbumList} from '@hooks/useSiteAlbumList';
+import {
+  resetSiteAlbumList,
+  useSiteAlbumList,
+} from '@hooks/useSiteAlbumList';
 import {useLayout} from '@hooks/useLayout';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {
@@ -20,6 +23,7 @@ import {MainStackParamList} from '../app/MainNavigator';
 import {APIResponse, FileAsset} from '@services/api';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useFocusEffect} from '@react-navigation/native';
+import {useQueryClient} from '@tanstack/react-query';
 import {useCallback, useMemo, useRef, useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
@@ -55,6 +59,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
     hasMore,
     refresh,
   } = useSiteAlbumList();
+  const queryClient = useQueryClient();
   const {localAlbumIds, refresh: refreshLocalAlbums} = useLocalCulledAlbumList();
   const {addPhotos} = useCulledAlbumActions();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -72,11 +77,20 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
       if (isLeavingRef.current) {
         return;
       }
-      // Refetch site albums on each open so albums created on web appear,
-      // and refresh local exclusions used to hide already-started albums.
-      void refresh();
+      // Hard reset on open: plain refetch keeps old infinite-query cursors and
+      // can miss albums created on web since the last fetch.
+      void resetSiteAlbumList(queryClient);
       refreshLocalAlbums();
-    }, [refresh, refreshLocalAlbums]),
+
+      return () => {
+        if (isLeavingRef.current) {
+          return;
+        }
+        // Reset again on close so MainNavigator prefetch warms a fresh list
+        // while the user is back on Home.
+        void resetSiteAlbumList(queryClient);
+      };
+    }, [queryClient, refreshLocalAlbums]),
   );
 
   const handlePullRefresh = useCallback(() => {
