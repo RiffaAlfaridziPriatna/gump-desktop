@@ -1,7 +1,7 @@
 import type {PropsWithChildren} from 'react';
 
 /**
- * Windows stub — PostHog is unsupported on RNW; do not import the SDK here.
+ * Windows has no PostHogProvider (HTTP client in posthogClient.windows.ts).
  */
 export function PostHogAppShell({children}: PropsWithChildren) {
   return children;
