@@ -1940,6 +1940,9 @@ void GumpLocalStorage::StartAnalysis(
     sessionConfig.interJobDelayMs = 50;
     sessionConfig.maxDecodePixelSize = 4096;
     sessionConfig.progressiveBatchSize = 20;
+    // Match the pre-timeout Windows path: process inline on the worker thread
+    // so hung-photo skip does not spawn abandoned decode/detect threads.
+    sessionConfig.photoTimeoutMs = 0;
 
     if (config.Type() == winrtRN::JSValueType::Object) {
       const auto &configObj = config.AsObject();
@@ -1961,6 +1964,20 @@ void GumpLocalStorage::StartAnalysis(
                winrtRN::JSValueType::Double)) {
         sessionConfig.maxDecodePixelSize =
             static_cast<int>(configObj["maxDecodePixelSize"].AsDouble());
+      }
+      if (configObj.count("progressiveBatchSize") &&
+          (configObj["progressiveBatchSize"].Type() ==
+               winrtRN::JSValueType::Int64 ||
+           configObj["progressiveBatchSize"].Type() ==
+               winrtRN::JSValueType::Double)) {
+        sessionConfig.progressiveBatchSize =
+            static_cast<int>(configObj["progressiveBatchSize"].AsDouble());
+      }
+      if (configObj.count("photoTimeoutMs") &&
+          (configObj["photoTimeoutMs"].Type() == winrtRN::JSValueType::Int64 ||
+           configObj["photoTimeoutMs"].Type() == winrtRN::JSValueType::Double)) {
+        sessionConfig.photoTimeoutMs =
+            static_cast<int>(configObj["photoTimeoutMs"].AsDouble());
       }
     }
 

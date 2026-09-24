@@ -30,6 +30,8 @@ export type PendingPhotoUpdate = {
 const MIN_FLUSH_INTERVAL_MS = Platform.OS === 'windows' ? 250 : 120;
 const DEFERRED_FLUSH_MS = Platform.OS === 'windows' ? 80 : 50;
 export const PHOTO_UPDATE_APPLY_CHUNK = 20;
+/** Windows keeps the pre-chunk drain-all flush to avoid sustained JS wakes mid-cull. */
+const DRAIN_PHOTO_UPDATES_ON_FLUSH = Platform.OS === 'windows';
 
 function pendingPhotoKey(update: PendingPhotoUpdate): string {
   return `${update.albumId}:${update.photoId}`;
@@ -199,11 +201,16 @@ export function flushPendingPhotoUpdates(
     return;
   }
 
-  const drain = options?.drain === true;
+  const drain = options?.drain === true || DRAIN_PHOTO_UPDATES_ON_FLUSH;
+  // Windows restores the pre-chunk coalesced flush: one applyBatch for the
+  // whole pending queue. Other platforms keep capped chunks to limit hitch size.
+  const chunkSize = DRAIN_PHOTO_UPDATES_ON_FLUSH
+    ? pending.length
+    : PHOTO_UPDATE_APPLY_CHUNK;
 
   do {
     flushScheduled = false;
-    const batch = pending.splice(0, PHOTO_UPDATE_APPLY_CHUNK);
+    const batch = pending.splice(0, chunkSize);
     for (const update of batch) {
       pendingByPhoto.delete(pendingPhotoKey(update));
     }

@@ -17,6 +17,8 @@ type NativeAnalysisSessionModule = {
       interJobDelayMs?: number;
       maxDecodePixelSize?: number;
       progressiveBatchSize?: number;
+      /** 0 disables per-photo timeout threads (Windows known-good path). */
+      photoTimeoutMs?: number;
     },
   ) => Promise<{success: boolean}>;
   cancelAnalysis: () => Promise<{success: boolean}>;
@@ -28,6 +30,12 @@ export type AnalysisSessionTuning = {
   interJobDelayMs: number;
   maxDecodePixelSize: number;
   progressiveBatchSize: number;
+  /**
+   * Wall-clock budget per photo for hung decode/detect skip.
+   * Windows keeps this at 0 to match the pre-timeout inline worker path
+   * (avoids abandoned decode threads that heat the machine during cull).
+   */
+  photoTimeoutMs: number;
 };
 
 let lowPowerModeEnabled = false;
@@ -43,6 +51,7 @@ export function getAnalysisSessionTuning(): AnalysisSessionTuning {
       interJobDelayMs: 200,
       maxDecodePixelSize: 2048,
       progressiveBatchSize: 20,
+      photoTimeoutMs: Platform.OS === 'windows' ? 0 : 60_000,
     };
   }
 
@@ -51,6 +60,9 @@ export function getAnalysisSessionTuning(): AnalysisSessionTuning {
     interJobDelayMs: 50,
     maxDecodePixelSize: 4096,
     progressiveBatchSize: 20,
+    // Windows: inline ProcessPhoto on the worker (like 038d89c). macOS keeps
+    // the hung-photo timeout so one stuck decode cannot stall the album.
+    photoTimeoutMs: Platform.OS === 'windows' ? 0 : 60_000,
   };
 }
 

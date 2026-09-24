@@ -793,7 +793,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       interJobDelayMs: tuning.interJobDelayMs,
       maxDecodePixelSize: tuning.maxDecodePixelSize,
       progressiveBatchSize: tuning.progressiveBatchSize,
-      nativePhotoTimeoutMs: 60_000,
+      nativePhotoTimeoutMs: tuning.photoTimeoutMs,
       watchdogTimeoutMs: NATIVE_WATCHDOG_TIMEOUT_MS,
       ...sampleRemainingPhotos(albumId),
       ...getAlbumTraceContext(albumId),
