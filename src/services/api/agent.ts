@@ -1,6 +1,7 @@
 import {Injectable} from '@di/tsyringe';
 import {API_BASE_URL} from '@lib/config/constants';
 import {reportError} from '@lib/observability/reportError';
+import {Platform} from 'react-native';
 import {APIException} from './exception';
 import {APIResponse} from './types';
 
@@ -46,6 +47,13 @@ export class APIAgent {
       } else {
         options.body = JSON.stringify(payload);
       }
+    }
+
+    // RNW's WinRT HttpClient caches GETs by default (unlike macOS). Client
+    // Cache-Control headers are ignored; a unique query param forces a miss.
+    // See microsoft/react-native-windows#16315.
+    if (Platform.OS === 'windows' && method === 'GET') {
+      url.searchParams.set('_nc', String(Date.now()));
     }
 
     let response: Response;
