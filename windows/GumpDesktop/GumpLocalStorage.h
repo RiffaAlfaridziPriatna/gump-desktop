@@ -138,7 +138,8 @@ struct GumpLocalStorage {
   void ApplyLook(
       std::string sourceUri,
       std::string destPath,
-      winrt::Microsoft::ReactNative::JSValueArray matrix,
+      std::string lookId,
+      double intensity,
       double maxPixelSize,
       double jpegQuality,
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;

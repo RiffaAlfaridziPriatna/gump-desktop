@@ -9,48 +9,14 @@ export type LookId = (typeof LOOK_IDS)[number];
 
 export const DEFAULT_LOOK_INTENSITY = 80;
 
-export type LookOverlayRecipe = {
-  /** Solid tint over the image (rgba). */
-  tintColor: string;
-  /** Opacity of tint layer after intensity scaling (0–1 at full intensity). */
-  tintOpacity: number;
-  /** Optional multiply/darken layer for film contrast. */
-  multiplyColor?: string;
-  multiplyOpacity?: number;
-  /** Brightness boost via white overlay (0–1 at full intensity). */
-  liftOpacity?: number;
-};
-
-/** 5x4 color matrix row-major: R', G', B', A' each from RGBA + offset. */
-export type LookColorMatrix = [
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-];
-
 export type LookDefinition = {
   id: LookId;
   label: string;
-  overlay: LookOverlayRecipe;
-  /** Full-strength bake matrix; lerped with identity by intensity. */
-  matrix: LookColorMatrix;
+  /**
+   * Bundled .cube basename without extension (macOS Looks/, Windows Assets/Looks/).
+   * Omitted for original.
+   */
+  lutName?: string;
 };
 
 export function isLookId(value: unknown): value is LookId {

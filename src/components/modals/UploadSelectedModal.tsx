@@ -1,9 +1,9 @@
-import {
-  formatPhotoCount,
-  formatStorageGb,
-} from '@application/plan/formatPlanNumbers';
+import {formatPhotoCount} from '@application/plan/formatPlanNumbers';
 import {Modal, ProgressBar, TouchableOpacity} from '@components/ui';
-import {bytesToGigabytes} from '@lib/culledAlbum/format';
+import {
+  bytesToGigabytes,
+  formatStorageSizeGb,
+} from '@lib/culledAlbum/format';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {useState} from 'react';
@@ -79,7 +79,7 @@ function ConfirmPhase({
           <View style={styles.breakdownRow}>
             <Text style={styles.breakdownLabel}>Upload size</Text>
             <Text style={styles.breakdownValue}>
-              {formatStorageGb(uploadSizeGb)} GB
+              {formatStorageSizeGb(uploadSizeGb)}
             </Text>
           </View>
         </View>
@@ -150,7 +150,7 @@ function UploadingPhase({
         />
         <Text style={styles.uploadProgressMeta}>
           <Text style={styles.uploadProgressMetaValue}>{percent}%</Text> ·{' '}
-          {formatStorageGb(uploadedGb)} GB of {formatStorageGb(totalGb)} GB
+          {formatStorageSizeGb(uploadedGb)} of {formatStorageSizeGb(totalGb)}
         </Text>
       </View>
     </View>

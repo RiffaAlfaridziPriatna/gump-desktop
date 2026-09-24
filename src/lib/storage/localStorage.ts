@@ -59,7 +59,8 @@ type NativeLocalStorageModule = {
   applyLook?: (
     sourceUri: string,
     destPath: string,
-    matrix: number[],
+    lookId: string,
+    intensity: number,
     maxPixelSize: number,
     jpegQuality: number,
   ) => Promise<{uri: string | null; path?: string | null}>;
@@ -371,7 +372,8 @@ export type ApplyLookNativeResult = {
 export async function applyLookToJpeg(options: {
   sourceUri: string;
   destPath: string;
-  matrix: number[];
+  lookId: string;
+  intensity: number;
   maxPixelSize: number;
   jpegQuality: number;
 }): Promise<ApplyLookNativeResult> {
@@ -384,7 +386,8 @@ export async function applyLookToJpeg(options: {
   const result = await NativeLocalStorage.applyLook(
     options.sourceUri,
     options.destPath,
-    options.matrix,
+    options.lookId,
+    options.intensity,
     options.maxPixelSize,
     options.jpegQuality,
   );

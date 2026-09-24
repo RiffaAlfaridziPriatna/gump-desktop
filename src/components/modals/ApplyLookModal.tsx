@@ -68,7 +68,7 @@ export function ApplyLookModal({
     [previewPhoto],
   );
 
-  const [lookId, setLookId] = useState<LookId>('cleanNatural');
+  const [lookId, setLookId] = useState<LookId>('warmRomantic');
   const [intensity, setIntensity] = useState(DEFAULT_LOOK_INTENSITY);
   const [applying, setApplying] = useState(false);
 
@@ -77,9 +77,13 @@ export function ApplyLookModal({
       return;
     }
     const seed = selectedPhotos[0];
-    setLookId(
-      seed?.lookId && seed.lookId !== 'original' ? seed.lookId : 'cleanNatural',
-    );
+    const seedId = seed?.lookId;
+    const catalogIds = new Set(LOOK_CATALOG.map(look => look.id));
+    const nextId: LookId =
+      seedId && seedId !== 'original' && catalogIds.has(seedId)
+        ? seedId
+        : 'warmRomantic';
+    setLookId(nextId);
     setIntensity(seed?.lookIntensity ?? DEFAULT_LOOK_INTENSITY);
     setApplying(false);
   }, [selectedPhotos, visible]);

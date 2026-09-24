@@ -3335,13 +3335,292 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
   });
 }
 
-- (NSString *)applyLookMatrixFromPath:(NSString *)sourcePath
-                               toPath:(NSString *)destPath
-                               matrix:(NSArray *)matrix
-                         maxPixelSize:(NSUInteger)maxPixelSize
-                          jpegQuality:(CGFloat)jpegQuality
+- (NSString *)lookCubePathForId:(NSString *)lookId
 {
-  if (sourcePath.length == 0 || destPath.length == 0 || matrix.count < 20) {
+  if (lookId.length == 0 || [lookId isEqualToString:@"original"]) {
+    return nil;
+  }
+  NSBundle *bundle = [NSBundle mainBundle];
+  NSString *path = [bundle pathForResource:lookId ofType:@"cube" inDirectory:@"Looks"];
+  if (path.length == 0) {
+    path = [bundle pathForResource:lookId ofType:@"cube"];
+  }
+  if (path.length == 0) {
+    path = [[bundle.resourcePath stringByAppendingPathComponent:@"Looks"]
+        stringByAppendingPathComponent:[lookId stringByAppendingPathExtension:@"cube"]];
+  }
+  if (path.length == 0 || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+    return nil;
+  }
+  return path;
+}
+
+- (NSData *)colorCubeDataFromCubePath:(NSString *)cubePath
+                            intensity:(CGFloat)intensityPercent
+                            dimension:(NSInteger *)outDimension
+{
+  NSString *contents = [NSString stringWithContentsOfFile:cubePath
+                                                 encoding:NSUTF8StringEncoding
+                                                    error:nil];
+  if (contents.length == 0) {
+    return nil;
+  }
+
+  NSInteger size = 0;
+  NSMutableArray<NSNumber *> *values = [NSMutableArray array];
+  for (NSString *rawLine in [contents componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+    NSString *line = [rawLine stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (line.length == 0 || [line hasPrefix:@"#"]) {
+      continue;
+    }
+    if ([line hasPrefix:@"TITLE"] || [line hasPrefix:@"DOMAIN_"]) {
+      continue;
+    }
+    if ([line hasPrefix:@"LUT_3D_SIZE"]) {
+      NSArray *parts = [line componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+      if (parts.count >= 2) {
+        size = [parts[1] integerValue];
+      }
+      continue;
+    }
+    NSArray *parts = [line componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    NSMutableArray *nums = [NSMutableArray array];
+    for (NSString *part in parts) {
+      if (part.length == 0) {
+        continue;
+      }
+      [nums addObject:part];
+    }
+    if (nums.count < 3) {
+      continue;
+    }
+    [values addObject:@([nums[0] doubleValue])];
+    [values addObject:@([nums[1] doubleValue])];
+    [values addObject:@([nums[2] doubleValue])];
+  }
+
+  const NSInteger expected = size * size * size * 3;
+  if (size <= 1 || values.count < (NSUInteger)expected) {
+    return nil;
+  }
+
+  // Apply cube lattice as-is. Soft-filtering was for noisy HALD→JPEG cubes and
+  // washed out PNG-derived LUTs (midtones drifted away from Lightroom).
+  const CGFloat t = MAX(0.0, MIN(1.0, intensityPercent / 100.0));
+  const NSInteger count = size * size * size;
+  NSMutableData *data = [NSMutableData dataWithLength:(NSUInteger)count * 4 * sizeof(float)];
+  float *rgba = (float *)data.mutableBytes;
+  for (NSInteger b = 0; b < size; b++) {
+    for (NSInteger g = 0; g < size; g++) {
+      for (NSInteger r = 0; r < size; r++) {
+        const NSInteger idx = r + g * size + b * size * size;
+        const CGFloat inR = (CGFloat)r / (CGFloat)(size - 1);
+        const CGFloat inG = (CGFloat)g / (CGFloat)(size - 1);
+        const CGFloat inB = (CGFloat)b / (CGFloat)(size - 1);
+        const CGFloat lutR = (CGFloat)[values[(NSUInteger)(idx * 3 + 0)] doubleValue];
+        const CGFloat lutG = (CGFloat)[values[(NSUInteger)(idx * 3 + 1)] doubleValue];
+        const CGFloat lutB = (CGFloat)[values[(NSUInteger)(idx * 3 + 2)] doubleValue];
+        rgba[idx * 4 + 0] = (float)(inR * (1.0 - t) + lutR * t);
+        rgba[idx * 4 + 1] = (float)(inG * (1.0 - t) + lutG * t);
+        rgba[idx * 4 + 2] = (float)(inB * (1.0 - t) + lutB * t);
+        rgba[idx * 4 + 3] = 1.0f;
+      }
+    }
+  }
+
+  if (outDimension != NULL) {
+    *outDimension = size;
+  }
+  return data;
+}
+
+/// Lightroom Warm Romantic Presence/Effects that a 3D LUT cannot carry.
+/// Amounts mirror Develop at preset Amount 100; scaled by look intensity.
+- (CIImage *)applyWarmRomanticFinishingToImage:(CIImage *)image
+                                     intensity:(CGFloat)intensityPercent
+{
+  if (image == nil) {
+    return nil;
+  }
+  const CGFloat t = MAX(0.0, MIN(1.0, intensityPercent / 100.0));
+  if (t <= 0.0) {
+    return image;
+  }
+
+  CIImage *current = image;
+  const CGRect bounds = image.extent;
+  if (CGRectIsInfinite(bounds) || bounds.size.width < 1.0 || bounds.size.height < 1.0) {
+    return image;
+  }
+
+  auto blurBlend = ^CIImage *(CIImage *src, CGFloat radius, CGFloat amount) {
+    if (amount <= 0.001 || radius < 0.5) {
+      return src;
+    }
+    CIFilter *blur = [CIFilter filterWithName:@"CIGaussianBlur"];
+    [blur setValue:src forKey:kCIInputImageKey];
+    [blur setValue:@(radius) forKey:kCIInputRadiusKey];
+    CIImage *blurred = [blur.outputImage imageByCroppingToRect:bounds];
+    if (blurred == nil) {
+      return src;
+    }
+    CIFilter *mix = [CIFilter filterWithName:@"CIMix"];
+    if (mix == nil) {
+      // Fallback: CIDissolveTransition at time=amount
+      CIFilter *dissolve = [CIFilter filterWithName:@"CIDissolveTransition"];
+      [dissolve setValue:src forKey:kCIInputImageKey];
+      [dissolve setValue:blurred forKey:kCIInputTargetImageKey];
+      [dissolve setValue:@(amount) forKey:kCIInputTimeKey];
+      CIImage *out = [dissolve.outputImage imageByCroppingToRect:bounds];
+      return out ?: src;
+    }
+    // CIMix: amount 0 = background, 1 = inputImage. Keep sharp as input, blur as bg.
+    [mix setValue:src forKey:kCIInputImageKey];
+    [mix setValue:blurred forKey:@"inputBackgroundImage"];
+    [mix setValue:@(1.0 - amount) forKey:kCIInputAmountKey];
+    CIImage *out = [mix.outputImage imageByCroppingToRect:bounds];
+    return out ?: src;
+  };
+
+  // Texture -5 → fine soften (LR Amount scale ~0..100).
+  const CGFloat texAmt = (5.0 / 100.0) * 0.55 * t;
+  const CGFloat texRadius = MAX(1.2, MIN(bounds.size.width, bounds.size.height) * 0.0018);
+  current = blurBlend(current, texRadius, texAmt);
+
+  // Clarity -8 → mid-frequency soften (larger radius).
+  const CGFloat clarAmt = (8.0 / 100.0) * 0.95 * t;
+  const CGFloat clarRadius = MAX(8.0, MIN(bounds.size.width, bounds.size.height) * 0.018);
+  current = blurBlend(current, clarRadius, clarAmt);
+
+  // Dehaze -3 → slight haze (lower contrast, tiny lift).
+  const CGFloat dehazeT = (3.0 / 100.0) * t;
+  if (dehazeT > 0.0005) {
+    CIFilter *controls = [CIFilter filterWithName:@"CIColorControls"];
+    [controls setValue:current forKey:kCIInputImageKey];
+    [controls setValue:@(1.0 - dehazeT * 0.35) forKey:kCIInputContrastKey];
+    [controls setValue:@(dehazeT * 0.02) forKey:kCIInputBrightnessKey];
+    [controls setValue:@(1.0 - dehazeT * 0.08) forKey:kCIInputSaturationKey];
+    CIImage *adjusted = controls.outputImage;
+    if (adjusted != nil) {
+      current = adjusted;
+    }
+  }
+
+  // Residual vs LR export: cube bake reads a bit bright/cool. Nudge peach-orange
+  // (Color Grading mid/highlight warm + Balance toward highlights) and settle mids.
+  {
+    const CGFloat warm = 0.045 * t;
+    const CGFloat settle = 0.035 * t;
+    CIFilter *matrix = [CIFilter filterWithName:@"CIColorMatrix"];
+    if (matrix != nil) {
+      // Slightly lift R, hold G, pull B; then small overall settle via bias.
+      [matrix setValue:current forKey:kCIInputImageKey];
+      [matrix setValue:[CIVector vectorWithX:(1.0 + warm * 0.55) Y:0 Z:0 W:0]
+                  forKey:@"inputRVector"];
+      [matrix setValue:[CIVector vectorWithX:0 Y:(1.0 + warm * 0.08) Z:0 W:0]
+                  forKey:@"inputGVector"];
+      [matrix setValue:[CIVector vectorWithX:0 Y:0 Z:(1.0 - warm * 0.65) W:0]
+                  forKey:@"inputBVector"];
+      [matrix setValue:[CIVector vectorWithX:0 Y:0 Z:0 W:1] forKey:@"inputAVector"];
+      [matrix setValue:[CIVector vectorWithX:(-settle * 0.55)
+                                           Y:(-settle * 0.75)
+                                           Z:(-settle * 0.35)
+                                           W:0]
+                  forKey:@"inputBiasVector"];
+      CIImage *warmed = matrix.outputImage;
+      if (warmed != nil) {
+        current = warmed;
+      }
+    }
+  }
+
+  // Post-crop vignette Amount -8, Midpoint 45, Feather 75 (kept mild — LR -8 is subtle).
+  const CGFloat vigAmt = (8.0 / 100.0) * t;
+  if (vigAmt > 0.0005) {
+    CIFilter *vig = [CIFilter filterWithName:@"CIVignetteEffect"];
+    if (vig != nil) {
+      const CGFloat cx = CGRectGetMidX(bounds);
+      const CGFloat cy = CGRectGetMidY(bounds);
+      const CGFloat minSide = MIN(bounds.size.width, bounds.size.height);
+      const CGFloat radius = minSide * (0.62 + (45.0 / 100.0) * 0.28);
+      [vig setValue:current forKey:kCIInputImageKey];
+      [vig setValue:[CIVector vectorWithX:cx Y:cy] forKey:kCIInputCenterKey];
+      [vig setValue:@(radius) forKey:kCIInputRadiusKey];
+      [vig setValue:@(vigAmt * 0.85) forKey:kCIInputIntensityKey];
+      CIImage *vigOut = [vig.outputImage imageByCroppingToRect:bounds];
+      if (vigOut != nil) {
+        current = vigOut;
+      }
+    }
+  }
+
+  // Grain Amount 10, Size 25, Roughness 45 — subtle mono noise overlay.
+  const CGFloat grainAmt = (10.0 / 100.0) * t;
+  if (grainAmt > 0.0005) {
+    CIFilter *random = [CIFilter filterWithName:@"CIRandomGenerator"];
+    CIImage *noise = random.outputImage;
+    if (noise != nil) {
+      // Scale noise "size": smaller scale → finer grain. Size 25 → moderate.
+      const CGFloat noiseScale = 1.0 / MAX(0.35, 25.0 / 40.0);
+      CGAffineTransform scale =
+          CGAffineTransformMakeScale(noiseScale, noiseScale);
+      CIImage *scaledNoise = [noise imageByApplyingTransform:scale];
+      scaledNoise = [scaledNoise imageByCroppingToRect:bounds];
+
+      CIFilter *mono = [CIFilter filterWithName:@"CIColorMatrix"];
+      [mono setValue:scaledNoise forKey:kCIInputImageKey];
+      [mono setValue:[CIVector vectorWithX:0.333 Y:0.333 Z:0.333 W:0] forKey:@"inputRVector"];
+      [mono setValue:[CIVector vectorWithX:0.333 Y:0.333 Z:0.333 W:0] forKey:@"inputGVector"];
+      [mono setValue:[CIVector vectorWithX:0.333 Y:0.333 Z:0.333 W:0] forKey:@"inputBVector"];
+      [mono setValue:[CIVector vectorWithX:0 Y:0 Z:0 W:grainAmt * 0.55] forKey:@"inputAVector"];
+      // Roughness 45 → bias away from pure gray slightly via bias vector.
+      const CGFloat rough = 45.0 / 100.0;
+      [mono setValue:[CIVector vectorWithX:rough * 0.02 Y:rough * 0.02 Z:rough * 0.02 W:0]
+                forKey:@"inputBiasVector"];
+      CIImage *grainLayer = mono.outputImage;
+      if (grainLayer != nil) {
+        CIFilter *overlay = [CIFilter filterWithName:@"CIOverlayBlendMode"];
+        if (overlay == nil) {
+          overlay = [CIFilter filterWithName:@"CISoftLightBlendMode"];
+        }
+        if (overlay != nil) {
+          [overlay setValue:current forKey:kCIInputBackgroundImageKey];
+          [overlay setValue:grainLayer forKey:kCIInputImageKey];
+          CIImage *grained = [overlay.outputImage imageByCroppingToRect:bounds];
+          if (grained != nil) {
+            // Mix back so grain stays subtle (Amount 10).
+            CIFilter *mix = [CIFilter filterWithName:@"CIMix"];
+            if (mix != nil) {
+              [mix setValue:current forKey:kCIInputImageKey];
+              [mix setValue:grained forKey:@"inputBackgroundImage"];
+              // Prefer original; blend in a little grain (CIMix 1 = inputImage).
+              [mix setValue:@(1.0 - grainAmt * 0.85) forKey:kCIInputAmountKey];
+              CIImage *mixed = [mix.outputImage imageByCroppingToRect:bounds];
+              if (mixed != nil) {
+                current = mixed;
+              } else {
+                current = grained;
+              }
+            } else {
+              current = grained;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return current;
+}
+
+- (NSString *)applyLookLutFromPath:(NSString *)sourcePath
+                            toPath:(NSString *)destPath
+                            lookId:(NSString *)lookId
+                         intensity:(CGFloat)intensityPercent
+                      maxPixelSize:(NSUInteger)maxPixelSize
+                       jpegQuality:(CGFloat)jpegQuality
+{
+  if (sourcePath.length == 0 || destPath.length == 0) {
     return nil;
   }
 
@@ -3362,8 +3641,10 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
 
   NSDictionary *options = @{
     (NSString *)kCGImageSourceCreateThumbnailFromImageAlways : @YES,
+    (NSString *)kCGImageSourceCreateThumbnailFromImageIfAbsent : @YES,
     (NSString *)kCGImageSourceThumbnailMaxPixelSize : @(maxPixelSize),
     (NSString *)kCGImageSourceCreateThumbnailWithTransform : @YES,
+    (NSString *)kCGImageSourceShouldCacheImmediately : @YES,
   };
   CGImageRef oriented =
       CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)options);
@@ -3372,47 +3653,65 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
     return nil;
   }
 
-  CIImage *input = [CIImage imageWithCGImage:oriented];
+  CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+  // Keep the source CGImage color space (often Display P3). Forcing sRGB via
+  // kCIImageColorSpace re-tags without converting and skews LUT midtones.
+  // CIColorCubeWithColorSpace below converts into sRGB, applies the cube, then out.
+  CIImage *input = [[CIImage alloc] initWithCGImage:oriented options:nil];
   CGImageRelease(oriented);
+  CIImage *output = input;
+  const CGRect renderRect = input.extent;
 
-  CIFilter *filter = [CIFilter filterWithName:@"CIColorMatrix"];
-  if (filter == nil) {
-    return nil;
-  }
-  [filter setValue:input forKey:kCIInputImageKey];
-  [filter setValue:[CIVector vectorWithX:[matrix[0] doubleValue]
-                                       Y:[matrix[1] doubleValue]
-                                       Z:[matrix[2] doubleValue]
-                                       W:[matrix[3] doubleValue]]
-            forKey:@"inputRVector"];
-  [filter setValue:[CIVector vectorWithX:[matrix[5] doubleValue]
-                                       Y:[matrix[6] doubleValue]
-                                       Z:[matrix[7] doubleValue]
-                                       W:[matrix[8] doubleValue]]
-            forKey:@"inputGVector"];
-  [filter setValue:[CIVector vectorWithX:[matrix[10] doubleValue]
-                                       Y:[matrix[11] doubleValue]
-                                       Z:[matrix[12] doubleValue]
-                                       W:[matrix[13] doubleValue]]
-            forKey:@"inputBVector"];
-  [filter setValue:[CIVector vectorWithX:[matrix[15] doubleValue]
-                                       Y:[matrix[16] doubleValue]
-                                       Z:[matrix[17] doubleValue]
-                                       W:[matrix[18] doubleValue]]
-            forKey:@"inputAVector"];
-  [filter setValue:[CIVector vectorWithX:[matrix[4] doubleValue]
-                                       Y:[matrix[9] doubleValue]
-                                       Z:[matrix[14] doubleValue]
-                                       W:[matrix[19] doubleValue]]
-            forKey:@"inputBiasVector"];
-
-  CIImage *output = filter.outputImage;
-  if (output == nil) {
-    return nil;
+  if (![lookId isEqualToString:@"original"] && intensityPercent > 0.0) {
+    NSString *cubePath = [self lookCubePathForId:lookId];
+    NSInteger dimension = 0;
+    NSData *cubeData = [self colorCubeDataFromCubePath:cubePath
+                                             intensity:intensityPercent
+                                             dimension:&dimension];
+    if (cubeData == nil || dimension <= 1) {
+      CGColorSpaceRelease(srgb);
+      return nil;
+    }
+    CIFilter *filter = [CIFilter filterWithName:@"CIColorCubeWithColorSpace"];
+    if (filter == nil) {
+      filter = [CIFilter filterWithName:@"CIColorCube"];
+    }
+    if (filter == nil) {
+      CGColorSpaceRelease(srgb);
+      return nil;
+    }
+    [filter setValue:input forKey:kCIInputImageKey];
+    [filter setValue:@(dimension) forKey:@"inputCubeDimension"];
+    [filter setValue:cubeData forKey:@"inputCubeData"];
+    if ([[filter inputKeys] containsObject:@"inputColorSpace"]) {
+      [filter setValue:(__bridge id)srgb forKey:@"inputColorSpace"];
+    }
+    output = filter.outputImage;
+    if (output == nil) {
+      CGColorSpaceRelease(srgb);
+      return nil;
+    }
   }
 
-  CIContext *context = [CIContext contextWithOptions:nil];
-  CGImageRef outputImage = [context createCGImage:output fromRect:output.extent];
+  if ([lookId isEqualToString:@"warmRomantic"] && intensityPercent > 0.0) {
+    CIImage *finished = [self applyWarmRomanticFinishingToImage:output
+                                                      intensity:intensityPercent];
+    if (finished != nil) {
+      output = finished;
+    }
+  }
+
+  output = [output imageByCroppingToRect:renderRect];
+
+  CIContext *context = [CIContext contextWithOptions:@{
+    kCIContextWorkingColorSpace : (__bridge id)srgb,
+    kCIContextOutputColorSpace : (__bridge id)srgb,
+  }];
+  CGImageRef outputImage = [context createCGImage:output
+                                         fromRect:renderRect
+                                           format:kCIFormatRGBA8
+                                       colorSpace:srgb];
+  CGColorSpaceRelease(srgb);
   if (outputImage == NULL) {
     return nil;
   }
@@ -3421,28 +3720,28 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
     [[NSFileManager defaultManager] removeItemAtPath:destPath error:nil];
   }
 
-  NSURL *destURL = [NSURL fileURLWithPath:destPath isDirectory:NO];
-  CGImageDestinationRef destination =
-      CGImageDestinationCreateWithURL((__bridge CFURLRef)destURL, CFSTR("public.jpeg"), 1, NULL);
-  if (destination == NULL) {
-    CGImageRelease(outputImage);
+  // NSBitmapImageRep embeds the sRGB ICC profile (ImageIO public ICC keys were removed).
+  CGFloat quality = MAX(0.85, MIN(1.0, jpegQuality));
+  NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithCGImage:outputImage];
+  CGImageRelease(outputImage);
+  if (rep == nil) {
+    return nil;
+  }
+  NSData *jpegData = [rep representationUsingType:NSBitmapImageFileTypeJPEG
+                                       properties:@{
+                                         NSImageCompressionFactor : @(quality),
+                                       }];
+  if (jpegData.length == 0 || ![jpegData writeToFile:destPath atomically:YES]) {
     return nil;
   }
 
-  NSDictionary *properties = @{
-    (NSString *)kCGImageDestinationLossyCompressionQuality : @(jpegQuality),
-  };
-  CGImageDestinationAddImage(destination, outputImage, (__bridge CFDictionaryRef)properties);
-  BOOL saved = CGImageDestinationFinalize(destination);
-  CGImageRelease(outputImage);
-  CFRelease(destination);
-
-  return saved ? destPath : nil;
+  return destPath;
 }
 
 RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
                   destPath:(NSString *)destPath
-                  matrix:(NSArray *)matrix
+                  lookId:(NSString *)lookId
+                  intensity:(nonnull NSNumber *)intensity
                   maxPixelSize:(nonnull NSNumber *)maxPixelSize
                   jpegQuality:(nonnull NSNumber *)jpegQuality
                   resolver:(RCTPromiseResolveBlock)resolve
@@ -3460,11 +3759,12 @@ RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
       }
 
       NSString *generatedPath =
-          [self applyLookMatrixFromPath:sourcePath
-                                 toPath:destPath
-                                 matrix:matrix
-                           maxPixelSize:maxPixelSize.unsignedIntegerValue
-                            jpegQuality:jpegQuality.doubleValue];
+          [self applyLookLutFromPath:sourcePath
+                              toPath:destPath
+                              lookId:lookId ?: @"original"
+                           intensity:intensity.doubleValue
+                        maxPixelSize:maxPixelSize.unsignedIntegerValue
+                         jpegQuality:jpegQuality.doubleValue];
       dispatch_async(dispatch_get_main_queue(), ^{
         if (generatedPath.length > 0) {
           resolve(@{

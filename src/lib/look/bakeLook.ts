@@ -1,12 +1,17 @@
 import type {CulledAlbumPhoto} from '@lib/culledAlbum/types';
-import {resolveBakeMatrix} from '@lib/look/lookCatalog';
-import {hasAppliedLook, type LookId} from '@lib/look/types';
+import {normalizeLookIntensityPercent} from '@lib/look/lookCatalog';
+import {
+  DEFAULT_LOOK_INTENSITY,
+  hasAppliedLook,
+  type LookId,
+} from '@lib/look/types';
 import {ensureExportStagingDirectory} from '@lib/export/nativeExport';
 import {applyLookToJpeg} from '@lib/storage/localStorage';
 
 export const LOOK_BAKE_CONCURRENCY = 4;
+export const LOOK_PREVIEW_MAX_PIXEL_SIZE = 960;
 
-export type BakeLookQuality = 'compressed' | 'original';
+export type BakeLookQuality = 'compressed' | 'original' | 'preview';
 
 export type BakeLookProgress = {
   completed: number;
@@ -24,9 +29,12 @@ const QUALITY_SETTINGS: Record<
   BakeLookQuality,
   {maxPixelSize: number; jpegQuality: number}
 > = {
-  compressed: {maxPixelSize: 4096, jpegQuality: 0.9},
-  original: {maxPixelSize: 12000, jpegQuality: 0.95},
+  compressed: {maxPixelSize: 4096, jpegQuality: 0.95},
+  original: {maxPixelSize: 12000, jpegQuality: 0.97},
+  preview: {maxPixelSize: LOOK_PREVIEW_MAX_PIXEL_SIZE, jpegQuality: 0.88},
 };
+
+const previewUriCache = new Map<string, string>();
 
 function stripUnsafeFileNameChars(value: string): string {
   let result = '';
@@ -40,6 +48,15 @@ function stripUnsafeFileNameChars(value: string): string {
   return result || 'photo';
 }
 
+function previewCacheKey(
+  sourceUri: string,
+  lookId: LookId,
+  intensity: number,
+  maxPixelSize: number,
+): string {
+  return `${sourceUri}|${lookId}|${intensity}|${maxPixelSize}`;
+}
+
 export function photoNeedsLookBake(photo: CulledAlbumPhoto): boolean {
   return hasAppliedLook(photo.lookId);
 }
@@ -51,7 +68,23 @@ export async function resolveBakeDestinationPath(
   const staging = await ensureExportStagingDirectory();
   const settings = QUALITY_SETTINGS[quality];
   const safeId = stripUnsafeFileNameChars(photo.photoId);
-  const fileName = `${safeId}-${photo.lookId}-${photo.lookIntensity}-${settings.maxPixelSize}.jpg`;
+  const intensity = normalizeLookIntensityPercent(photo.lookIntensity);
+  const fileName = `${safeId}-${photo.lookId}-${intensity}-${settings.maxPixelSize}.jpg`;
+  const separator = staging.path.includes('\\') ? '\\' : '/';
+  return `${staging.path}${separator}looks${separator}${fileName}`;
+}
+
+async function resolvePreviewDestinationPath(
+  sourceUri: string,
+  lookId: LookId,
+  intensity: number,
+): Promise<string> {
+  const staging = await ensureExportStagingDirectory();
+  const settings = QUALITY_SETTINGS.preview;
+  const hash = stripUnsafeFileNameChars(
+    sourceUri.replace(/[^a-zA-Z0-9]+/g, '').slice(-48) || 'preview',
+  );
+  const fileName = `preview-${hash}-${lookId}-${intensity}-${settings.maxPixelSize}.jpg`;
   const separator = staging.path.includes('\\') ? '\\' : '/';
   return `${staging.path}${separator}looks${separator}${fileName}`;
 }
@@ -65,15 +98,15 @@ export async function bakePhotoLook(
   }
 
   const settings = QUALITY_SETTINGS[quality];
-  const matrix = resolveBakeMatrix(
-    photo.lookId as LookId,
-    photo.lookIntensity,
+  const intensity = normalizeLookIntensityPercent(
+    photo.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
   );
   const destPath = await resolveBakeDestinationPath(photo, quality);
   const baked = await applyLookToJpeg({
     sourceUri: photo.file.uri,
     destPath,
-    matrix,
+    lookId: photo.lookId as LookId,
+    intensity,
     maxPixelSize: settings.maxPixelSize,
     jpegQuality: settings.jpegQuality,
   });
@@ -87,6 +120,55 @@ export async function bakePhotoLook(
     uri: baked.uri,
     path: baked.path ?? undefined,
   };
+}
+
+/** Display preview using the same LUT bake path as export (smaller pixel budget). */
+export async function bakeLookPreviewUri(
+  sourceUri: string,
+  lookId: LookId,
+  intensityPercent: number = DEFAULT_LOOK_INTENSITY,
+): Promise<string> {
+  if (!sourceUri || !hasAppliedLook(lookId)) {
+    return sourceUri;
+  }
+
+  const intensity = normalizeLookIntensityPercent(intensityPercent);
+  if (intensity <= 0) {
+    return sourceUri;
+  }
+
+  const settings = QUALITY_SETTINGS.preview;
+  const key = previewCacheKey(
+    sourceUri,
+    lookId,
+    intensity,
+    settings.maxPixelSize,
+  );
+  const cached = previewUriCache.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const destPath = await resolvePreviewDestinationPath(
+    sourceUri,
+    lookId,
+    intensity,
+  );
+  const baked = await applyLookToJpeg({
+    sourceUri,
+    destPath,
+    lookId,
+    intensity,
+    maxPixelSize: settings.maxPixelSize,
+    jpegQuality: settings.jpegQuality,
+  });
+
+  if (!baked.uri) {
+    throw new Error('Failed to bake look preview');
+  }
+
+  previewUriCache.set(key, baked.uri);
+  return baked.uri;
 }
 
 async function mapPool<T, R>(

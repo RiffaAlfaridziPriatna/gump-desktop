@@ -1,10 +1,10 @@
-import {resolveBakeMatrix} from '@lib/look/lookCatalog';
+import {bakeLookPreviewUri} from '@lib/look/bakeLook';
 import {
   DEFAULT_LOOK_INTENSITY,
   hasAppliedLook,
   type LookId,
 } from '@lib/look/types';
-import {memo, useMemo} from 'react';
+import {memo, useEffect, useState} from 'react';
 import {
   Image,
   type ImageErrorEventData,
@@ -13,7 +13,6 @@ import {
   type NativeSyntheticEvent,
   type StyleProp,
 } from 'react-native';
-import {FilterImage} from 'react-native-svg/filter-image';
 
 type LookPreviewImageProps = {
   uri: string;
@@ -24,9 +23,11 @@ type LookPreviewImageProps = {
   onError?: (event: NativeSyntheticEvent<ImageErrorEventData>) => void;
 };
 
+const PREVIEW_DEBOUNCE_MS = 90;
+
 /**
- * In-app look preview via the same color matrix used for Export/Upload bake.
- * Uses SVG FeColorMatrix (FilterImage) — not tint overlays.
+ * In-app look preview via the same native .cube LUT bake used for Export/Upload.
+ * Falls back to the source URI while baking / if bake is unavailable.
  */
 export const LookPreviewImage = memo(function LookPreviewImage({
   uri,
@@ -37,39 +38,43 @@ export const LookPreviewImage = memo(function LookPreviewImage({
   onError,
 }: LookPreviewImageProps) {
   const intensity = lookIntensity ?? DEFAULT_LOOK_INTENSITY;
-  const matrix = useMemo(
-    () => resolveBakeMatrix(lookId ?? 'original', intensity),
-    [intensity, lookId],
-  );
+  const [displayUri, setDisplayUri] = useState(uri);
+
+  useEffect(() => {
+    setDisplayUri(uri);
+    if (!uri || !hasAppliedLook(lookId) || intensity <= 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      bakeLookPreviewUri(uri, lookId, intensity)
+        .then(bakedUri => {
+          if (!cancelled && bakedUri) {
+            setDisplayUri(bakedUri);
+          }
+        })
+        .catch(error => {
+          console.warn('[LookPreviewImage] LUT preview bake failed', error);
+        });
+    }, PREVIEW_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [intensity, lookId, uri]);
 
   if (!uri) {
     return null;
   }
 
-  if (!hasAppliedLook(lookId)) {
-    return (
-      <Image
-        source={{uri}}
-        style={style}
-        onLoad={onLoad}
-        onError={onError}
-      />
-    );
-  }
-
   return (
-    <FilterImage
-      source={{uri}}
+    <Image
+      source={{uri: displayUri || uri}}
       style={style}
       onLoad={onLoad}
       onError={onError}
-      filters={[
-        {
-          name: 'feColorMatrix',
-          type: 'matrix',
-          values: matrix,
-        },
-      ]}
     />
   );
 });

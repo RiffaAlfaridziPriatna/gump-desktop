@@ -37,6 +37,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -1951,20 +1952,343 @@ uint8_t ClampToByte(float value) {
   return static_cast<uint8_t>(value + 0.5f);
 }
 
-bool ParseColorMatrix(const winrtRN::JSValueArray &matrix, std::array<float, 20> &out) {
-  if (matrix.size() < 20) {
-    return false;
-  }
-  for (size_t index = 0; index < 20; ++index) {
-    out[index] = static_cast<float>(matrix[index].AsDouble());
-  }
-  return true;
+float LumaBgr(float b, float g, float r) {
+  return 0.0722f * b + 0.7152f * g + 0.2126f * r;
 }
 
-std::optional<std::filesystem::path> ApplyLookMatrixToPath(
+void SeparableBoxBlurBgra(
+    std::vector<uint8_t> &bgra,
+    int width,
+    int height,
+    int stride,
+    int radius) {
+  if (radius < 1 || width < 2 || height < 2) {
+    return;
+  }
+  const int n = width * height;
+  std::vector<float> tmp(static_cast<size_t>(n) * 3U);
+  std::vector<float> out(static_cast<size_t>(n) * 3U);
+
+  auto sample = [&](int x, int y, int c) -> float {
+    x = std::clamp(x, 0, width - 1);
+    y = std::clamp(y, 0, height - 1);
+    return bgra[static_cast<size_t>(y) * static_cast<size_t>(stride) +
+                static_cast<size_t>(x) * 4U + static_cast<size_t>(c)] /
+           255.0f;
+  };
+
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      float sumB = 0, sumG = 0, sumR = 0;
+      const int count = radius * 2 + 1;
+      for (int k = -radius; k <= radius; ++k) {
+        sumB += sample(x + k, y, 0);
+        sumG += sample(x + k, y, 1);
+        sumR += sample(x + k, y, 2);
+      }
+      const size_t idx = (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 3U;
+      tmp[idx + 0] = sumB / static_cast<float>(count);
+      tmp[idx + 1] = sumG / static_cast<float>(count);
+      tmp[idx + 2] = sumR / static_cast<float>(count);
+    }
+  }
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      float sumB = 0, sumG = 0, sumR = 0;
+      const int count = radius * 2 + 1;
+      for (int k = -radius; k <= radius; ++k) {
+        const int yy = std::clamp(y + k, 0, height - 1);
+        const size_t idx = (static_cast<size_t>(yy) * width + static_cast<size_t>(x)) * 3U;
+        sumB += tmp[idx + 0];
+        sumG += tmp[idx + 1];
+        sumR += tmp[idx + 2];
+      }
+      const size_t idx = (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 3U;
+      out[idx + 0] = sumB / static_cast<float>(count);
+      out[idx + 1] = sumG / static_cast<float>(count);
+      out[idx + 2] = sumR / static_cast<float>(count);
+    }
+  }
+  for (int y = 0; y < height; ++y) {
+    uint8_t *row = bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
+    for (int x = 0; x < width; ++x) {
+      const size_t idx = (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 3U;
+      const size_t o = static_cast<size_t>(x) * 4U;
+      row[o + 0] = ClampToByte(out[idx + 0] * 255.0f);
+      row[o + 1] = ClampToByte(out[idx + 1] * 255.0f);
+      row[o + 2] = ClampToByte(out[idx + 2] * 255.0f);
+    }
+  }
+}
+
+void BlendTowardBlurBgra(
+    std::vector<uint8_t> &bgra,
+    int width,
+    int height,
+    int stride,
+    int radius,
+    float amount) {
+  if (amount <= 0.001f || radius < 1) {
+    return;
+  }
+  amount = std::clamp(amount, 0.0f, 1.0f);
+  std::vector<uint8_t> blurred = bgra;
+  SeparableBoxBlurBgra(blurred, width, height, stride, radius);
+  for (int y = 0; y < height; ++y) {
+    uint8_t *row = bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
+    const uint8_t *brow =
+        blurred.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
+    for (int x = 0; x < width; ++x) {
+      const size_t o = static_cast<size_t>(x) * 4U;
+      for (int c = 0; c < 3; ++c) {
+        const float src = row[o + c];
+        const float blu = brow[o + c];
+        row[o + c] = ClampToByte(src * (1.0f - amount) + blu * amount);
+      }
+    }
+  }
+}
+
+uint32_t GrainHash(uint32_t x, uint32_t y) {
+  uint32_t n = x * 374761393u + y * 668265263u + 1013904223u;
+  n = (n ^ (n >> 13)) * 1274126177u;
+  return n ^ (n >> 16);
+}
+
+void ApplyWarmRomanticFinishingBgra(
+    uint8_t *destData,
+    int width,
+    int height,
+    int stride,
+    float intensityT) {
+  const float t = std::clamp(intensityT, 0.0f, 1.0f);
+  if (t <= 0.0f || width < 2 || height < 2 || destData == nullptr) {
+    return;
+  }
+
+  std::vector<uint8_t> bgra(static_cast<size_t>(height) * static_cast<size_t>(stride));
+  for (int y = 0; y < height; ++y) {
+    std::memcpy(
+        bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride),
+        destData + static_cast<size_t>(y) * static_cast<size_t>(stride),
+        static_cast<size_t>(width) * 4U);
+  }
+
+  const int texRadius =
+      std::max(1, static_cast<int>(std::lround(std::min(width, height) * 0.0015)));
+  BlendTowardBlurBgra(bgra, width, height, stride, texRadius, (5.0f / 100.0f) * 0.55f * t);
+
+  const int clarRadius =
+      std::max(4, static_cast<int>(std::lround(std::min(width, height) * 0.012)));
+  BlendTowardBlurBgra(bgra, width, height, stride, clarRadius, (8.0f / 100.0f) * 0.95f * t);
+
+  const float dehazeT = (3.0f / 100.0f) * t;
+  const float vigAmt = (8.0f / 100.0f) * t * 0.85f;
+  const float grainAmt = (10.0f / 100.0f) * t;
+  const float warm = 0.045f * t;
+  const float settle = 0.035f * t;
+  const float cx = (width - 1) * 0.5f;
+  const float cy = (height - 1) * 0.5f;
+  const float minSide = static_cast<float>(std::min(width, height));
+  const float vigRadius = minSide * (0.62f + 0.45f * 0.28f);
+  const float vigRadiusSq = vigRadius * vigRadius;
+
+  for (int y = 0; y < height; ++y) {
+    uint8_t *row = bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
+    for (int x = 0; x < width; ++x) {
+      const size_t o = static_cast<size_t>(x) * 4U;
+      float b = row[o + 0] / 255.0f;
+      float g = row[o + 1] / 255.0f;
+      float r = row[o + 2] / 255.0f;
+
+      if (dehazeT > 0.0005f) {
+        const float contrast = 1.0f - dehazeT * 0.35f;
+        const float brightness = dehazeT * 0.02f;
+        const float sat = 1.0f - dehazeT * 0.08f;
+        b = (b - 0.5f) * contrast + 0.5f + brightness;
+        g = (g - 0.5f) * contrast + 0.5f + brightness;
+        r = (r - 0.5f) * contrast + 0.5f + brightness;
+        const float yL = LumaBgr(b, g, r);
+        b = yL + (b - yL) * sat;
+        g = yL + (g - yL) * sat;
+        r = yL + (r - yL) * sat;
+      }
+
+      // Peach-orange nudge + slight mid settle (match LR residual vs cube).
+      r = r * (1.0f + warm * 0.55f) - settle * 0.55f;
+      g = g * (1.0f + warm * 0.08f) - settle * 0.75f;
+      b = b * (1.0f - warm * 0.65f) - settle * 0.35f;
+      r = std::clamp(r, 0.0f, 1.0f);
+      g = std::clamp(g, 0.0f, 1.0f);
+      b = std::clamp(b, 0.0f, 1.0f);
+
+      if (vigAmt > 0.0005f) {
+        const float dx = static_cast<float>(x) - cx;
+        const float dy = static_cast<float>(y) - cy;
+        float falloff = (dx * dx + dy * dy) / std::max(vigRadiusSq, 1.0f);
+        falloff = std::clamp(falloff, 0.0f, 1.0f);
+        falloff = falloff * falloff * (3.0f - 2.0f * falloff);
+        const float darken = 1.0f - vigAmt * falloff;
+        b *= darken;
+        g *= darken;
+        r *= darken;
+      }
+
+      if (grainAmt > 0.0005f) {
+        const uint32_t h = GrainHash(static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+        const float n = (static_cast<float>(h & 255u) / 255.0f - 0.5f);
+        const float rough = 45.0f / 100.0f;
+        const float grain = n * grainAmt * (0.35f + rough * 0.25f);
+        b = std::clamp(b + grain, 0.0f, 1.0f);
+        g = std::clamp(g + grain, 0.0f, 1.0f);
+        r = std::clamp(r + grain, 0.0f, 1.0f);
+      }
+
+      row[o + 0] = ClampToByte(b * 255.0f);
+      row[o + 1] = ClampToByte(g * 255.0f);
+      row[o + 2] = ClampToByte(r * 255.0f);
+    }
+  }
+
+  for (int y = 0; y < height; ++y) {
+    std::memcpy(
+        destData + static_cast<size_t>(y) * static_cast<size_t>(stride),
+        bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride),
+        static_cast<size_t>(width) * 4U);
+  }
+}
+
+struct LookCubeLut {
+  int size = 0;
+  std::vector<float> rgb; // size^3 * 3, R-fast then G then B
+};
+
+std::optional<std::filesystem::path> ResolveLookCubePath(const std::string &lookId) {
+  if (lookId.empty() || lookId == "original") {
+    return std::nullopt;
+  }
+  const auto moduleDir = ModuleDirectory();
+  const auto fileName = ToWide(lookId + ".cube");
+  for (const auto &base : {moduleDir / L"Assets" / L"Looks", moduleDir / L"Looks"}) {
+    const auto candidate = base / fileName;
+    if (std::filesystem::exists(candidate)) {
+      return candidate;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<LookCubeLut> LoadCubeLut(const std::filesystem::path &path);
+
+std::optional<LookCubeLut> LoadCubeLut(const std::filesystem::path &path) {
+  std::ifstream input(path);
+  if (!input) {
+    return std::nullopt;
+  }
+  LookCubeLut lut;
+  std::string line;
+  while (std::getline(input, line)) {
+    if (line.empty() || line[0] == '#') {
+      continue;
+    }
+    if (line.rfind("TITLE", 0) == 0 || line.rfind("DOMAIN_", 0) == 0) {
+      continue;
+    }
+    if (line.rfind("LUT_3D_SIZE", 0) == 0) {
+      std::istringstream sizeStream(line);
+      std::string label;
+      sizeStream >> label >> lut.size;
+      continue;
+    }
+    std::istringstream valueStream(line);
+    float r = 0;
+    float g = 0;
+    float b = 0;
+    if (!(valueStream >> r >> g >> b)) {
+      continue;
+    }
+    lut.rgb.push_back(r);
+    lut.rgb.push_back(g);
+    lut.rgb.push_back(b);
+  }
+  if (lut.size <= 1) {
+    return std::nullopt;
+  }
+  const size_t expected = static_cast<size_t>(lut.size) * static_cast<size_t>(lut.size) *
+                          static_cast<size_t>(lut.size) * 3U;
+  if (lut.rgb.size() < expected) {
+    return std::nullopt;
+  }
+  lut.rgb.resize(expected);
+  return lut;
+}
+
+void SampleCubeLut(
+    const LookCubeLut &lut,
+    float r,
+    float g,
+    float b,
+    float intensityT,
+    float &outR,
+    float &outG,
+    float &outB) {
+  const int n = lut.size;
+  const float maxIndex = static_cast<float>(n - 1);
+  const float rf = std::clamp(r, 0.0f, 1.0f) * maxIndex;
+  const float gf = std::clamp(g, 0.0f, 1.0f) * maxIndex;
+  const float bf = std::clamp(b, 0.0f, 1.0f) * maxIndex;
+  const int r0 = static_cast<int>(rf);
+  const int g0 = static_cast<int>(gf);
+  const int b0 = static_cast<int>(bf);
+  const int r1 = std::min(r0 + 1, n - 1);
+  const int g1 = std::min(g0 + 1, n - 1);
+  const int b1 = std::min(b0 + 1, n - 1);
+  const float rT = rf - static_cast<float>(r0);
+  const float gT = gf - static_cast<float>(g0);
+  const float bT = bf - static_cast<float>(b0);
+
+  auto at = [&](int rr, int gg, int bb, int channel) -> float {
+    const size_t index =
+        (static_cast<size_t>(rr) + static_cast<size_t>(gg) * static_cast<size_t>(n) +
+         static_cast<size_t>(bb) * static_cast<size_t>(n) * static_cast<size_t>(n)) *
+            3U +
+        static_cast<size_t>(channel);
+    return lut.rgb[index];
+  };
+
+  auto lerp = [](float a, float c, float t) { return a * (1.0f - t) + c * t; };
+  auto sampleChannel = [&](int channel) {
+    const float c000 = at(r0, g0, b0, channel);
+    const float c100 = at(r1, g0, b0, channel);
+    const float c010 = at(r0, g1, b0, channel);
+    const float c110 = at(r1, g1, b0, channel);
+    const float c001 = at(r0, g0, b1, channel);
+    const float c101 = at(r1, g0, b1, channel);
+    const float c011 = at(r0, g1, b1, channel);
+    const float c111 = at(r1, g1, b1, channel);
+    const float c00 = lerp(c000, c100, rT);
+    const float c10 = lerp(c010, c110, rT);
+    const float c01 = lerp(c001, c101, rT);
+    const float c11 = lerp(c011, c111, rT);
+    const float c0 = lerp(c00, c10, gT);
+    const float c1 = lerp(c01, c11, gT);
+    return lerp(c0, c1, bT);
+  };
+
+  const float lutR = sampleChannel(0);
+  const float lutG = sampleChannel(1);
+  const float lutB = sampleChannel(2);
+  const float t = std::clamp(intensityT, 0.0f, 1.0f);
+  outR = lerp(r, lutR, t);
+  outG = lerp(g, lutG, t);
+  outB = lerp(b, lutB, t);
+}
+
+std::optional<std::filesystem::path> ApplyLookLutToPath(
     const std::filesystem::path &sourcePath,
     const std::filesystem::path &destPath,
-    const std::array<float, 20> &matrix,
+    const std::string &lookId,
+    float intensityPercent,
     uint32_t maxPixelSize,
     float jpegQuality) {
   ThumbnailConcurrencyGuard concurrencyGuard;
@@ -1973,6 +2297,20 @@ std::optional<std::filesystem::path> ApplyLookMatrixToPath(
     return std::nullopt;
   }
   const auto pixels = ReadBitmapPixels(bitmap);
+
+  const bool applyLut = lookId != "original" && intensityPercent > 0.0f;
+  std::optional<LookCubeLut> lut;
+  if (applyLut) {
+    const auto cubePath = ResolveLookCubePath(lookId);
+    if (!cubePath.has_value()) {
+      return std::nullopt;
+    }
+    lut = LoadCubeLut(*cubePath);
+    if (!lut.has_value()) {
+      return std::nullopt;
+    }
+  }
+  const float intensityT = std::clamp(intensityPercent / 100.0f, 0.0f, 1.0f);
 
   SoftwareBitmap output(
       BitmapPixelFormat::Bgra8,
@@ -1997,20 +2335,35 @@ std::optional<std::filesystem::path> ApplyLookMatrixToPath(
       const float r = srcRow[offset + 2] / 255.0f;
       const float a = srcRow[offset + 3] / 255.0f;
 
-      const float rOut =
-          matrix[0] * r + matrix[1] * g + matrix[2] * b + matrix[3] * a + matrix[4];
-      const float gOut =
-          matrix[5] * r + matrix[6] * g + matrix[7] * b + matrix[8] * a + matrix[9];
-      const float bOut =
-          matrix[10] * r + matrix[11] * g + matrix[12] * b + matrix[13] * a + matrix[14];
-      const float aOut =
-          matrix[15] * r + matrix[16] * g + matrix[17] * b + matrix[18] * a + matrix[19];
+      float rOut = r;
+      float gOut = g;
+      float bOut = b;
+      if (lut.has_value()) {
+        SampleCubeLut(*lut, r, g, b, intensityT, rOut, gOut, bOut);
+      }
 
-      destRow[offset + 0] = ClampToByte(bOut * 255.0f);
-      destRow[offset + 1] = ClampToByte(gOut * 255.0f);
-      destRow[offset + 2] = ClampToByte(rOut * 255.0f);
-      destRow[offset + 3] = ClampToByte(aOut * 255.0f);
+      // Ordered dither reduces 8-bit banding after aggressive LUT remap.
+      static constexpr float kBayer4[4][4] = {
+          {0 / 16.0f, 8 / 16.0f, 2 / 16.0f, 10 / 16.0f},
+          {12 / 16.0f, 4 / 16.0f, 14 / 16.0f, 6 / 16.0f},
+          {3 / 16.0f, 11 / 16.0f, 1 / 16.0f, 9 / 16.0f},
+          {15 / 16.0f, 7 / 16.0f, 13 / 16.0f, 5 / 16.0f},
+      };
+      const float dither = (kBayer4[y & 3][x & 3] - 0.5f) * 0.85f;
+      destRow[offset + 0] = ClampToByte(bOut * 255.0f + dither);
+      destRow[offset + 1] = ClampToByte(gOut * 255.0f + dither);
+      destRow[offset + 2] = ClampToByte(rOut * 255.0f + dither);
+      destRow[offset + 3] = ClampToByte(a * 255.0f);
     }
+  }
+
+  if (lookId == "warmRomantic" && intensityT > 0.0f) {
+    ApplyWarmRomanticFinishingBgra(
+        destData,
+        pixels.width,
+        pixels.height,
+        destPlane.Stride,
+        intensityT);
   }
 
   EnsureDirectory(destPath.parent_path());
@@ -2027,14 +2380,16 @@ std::optional<std::filesystem::path> ApplyLookMatrixToPath(
 void GumpLocalStorage::ApplyLook(
     std::string sourceUri,
     std::string destPath,
-    winrtRN::JSValueArray matrix,
+    std::string lookId,
+    double intensity,
     double maxPixelSize,
     double jpegQuality,
     ReactPromiseJS &&promise) noexcept {
   RunAsync(
       [sourceUri = std::move(sourceUri),
        destPath = std::move(destPath),
-       matrix = std::move(matrix),
+       lookId = std::move(lookId),
+       intensity,
        maxPixelSize,
        jpegQuality]() {
         const auto sourcePath = PathFromUri(sourceUri);
@@ -2042,15 +2397,11 @@ void GumpLocalStorage::ApplyLook(
           return winrtRN::JSValue(winrtRN::JSValueObject{{"uri", nullptr}});
         }
 
-        std::array<float, 20> colorMatrix{};
-        if (!ParseColorMatrix(matrix, colorMatrix)) {
-          return winrtRN::JSValue(winrtRN::JSValueObject{{"uri", nullptr}});
-        }
-
-        const auto outPath = ApplyLookMatrixToPath(
+        const auto outPath = ApplyLookLutToPath(
             sourcePath,
             std::filesystem::path(ToWide(destPath)),
-            colorMatrix,
+            lookId.empty() ? "original" : lookId,
+            static_cast<float>(intensity),
             maxPixelSize > 0 ? static_cast<uint32_t>(maxPixelSize) : kDetailMaxPixelSize,
             jpegQuality > 0 ? static_cast<float>(jpegQuality) : kDetailJpegQuality);
         if (!outPath.has_value()) {
