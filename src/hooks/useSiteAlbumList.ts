@@ -55,6 +55,7 @@ export function useSiteAlbumList(options: UseSiteAlbumListOptions = {}) {
     hasNextPage,
     isFetching,
     isFetchingNextPage,
+    isPending,
     refetch,
   } = useInfiniteQuery({
     queryKey,
@@ -134,12 +135,13 @@ export function useSiteAlbumList(options: UseSiteAlbumListOptions = {}) {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const refresh = useCallback(() => {
-    refetch();
+    return refetch();
   }, [refetch]);
 
   return {
-    // Initial load / pull-to-refresh only — not cursor pagination.
-    loadingAlbums: isFetching && !isFetchingNextPage,
+    // Full-screen load only while there is no cached page yet.
+    // Background focus/pull refetches keep the existing list visible.
+    loadingAlbums: isPending && isFetching && !isFetchingNextPage,
     albums,
     error: queryError ? String(queryError) : null,
     loadMore,

@@ -48,7 +48,13 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
     screenPaddingHorizontal,
     albumGridColumns,
   } = useLayout();
-  const {loadingAlbums, albums, loadMore, hasMore, refresh} = useSiteAlbumList();
+  const {
+    loadingAlbums,
+    albums,
+    loadMore,
+    hasMore,
+    refresh,
+  } = useSiteAlbumList();
   const {localAlbumIds, refresh: refreshLocalAlbums} = useLocalCulledAlbumList();
   const {addPhotos} = useCulledAlbumActions();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -58,6 +64,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
   );
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
   const isLeavingRef = useRef(false);
 
   useFocusEffect(
@@ -65,10 +72,17 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
       if (isLeavingRef.current) {
         return;
       }
-      // Site albums are prefetched on app auth; only refresh local exclusions.
+      // Refetch site albums on each open so albums created on web appear,
+      // and refresh local exclusions used to hide already-started albums.
+      void refresh();
       refreshLocalAlbums();
-    }, [refreshLocalAlbums]),
+    }, [refresh, refreshLocalAlbums]),
   );
+
+  const handlePullRefresh = useCallback(() => {
+    setPullRefreshing(true);
+    void refresh().finally(() => setPullRefreshing(false));
+  }, [refresh]);
 
   const emptyAlbums = useMemo(
     () => filterAvailableSourceAlbums(albums.results, localAlbumIds),
@@ -189,11 +203,10 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
             styles.scrollContent,
             {paddingHorizontal: screenPaddingHorizontal},
           ]}
-          scrollEnabled={!loadingAlbums}
           refreshControl={
             <RefreshControl
-              refreshing={loadingAlbums}
-              onRefresh={refresh}
+              refreshing={pullRefreshing}
+              onRefresh={handlePullRefresh}
               colors={[colors.accent]}
               tintColor={colors.accent}
             />
