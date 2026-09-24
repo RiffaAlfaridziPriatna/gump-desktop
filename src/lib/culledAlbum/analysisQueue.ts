@@ -30,11 +30,16 @@ import {
   getAlbum,
   getAlbumTraceContext,
   flushAllPendingPhotoUpdates,
+  flushPendingAnalysisBatchCounts,
   reconcileAnalysisBatchCounts,
   scheduleUpdateCullingSummary,
   setAnalysisBatchCounts,
   type UpdatePhotoOptions,
 } from './store';
+import {
+  pauseRenderSync,
+  resumeRenderSync,
+} from './photoRenderStore';
 import {
   CulledAlbumPhoto,
 } from './types';
@@ -115,6 +120,25 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     return next;
   }
 
+  let analysisUiPaused = false;
+
+  function beginAnalysisUiPause(): void {
+    if (Platform.OS !== 'windows' || analysisUiPaused) {
+      return;
+    }
+    analysisUiPaused = true;
+    pauseRenderSync();
+  }
+
+  function endAnalysisUiPause(): void {
+    flushPendingAnalysisBatchCounts();
+    if (Platform.OS !== 'windows' || !analysisUiPaused) {
+      return;
+    }
+    analysisUiPaused = false;
+    resumeRenderSync({flush: true});
+  }
+
   function beginBatch(albumId: string): void {
     cancelledAlbums.delete(albumId);
     bumpCancelGeneration(albumId);
@@ -131,6 +155,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     nativeLastProgressDetailByAlbum.delete(albumId);
     clearNativeWatchdog(albumId);
     batchStartedAtByAlbum.set(albumId, Date.now());
+    beginAnalysisUiPause();
   }
 
   function isCancelled(albumId: string, generation?: number): boolean {
@@ -339,6 +364,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         operation: 'analysis_all_failed',
         ...getAlbumTraceContext(albumId),
       });
+      endAnalysisUiPause();
       onError(albumId, message);
       return;
     }
@@ -356,6 +382,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
       );
     }
 
+    endAnalysisUiPause();
     flushPersist(albumId)
       .then(() => onComplete(albumId))
       .catch(err => {
@@ -568,6 +595,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     await waitForActiveAnalysis(albumId);
     await failQueuedAnalysis(albumId, error, false);
     flushAllPendingPhotoUpdates();
+    endAnalysisUiPause();
     schedulePersist(albumId);
   }
 
@@ -636,6 +664,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
         });
         console.error('[CulledAlbum] Native ingest failed', error);
         if (!isCancelled(albumId, generation)) {
+          endAnalysisUiPause();
           onError(albumId, 'Failed to ingest analysis results');
         }
       });
@@ -859,6 +888,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
             },
           );
         });
+        endAnalysisUiPause();
         onError(
           albumId,
           'Analysis stalled after no progress. Remaining photos are still pending so you can retry.',
@@ -1156,6 +1186,7 @@ export function createAnalysisQueue(deps: AnalysisQueueDeps) {
     if (isCancelled(albumId)) {
       return;
     }
+    beginAnalysisUiPause();
     if (nativeSessionAlbums.has(albumId) || nativeStartInFlight.has(albumId)) {
       return;
     }
