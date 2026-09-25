@@ -4,8 +4,8 @@ import {DEFAULT_LOOK_INTENSITY, type LookDefinition, type LookId} from './types'
  * Full look definitions (including not-yet-shipped). Used for id/label resolution
  * when a photo still references a look that is hidden from the Apply Look UI.
  *
- * Warm Romantic also applies post-LUT finishing that a 3D LUT cannot carry
- * (Texture/Clarity/Dehaze softness, vignette, grain) matching Develop Amount 100.
+ * Each look also applies post-LUT finishing that a 3D LUT cannot carry
+ * (Texture/Clarity/Dehaze, vignette, grain) from its Lightroom Develop values.
  */
 const ALL_LOOK_DEFINITIONS: readonly LookDefinition[] = [
   {
@@ -29,11 +29,13 @@ const ALL_LOOK_DEFINITIONS: readonly LookDefinition[] = [
   },
 ] as const;
 
-/** Looks exposed in Apply Look UI. Clean Natural / Film Mood hidden until cubes ship. */
+/** Looks exposed in Apply Look UI. Film Mood hidden until validated. */
 export const LOOK_CATALOG: readonly LookDefinition[] =
   ALL_LOOK_DEFINITIONS.filter(
     definition =>
-      definition.id === 'original' || definition.id === 'warmRomantic',
+      definition.id === 'original' ||
+      definition.id === 'cleanNatural' ||
+      definition.id === 'warmRomantic',
   );
 
 const LOOK_BY_ID = new Map(

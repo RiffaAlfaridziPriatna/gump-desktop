@@ -3434,16 +3434,56 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
   return data;
 }
 
-/// Lightroom Warm Romantic Presence/Effects that a 3D LUT cannot carry.
-/// Amounts mirror Develop at preset Amount 100; scaled by look intensity.
-- (CIImage *)applyWarmRomanticFinishingToImage:(CIImage *)image
-                                     intensity:(CGFloat)intensityPercent
+/// Presence/Effects that a 3D LUT cannot carry. Amounts mirror Lightroom Develop
+/// at preset Amount 100; scaled by look intensity.
+- (CIImage *)applyLookFinishingToImage:(CIImage *)image
+                                lookId:(NSString *)lookId
+                             intensity:(CGFloat)intensityPercent
 {
-  if (image == nil) {
-    return nil;
+  if (image == nil || lookId.length == 0) {
+    return image;
   }
   const CGFloat t = MAX(0.0, MIN(1.0, intensityPercent / 100.0));
   if (t <= 0.0) {
+    return image;
+  }
+
+  // LR Presence / Effects (spatial). Tone/WB/HSL live in the cube.
+  CGFloat texture = 0, clarity = 0, dehaze = 0;
+  CGFloat vigAmount = 0, vigMidpoint = 50, grainAmount = 0, grainSize = 25, grainRough = 45;
+  CGFloat warmNudge = 0, settleNudge = 0;
+  BOOL known = NO;
+  if ([lookId isEqualToString:@"warmRomantic"]) {
+    known = YES;
+    texture = -5;
+    clarity = -8;
+    dehaze = -3;
+    vigAmount = -8;
+    vigMidpoint = 45;
+    grainAmount = 10;
+    grainSize = 25;
+    grainRough = 45;
+    warmNudge = 0.045;
+    settleNudge = 0.035;
+  } else if ([lookId isEqualToString:@"cleanNatural"]) {
+    known = YES;
+    texture = -5;
+    clarity = -5;
+    dehaze = 0;
+    vigAmount = 0;
+    grainAmount = 0;
+  } else if ([lookId isEqualToString:@"filmMood"]) {
+    known = YES;
+    texture = -5;
+    clarity = +4;
+    dehaze = +5;
+    vigAmount = -20;
+    vigMidpoint = 40;
+    grainAmount = 25;
+    grainSize = 30;
+    grainRough = 55;
+  }
+  if (!known) {
     return image;
   }
 
@@ -3466,7 +3506,6 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
     }
     CIFilter *mix = [CIFilter filterWithName:@"CIMix"];
     if (mix == nil) {
-      // Fallback: CIDissolveTransition at time=amount
       CIFilter *dissolve = [CIFilter filterWithName:@"CIDissolveTransition"];
       [dissolve setValue:src forKey:kCIInputImageKey];
       [dissolve setValue:blurred forKey:kCIInputTargetImageKey];
@@ -3474,7 +3513,7 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
       CIImage *out = [dissolve.outputImage imageByCroppingToRect:bounds];
       return out ?: src;
     }
-    // CIMix: amount 0 = background, 1 = inputImage. Keep sharp as input, blur as bg.
+    // CIMix: amount 0 = background, 1 = inputImage.
     [mix setValue:src forKey:kCIInputImageKey];
     [mix setValue:blurred forKey:@"inputBackgroundImage"];
     [mix setValue:@(1.0 - amount) forKey:kCIInputAmountKey];
@@ -3482,38 +3521,52 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
     return out ?: src;
   };
 
-  // Texture -5 → fine soften (LR Amount scale ~0..100).
-  const CGFloat texAmt = (5.0 / 100.0) * 0.55 * t;
-  const CGFloat texRadius = MAX(1.2, MIN(bounds.size.width, bounds.size.height) * 0.0018);
-  current = blurBlend(current, texRadius, texAmt);
+  const CGFloat minSide = MIN(bounds.size.width, bounds.size.height);
 
-  // Clarity -8 → mid-frequency soften (larger radius).
-  const CGFloat clarAmt = (8.0 / 100.0) * 0.95 * t;
-  const CGFloat clarRadius = MAX(8.0, MIN(bounds.size.width, bounds.size.height) * 0.018);
-  current = blurBlend(current, clarRadius, clarAmt);
+  // Texture: negative softens fine detail.
+  if (texture < 0) {
+    const CGFloat texAmt = (ABS(texture) / 100.0) * 0.55 * t;
+    const CGFloat texRadius = MAX(1.2, minSide * 0.0018);
+    current = blurBlend(current, texRadius, texAmt);
+  }
 
-  // Dehaze -3 → slight haze (lower contrast, tiny lift).
-  const CGFloat dehazeT = (3.0 / 100.0) * t;
-  if (dehazeT > 0.0005) {
+  // Clarity: negative softens mids; positive uses unsharp.
+  if (clarity < 0) {
+    const CGFloat clarAmt = (ABS(clarity) / 100.0) * 0.95 * t;
+    const CGFloat clarRadius = MAX(8.0, minSide * 0.018);
+    current = blurBlend(current, clarRadius, clarAmt);
+  } else if (clarity > 0) {
+    CIFilter *unsharp = [CIFilter filterWithName:@"CIUnsharpMask"];
+    if (unsharp != nil) {
+      [unsharp setValue:current forKey:kCIInputImageKey];
+      [unsharp setValue:@(MAX(2.0, minSide * 0.008)) forKey:kCIInputRadiusKey];
+      [unsharp setValue:@((clarity / 100.0) * 1.1 * t) forKey:kCIInputIntensityKey];
+      CIImage *sharp = [unsharp.outputImage imageByCroppingToRect:bounds];
+      if (sharp != nil) {
+        current = sharp;
+      }
+    }
+  }
+
+  // Dehaze: negative = haze; positive = clearer contrast.
+  if (ABS(dehaze) > 0.01) {
+    const CGFloat d = (dehaze / 100.0) * t;
     CIFilter *controls = [CIFilter filterWithName:@"CIColorControls"];
     [controls setValue:current forKey:kCIInputImageKey];
-    [controls setValue:@(1.0 - dehazeT * 0.35) forKey:kCIInputContrastKey];
-    [controls setValue:@(dehazeT * 0.02) forKey:kCIInputBrightnessKey];
-    [controls setValue:@(1.0 - dehazeT * 0.08) forKey:kCIInputSaturationKey];
+    [controls setValue:@(1.0 + d * 0.35) forKey:kCIInputContrastKey];
+    [controls setValue:@(d < 0 ? (-d * 0.02) : (-d * 0.01)) forKey:kCIInputBrightnessKey];
+    [controls setValue:@(1.0 + d * 0.08) forKey:kCIInputSaturationKey];
     CIImage *adjusted = controls.outputImage;
     if (adjusted != nil) {
       current = adjusted;
     }
   }
 
-  // Residual vs LR export: cube bake reads a bit bright/cool. Nudge peach-orange
-  // (Color Grading mid/highlight warm + Balance toward highlights) and settle mids.
-  {
-    const CGFloat warm = 0.045 * t;
-    const CGFloat settle = 0.035 * t;
+  if (warmNudge > 0.0 || settleNudge > 0.0) {
+    const CGFloat warm = warmNudge * t;
+    const CGFloat settle = settleNudge * t;
     CIFilter *matrix = [CIFilter filterWithName:@"CIColorMatrix"];
     if (matrix != nil) {
-      // Slightly lift R, hold G, pull B; then small overall settle via bias.
       [matrix setValue:current forKey:kCIInputImageKey];
       [matrix setValue:[CIVector vectorWithX:(1.0 + warm * 0.55) Y:0 Z:0 W:0]
                   forKey:@"inputRVector"];
@@ -3534,15 +3587,13 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
     }
   }
 
-  // Post-crop vignette Amount -8, Midpoint 45, Feather 75 (kept mild — LR -8 is subtle).
-  const CGFloat vigAmt = (8.0 / 100.0) * t;
-  if (vigAmt > 0.0005) {
+  if (vigAmount < 0) {
+    const CGFloat vigAmt = (ABS(vigAmount) / 100.0) * t;
     CIFilter *vig = [CIFilter filterWithName:@"CIVignetteEffect"];
-    if (vig != nil) {
+    if (vig != nil && vigAmt > 0.0005) {
       const CGFloat cx = CGRectGetMidX(bounds);
       const CGFloat cy = CGRectGetMidY(bounds);
-      const CGFloat minSide = MIN(bounds.size.width, bounds.size.height);
-      const CGFloat radius = minSide * (0.62 + (45.0 / 100.0) * 0.28);
+      const CGFloat radius = minSide * (0.62 + (vigMidpoint / 100.0) * 0.28);
       [vig setValue:current forKey:kCIInputImageKey];
       [vig setValue:[CIVector vectorWithX:cx Y:cy] forKey:kCIInputCenterKey];
       [vig setValue:@(radius) forKey:kCIInputRadiusKey];
@@ -3554,27 +3605,22 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
     }
   }
 
-  // Grain Amount 10, Size 25, Roughness 45 — subtle mono noise overlay.
-  const CGFloat grainAmt = (10.0 / 100.0) * t;
-  if (grainAmt > 0.0005) {
+  if (grainAmount > 0) {
+    const CGFloat grainAmt = (grainAmount / 100.0) * t;
     CIFilter *random = [CIFilter filterWithName:@"CIRandomGenerator"];
     CIImage *noise = random.outputImage;
-    if (noise != nil) {
-      // Scale noise "size": smaller scale → finer grain. Size 25 → moderate.
-      const CGFloat noiseScale = 1.0 / MAX(0.35, 25.0 / 40.0);
-      CGAffineTransform scale =
-          CGAffineTransformMakeScale(noiseScale, noiseScale);
-      CIImage *scaledNoise = [noise imageByApplyingTransform:scale];
-      scaledNoise = [scaledNoise imageByCroppingToRect:bounds];
-
+    if (noise != nil && grainAmt > 0.0005) {
+      const CGFloat noiseScale = 1.0 / MAX(0.35, grainSize / 40.0);
+      CIImage *scaledNoise =
+          [[noise imageByApplyingTransform:CGAffineTransformMakeScale(noiseScale, noiseScale)]
+              imageByCroppingToRect:bounds];
       CIFilter *mono = [CIFilter filterWithName:@"CIColorMatrix"];
       [mono setValue:scaledNoise forKey:kCIInputImageKey];
       [mono setValue:[CIVector vectorWithX:0.333 Y:0.333 Z:0.333 W:0] forKey:@"inputRVector"];
       [mono setValue:[CIVector vectorWithX:0.333 Y:0.333 Z:0.333 W:0] forKey:@"inputGVector"];
       [mono setValue:[CIVector vectorWithX:0.333 Y:0.333 Z:0.333 W:0] forKey:@"inputBVector"];
       [mono setValue:[CIVector vectorWithX:0 Y:0 Z:0 W:grainAmt * 0.55] forKey:@"inputAVector"];
-      // Roughness 45 → bias away from pure gray slightly via bias vector.
-      const CGFloat rough = 45.0 / 100.0;
+      const CGFloat rough = grainRough / 100.0;
       [mono setValue:[CIVector vectorWithX:rough * 0.02 Y:rough * 0.02 Z:rough * 0.02 W:0]
                 forKey:@"inputBiasVector"];
       CIImage *grainLayer = mono.outputImage;
@@ -3588,19 +3634,13 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
           [overlay setValue:grainLayer forKey:kCIInputImageKey];
           CIImage *grained = [overlay.outputImage imageByCroppingToRect:bounds];
           if (grained != nil) {
-            // Mix back so grain stays subtle (Amount 10).
             CIFilter *mix = [CIFilter filterWithName:@"CIMix"];
             if (mix != nil) {
               [mix setValue:current forKey:kCIInputImageKey];
               [mix setValue:grained forKey:@"inputBackgroundImage"];
-              // Prefer original; blend in a little grain (CIMix 1 = inputImage).
               [mix setValue:@(1.0 - grainAmt * 0.85) forKey:kCIInputAmountKey];
               CIImage *mixed = [mix.outputImage imageByCroppingToRect:bounds];
-              if (mixed != nil) {
-                current = mixed;
-              } else {
-                current = grained;
-              }
+              current = mixed ?: grained;
             } else {
               current = grained;
             }
@@ -3693,9 +3733,12 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
     }
   }
 
-  if ([lookId isEqualToString:@"warmRomantic"] && intensityPercent > 0.0) {
-    CIImage *finished = [self applyWarmRomanticFinishingToImage:output
-                                                      intensity:intensityPercent];
+  if (intensityPercent > 0.0 &&
+      ([lookId isEqualToString:@"warmRomantic"] || [lookId isEqualToString:@"cleanNatural"] ||
+       [lookId isEqualToString:@"filmMood"])) {
+    CIImage *finished = [self applyLookFinishingToImage:output
+                                                 lookId:lookId
+                                              intensity:intensityPercent];
     if (finished != nil) {
       output = finished;
     }

@@ -2055,7 +2055,8 @@ uint32_t GrainHash(uint32_t x, uint32_t y) {
   return n ^ (n >> 16);
 }
 
-void ApplyWarmRomanticFinishingBgra(
+void ApplyLookFinishingBgra(
+    const std::string &lookId,
     uint8_t *destData,
     int width,
     int height,
@@ -2063,6 +2064,36 @@ void ApplyWarmRomanticFinishingBgra(
     float intensityT) {
   const float t = std::clamp(intensityT, 0.0f, 1.0f);
   if (t <= 0.0f || width < 2 || height < 2 || destData == nullptr) {
+    return;
+  }
+
+  float texture = 0, clarity = 0, dehaze = 0;
+  float vigAmount = 0, vigMidpoint = 50, grainAmount = 0, grainSize = 25, grainRough = 45;
+  float warmNudge = 0, settleNudge = 0;
+  if (lookId == "warmRomantic") {
+    texture = -5;
+    clarity = -8;
+    dehaze = -3;
+    vigAmount = -8;
+    vigMidpoint = 45;
+    grainAmount = 10;
+    grainSize = 25;
+    grainRough = 45;
+    warmNudge = 0.045f;
+    settleNudge = 0.035f;
+  } else if (lookId == "cleanNatural") {
+    texture = -5;
+    clarity = -5;
+  } else if (lookId == "filmMood") {
+    texture = -5;
+    clarity = 4;
+    dehaze = 5;
+    vigAmount = -20;
+    vigMidpoint = 40;
+    grainAmount = 25;
+    grainSize = 30;
+    grainRough = 55;
+  } else {
     return;
   }
 
@@ -2074,23 +2105,49 @@ void ApplyWarmRomanticFinishingBgra(
         static_cast<size_t>(width) * 4U);
   }
 
-  const int texRadius =
-      std::max(1, static_cast<int>(std::lround(std::min(width, height) * 0.0015)));
-  BlendTowardBlurBgra(bgra, width, height, stride, texRadius, (5.0f / 100.0f) * 0.55f * t);
+  if (texture < 0) {
+    const int texRadius =
+        std::max(1, static_cast<int>(std::lround(std::min(width, height) * 0.0015)));
+    BlendTowardBlurBgra(
+        bgra, width, height, stride, texRadius, (std::abs(texture) / 100.0f) * 0.55f * t);
+  }
 
-  const int clarRadius =
-      std::max(4, static_cast<int>(std::lround(std::min(width, height) * 0.012)));
-  BlendTowardBlurBgra(bgra, width, height, stride, clarRadius, (8.0f / 100.0f) * 0.95f * t);
+  if (clarity < 0) {
+    const int clarRadius =
+        std::max(4, static_cast<int>(std::lround(std::min(width, height) * 0.012)));
+    BlendTowardBlurBgra(
+        bgra, width, height, stride, clarRadius, (std::abs(clarity) / 100.0f) * 0.95f * t);
+  } else if (clarity > 0) {
+    // Positive clarity: unsharp via blur residual.
+    const int radius =
+        std::max(2, static_cast<int>(std::lround(std::min(width, height) * 0.006)));
+    std::vector<uint8_t> blurred = bgra;
+    SeparableBoxBlurBgra(blurred, width, height, stride, radius);
+    const float amt = (clarity / 100.0f) * 1.1f * t;
+    for (int y = 0; y < height; ++y) {
+      uint8_t *row = bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
+      const uint8_t *brow =
+          blurred.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
+      for (int x = 0; x < width; ++x) {
+        const size_t o = static_cast<size_t>(x) * 4U;
+        for (int c = 0; c < 3; ++c) {
+          const float src = row[o + c];
+          const float blu = brow[o + c];
+          row[o + c] = ClampToByte(src + (src - blu) * amt);
+        }
+      }
+    }
+  }
 
-  const float dehazeT = (3.0f / 100.0f) * t;
-  const float vigAmt = (8.0f / 100.0f) * t * 0.85f;
-  const float grainAmt = (10.0f / 100.0f) * t;
-  const float warm = 0.045f * t;
-  const float settle = 0.035f * t;
+  const float dehazeT = (dehaze / 100.0f) * t;
+  const float vigAmt = (std::abs(vigAmount) / 100.0f) * t * 0.85f;
+  const float grainAmt = (grainAmount / 100.0f) * t;
+  const float warm = warmNudge * t;
+  const float settle = settleNudge * t;
   const float cx = (width - 1) * 0.5f;
   const float cy = (height - 1) * 0.5f;
   const float minSide = static_cast<float>(std::min(width, height));
-  const float vigRadius = minSide * (0.62f + 0.45f * 0.28f);
+  const float vigRadius = minSide * (0.62f + (vigMidpoint / 100.0f) * 0.28f);
   const float vigRadiusSq = vigRadius * vigRadius;
 
   for (int y = 0; y < height; ++y) {
@@ -2101,10 +2158,10 @@ void ApplyWarmRomanticFinishingBgra(
       float g = row[o + 1] / 255.0f;
       float r = row[o + 2] / 255.0f;
 
-      if (dehazeT > 0.0005f) {
-        const float contrast = 1.0f - dehazeT * 0.35f;
-        const float brightness = dehazeT * 0.02f;
-        const float sat = 1.0f - dehazeT * 0.08f;
+      if (std::abs(dehazeT) > 0.0005f) {
+        const float contrast = 1.0f + dehazeT * 0.35f;
+        const float brightness = dehazeT < 0 ? (-dehazeT * 0.02f) : (-dehazeT * 0.01f);
+        const float sat = 1.0f + dehazeT * 0.08f;
         b = (b - 0.5f) * contrast + 0.5f + brightness;
         g = (g - 0.5f) * contrast + 0.5f + brightness;
         r = (r - 0.5f) * contrast + 0.5f + brightness;
@@ -2114,15 +2171,16 @@ void ApplyWarmRomanticFinishingBgra(
         r = yL + (r - yL) * sat;
       }
 
-      // Peach-orange nudge + slight mid settle (match LR residual vs cube).
-      r = r * (1.0f + warm * 0.55f) - settle * 0.55f;
-      g = g * (1.0f + warm * 0.08f) - settle * 0.75f;
-      b = b * (1.0f - warm * 0.65f) - settle * 0.35f;
+      if (warm > 0.0f || settle > 0.0f) {
+        r = r * (1.0f + warm * 0.55f) - settle * 0.55f;
+        g = g * (1.0f + warm * 0.08f) - settle * 0.75f;
+        b = b * (1.0f - warm * 0.65f) - settle * 0.35f;
+      }
       r = std::clamp(r, 0.0f, 1.0f);
       g = std::clamp(g, 0.0f, 1.0f);
       b = std::clamp(b, 0.0f, 1.0f);
 
-      if (vigAmt > 0.0005f) {
+      if (vigAmount < 0 && vigAmt > 0.0005f) {
         const float dx = static_cast<float>(x) - cx;
         const float dy = static_cast<float>(y) - cy;
         float falloff = (dx * dx + dy * dy) / std::max(vigRadiusSq, 1.0f);
@@ -2136,8 +2194,12 @@ void ApplyWarmRomanticFinishingBgra(
 
       if (grainAmt > 0.0005f) {
         const uint32_t h = GrainHash(static_cast<uint32_t>(x), static_cast<uint32_t>(y));
-        const float n = (static_cast<float>(h & 255u) / 255.0f - 0.5f);
-        const float rough = 45.0f / 100.0f;
+        // Size modulates hash lattice a bit.
+        const uint32_t sx = static_cast<uint32_t>(x * (40.0f / std::max(grainSize, 1.0f)));
+        const uint32_t sy = static_cast<uint32_t>(y * (40.0f / std::max(grainSize, 1.0f)));
+        const uint32_t h2 = GrainHash(sx, sy) ^ h;
+        const float n = (static_cast<float>(h2 & 255u) / 255.0f - 0.5f);
+        const float rough = grainRough / 100.0f;
         const float grain = n * grainAmt * (0.35f + rough * 0.25f);
         b = std::clamp(b + grain, 0.0f, 1.0f);
         g = std::clamp(g + grain, 0.0f, 1.0f);
@@ -2357,8 +2419,10 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
     }
   }
 
-  if (lookId == "warmRomantic" && intensityT > 0.0f) {
-    ApplyWarmRomanticFinishingBgra(
+  if ((lookId == "warmRomantic" || lookId == "cleanNatural" || lookId == "filmMood") &&
+      intensityT > 0.0f) {
+    ApplyLookFinishingBgra(
+        lookId,
         destData,
         pixels.width,
         pixels.height,

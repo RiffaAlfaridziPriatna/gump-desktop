@@ -217,6 +217,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
 
+    <None Include="Looks\cleanNatural.cube">
+      <Link>Assets\Looks\cleanNatural.cube</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="Looks\warmRomantic.cube">
       <Link>Assets\Looks\warmRomantic.cube</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
