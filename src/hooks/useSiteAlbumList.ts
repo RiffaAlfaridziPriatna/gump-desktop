@@ -1,8 +1,5 @@
-import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
-import {useLayout} from '@hooks/useLayout';
 import {
   countAvailableSourceAlbums,
-  getSelectAlbumPrefetchThreshold,
 } from '@lib/culledAlbum/selectAlbum';
 import {make} from '@di/tsyringe';
 import {APIService, APIResponse, assertAPIException} from '@services/api';
@@ -177,16 +174,3 @@ export function useSiteAlbumList(options: UseSiteAlbumListOptions = {}) {
 }
 
 const EMPTY_LOCAL_ALBUM_IDS: ReadonlySet<string> = new Set();
-
-/** Warm enough selectable empty albums for Select Album scroll pagination. */
-export function usePrefetchSelectableSiteAlbums() {
-  const {albumGridColumns} = useLayout();
-  const {localAlbumIds} = useLocalCulledAlbumList();
-  const prefetchUntilSelectable =
-    getSelectAlbumPrefetchThreshold(albumGridColumns);
-
-  useSiteAlbumList({
-    prefetchUntilSelectable,
-    localAlbumIds,
-  });
-}

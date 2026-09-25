@@ -52,15 +52,18 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
     screenPaddingHorizontal,
     albumGridColumns,
   } = useLayout();
+  const {localAlbumIds, refresh: refreshLocalAlbums} = useLocalCulledAlbumList();
   const {
     loadingAlbums,
     albums,
     loadMore,
     hasMore,
     refresh,
-  } = useSiteAlbumList();
+  } = useSiteAlbumList({
+    prefetchUntilSelectable: getSelectAlbumPrefetchThreshold(albumGridColumns),
+    localAlbumIds,
+  });
   const queryClient = useQueryClient();
-  const {localAlbumIds, refresh: refreshLocalAlbums} = useLocalCulledAlbumList();
   const {addPhotos} = useCulledAlbumActions();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -86,8 +89,8 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
         if (isLeavingRef.current) {
           return;
         }
-        // Reset again on close so MainNavigator prefetch warms a fresh list
-        // while the user is back on Home.
+        // Drop the select-album cursor cache on close so the next open starts
+        // from a fresh first page instead of stale pagination state.
         void resetSiteAlbumList(queryClient);
       };
     }, [queryClient, refreshLocalAlbums]),

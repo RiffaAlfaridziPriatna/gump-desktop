@@ -28,6 +28,7 @@
 #include <winrt/Windows.Web.Http.Headers.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstring>
@@ -1877,28 +1878,52 @@ winrtRN::JSValueObject AnalysisAssignmentToJsObject(
   };
 }
 
+void ScheduleIdleAnalysisSessionRelease() {
+  std::thread([]() {
+    for (int attempt = 0; attempt < 100; ++attempt) {
+      {
+        std::lock_guard<std::mutex> lock(g_sessionMutex);
+        if (!g_analysisSession) {
+          return;
+        }
+        if (!g_analysisSession->IsRunning()) {
+          // Drop ORT SCRFD/OCEC workers so finished culls do not keep the laptop warm.
+          g_analysisSession.reset();
+          g_decoder.reset();
+          return;
+        }
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+  }).detach();
+}
+
 void EmitAnalysisComplete(const Analysis::CompletionSummary &summary) {
-  if (!g_sessionReactContext) {
-    return;
+  if (g_sessionReactContext) {
+    winrtRN::JSValueArray assignments;
+    for (const auto &result : summary.results) {
+      assignments.push_back(
+          winrtRN::JSValue(AnalysisAssignmentToJsObject(result)));
+    }
+
+    g_sessionReactContext.EmitJSEvent(
+        L"RCTDeviceEventEmitter",
+        L"analysisComplete",
+        winrtRN::JSValue(winrtRN::JSValueObject{
+            {"done", summary.done},
+            {"total", summary.total},
+            {"failed", summary.failed},
+            {"postProcessed", true},
+            {"assignments", winrtRN::JSValue(std::move(assignments))},
+            {"duplicateGroups",
+             winrtRN::JSValue(
+                 DuplicateGroupsToJsArray(summary.duplicateGroups))},
+        }));
   }
 
-  winrtRN::JSValueArray assignments;
-  for (const auto &result : summary.results) {
-    assignments.push_back(winrtRN::JSValue(AnalysisAssignmentToJsObject(result)));
-  }
-
-  g_sessionReactContext.EmitJSEvent(
-      L"RCTDeviceEventEmitter",
-      L"analysisComplete",
-      winrtRN::JSValue(winrtRN::JSValueObject{
-          {"done", summary.done},
-          {"total", summary.total},
-          {"failed", summary.failed},
-          {"postProcessed", true},
-          {"assignments", winrtRN::JSValue(std::move(assignments))},
-          {"duplicateGroups",
-           winrtRN::JSValue(DuplicateGroupsToJsArray(summary.duplicateGroups))},
-      }));
+  // onComplete runs on the orchestrator thread — defer destruction until the
+  // session marks itself idle so we do not join that thread from inside it.
+  ScheduleIdleAnalysisSessionRelease();
 }
 
 } // anonymous namespace
@@ -1935,9 +1960,12 @@ void GumpLocalStorage::StartAnalysis(
     sessionConfig.albumId = albumId;
     sessionConfig.decoder = g_decoder.get();
     sessionConfig.maxConcurrency = 1;
-    sessionConfig.pipelinePoolSize = 2;
+    // One SCRFD+OCEC worker is enough at concurrency 1 and keeps idle/cull cooler.
+    sessionConfig.pipelinePoolSize = 1;
     sessionConfig.progressIntervalMs = 500;
-    sessionConfig.interJobDelayMs = 50;
+    // Gap jobs slightly for thermals. Keep decode at 4096 so Windows cull
+    // quality matches macOS (JS may still override delay/size).
+    sessionConfig.interJobDelayMs = 150;
     sessionConfig.maxDecodePixelSize = 4096;
     sessionConfig.progressiveBatchSize = 20;
     // Match the pre-timeout Windows path: process inline on the worker thread
@@ -1988,7 +2016,7 @@ void GumpLocalStorage::StartAnalysis(
     pipelineConfig.enableTiling = true;
     pipelineConfig.requireLandmarkPlausibility = true;
     pipelineConfig.enableNativeFpFilter = true;
-    pipelineConfig.pipelinePoolSize = 2;
+    pipelineConfig.pipelinePoolSize = 1;
     const auto moduleDir = ModuleDirectory();
     for (const auto &base : {moduleDir / L"Assets" / L"Models", moduleDir / L"Models"}) {
       const auto scrfd = base / L"face_detection_scrfd_2.5g_bnkps.onnx";
@@ -2067,6 +2095,10 @@ void GumpLocalStorage::CancelAnalysis(ReactPromiseJS &&promise) noexcept {
     }
 
     g_analysisSession->Cancel();
+    // Cancel joins workers; release ORT pipelines immediately so cancel does
+    // not leave a warm session resident while the app looks idle.
+    g_analysisSession.reset();
+    g_decoder.reset();
 
     promise.Resolve(
         winrtRN::JSValue(winrtRN::JSValueObject{{"cancelled", true}}));

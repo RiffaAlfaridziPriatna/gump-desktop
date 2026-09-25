@@ -529,6 +529,12 @@ RCT_EXPORT_METHOD(startAnalysis:(NSString *)albumId
       sessionConfig.interJobDelayMs = [configDict[@"interJobDelayMs"] intValue] ?: 50;
       sessionConfig.maxDecodePixelSize = [configDict[@"maxDecodePixelSize"] intValue] ?: 4096;
       sessionConfig.progressiveBatchSize = [configDict[@"progressiveBatchSize"] intValue] ?: 20;
+      // 0 is a valid "disable timeout" value — cannot use ?: default.
+      if (configDict[@"photoTimeoutMs"] != nil) {
+        sessionConfig.photoTimeoutMs = [configDict[@"photoTimeoutMs"] intValue];
+      } else {
+        sessionConfig.photoTimeoutMs = 30000;
+      }
       sessionConfig.albumId = [albumId UTF8String];
       sessionConfig.photos = photos;
       sessionConfig.decoder = self->_decoder.get();

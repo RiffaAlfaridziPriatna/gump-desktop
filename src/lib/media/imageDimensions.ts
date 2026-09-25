@@ -34,6 +34,19 @@ export function putCachedImageDimensions(
 
 const NATIVE_DIMENSION_PLATFORMS = new Set(['macos', 'ios', 'android', 'windows']);
 
+function canUseNativeImageDimensions(uri: string): boolean {
+  // Native GumpLocalStorage only decodes local filesystem paths. Remote
+  // https:// covers used to spawn a detached thread, fail PathFromUri, then
+  // fall back to Image.getSize — paying thread+COM cost for every album card.
+  const normalized = uri.trim().toLowerCase();
+  return (
+    normalized.startsWith('file:') ||
+    normalized.startsWith('content:') ||
+    normalized.startsWith('/') ||
+    /^[a-z]:[\\/]/.test(normalized)
+  );
+}
+
 export async function loadImageDimensions(
   uri: string,
   options?: {bypassCache?: boolean},
@@ -47,7 +60,8 @@ export async function loadImageDimensions(
 
   if (
     NATIVE_DIMENSION_PLATFORMS.has(Platform.OS) &&
-    NativeLocalStorage?.getImageDimensions
+    NativeLocalStorage?.getImageDimensions &&
+    canUseNativeImageDimensions(uri)
   ) {
     try {
       const dimensions = await NativeLocalStorage.getImageDimensions(uri);

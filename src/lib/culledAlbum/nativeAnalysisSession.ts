@@ -32,8 +32,8 @@ export type AnalysisSessionTuning = {
   progressiveBatchSize: number;
   /**
    * Wall-clock budget per photo for hung decode/detect skip.
-   * Windows keeps this at 0 to match the pre-timeout inline worker path
-   * (avoids abandoned decode threads that heat the machine during cull).
+   * Windows keeps this at 0 (inline worker — any timeout>0 spawns a thread per
+   * photo and heated the machine during cull). macOS uses 30s empty fallback.
    */
   photoTimeoutMs: number;
 };
@@ -51,18 +51,32 @@ export function getAnalysisSessionTuning(): AnalysisSessionTuning {
       interJobDelayMs: 200,
       maxDecodePixelSize: 2048,
       progressiveBatchSize: 20,
-      photoTimeoutMs: Platform.OS === 'windows' ? 0 : 60_000,
+      // Windows keeps timeout disabled (inline worker). Elsewhere: 30s hung skip.
+      photoTimeoutMs: Platform.OS === 'windows' ? 0 : 30_000,
+    };
+  }
+
+  // Windows keeps the same analysis decode size as macOS so cull quality does
+  // not drift. Thermal relief comes from inter-job delay + pool size 1 +
+  // tearing down the ORT session when idle — not from downscaling detection.
+  // photoTimeoutMs stays 0 on Windows: any timeout>0 spawns a thread per photo
+  // (even healthy ones), which was the main cull heat regression.
+  if (Platform.OS === 'windows') {
+    return {
+      maxConcurrency: 1,
+      interJobDelayMs: 150,
+      maxDecodePixelSize: 4096,
+      progressiveBatchSize: 20,
+      photoTimeoutMs: 0,
     };
   }
 
   return {
-    maxConcurrency: Platform.OS === 'windows' ? 1 : 2,
+    maxConcurrency: 2,
     interJobDelayMs: 50,
     maxDecodePixelSize: 4096,
     progressiveBatchSize: 20,
-    // Windows: inline ProcessPhoto on the worker (like 038d89c). macOS keeps
-    // the hung-photo timeout so one stuck decode cannot stall the album.
-    photoTimeoutMs: Platform.OS === 'windows' ? 0 : 60_000,
+    photoTimeoutMs: 30_000,
   };
 }
 
