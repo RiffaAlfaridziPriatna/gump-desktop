@@ -3358,6 +3358,8 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
 - (NSData *)colorCubeDataFromCubePath:(NSString *)cubePath
                             intensity:(CGFloat)intensityPercent
                             dimension:(NSInteger *)outDimension
+                           smoothPasses:(NSInteger)smoothPasses
+                    highlightSoftAmount:(CGFloat)highlightSoftAmount
 {
   NSString *contents = [NSString stringWithContentsOfFile:cubePath
                                                  encoding:NSUTF8StringEncoding
@@ -3404,9 +3406,48 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
     return nil;
   }
 
-  // Apply cube lattice as-is. Soft-filtering was for noisy HALD→JPEG cubes and
-  // washed out PNG-derived LUTs (midtones drifted away from Lightroom).
+  std::vector<float> rgb((size_t)expected);
+  for (NSInteger i = 0; i < expected; i++) {
+    rgb[(size_t)i] = (float)[values[(NSUInteger)i] doubleValue];
+  }
+
+  // Film Mood cube is aggressive; one light lattice smooth cuts posterization without
+  // washing the look the way 2-pass did on Warm Romantic.
+  if (smoothPasses > 0 && size > 2) {
+    auto sample = [&](NSInteger r, NSInteger g, NSInteger b, NSInteger c) -> float {
+      r = MAX((NSInteger)0, MIN(size - 1, r));
+      g = MAX((NSInteger)0, MIN(size - 1, g));
+      b = MAX((NSInteger)0, MIN(size - 1, b));
+      return rgb[(size_t)((r + g * size + b * size * size) * 3 + c)];
+    };
+    for (NSInteger pass = 0; pass < smoothPasses; pass++) {
+      std::vector<float> next = rgb;
+      for (NSInteger b = 0; b < size; b++) {
+        for (NSInteger g = 0; g < size; g++) {
+          for (NSInteger r = 0; r < size; r++) {
+            for (NSInteger c = 0; c < 3; c++) {
+              float sum = 0.0f;
+              float weight = 0.0f;
+              for (NSInteger db = -1; db <= 1; db++) {
+                for (NSInteger dg = -1; dg <= 1; dg++) {
+                  for (NSInteger dr = -1; dr <= 1; dr++) {
+                    const float w = (dr == 0 && dg == 0 && db == 0) ? 8.0f : 1.0f;
+                    sum += sample(r + dr, g + dg, b + db, c) * w;
+                    weight += w;
+                  }
+                }
+              }
+              next[(size_t)((r + g * size + b * size * size) * 3 + c)] = sum / weight;
+            }
+          }
+        }
+      }
+      rgb.swap(next);
+    }
+  }
+
   const CGFloat t = MAX(0.0, MIN(1.0, intensityPercent / 100.0));
+  const CGFloat softAmt = MAX(0.0, MIN(1.0, highlightSoftAmount));
   const NSInteger count = size * size * size;
   NSMutableData *data = [NSMutableData dataWithLength:(NSUInteger)count * 4 * sizeof(float)];
   float *rgba = (float *)data.mutableBytes;
@@ -3417,12 +3458,21 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
         const CGFloat inR = (CGFloat)r / (CGFloat)(size - 1);
         const CGFloat inG = (CGFloat)g / (CGFloat)(size - 1);
         const CGFloat inB = (CGFloat)b / (CGFloat)(size - 1);
-        const CGFloat lutR = (CGFloat)[values[(NSUInteger)(idx * 3 + 0)] doubleValue];
-        const CGFloat lutG = (CGFloat)[values[(NSUInteger)(idx * 3 + 1)] doubleValue];
-        const CGFloat lutB = (CGFloat)[values[(NSUInteger)(idx * 3 + 2)] doubleValue];
-        rgba[idx * 4 + 0] = (float)(inR * (1.0 - t) + lutR * t);
-        rgba[idx * 4 + 1] = (float)(inG * (1.0 - t) + lutG * t);
-        rgba[idx * 4 + 2] = (float)(inB * (1.0 - t) + lutB * t);
+        const CGFloat lutR = rgb[(size_t)idx * 3 + 0];
+        const CGFloat lutG = rgb[(size_t)idx * 3 + 1];
+        const CGFloat lutB = rgb[(size_t)idx * 3 + 2];
+        // Soften only bright lattice cells so midtone color stays near full LUT.
+        CGFloat localT = t;
+        if (softAmt > 0.001) {
+          const CGFloat luma = 0.2126 * inR + 0.7152 * inG + 0.0722 * inB;
+          CGFloat hi = (luma - 0.55) / 0.40; // 0 at ~55%, 1 at ~95%
+          hi = MAX(0.0, MIN(1.0, hi));
+          hi = hi * hi * (3.0 - 2.0 * hi);
+          localT = t * (1.0 - softAmt * hi);
+        }
+        rgba[idx * 4 + 0] = (float)(inR * (1.0 - localT) + lutR * localT);
+        rgba[idx * 4 + 1] = (float)(inG * (1.0 - localT) + lutG * localT);
+        rgba[idx * 4 + 2] = (float)(inB * (1.0 - localT) + lutB * localT);
         rgba[idx * 4 + 3] = 1.0f;
       }
     }
@@ -3450,8 +3500,11 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
 
   // LR Presence / Effects (spatial). Tone/WB/HSL live in the cube.
   CGFloat texture = 0, clarity = 0, dehaze = 0;
-  CGFloat vigAmount = 0, vigMidpoint = 50, grainAmount = 0, grainSize = 25, grainRough = 45;
+  CGFloat vigAmount = 0, vigMidpoint = 50, vigFeather = 0.75;
+  CGFloat grainAmount = 0, grainSize = 25, grainRough = 45;
   CGFloat warmNudge = 0, settleNudge = 0;
+  CGFloat darken = 0, blueCrush = 0;
+  BOOL vigFrameEllipse = NO;
   BOOL known = NO;
   if ([lookId isEqualToString:@"warmRomantic"]) {
     known = YES;
@@ -3474,14 +3527,19 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
     grainAmount = 0;
   } else if ([lookId isEqualToString:@"filmMood"]) {
     known = YES;
-    texture = -5;
-    clarity = +4;
-    dehaze = +5;
-    vigAmount = -20;
+    // Cube = curve70 + warm + pull20. Pair with frame-ellipse vig −30 (FM_latest_03b).
+    texture = -3;
+    clarity = 0;
+    dehaze = 0;
+    vigAmount = -30;
     vigMidpoint = 40;
-    grainAmount = 25;
-    grainSize = 30;
-    grainRough = 55;
+    vigFeather = 0.75;
+    vigFrameEllipse = YES;
+    grainAmount = 0;
+    warmNudge = 0;
+    settleNudge = 0;
+    blueCrush = 0;
+    darken = 0;
   }
   if (!known) {
     return image;
@@ -3562,17 +3620,23 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
     }
   }
 
-  if (warmNudge > 0.0 || settleNudge > 0.0) {
+  if (warmNudge > 0.0 || settleNudge > 0.0 || darken > 0.0 || blueCrush > 0.0) {
     const CGFloat warm = warmNudge * t;
     const CGFloat settle = settleNudge * t;
+    const CGFloat dark = darken * t;
+    const CGFloat crushB = blueCrush * t;
+    const CGFloat keep = 1.0 - dark;
     CIFilter *matrix = [CIFilter filterWithName:@"CIColorMatrix"];
     if (matrix != nil) {
       [matrix setValue:current forKey:kCIInputImageKey];
-      [matrix setValue:[CIVector vectorWithX:(1.0 + warm * 0.55) Y:0 Z:0 W:0]
+      [matrix setValue:[CIVector vectorWithX:(keep * (1.0 + warm * 0.55)) Y:0 Z:0 W:0]
                   forKey:@"inputRVector"];
-      [matrix setValue:[CIVector vectorWithX:0 Y:(1.0 + warm * 0.08) Z:0 W:0]
+      [matrix setValue:[CIVector vectorWithX:0 Y:(keep * (1.0 + warm * 0.05)) Z:0 W:0]
                   forKey:@"inputGVector"];
-      [matrix setValue:[CIVector vectorWithX:0 Y:0 Z:(1.0 - warm * 0.65) W:0]
+      [matrix setValue:[CIVector vectorWithX:0
+                                           Y:0
+                                           Z:(keep * (1.0 - warm * 0.70 - crushB))
+                                           W:0]
                   forKey:@"inputBVector"];
       [matrix setValue:[CIVector vectorWithX:0 Y:0 Z:0 W:1] forKey:@"inputAVector"];
       [matrix setValue:[CIVector vectorWithX:(-settle * 0.55)
@@ -3589,18 +3653,84 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
 
   if (vigAmount < 0) {
     const CGFloat vigAmt = (ABS(vigAmount) / 100.0) * t;
-    CIFilter *vig = [CIFilter filterWithName:@"CIVignetteEffect"];
-    if (vig != nil && vigAmt > 0.0005) {
+    if (vigAmt > 0.0005) {
       const CGFloat cx = CGRectGetMidX(bounds);
       const CGFloat cy = CGRectGetMidY(bounds);
-      const CGFloat radius = minSide * (0.62 + (vigMidpoint / 100.0) * 0.28);
-      [vig setValue:current forKey:kCIInputImageKey];
-      [vig setValue:[CIVector vectorWithX:cx Y:cy] forKey:kCIInputCenterKey];
-      [vig setValue:@(radius) forKey:kCIInputRadiusKey];
-      [vig setValue:@(vigAmt * 0.85) forKey:kCIInputIntensityKey];
-      CIImage *vigOut = [vig.outputImage imageByCroppingToRect:bounds];
-      if (vigOut != nil) {
-        current = vigOut;
+      if (vigFrameEllipse) {
+        // Low-res frame-ellipse keep-mask (smooth falloff), scaled to image — L/R + T/B.
+        const CGFloat imgW = MAX(bounds.size.width, 1.0);
+        const CGFloat imgH = MAX(bounds.size.height, 1.0);
+        const CGFloat longSide = MAX(imgW, imgH);
+        const CGFloat maskScale = longSide > 1024.0 ? (1024.0 / longSide) : 1.0;
+        const NSInteger pw = MAX((NSInteger)lround(imgW * maskScale), 1);
+        const NSInteger ph = MAX((NSInteger)lround(imgH * maskScale), 1);
+        const CGFloat halfW = MAX((CGFloat)pw * 0.5, 1.0);
+        const CGFloat halfH = MAX((CGFloat)ph * 0.5, 1.0);
+        const CGFloat inner = MIN(MAX((vigMidpoint / 100.0) * 0.95, 0.0), 0.9);
+        const CGFloat width = 0.18 + vigFeather * 0.50;
+        const CGFloat invWidth = 1.0 / MAX(width, 1e-6);
+        NSBitmapImageRep *maskRep =
+            [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                    pixelsWide:pw
+                                                    pixelsHigh:ph
+                                                 bitsPerSample:8
+                                               samplesPerPixel:4
+                                                      hasAlpha:YES
+                                                      isPlanar:NO
+                                                colorSpaceName:NSDeviceRGBColorSpace
+                                                   bytesPerRow:pw * 4
+                                                  bitsPerPixel:32];
+        unsigned char *maskPx = maskRep.bitmapData;
+        if (maskPx != NULL) {
+          for (NSInteger y = 0; y < ph; ++y) {
+            unsigned char *row = maskPx + y * pw * 4;
+            const CGFloat ny = ((CGFloat)y + 0.5 - halfH) / halfH;
+            for (NSInteger x = 0; x < pw; ++x) {
+              const CGFloat nx = ((CGFloat)x + 0.5 - halfW) / halfW;
+              const CGFloat rr = sqrt(nx * nx + ny * ny) * 0.70710678118;
+              CGFloat fall = MIN(MAX((rr - inner) * invWidth, 0.0), 1.0);
+              fall = fall * fall * (3.0 - 2.0 * fall);
+              const CGFloat keep = 1.0 - vigAmt * fall;
+              const unsigned char k = (unsigned char)MAX(0, MIN(255, (int)lround(keep * 255.0)));
+              const size_t o = (size_t)x * 4U;
+              row[o + 0] = k;
+              row[o + 1] = k;
+              row[o + 2] = k;
+              row[o + 3] = 255;
+            }
+          }
+          CIImage *mask = [[CIImage alloc] initWithBitmapImageRep:maskRep];
+          if (mask != nil) {
+            const CGFloat sx = imgW / (CGFloat)pw;
+            const CGFloat sy = imgH / (CGFloat)ph;
+            mask = [mask imageByApplyingTransform:CGAffineTransformScale(
+                        CGAffineTransformMakeTranslation(bounds.origin.x, bounds.origin.y),
+                        sx,
+                        sy)];
+            CIFilter *mult = [CIFilter filterWithName:@"CIMultiplyCompositing"];
+            if (mult != nil) {
+              [mult setValue:current forKey:kCIInputImageKey];
+              [mult setValue:mask forKey:kCIInputBackgroundImageKey];
+              CIImage *vigOut = [mult.outputImage imageByCroppingToRect:bounds];
+              if (vigOut != nil) {
+                current = vigOut;
+              }
+            }
+          }
+        }
+      } else {
+        CIFilter *vig = [CIFilter filterWithName:@"CIVignetteEffect"];
+        if (vig != nil) {
+          const CGFloat radius = minSide * (0.62 + (vigMidpoint / 100.0) * 0.28);
+          [vig setValue:current forKey:kCIInputImageKey];
+          [vig setValue:[CIVector vectorWithX:cx Y:cy] forKey:kCIInputCenterKey];
+          [vig setValue:@(radius) forKey:kCIInputRadiusKey];
+          [vig setValue:@(vigAmt * 0.85) forKey:kCIInputIntensityKey];
+          CIImage *vigOut = [vig.outputImage imageByCroppingToRect:bounds];
+          if (vigOut != nil) {
+            current = vigOut;
+          }
+        }
       }
     }
   }
@@ -3705,9 +3835,14 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
   if (![lookId isEqualToString:@"original"] && intensityPercent > 0.0) {
     NSString *cubePath = [self lookCubePathForId:lookId];
     NSInteger dimension = 0;
+    // Film Mood curve70+warm+pull20 cube is already smooth — skip lattice smooth.
+    const NSInteger smoothPasses = 0;
+    const CGFloat highlightSoft = 0.0;
     NSData *cubeData = [self colorCubeDataFromCubePath:cubePath
                                              intensity:intensityPercent
-                                             dimension:&dimension];
+                                             dimension:&dimension
+                                          smoothPasses:smoothPasses
+                                    highlightSoftAmount:highlightSoft];
     if (cubeData == nil || dimension <= 1) {
       CGColorSpaceRelease(srgb);
       return nil;

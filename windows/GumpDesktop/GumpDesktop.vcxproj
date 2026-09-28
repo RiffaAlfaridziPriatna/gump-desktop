@@ -225,6 +225,10 @@
       <Link>Assets\Looks\warmRomantic.cube</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="Looks\filmMood.cube">
+      <Link>Assets\Looks\filmMood.cube</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="Models\face_detection_scrfd_2.5g_bnkps.onnx">
       <Link>Assets\Models\face_detection_scrfd_2.5g_bnkps.onnx</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

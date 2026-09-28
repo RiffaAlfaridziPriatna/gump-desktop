@@ -40,6 +40,7 @@
 		E4A5B6C70123456700000001 /* GumpUpdateController.mm in Sources */ = {isa = PBXBuildFile; fileRef = E4A5B6C71123456700000001 /* GumpUpdateController.mm */; };
 		E5LOOK010123456700000001 /* cleanNatural.cube in Resources */ = {isa = PBXBuildFile; fileRef = E5LOOK011123456700000001 /* cleanNatural.cube */; };
 		E5LOOK010123456700000002 /* warmRomantic.cube in Resources */ = {isa = PBXBuildFile; fileRef = E5LOOK011123456700000002 /* warmRomantic.cube */; };
+		E5LOOK010123456700000003 /* filmMood.cube in Resources */ = {isa = PBXBuildFile; fileRef = E5LOOK011123456700000003 /* filmMood.cube */; };
 		F1A2C3D40123456700000001 /* GumpScrollView.mm in Sources */ = {isa = PBXBuildFile; fileRef = F1A2C3D41123456700000001 /* GumpScrollView.mm */; };
 /* End PBXBuildFile section */
 
@@ -102,6 +103,7 @@
 		E4A5B6C71123456700000002 /* GumpUpdateController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpUpdateController.h; sourceTree = "<group>"; };
 		E5LOOK011123456700000001 /* cleanNatural.cube */ = {isa = PBXFileReference; lastKnownFileType = text; path = cleanNatural.cube; sourceTree = "<group>"; };
 		E5LOOK011123456700000002 /* warmRomantic.cube */ = {isa = PBXFileReference; lastKnownFileType = text; path = warmRomantic.cube; sourceTree = "<group>"; };
+		E5LOOK011123456700000003 /* filmMood.cube */ = {isa = PBXFileReference; lastKnownFileType = text; path = filmMood.cube; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F1A2C3D41123456700000001 /* GumpScrollView.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpScrollView.mm; sourceTree = "<group>"; };
 		F1A2C3D41123456700000002 /* GumpScrollView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpScrollView.h; sourceTree = "<group>"; };
@@ -272,6 +274,7 @@
 			children = (
 				E5LOOK011123456700000001 /* cleanNatural.cube */,
 				E5LOOK011123456700000002 /* warmRomantic.cube */,
+				E5LOOK011123456700000003 /* filmMood.cube */,
 			);
 			path = Looks;
 			sourceTree = "<group>";
@@ -378,6 +381,7 @@
 				D1A2C3D40123456700000011 /* eye_state_ocec_s.onnx in Resources */,
 				E5LOOK010123456700000001 /* cleanNatural.cube in Resources */,
 				E5LOOK010123456700000002 /* warmRomantic.cube in Resources */,
+				E5LOOK010123456700000003 /* filmMood.cube in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

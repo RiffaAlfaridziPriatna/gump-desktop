@@ -2068,8 +2068,11 @@ void ApplyLookFinishingBgra(
   }
 
   float texture = 0, clarity = 0, dehaze = 0;
-  float vigAmount = 0, vigMidpoint = 50, grainAmount = 0, grainSize = 25, grainRough = 45;
+  float vigAmount = 0, vigMidpoint = 50, vigFeather = 0.75f;
+  float grainAmount = 0, grainSize = 25, grainRough = 45;
   float warmNudge = 0, settleNudge = 0;
+  float darken = 0, blueCrush = 0;
+  bool vigFrameEllipse = false;
   if (lookId == "warmRomantic") {
     texture = -5;
     clarity = -8;
@@ -2085,14 +2088,19 @@ void ApplyLookFinishingBgra(
     texture = -5;
     clarity = -5;
   } else if (lookId == "filmMood") {
-    texture = -5;
-    clarity = 4;
-    dehaze = 5;
-    vigAmount = -20;
+    // Cube = curve70 + warm + pull20. Frame ellipse vignette matches FM_latest_03b.
+    texture = -3;
+    clarity = 0;
+    dehaze = 0;
+    vigAmount = -30;
     vigMidpoint = 40;
-    grainAmount = 25;
-    grainSize = 30;
-    grainRough = 55;
+    vigFeather = 0.75f;
+    vigFrameEllipse = true;
+    grainAmount = 0;
+    warmNudge = 0.0f;
+    settleNudge = 0.0f;
+    blueCrush = 0.0f;
+    darken = 0.0f;
   } else {
     return;
   }
@@ -2140,15 +2148,22 @@ void ApplyLookFinishingBgra(
   }
 
   const float dehazeT = (dehaze / 100.0f) * t;
-  const float vigAmt = (std::abs(vigAmount) / 100.0f) * t * 0.85f;
+  // Circular WR path keeps 0.85 scale; ellipse Film Mood uses LR amount 1:1.
+  const float vigAmt =
+      (std::abs(vigAmount) / 100.0f) * t * (vigFrameEllipse ? 1.0f : 0.85f);
   const float grainAmt = (grainAmount / 100.0f) * t;
   const float warm = warmNudge * t;
   const float settle = settleNudge * t;
+  const float dark = darken * t;
+  const float crushB = blueCrush * t;
+  const float keep = 1.0f - dark;
   const float cx = (width - 1) * 0.5f;
   const float cy = (height - 1) * 0.5f;
   const float minSide = static_cast<float>(std::min(width, height));
   const float vigRadius = minSide * (0.62f + (vigMidpoint / 100.0f) * 0.28f);
   const float vigRadiusSq = vigRadius * vigRadius;
+  const float vigInner = std::clamp((vigMidpoint / 100.0f) * 0.95f, 0.0f, 0.9f);
+  const float vigWidth = 0.18f + vigFeather * 0.50f;
 
   for (int y = 0; y < height; ++y) {
     uint8_t *row = bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
@@ -2171,25 +2186,41 @@ void ApplyLookFinishingBgra(
         r = yL + (r - yL) * sat;
       }
 
-      if (warm > 0.0f || settle > 0.0f) {
-        r = r * (1.0f + warm * 0.55f) - settle * 0.55f;
-        g = g * (1.0f + warm * 0.08f) - settle * 0.75f;
-        b = b * (1.0f - warm * 0.65f) - settle * 0.35f;
+      if (warm > 0.0f || settle > 0.0f || dark > 0.0f || crushB > 0.0f) {
+        r = r * keep * (1.0f + warm * 0.55f) - settle * 0.55f;
+        g = g * keep * (1.0f + warm * 0.05f) - settle * 0.75f;
+        b = b * keep * (1.0f - warm * 0.70f - crushB) - settle * 0.35f;
       }
       r = std::clamp(r, 0.0f, 1.0f);
       g = std::clamp(g, 0.0f, 1.0f);
       b = std::clamp(b, 0.0f, 1.0f);
 
       if (vigAmount < 0 && vigAmt > 0.0005f) {
-        const float dx = static_cast<float>(x) - cx;
-        const float dy = static_cast<float>(y) - cy;
-        float falloff = (dx * dx + dy * dy) / std::max(vigRadiusSq, 1.0f);
-        falloff = std::clamp(falloff, 0.0f, 1.0f);
-        falloff = falloff * falloff * (3.0f - 2.0f * falloff);
-        const float darken = 1.0f - vigAmt * falloff;
-        b *= darken;
-        g *= darken;
-        r *= darken;
+        float falloff = 0.0f;
+        if (vigFrameEllipse) {
+          const float nx = (static_cast<float>(x) - cx) / std::max(cx, 1.0f);
+          const float ny = (static_cast<float>(y) - cy) / std::max(cy, 1.0f);
+          const float rr =
+              std::sqrt(nx * nx + ny * ny) * 0.70710678118f;  // / sqrt(2)
+          falloff = std::clamp((rr - vigInner) / std::max(vigWidth, 1e-6f), 0.0f, 1.0f);
+          falloff = falloff * falloff * (3.0f - 2.0f * falloff);
+          const float Y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+          const float hi = std::clamp((Y - 0.78f) / 0.22f, 0.0f, 1.0f) * 0.30f;
+          const float strength = vigAmt * falloff * (1.0f - hi);
+          b *= (1.0f - strength);
+          g *= (1.0f - strength);
+          r *= (1.0f - strength);
+        } else {
+          const float dx = static_cast<float>(x) - cx;
+          const float dy = static_cast<float>(y) - cy;
+          falloff = (dx * dx + dy * dy) / std::max(vigRadiusSq, 1.0f);
+          falloff = std::clamp(falloff, 0.0f, 1.0f);
+          falloff = falloff * falloff * (3.0f - 2.0f * falloff);
+          const float darkenV = 1.0f - vigAmt * falloff;
+          b *= darkenV;
+          g *= darkenV;
+          r *= darkenV;
+        }
       }
 
       if (grainAmt > 0.0005f) {
@@ -2285,6 +2316,53 @@ std::optional<LookCubeLut> LoadCubeLut(const std::filesystem::path &path) {
   return lut;
 }
 
+void SmoothCubeLutLight(LookCubeLut &lut, int passes) {
+  const int n = lut.size;
+  if (n <= 2 || passes <= 0) {
+    return;
+  }
+  auto at = [&](int r, int g, int b, int c) -> float {
+    r = std::clamp(r, 0, n - 1);
+    g = std::clamp(g, 0, n - 1);
+    b = std::clamp(b, 0, n - 1);
+    const size_t index =
+        (static_cast<size_t>(r) + static_cast<size_t>(g) * static_cast<size_t>(n) +
+         static_cast<size_t>(b) * static_cast<size_t>(n) * static_cast<size_t>(n)) *
+            3U +
+        static_cast<size_t>(c);
+    return lut.rgb[index];
+  };
+  for (int pass = 0; pass < passes; ++pass) {
+    std::vector<float> next = lut.rgb;
+    for (int b = 0; b < n; ++b) {
+      for (int g = 0; g < n; ++g) {
+        for (int r = 0; r < n; ++r) {
+          for (int c = 0; c < 3; ++c) {
+            float sum = 0.0f;
+            float weight = 0.0f;
+            for (int db = -1; db <= 1; ++db) {
+              for (int dg = -1; dg <= 1; ++dg) {
+                for (int dr = -1; dr <= 1; ++dr) {
+                  const float w = (dr == 0 && dg == 0 && db == 0) ? 8.0f : 1.0f;
+                  sum += at(r + dr, g + dg, b + db, c) * w;
+                  weight += w;
+                }
+              }
+            }
+            const size_t index =
+                (static_cast<size_t>(r) + static_cast<size_t>(g) * static_cast<size_t>(n) +
+                 static_cast<size_t>(b) * static_cast<size_t>(n) * static_cast<size_t>(n)) *
+                    3U +
+                static_cast<size_t>(c);
+            next[index] = sum / weight;
+          }
+        }
+      }
+    }
+    lut.rgb.swap(next);
+  }
+}
+
 void SampleCubeLut(
     const LookCubeLut &lut,
     float r,
@@ -2371,8 +2449,12 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
     if (!lut.has_value()) {
       return std::nullopt;
     }
+    // Film Mood curve70+warm+pull20 cube is already smooth — skip lattice smooth.
   }
   const float intensityT = std::clamp(intensityPercent / 100.0f, 0.0f, 1.0f);
+  // Matched Film Mood cube — no highlight-soft wash.
+  const float highlightSoft = 0.0f;
+  const float cubeIntensityT = intensityT;
 
   SoftwareBitmap output(
       BitmapPixelFormat::Bgra8,
@@ -2401,7 +2483,15 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
       float gOut = g;
       float bOut = b;
       if (lut.has_value()) {
-        SampleCubeLut(*lut, r, g, b, intensityT, rOut, gOut, bOut);
+        float localT = cubeIntensityT;
+        if (highlightSoft > 0.001f) {
+          const float luma = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+          float hi = (luma - 0.55f) / 0.40f;
+          hi = std::clamp(hi, 0.0f, 1.0f);
+          hi = hi * hi * (3.0f - 2.0f * hi);
+          localT = cubeIntensityT * (1.0f - highlightSoft * hi);
+        }
+        SampleCubeLut(*lut, r, g, b, localT, rOut, gOut, bOut);
       }
 
       // Ordered dither reduces 8-bit banding after aggressive LUT remap.
