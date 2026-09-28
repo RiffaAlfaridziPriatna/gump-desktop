@@ -17,6 +17,7 @@ import {
   FlatList,
   ListRenderItemInfo,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -24,6 +25,7 @@ import {
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 import IconCheckCircleOutline from '../../assets/images/icon_check_circle_outlined.svg';
 import IconExport from '../../assets/images/icon_export.svg';
+import IconPlus from '../../assets/images/icon_plus.svg';
 import IconUpload from '../../assets/images/icon_upload.svg';
 import IconWand from '../../assets/images/icon_wand.svg';
 
@@ -60,10 +62,12 @@ export type CulledAlbumDetailSidebarProps = {
   onKeyFaceTooltipChange: (anchor: KeyFaceTooltipAnchor | null) => void;
   onKeyFacePress?: (photoId: string, faceIndex?: number) => void;
   onUploadSelected: () => void;
+  onAddPhotos?: () => void;
   onExport: () => void;
   onApplyLook: () => void;
   uploaded?: boolean;
   uploadDisabled?: boolean;
+  addPhotosDisabled?: boolean;
   exportDisabled?: boolean;
   applyLookDisabled?: boolean;
 };
@@ -161,10 +165,12 @@ function CulledAlbumDetailSidebarComponent({
   onKeyFaceTooltipChange,
   onKeyFacePress,
   onUploadSelected,
+  onAddPhotos,
   onExport,
   onApplyLook,
   uploaded = false,
   uploadDisabled = false,
+  addPhotosDisabled = false,
   exportDisabled = false,
   applyLookDisabled = false,
 }: CulledAlbumDetailSidebarProps) {
@@ -274,6 +280,21 @@ function CulledAlbumDetailSidebarComponent({
           </Text>
         </Pressable>
 
+        {onAddPhotos && (
+          <Pressable
+            onPress={onAddPhotos}
+            disabled={addPhotosDisabled}
+            style={[
+              styles.addPhotosButton,
+              addPhotosDisabled && styles.actionButtonDisabled,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Add photos to cull">
+            <IconPlus width={20} height={20} color={colors.accent} />
+            <Text style={styles.addPhotosButtonText}>Add Photos to Cull</Text>
+          </Pressable>
+        )}
+
         <Pressable
           onPress={onExport}
           disabled={exportDisabled}
@@ -301,11 +322,15 @@ function CulledAlbumDetailSidebarComponent({
         </Pressable>
       </View>
 
-      <Accordion
-        title="Cull Filters"
-        expanded={cullFiltersExpanded}
-        onToggle={onCullFiltersToggle}
-        style={styles.cullFiltersAccordion}>
+      <ScrollView
+        style={styles.filtersScrollContainer}
+        contentContainerStyle={styles.filtersScrollContent}
+        showsVerticalScrollIndicator={!isMobileLayout}>
+        <Accordion
+          title="Cull Filters"
+          expanded={cullFiltersExpanded}
+          onToggle={onCullFiltersToggle}
+          style={styles.cullFiltersAccordion}>
         <View style={styles.accordionContent}>
           <View style={styles.totalPhotosBadge}>
             <Text style={styles.totalPhotosLabel}>Total Photos</Text>
@@ -344,11 +369,10 @@ function CulledAlbumDetailSidebarComponent({
         title={`Key Faces (${keyFaces.length})`}
         expanded={keyFacesExpanded}
         onToggle={onKeyFacesToggle}
-        fill={!isMobileLayout}
-        minContentHeight={isMobileLayout ? 120 : 200}
         style={styles.keyFacesAccordion}>
         <ScrollAwareTooltipContext.Provider value={scrollStoreRef.current}>
-          {isMobileLayout ? (
+          <View style={styles.keyFaceScrollContainer}>
+            {isMobileLayout ? (
             <FlatList
               {...keyFaceScrollHandlers}
               data={keyFaces}
@@ -382,8 +406,10 @@ function CulledAlbumDetailSidebarComponent({
               ItemSeparatorComponent={KeyFaceSeparator}
             />
           )}
+          </View>
         </ScrollAwareTooltipContext.Provider>
       </Accordion>
+      </ScrollView>
     </View>
   );
 }
@@ -411,6 +437,14 @@ const styles = StyleSheet.create({
   },
   actionStack: {
     gap: 16,
+  },
+  filtersScrollContainer: {
+    flex: 1,
+    minHeight: 0,
+  },
+  filtersScrollContent: {
+    gap: 20,
+    paddingBottom: 24,
   },
   uploadButton: {
     minHeight: 48,
@@ -448,6 +482,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   exportButtonText: {
+    ...sansBoldStyle,
+    fontSize: 16,
+    color: colors.accent,
+  },
+  addPhotosButton: {
+    minHeight: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'transparent',
+  },
+  addPhotosButtonText: {
     ...sansBoldStyle,
     fontSize: 16,
     color: colors.accent,
@@ -517,6 +569,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textMuted,
+  },
+  keyFaceScrollContainer: {
+    maxHeight: 400,
   },
   keyFaceScroll: {
     flex: 1,

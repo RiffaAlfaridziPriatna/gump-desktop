@@ -9,6 +9,7 @@ import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
 import {ApplyLookModal} from '@components/modals/ApplyLookModal';
 import {DeletePhotoModal} from '@components/modals/DeletePhotoModal';
 import {ExportPhotosModal} from '@components/modals/ExportPhotosModal';
+import {UploadModal} from '@components/modals/UploadModal';
 import {
   UploadSelectedModal,
   type UploadSelectedPhase,
@@ -18,6 +19,7 @@ import {
   estimateUploadSizeGb,
 } from '@application/plan/uploadStorageEstimate';
 import type {LookId} from '@lib/look/types';
+import {FileAsset} from '@services/upload/types';
 import {UploadToast} from '@components/upload/UploadToast';
 import {FaceStatusTooltip} from '@components/culling/FaceStatusTooltip';
 import {
@@ -97,7 +99,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   );
   const isFocused = useIsFocused();
   const profileMenu = useProfileMenu();
-  const {resumeInFlightWork, startSelectedUpload} = useCulledAlbumActions();
+  const {resumeInFlightWork, startSelectedUpload, addPhotos} = useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
   const {loadError, loadingPhotos} = useCulledAlbumPhotos(albumId);
   const albumPhotos = useCulledAlbumPhotosState(albumId);
@@ -157,12 +159,14 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const uploadModalDismissedRef = useRef(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showApplyLookModal, setShowApplyLookModal] = useState(false);
+  const [showAddPhotosModal, setShowAddPhotosModal] = useState(false);
   const [mainContentWidth, setMainContentWidth] = useState(0);
   const isBlockingModalOpen =
     photoToDelete !== null ||
     showUploadModal ||
     showExportModal ||
-    showApplyLookModal;
+    showApplyLookModal ||
+    showAddPhotosModal;
 
   useEffect(() => {
     if (!isBlockingModalOpen) {
@@ -491,6 +495,27 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     setKeyFacesExpanded(current => !current);
   }, []);
 
+  const handleAddPhotosPress = useCallback(() => {
+    if (cullingBusy) {
+      return;
+    }
+    setShowAddPhotosModal(true);
+  }, [cullingBusy]);
+
+  const handleAddPhotosSelected = useCallback(
+    (files: FileAsset[]) => {
+      setShowAddPhotosModal(false);
+      if (files.length === 0) {
+        return;
+      }
+      addPhotos(albumId, files, {
+        autoStartAnalysis: true,
+        stabilizeDetailUiDuringImport: true,
+      });
+    },
+    [addPhotos, albumId],
+  );
+
   const handleOpenExport = useCallback(() => {
     if (exportPhotoCount === 0) {
       return;
@@ -525,10 +550,12 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       setUploadPhase('confirm');
       setShowUploadModal(true);
     },
+    onAddPhotos: handleAddPhotosPress,
     onExport: handleOpenExport,
     onApplyLook: handleOpenApplyLook,
     uploaded: cullingHasUploads,
     uploadDisabled: actionCount === 0,
+    addPhotosDisabled: cullingBusy,
     exportDisabled: exportPhotoCount === 0,
     applyLookDisabled: exportPhotoCount === 0,
   };
@@ -744,6 +771,12 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           selectedPhotos={actionAlbumPhotos}
           onClose={() => setShowApplyLookModal(false)}
           onApply={handleApplyLook}
+        />
+
+        <UploadModal
+          visible={showAddPhotosModal}
+          onClose={() => setShowAddPhotosModal(false)}
+          onSelect={handleAddPhotosSelected}
         />
 
         {keyFaceTooltip && (
