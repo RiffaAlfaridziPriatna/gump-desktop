@@ -3,6 +3,7 @@ import {
   useCulledAlbumActions,
   useCulledAlbumAnalysisCounts,
   useCulledAlbumFilenameDuplicates,
+  useCulledAlbumFilenameDuplicateToastMode,
   useCulledAlbumLocalImportProgress,
   useCulledAlbumServerUploadBatch,
   useCulledAlbumUiState,
@@ -48,6 +49,8 @@ const MIN_MS_PER_PHOTO = 80;
 const MAX_MS_PER_PHOTO = 350;
 const DEFAULT_MS_PER_PHOTO = 180;
 const MAX_LEAD_PHOTOS = 20;
+const TOAST_WIDTH = 450;
+const TOAST_WIDTH_WITH_DUPLICATES = 540;
 const DUPLICATE_ROW_HEIGHT = 28;
 const DUPLICATE_ROW_GAP = 8;
 const DUPLICATE_LIST_MAX_ROWS = 3;
@@ -242,10 +245,11 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     clearFilenameDuplicates,
   } = useCulledAlbumActions();
 
-  const filenameDuplicates = useCulledAlbumFilenameDuplicates(
-    mode === 'analyze' ? albumId : null,
-  );
-  const hasFilenameDuplicates = filenameDuplicates.length > 0;
+  const filenameDuplicates = useCulledAlbumFilenameDuplicates(albumId);
+  const filenameDuplicateToastMode =
+    useCulledAlbumFilenameDuplicateToastMode(albumId);
+  const hasFilenameDuplicates =
+    filenameDuplicates.length > 0 && filenameDuplicateToastMode === mode;
   const [duplicatesExpanded, setDuplicatesExpanded] = useState(false);
 
   const items = mode === 'serverUpload' ? serverUploadItems : [];
@@ -273,11 +277,11 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
         : items.length > 0;
 
   const duplicatesOnly =
-    mode === 'analyze' &&
     hasFilenameDuplicates &&
     queueOperation.status === 'idle' &&
-    (analysisCounts?.total ?? 0) === 0 &&
-    queueOperation.batchTotal === 0;
+    queueOperation.batchTotal === 0 &&
+    (mode === 'upload' ||
+      (mode === 'analyze' && (analysisCounts?.total ?? 0) === 0));
 
   const shouldBeVisible =
     (visible && hasRenderableBatch) || duplicatesOnly;
@@ -469,7 +473,9 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
         ? 'Finalizing analysis...'
         : 'Canceling upload...'
     : mode === 'upload'
-      ? `Uploading ${uploadInProgressRemaining} photos`
+      ? duplicatesOnly
+        ? 'Uploaded 0 photos'
+        : `Uploading ${uploadInProgressRemaining} photos`
       : mode === 'analyze'
         ? isFinalizingAnalysis
           ? 'Finalizing analysis...'
@@ -489,11 +495,10 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
         : `Uploaded ${counts.completed} photos to server`;
 
   const showFilenameDuplicatesChrome =
-    mode === 'analyze' &&
     hasFilenameDuplicates &&
     !isCanceling &&
-    !isFinalizingAnalysis &&
-    !completed;
+    !(mode === 'analyze' && isFinalizingAnalysis) &&
+    !(mode === 'analyze' && completed);
 
   const duplicateCountLabel = showFilenameDuplicatesChrome
     ? `${filenameDuplicates.length} duplicate${
@@ -501,17 +506,21 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
       }`
     : null;
 
-  const analyzeTitleParts: string[] = [];
-  if (mode === 'analyze' && !(completed && !isCanceling)) {
-    if (inProgressLabel) {
-      analyzeTitleParts.push(inProgressLabel);
+  const toastTitleParts: string[] = [];
+  if (!(completed && !isCanceling && mode === 'analyze')) {
+    if (completed && !isCanceling && mode === 'upload') {
+      toastTitleParts.push(completedLabel);
+    } else if (!completed || isCanceling) {
+      if (inProgressLabel) {
+        toastTitleParts.push(inProgressLabel);
+      }
     }
     if (duplicateCountLabel) {
-      analyzeTitleParts.push(duplicateCountLabel);
+      toastTitleParts.push(duplicateCountLabel);
     }
   }
-  const analyzeInProgressTitle =
-    analyzeTitleParts.length > 0 ? analyzeTitleParts.join(' • ') : null;
+  const composedInProgressTitle =
+    toastTitleParts.length > 0 ? toastTitleParts.join(' • ') : null;
 
   useEffect(() => {
     if (!showFilenameDuplicatesChrome) {
@@ -557,7 +566,14 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   ]);
 
   useEffect(() => {
-    if (!visible || !completed || batchTotal === 0 || isCanceling || duplicatesOnly) {
+    if (
+      !visible ||
+      !completed ||
+      batchTotal === 0 ||
+      isCanceling ||
+      duplicatesOnly ||
+      duplicatesExpanded
+    ) {
       return;
     }
     const timer = setTimeout(() => {
@@ -569,6 +585,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     albumId,
     batchTotal,
     completed,
+    duplicatesExpanded,
     duplicatesOnly,
     hideToast,
     isCanceling,
@@ -735,11 +752,8 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
       : queueOperation.status === 'completed');
 
   const titleText =
-    completed && !isCanceling
-      ? completedLabel
-      : mode === 'analyze' && analyzeInProgressTitle
-        ? analyzeInProgressTitle
-        : inProgressLabel ?? '';
+    composedInProgressTitle ??
+    (completed && !isCanceling ? completedLabel : inProgressLabel ?? '');
 
   const showDuplicatesToggle = showFilenameDuplicatesChrome;
 
@@ -750,12 +764,17 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     <Animated.View
       style={[
         styles.container,
-        {maxWidth: deviceWidth},
+        {
+          width: showFilenameDuplicatesChrome
+            ? TOAST_WIDTH_WITH_DUPLICATES
+            : TOAST_WIDTH,
+          maxWidth: deviceWidth,
+        },
         {transform: [{translateY}], opacity},
       ]}>
       <View style={styles.header}>
         <View style={styles.titleContainer}>
-          <Text style={styles.title} numberOfLines={2}>
+          <Text style={styles.title} numberOfLines={1}>
             {titleText}
           </Text>
           {showDuplicatesToggle ? (
@@ -834,7 +853,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     left: 0,
-    width: 450,
     backgroundColor: colors.white,
     zIndex: 100,
     paddingHorizontal: 32,
@@ -853,9 +871,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    minWidth: 0,
   },
   title: {
     ...sansBoldStyle,
+    flexShrink: 1,
     fontSize: 16,
     letterSpacing: 0,
     color: colors.textDark,
@@ -864,11 +884,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 16,
     color: colors.textDark,
+    flexShrink: 0,
   },
   showHideText: {
     fontFamily: fonts.sans,
     fontSize: 16,
     color: colors.accent,
+    flexShrink: 0,
   },
   errorText: {
     fontFamily: fonts.sans,
@@ -882,6 +904,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.textMuted,
+    flexShrink: 0,
   },
   progressBarContainer: {
     width: '100%',

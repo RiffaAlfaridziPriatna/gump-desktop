@@ -149,6 +149,11 @@ export type CulledAlbum = {
    * album photo or a later pick in the same batch). Runtime toast state only.
    */
   filenameDuplicateNames?: string[];
+  /**
+   * Which UploadToast owns filename-duplicate chrome for the latest skip list.
+   * AlbumDetail (plain import) → upload; CulledAlbum add-more (auto-analyze) → analyze.
+   */
+  filenameDuplicateToastMode?: 'upload' | 'analyze';
   nextFaceClusterId: number;
   createdAt: string;
   totalPhotos: number;
@@ -238,6 +243,7 @@ export function createCulledAlbumFromSelection(
     autoStartAnalysisAfterImport: false,
     stabilizeDetailUiDuringImport: false,
     filenameDuplicateNames: [],
+    filenameDuplicateToastMode: undefined,
     nextFaceClusterId: 0,
     createdAt: new Date().toISOString(),
     totalPhotos: 0,
@@ -484,6 +490,7 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.autoStartAnalysisAfterImport ??= false;
   album.stabilizeDetailUiDuringImport ??= false;
   album.filenameDuplicateNames ??= [];
+  album.filenameDuplicateToastMode ??= undefined;
   album.cullingStats ??= undefined;
   album.cullingKeyFaces ??= undefined;
   album.cullingDuplicateGroups ??= undefined;
