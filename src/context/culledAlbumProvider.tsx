@@ -288,7 +288,13 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       existingNames,
       files,
     );
-    setFilenameDuplicateNames(albumId, rejectedNames);
+    // CulledAlbum add-more auto-analyzes → "Analyzing… • n duplicates".
+    // AlbumDetail plain import → "Uploaded… • n duplicates".
+    setFilenameDuplicateNames(
+      albumId,
+      rejectedNames,
+      options?.autoStartAnalysis ? 'analyze' : 'upload',
+    );
 
     if (accepted.length === 0) {
       return;
@@ -391,6 +397,10 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
     if (mode === 'upload') {
       clearLocalImportBatch(albumId);
+      // Keep analyze-owned duplicate chrome for the handoff toast on CulledAlbum.
+      if (getAlbum(albumId)?.filenameDuplicateToastMode === 'upload') {
+        clearFilenameDuplicateNames(albumId);
+      }
       persistAlbum(albumId).catch(() => undefined);
     } else if (mode === 'analyze') {
       clearAnalysisBatch(albumId);
