@@ -199,10 +199,16 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   usePreloadGridImages(initialPreloadUris);
 
   const localImportQueue = useAlbumQueueOperation(albumId, 'upload');
+  const analysisQueue = useAlbumQueueOperation(albumId, 'analyze');
   const isLocalImporting =
     localImportQueue.status === 'active' ||
     localImportQueue.status === 'finalizing';
-  const cullingBusy = isAnalyzing || isLocalImporting;
+  // Photo statuses flip to analyzed before the queue leaves active/finalizing
+  // ("Finalizing analysis…"), so also gate on the analysis queue itself.
+  const isAnalysisQueueBusy =
+    analysisQueue.status === 'active' ||
+    analysisQueue.status === 'finalizing';
+  const cullingBusy = isAnalyzing || isLocalImporting || isAnalysisQueueBusy;
   const canDeletePhoto = cullingCompleted && !cullingBusy;
 
   // Keep the detail grid on already-culled photos only. Newly imported files
