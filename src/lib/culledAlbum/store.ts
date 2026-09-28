@@ -781,11 +781,14 @@ export function clearLocalImportBatch(albumId: string): void {
 export function setFilenameDuplicateNames(
   albumId: string,
   names: string[],
+  toastMode: 'upload' | 'analyze' = 'analyze',
 ): void {
   culledAlbumStore.setState(state => {
     const album = state.albums[albumId];
     if (album) {
       album.filenameDuplicateNames = names;
+      album.filenameDuplicateToastMode =
+        names.length > 0 ? toastMode : undefined;
     }
   });
 }
@@ -795,6 +798,7 @@ export function clearFilenameDuplicateNames(albumId: string): void {
     const album = state.albums[albumId];
     if (album) {
       album.filenameDuplicateNames = [];
+      album.filenameDuplicateToastMode = undefined;
     }
   });
 }
