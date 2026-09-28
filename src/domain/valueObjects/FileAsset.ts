@@ -8,6 +8,8 @@ export class FileAsset {
   readonly thumbnailWidth: number | null;
   readonly thumbnailHeight: number | null;
   readonly detailUri: string | null;
+  readonly lookDetailUri: string | null;
+  readonly lookDetailKey: string | null;
 
   constructor(data: {
     uri: string;
@@ -19,6 +21,8 @@ export class FileAsset {
     thumbnailWidth?: number | null;
     thumbnailHeight?: number | null;
     detailUri?: string | null;
+    lookDetailUri?: string | null;
+    lookDetailKey?: string | null;
   }) {
     this.uri = data.uri;
     this.name = data.name;
@@ -29,6 +33,8 @@ export class FileAsset {
     this.thumbnailWidth = data.thumbnailWidth ?? null;
     this.thumbnailHeight = data.thumbnailHeight ?? null;
     this.detailUri = data.detailUri ?? null;
+    this.lookDetailUri = data.lookDetailUri ?? null;
+    this.lookDetailKey = data.lookDetailKey ?? null;
   }
 
   static fromPlain(data: {
@@ -41,6 +47,8 @@ export class FileAsset {
     thumbnailWidth?: number | null;
     thumbnailHeight?: number | null;
     detailUri?: string | null;
+    lookDetailUri?: string | null;
+    lookDetailKey?: string | null;
   }): FileAsset {
     return new FileAsset(data);
   }
@@ -55,6 +63,8 @@ export class FileAsset {
     thumbnailWidth: number | null;
     thumbnailHeight: number | null;
     detailUri: string | null;
+    lookDetailUri: string | null;
+    lookDetailKey: string | null;
   } {
     return {
       uri: this.uri,
@@ -66,6 +76,8 @@ export class FileAsset {
       thumbnailWidth: this.thumbnailWidth,
       thumbnailHeight: this.thumbnailHeight,
       detailUri: this.detailUri,
+      lookDetailUri: this.lookDetailUri,
+      lookDetailKey: this.lookDetailKey,
     };
   }
 }

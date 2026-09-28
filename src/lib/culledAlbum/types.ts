@@ -104,7 +104,7 @@ export type CulledAlbumPhoto = {
   faces: APIResponse.CullingFace[];
   selected: boolean;
   starRating: number | null;
-  /** Color look applied in-app; baked only on export/upload. */
+  /** Color look applied in-app; detail viewer bakes lookDetailUri @4096 on demand. */
   lookId: LookId;
   /** Look strength 0–100. Ignored when lookId is original. */
   lookIntensity: number;

@@ -937,6 +937,11 @@ export const cullingEngine = {
         photo => {
           photo.lookId = data.lookId;
           photo.lookIntensity = lookIntensity;
+          // Invalidate look-baked detail so UI holds gray until rebuilt.
+          if (photo.file.lookDetailUri || photo.file.lookDetailKey) {
+            const {lookDetailUri: _u, lookDetailKey: _k, ...rest} = photo.file;
+            photo.file = rest;
+          }
         },
         {immediate: true},
       );

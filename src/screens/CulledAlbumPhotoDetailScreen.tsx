@@ -20,6 +20,11 @@ import {useLayout} from '@hooks/useLayout';
 import {useImageDimensions} from '@hooks/useImageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
 import {
+  ensureLookDetail,
+  isLookDetailCurrent,
+} from '@lib/look/bakeLook';
+import {hasAppliedLook} from '@lib/look/types';
+import {
   ensureDetail,
   isUsableDetailUri,
   resolveDetailDisplayUri,
@@ -228,17 +233,47 @@ export default function CulledAlbumPhotoDetailScreen({
     setZoomFaceIndex(initialFaceIndex);
   }, [faces.length, initialFaceIndex, photoId]);
 
-  const [uri, setUri] = useState(() =>
-    photo ? resolveDetailDisplayUri(photo.file) : '',
-  );
+  const [uri, setUri] = useState(() => {
+    if (!photo) {
+      return '';
+    }
+    if (hasAppliedLook(photo.lookId)) {
+      return isLookDetailCurrent(photo.file, photo.lookId, photo.lookIntensity)
+        ? photo.file.lookDetailUri!
+        : '';
+    }
+    return resolveDetailDisplayUri(photo.file);
+  });
   const imageSize = useImageDimensions(uri);
   const photoFileUri = photo?.file.uri;
   const photoThumbnailUri = photo?.file.thumbnailUri;
   const photoDetailUri = photo?.file.detailUri;
+  const photoLookDetailUri = photo?.file.lookDetailUri;
+  const photoLookDetailKey = photo?.file.lookDetailKey;
+  const photoLookId = photo?.lookId;
+  const photoLookIntensity = photo?.lookIntensity;
+  const lookApplied = hasAppliedLook(photoLookId);
+  const lookDetailReady =
+    lookApplied &&
+    photoLookId != null &&
+    isLookDetailCurrent(
+      {
+        lookDetailUri: photoLookDetailUri,
+        lookDetailKey: photoLookDetailKey,
+      },
+      photoLookId,
+      photoLookIntensity ?? 0,
+    );
 
   useEffect(() => {
     if (!photoFileUri) {
       setUri('');
+      return;
+    }
+
+    if (lookApplied) {
+      // Hold gray until look-baked detail is ready — never flash ungraded.
+      setUri(lookDetailReady && photoLookDetailUri ? photoLookDetailUri : '');
       return;
     }
 
@@ -253,17 +288,59 @@ export default function CulledAlbumPhotoDetailScreen({
     setUri(resolveDetailDisplayUri(displayFile));
   }, [
     albumId,
+    lookApplied,
+    lookDetailReady,
     photo?.file.name,
     photo?.file.size,
     photo?.file.type,
     photoDetailUri,
     photoFileUri,
     photoId,
+    photoLookDetailUri,
     photoThumbnailUri,
   ]);
 
   useEffect(() => {
-    if (!photoFileUri || isUsableDetailUri(photoDetailUri)) {
+    if (!lookApplied || lookDetailReady || !photo) {
+      return;
+    }
+
+    let cancelled = false;
+    ensureLookDetail(photo)
+      .then(async result => {
+        if (cancelled || !result.lookDetailUri || !result.lookDetailKey) {
+          return;
+        }
+        const lookDetailUri = result.lookDetailUri;
+        const lookDetailKey = result.lookDetailKey;
+        await preloadImage(lookDetailUri);
+        if (cancelled) {
+          return;
+        }
+        updatePhoto(albumId, photoId, current => {
+          current.file = {...current.file, lookDetailUri, lookDetailKey};
+        });
+        syncPhotoFromStore(albumId, photoId);
+        setUri(lookDetailUri);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    albumId,
+    lookApplied,
+    lookDetailReady,
+    photo,
+    photoId,
+    photoLookId,
+    photoLookIntensity,
+  ]);
+
+  useEffect(() => {
+    // Ungraded detail derivative only when no look is applied.
+    if (lookApplied || !photoFileUri || isUsableDetailUri(photoDetailUri)) {
       return;
     }
 
@@ -302,6 +379,7 @@ export default function CulledAlbumPhotoDetailScreen({
     };
   }, [
     albumId,
+    lookApplied,
     photo?.file.name,
     photo?.file.size,
     photo?.file.type,
@@ -533,7 +611,7 @@ export default function CulledAlbumPhotoDetailScreen({
                   photoId={photoId}
                   faces={faces}
                   zoomFaceIndex={zoomFaceIndex}
-                  lookId={photo?.lookId}
+                  lookId={lookDetailReady ? 'original' : photo?.lookId}
                   lookIntensity={photo?.lookIntensity}
                   imageSize={imageSize}
                   onImageReady={handleMainImageReady}

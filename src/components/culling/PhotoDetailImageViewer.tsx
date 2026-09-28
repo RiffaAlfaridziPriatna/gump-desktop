@@ -161,7 +161,19 @@ export function PhotoDetailImageViewer({
   const imageSize = imageSizeProp ?? loadedImageSize;
   const isZoomed = zoomFaceIndex !== null;
 
+  // Empty uri = holding gray while look detail bakes (anti-flash).
   useEffect(() => {
+    if (!uri) {
+      setImageDecoded(false);
+      setLoadFailed(false);
+      imageReadyNotifiedRef.current = false;
+    }
+  }, [uri]);
+
+  useEffect(() => {
+    if (!uri) {
+      return;
+    }
     const cached = getCachedImageDimensions(uri);
     if (cached) {
       setLoadedImageSize(cached);
@@ -175,7 +187,7 @@ export function PhotoDetailImageViewer({
   }, [zoomFaceIndex, onTooltipAnchorChange]);
 
   useEffect(() => {
-    if (imageSizeProp) {
+    if (!uri || imageSizeProp) {
       return;
     }
 
@@ -208,6 +220,9 @@ export function PhotoDetailImageViewer({
   }, [imageSizeProp, onImageReady, uri]);
 
   useEffect(() => {
+    if (!uri) {
+      return;
+    }
     preloadImage(uri).catch(() => undefined);
   }, [uri]);
 
@@ -295,10 +310,10 @@ export function PhotoDetailImageViewer({
     }));
   }, [imageLayout, visibleFaces]);
 
-  const canRenderOverlays = imageDecoded && !loadFailed && imageLayout !== null;
-  const showLoadingOverlay = !imageDecoded && !loadFailed;
+  const canRenderOverlays = Boolean(uri) && imageDecoded && !loadFailed && imageLayout !== null;
+  const showLoadingOverlay = !uri || (!imageDecoded && !loadFailed);
 
-  const fallbackImage = (
+  const fallbackImage = uri ? (
     <Image
       source={{uri}}
       resizeMode="contain"
@@ -306,7 +321,7 @@ export function PhotoDetailImageViewer({
       onLoad={handleImageLoad}
       onError={handleImageError}
     />
-  );
+  ) : null;
 
   return (
     <View
@@ -317,7 +332,7 @@ export function PhotoDetailImageViewer({
       }}
     >
       <View style={styles.imageFrame}>
-        {imageLayout ? (
+        {uri && imageLayout ? (
           <LookPreviewImage
             uri={uri}
             lookId={lookId}

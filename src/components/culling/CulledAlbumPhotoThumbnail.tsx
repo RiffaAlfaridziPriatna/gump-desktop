@@ -70,6 +70,7 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
   );
   const [isLoaded, setIsLoaded] = useState(() => hasWarmThumbnail(uri));
   const displayedUriRef = useRef(uri);
+  const lookRef = useRef({lookId, lookIntensity});
 
   useEffect(() => {
     if (displayedUriRef.current === uri) {
@@ -79,6 +80,16 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
     setImageSize(resolveThumbnailSize(fileDims, uri));
     setIsLoaded(hasWarmThumbnail(uri));
   }, [fileDims.thumbnailHeight, fileDims.thumbnailWidth, uri]);
+
+  // Look change: clear loaded so we hold gray until LookPreviewImage bakes.
+  useEffect(() => {
+    const prev = lookRef.current;
+    if (prev.lookId === lookId && prev.lookIntensity === lookIntensity) {
+      return;
+    }
+    lookRef.current = {lookId, lookIntensity};
+    setIsLoaded(false);
+  }, [lookId, lookIntensity]);
 
   const imageLayout = useMemo(() => {
     if (!imageSize) {

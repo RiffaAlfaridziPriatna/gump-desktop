@@ -7,9 +7,11 @@ import {
 } from '@lib/look/types';
 import {ensureExportStagingDirectory} from '@lib/export/nativeExport';
 import {applyLookToJpeg} from '@lib/storage/localStorage';
+import type {FileAsset} from '@services/upload/types';
 
 export const LOOK_BAKE_CONCURRENCY = 4;
 export const LOOK_PREVIEW_MAX_PIXEL_SIZE = 960;
+export const LOOK_DETAIL_MAX_PIXEL_SIZE = 4096;
 
 export type BakeLookQuality = 'compressed' | 'original' | 'preview';
 
@@ -29,7 +31,7 @@ const QUALITY_SETTINGS: Record<
   BakeLookQuality,
   {maxPixelSize: number; jpegQuality: number}
 > = {
-  compressed: {maxPixelSize: 4096, jpegQuality: 0.95},
+  compressed: {maxPixelSize: LOOK_DETAIL_MAX_PIXEL_SIZE, jpegQuality: 0.95},
   original: {maxPixelSize: 12000, jpegQuality: 0.97},
   preview: {maxPixelSize: LOOK_PREVIEW_MAX_PIXEL_SIZE, jpegQuality: 0.88},
 };
@@ -55,6 +57,35 @@ function previewCacheKey(
   maxPixelSize: number,
 ): string {
   return `${sourceUri}|${lookId}|${intensity}|${maxPixelSize}`;
+}
+
+/** Cache key stored on FileAsset.lookDetailKey for a 4096 look bake. */
+export function lookDetailCacheKey(
+  lookId: LookId,
+  intensityPercent: number,
+): string {
+  const intensity = normalizeLookIntensityPercent(intensityPercent);
+  return `${lookId}|${intensity}|${LOOK_DETAIL_MAX_PIXEL_SIZE}`;
+}
+
+export function isUsableLookDetailUri(
+  lookDetailUri: string | null | undefined,
+): lookDetailUri is string {
+  return typeof lookDetailUri === 'string' && lookDetailUri.length > 0;
+}
+
+export function isLookDetailCurrent(
+  file: Pick<FileAsset, 'lookDetailUri' | 'lookDetailKey'>,
+  lookId: LookId,
+  intensityPercent: number,
+): boolean {
+  if (!hasAppliedLook(lookId)) {
+    return false;
+  }
+  if (!isUsableLookDetailUri(file.lookDetailUri) || !file.lookDetailKey) {
+    return false;
+  }
+  return file.lookDetailKey === lookDetailCacheKey(lookId, intensityPercent);
 }
 
 export function photoNeedsLookBake(photo: CulledAlbumPhoto): boolean {
@@ -122,7 +153,36 @@ export async function bakePhotoLook(
   };
 }
 
-/** Display preview using the same LUT bake path as export (smaller pixel budget). */
+/**
+ * Ensure a 4096 look-baked detail exists for this photo (like ensureDetail).
+ * Returns the URI + key to store on FileAsset; no-op when look is original.
+ */
+export async function ensureLookDetail(
+  photo: CulledAlbumPhoto,
+): Promise<{lookDetailUri: string | null; lookDetailKey: string | null}> {
+  if (!hasAppliedLook(photo.lookId)) {
+    return {lookDetailUri: null, lookDetailKey: null};
+  }
+
+  const intensity = normalizeLookIntensityPercent(
+    photo.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
+  );
+  const key = lookDetailCacheKey(photo.lookId, intensity);
+  if (isLookDetailCurrent(photo.file, photo.lookId, intensity)) {
+    return {
+      lookDetailUri: photo.file.lookDetailUri!,
+      lookDetailKey: key,
+    };
+  }
+
+  const baked = await bakePhotoLook(photo, 'compressed');
+  return {
+    lookDetailUri: baked.uri,
+    lookDetailKey: key,
+  };
+}
+
+/** Display preview using the same native .cube LUT bake path as export (smaller pixel budget). */
 export async function bakeLookPreviewUri(
   sourceUri: string,
   lookId: LookId,

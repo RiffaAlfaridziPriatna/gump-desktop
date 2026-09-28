@@ -27,7 +27,8 @@ const PREVIEW_DEBOUNCE_MS = 90;
 
 /**
  * In-app look preview via the same native .cube LUT bake used for Export/Upload.
- * Falls back to the source URI while baking / if bake is unavailable.
+ * When a look is applied, holds gray (renders nothing) until the baked URI is
+ * ready — never paints the ungraded source first (avoids original→look flash).
  */
 export const LookPreviewImage = memo(function LookPreviewImage({
   uri,
@@ -38,14 +39,19 @@ export const LookPreviewImage = memo(function LookPreviewImage({
   onError,
 }: LookPreviewImageProps) {
   const intensity = lookIntensity ?? DEFAULT_LOOK_INTENSITY;
-  const [displayUri, setDisplayUri] = useState(uri);
+  const needsLookBake = Boolean(uri) && hasAppliedLook(lookId) && intensity > 0;
+  const [displayUri, setDisplayUri] = useState(() =>
+    needsLookBake ? '' : uri,
+  );
 
   useEffect(() => {
-    setDisplayUri(uri);
     if (!uri || !hasAppliedLook(lookId) || intensity <= 0) {
+      setDisplayUri(uri);
       return;
     }
 
+    // Hold empty until bake finishes — do not show ungraded source.
+    setDisplayUri('');
     let cancelled = false;
     const timer = setTimeout(() => {
       bakeLookPreviewUri(uri, lookId, intensity)
@@ -65,13 +71,13 @@ export const LookPreviewImage = memo(function LookPreviewImage({
     };
   }, [intensity, lookId, uri]);
 
-  if (!uri) {
+  if (!uri || !displayUri) {
     return null;
   }
 
   return (
     <Image
-      source={{uri: displayUri || uri}}
+      source={{uri: displayUri}}
       style={style}
       onLoad={onLoad}
       onError={onError}
