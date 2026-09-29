@@ -156,18 +156,24 @@ type KeyFacesSectionHeaderProps = {
   title: string;
   expanded: boolean;
   onToggle: () => void;
+  onHoverIn?: () => void;
+  onHoverOut?: () => void;
 };
 
 const KeyFacesSectionHeader = memo(function KeyFacesSectionHeader({
   title,
   expanded,
   onToggle,
+  onHoverIn,
+  onHoverOut,
 }: KeyFacesSectionHeaderProps) {
   const ChevronIcon = expanded ? IconChevronUp : IconChevronDown;
 
   return (
     <Pressable
       onPress={onToggle}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
       style={styles.keyFacesSectionHeader}
       accessibilityRole="button"
       accessibilityState={{expanded}}>
@@ -220,7 +226,12 @@ function CulledAlbumDetailSidebarComponent({
 
   // Manual sticky: pin Key Faces title once Cull Filters has scrolled away.
   const [isKeyFacesTitleStuck, setIsKeyFacesTitleStuck] = useState(false);
+  const isKeyFacesTitleStuckRef = useRef(false);
+  isKeyFacesTitleStuckRef.current = isKeyFacesTitleStuck;
   const cullFiltersHeightRef = useRef(0);
+  const stickyOverlayRef = useRef<View>(null);
+  const stickyOverlayBottomYRef = useRef(0);
+  const isHoveringKeyFacesTitleRef = useRef(false);
 
   const keyFaceRows = useMemo(
     () => (isMobileLayout ? [] : buildKeyFaceRows(keyFaces)),
@@ -243,16 +254,48 @@ function CulledAlbumDetailSidebarComponent({
     [],
   );
 
+  const handleKeyFacesTitleHoverIn = useCallback(() => {
+    isHoveringKeyFacesTitleRef.current = true;
+    onKeyFaceTooltipChangeRef.current(null);
+  }, []);
+
+  const handleKeyFacesTitleHoverOut = useCallback(() => {
+    isHoveringKeyFacesTitleRef.current = false;
+  }, []);
+
+  // Drop face tooltips that sit under the sticky title (Windows can hover
+  // through the overlay onto FlatList cells behind it).
+  const handleTooltipAnchorChange = useCallback(
+    (anchor: KeyFaceTooltipAnchor | null) => {
+      if (isHoveringKeyFacesTitleRef.current) {
+        onKeyFaceTooltipChangeRef.current(null);
+        return;
+      }
+      if (anchor && isKeyFacesTitleStuckRef.current) {
+        const faceTop = anchor.topY ?? anchor.bottomY;
+        if (
+          stickyOverlayBottomYRef.current > 0 &&
+          faceTop < stickyOverlayBottomYRef.current
+        ) {
+          onKeyFaceTooltipChangeRef.current(null);
+          return;
+        }
+      }
+      onKeyFaceTooltipChangeRef.current(anchor);
+    },
+    [],
+  );
+
   const renderKeyFaceRow = useCallback(
     ({item}: ListRenderItemInfo<KeyFaceRow>) => (
       <KeyFaceGridRow
         row={item}
         isLastRow={item.rowIndex === lastKeyFaceRowIndex}
-        onTooltipAnchorChange={onKeyFaceTooltipChangeRef.current}
+        onTooltipAnchorChange={handleTooltipAnchorChange}
         onKeyFacePress={handleKeyFacePress}
       />
     ),
-    [handleKeyFacePress, lastKeyFaceRowIndex],
+    [handleKeyFacePress, handleTooltipAnchorChange, lastKeyFaceRowIndex],
   );
 
   const renderKeyFaceItem = useCallback(
@@ -307,14 +350,26 @@ function CulledAlbumDetailSidebarComponent({
       const stickAfter =
         cullFiltersHeightRef.current + LIST_HEADER_SECTION_GAP;
       const shouldStick = offsetY >= stickAfter;
-      setIsKeyFacesTitleStuck(current =>
-        current === shouldStick ? current : shouldStick,
-      );
+      setIsKeyFacesTitleStuck(current => {
+        if (current === shouldStick) {
+          return current;
+        }
+        if (shouldStick) {
+          onKeyFaceTooltipChangeRef.current(null);
+        }
+        return shouldStick;
+      });
     },
     // keyFaceScrollHandlers identity changes each render; only need onScroll.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [isMobileLayout, keyFaceScrollHandlers.onScroll],
   );
+
+  const handleStickyOverlayLayout = useCallback(() => {
+    stickyOverlayRef.current?.measureInWindow((_x, y, _w, height) => {
+      stickyOverlayBottomYRef.current = y + height;
+    });
+  }, []);
 
   const listHeader = useMemo(
     () => (
@@ -394,6 +449,8 @@ function CulledAlbumDetailSidebarComponent({
             title={`Key Faces (${keyFaces.length})`}
             expanded={keyFacesExpanded}
             onToggle={onKeyFacesToggle}
+            onHoverIn={handleKeyFacesTitleHoverIn}
+            onHoverOut={handleKeyFacesTitleHoverOut}
           />
         )}
       </View>
@@ -403,6 +460,8 @@ function CulledAlbumDetailSidebarComponent({
       cullFiltersExpanded,
       filterCounts,
       handleCullFiltersLayout,
+      handleKeyFacesTitleHoverIn,
+      handleKeyFacesTitleHoverOut,
       handleSelectionFilterPress,
       isMobileLayout,
       keyExtractor,
@@ -516,12 +575,34 @@ function CulledAlbumDetailSidebarComponent({
             }
           />
           {!isMobileLayout && isKeyFacesTitleStuck ? (
-            <View style={styles.keyFacesStickyOverlay} pointerEvents="box-none">
-              <KeyFacesSectionHeader
-                title={`Key Faces (${keyFaces.length})`}
-                expanded={keyFacesExpanded}
-                onToggle={onKeyFacesToggle}
-              />
+            <View
+              ref={stickyOverlayRef}
+              style={styles.keyFacesStickyOverlay}
+              onLayout={handleStickyOverlayLayout}
+              collapsable={false}>
+              <Pressable
+                style={styles.keyFacesStickyHitTarget}
+                onHoverIn={handleKeyFacesTitleHoverIn}
+                onHoverOut={handleKeyFacesTitleHoverOut}
+                onPress={onKeyFacesToggle}
+                accessibilityRole="button"
+                accessibilityState={{expanded: keyFacesExpanded}}
+                accessibilityLabel={`Key Faces (${keyFaces.length})`}>
+                <View style={styles.keyFacesSectionChevron}>
+                  {keyFacesExpanded ? (
+                    <IconChevronUp width={24} height={24} color={colors.white} />
+                  ) : (
+                    <IconChevronDown
+                      width={24}
+                      height={24}
+                      color={colors.white}
+                    />
+                  )}
+                </View>
+                <Text style={styles.keyFacesSectionTitle}>
+                  {`Key Faces (${keyFaces.length})`}
+                </Text>
+              </Pressable>
             </View>
           ) : null}
         </View>
@@ -576,15 +657,25 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    zIndex: 10,
+    zIndex: 100,
+    elevation: 100,
     backgroundColor: colors.background,
+  },
+  keyFacesStickyHitTarget: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: KEY_FACES_HEADER_HEIGHT,
+    width: '100%',
     paddingBottom: 8,
+    backgroundColor: colors.background,
   },
   keyFacesSectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     minHeight: KEY_FACES_HEADER_HEIGHT,
+    width: '100%',
   },
   keyFacesSectionChevron: {
     width: 24,
