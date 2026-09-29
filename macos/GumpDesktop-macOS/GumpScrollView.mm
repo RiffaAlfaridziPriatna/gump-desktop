@@ -187,6 +187,230 @@ static void GumpMoveClipView(NSScrollView *scrollView, CGFloat offsetY)
   [scrollView reflectScrolledClipView:clipView];
 }
 
+#pragma mark - Animated clip-view scroll (throttled events)
+
+// Keep JS alive: ~30 Hz ticks, emit every other tick (~15 Hz), defer image loads
+// stays on the JS side via isProgrammaticScroll. Jump path remains for animated:NO.
+static const NSTimeInterval kGumpScrollAnimTickHz = 30.0;
+static const NSTimeInterval kGumpScrollAnimMinDuration = 0.22;
+static const NSTimeInterval kGumpScrollAnimMaxDuration = 0.42;
+
+@interface GumpClipScrollAnimation : NSObject
+@property (nonatomic, weak) NSScrollView *scrollView;
+@property (nonatomic, copy) NSNumber *reactTag;
+@property (nonatomic, weak) id<RCTEventDispatcherProtocol> dispatcher;
+@property (nonatomic, assign) CGFloat fromY;
+@property (nonatomic, assign) CGFloat toY;
+@property (nonatomic, assign) CFTimeInterval startTime;
+@property (nonatomic, assign) NSTimeInterval duration;
+@property (nonatomic, assign) NSUInteger tick;
+@property (nonatomic, assign) NSUInteger generation;
+@property (nonatomic, copy) void (^completion)(CGFloat afterY, BOOL cancelled);
+@property (nonatomic, strong) NSTimer *timer;
+@end
+
+@implementation GumpClipScrollAnimation
+@end
+
+static GumpClipScrollAnimation *GumpActiveClipScrollAnimation = nil;
+static NSUInteger GumpClipScrollAnimationGeneration = 0;
+
+static NSTimeInterval GumpScrollAnimationDuration(CGFloat deltaY)
+{
+  return MIN(kGumpScrollAnimMaxDuration,
+             MAX(kGumpScrollAnimMinDuration, 0.18 + fabs(deltaY) / 14000.0));
+}
+
+static CGFloat GumpEaseOutCubic(CGFloat t)
+{
+  CGFloat inv = 1.0 - t;
+  return 1.0 - inv * inv * inv;
+}
+
+static void GumpCancelClipScrollAnimation(void)
+{
+  GumpClipScrollAnimation *active = GumpActiveClipScrollAnimation;
+  if (active == nil) {
+    return;
+  }
+  GumpActiveClipScrollAnimation = nil;
+  [active.timer invalidate];
+  active.timer = nil;
+  void (^completion)(CGFloat, BOOL) = active.completion;
+  active.completion = nil;
+  NSScrollView *scrollView = active.scrollView;
+  CGFloat afterY = scrollView != nil ? scrollView.documentVisibleRect.origin.y : active.toY;
+  if (completion != nil) {
+    completion(afterY, YES);
+  }
+}
+
+static void GumpFinishClipScrollAnimation(GumpClipScrollAnimation *animation, BOOL cancelled)
+{
+  if (animation == nil) {
+    return;
+  }
+  if (GumpActiveClipScrollAnimation == animation) {
+    GumpActiveClipScrollAnimation = nil;
+  }
+  [animation.timer invalidate];
+  animation.timer = nil;
+  void (^completion)(CGFloat, BOOL) = animation.completion;
+  animation.completion = nil;
+
+  NSScrollView *scrollView = animation.scrollView;
+  if (scrollView != nil && !cancelled) {
+    GumpMoveClipView(scrollView, animation.toY);
+    id<RCTEventDispatcherProtocol> dispatcher = animation.dispatcher;
+    NSNumber *reactTag = animation.reactTag;
+    if (dispatcher != nil && reactTag != nil) {
+      GumpEmitScrollEvent(dispatcher, reactTag, scrollView);
+      dispatch_async(dispatch_get_main_queue(), ^{
+        GumpEmitScrollEvent(dispatcher, reactTag, scrollView);
+      });
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.064 * NSEC_PER_SEC)),
+                     dispatch_get_main_queue(), ^{
+                       GumpEmitScrollEvent(dispatcher, reactTag, scrollView);
+                     });
+    } else {
+      GumpEmitScrollEventsForScrollView(scrollView);
+    }
+  }
+
+  CGFloat afterY =
+      scrollView != nil ? scrollView.documentVisibleRect.origin.y : animation.toY;
+  if (completion != nil) {
+    completion(afterY, cancelled);
+  }
+}
+
+static void GumpClipScrollAnimationTick(GumpClipScrollAnimation *animation)
+{
+  if (animation == nil || animation != GumpActiveClipScrollAnimation) {
+    return;
+  }
+  NSScrollView *scrollView = animation.scrollView;
+  if (scrollView == nil) {
+    GumpFinishClipScrollAnimation(animation, YES);
+    return;
+  }
+
+  CFTimeInterval elapsed = CFAbsoluteTimeGetCurrent() - animation.startTime;
+  CGFloat t = animation.duration > 0 ? (CGFloat)(elapsed / animation.duration) : 1.0;
+  if (t >= 1.0) {
+    GumpFinishClipScrollAnimation(animation, NO);
+    return;
+  }
+
+  CGFloat eased = GumpEaseOutCubic(t);
+  CGFloat y = animation.fromY + (animation.toY - animation.fromY) * eased;
+  GumpMoveClipView(scrollView, y);
+
+  animation.tick += 1;
+  // ~15 Hz synthetic events — enough for VirtualizedList, light on JS.
+  if ((animation.tick % 2) == 0) {
+    id<RCTEventDispatcherProtocol> dispatcher = animation.dispatcher;
+    NSNumber *reactTag = animation.reactTag;
+    if (dispatcher != nil && reactTag != nil) {
+      GumpEmitScrollEvent(dispatcher, reactTag, scrollView);
+    } else {
+      RCTScrollView *host = GumpHostForScrollView(scrollView);
+      id<RCTEventDispatcherProtocol> shared = GumpEventDispatcher();
+      if (host != nil && shared != nil) {
+        GumpEmitScrollEvent(shared, host.reactTag, scrollView);
+      }
+    }
+  }
+}
+
+static void GumpAnimateClipView(NSScrollView *scrollView,
+                                CGFloat offsetY,
+                                BOOL animated,
+                                NSNumber *reactTag,
+                                id<RCTEventDispatcherProtocol> dispatcher,
+                                void (^completion)(CGFloat afterY, BOOL cancelled))
+{
+  if (scrollView == nil) {
+    if (completion != nil) {
+      completion(offsetY, YES);
+    }
+    return;
+  }
+
+  CGFloat beforeY = scrollView.documentVisibleRect.origin.y;
+  if (!animated || fabs(beforeY - offsetY) <= 2.0) {
+    GumpCancelClipScrollAnimation();
+    GumpMoveClipView(scrollView, offsetY);
+    if (dispatcher != nil && reactTag != nil) {
+      GumpEmitScrollEvent(dispatcher, reactTag, scrollView);
+      dispatch_async(dispatch_get_main_queue(), ^{
+        GumpEmitScrollEvent(dispatcher, reactTag, scrollView);
+      });
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.064 * NSEC_PER_SEC)),
+                     dispatch_get_main_queue(), ^{
+                       GumpEmitScrollEvent(dispatcher, reactTag, scrollView);
+                     });
+    } else {
+      GumpEmitScrollEventsForScrollView(scrollView);
+    }
+    CGFloat afterY = scrollView.documentVisibleRect.origin.y;
+    if (completion != nil) {
+      completion(afterY, NO);
+    }
+    return;
+  }
+
+  // Same scroll view already animating to the same target: chain completion.
+  GumpClipScrollAnimation *active = GumpActiveClipScrollAnimation;
+  if (active != nil && active.scrollView == scrollView &&
+      fabs(active.toY - offsetY) <= 1.0) {
+    void (^previous)(CGFloat, BOOL) = active.completion;
+    active.completion = ^(CGFloat afterY, BOOL cancelled) {
+      if (previous != nil) {
+        previous(afterY, cancelled);
+      }
+      if (completion != nil) {
+        completion(afterY, cancelled);
+      }
+    };
+    return;
+  }
+
+  GumpCancelClipScrollAnimation();
+
+  GumpClipScrollAnimation *animation = [GumpClipScrollAnimation new];
+  animation.scrollView = scrollView;
+  animation.reactTag = reactTag;
+  animation.dispatcher = dispatcher;
+  animation.fromY = beforeY;
+  animation.toY = offsetY;
+  animation.startTime = CFAbsoluteTimeGetCurrent();
+  animation.duration = GumpScrollAnimationDuration(beforeY - offsetY);
+  animation.tick = 0;
+  animation.generation = ++GumpClipScrollAnimationGeneration;
+  animation.completion = completion;
+  GumpActiveClipScrollAnimation = animation;
+
+  // Immediate first frame so the click feels responsive.
+  GumpMoveClipView(scrollView, beforeY);
+  if (dispatcher != nil && reactTag != nil) {
+    GumpEmitScrollEvent(dispatcher, reactTag, scrollView);
+  }
+
+  __weak GumpClipScrollAnimation *weakAnimation = animation;
+  animation.timer = [NSTimer
+      timerWithTimeInterval:(1.0 / kGumpScrollAnimTickHz)
+                    repeats:YES
+                      block:^(__unused NSTimer *timer) {
+                        GumpClipScrollAnimation *strongAnimation = weakAnimation;
+                        if (strongAnimation == nil) {
+                          return;
+                        }
+                        GumpClipScrollAnimationTick(strongAnimation);
+                      }];
+  [[NSRunLoop mainRunLoop] addTimer:animation.timer forMode:NSRunLoopCommonModes];
+}
+
 #pragma mark - NSScroller tracking (drop RCT scroll events until mouse up)
 
 static NSScroller *GumpEnclosingScroller(NSView *view)
@@ -295,6 +519,7 @@ RCT_EXPORT_MODULE();
 
 RCT_EXPORT_METHOD(scrollToOffset:(nonnull NSNumber *)reactTag
                   offsetY:(double)offsetY
+                  animated:(BOOL)animated
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(__unused RCTPromiseRejectBlock)reject)
 {
@@ -337,41 +562,33 @@ RCT_EXPORT_METHOD(scrollToOffset:(nonnull NSNumber *)reactTag
 
     CGFloat beforeVisibleY = scrollView.documentVisibleRect.origin.y;
     CGFloat beforeClipY = clipView != nil ? clipView.bounds.origin.y : 0;
+    id<RCTEventDispatcherProtocol> dispatcher = strongSelf.bridge.eventDispatcher;
 
-    GumpMoveClipView(scrollView, offsetY);
-
-    CGFloat afterVisibleY = scrollView.documentVisibleRect.origin.y;
-    CGFloat afterClipY = clipView != nil ? clipView.bounds.origin.y : 0;
-
-    id<RCTEventDispatcherProtocol> dispatcher = weakSelf.bridge.eventDispatcher;
-
-    // Emission 1: immediately, same runloop turn.
-    GumpEmitScrollEvent(dispatcher, reactTag, scrollView);
-    // Emission 2: next runloop turn, after any pending layout pass has run.
-    dispatch_async(dispatch_get_main_queue(), ^{
-      GumpEmitScrollEvent(dispatcher, reactTag, scrollView);
-    });
-    // Emission 3: ~4 frames later, after RN's own deferred re-dispatch.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.064 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-      GumpEmitScrollEvent(dispatcher, reactTag, scrollView);
-    });
-
-    resolve(@{
-      @"resolved" : @YES,
-      @"reason" : @"ok",
-      @"viewClass" : viewClass,
-      @"beforeVisibleY" : @(beforeVisibleY),
-      @"afterVisibleY" : @(afterVisibleY),
-      @"beforeClipY" : @(beforeClipY),
-      @"afterClipY" : @(afterClipY),
-      @"documentHeight" : @(documentView != nil ? documentView.frame.size.height : 0),
-      @"clipHeight" : @(clipView != nil ? clipView.bounds.size.height : 0),
-      @"documentFlipped" : @(documentView != nil ? documentView.isFlipped : NO),
-      @"clipFlipped" : @(clipView != nil ? clipView.isFlipped : NO),
-      @"moved" : @(fabs(afterVisibleY - beforeVisibleY) > 1.0),
-      @"atTarget" : @(fabs(afterVisibleY - offsetY) <= 2.0),
-    });
+    GumpAnimateClipView(scrollView, (CGFloat)offsetY, animated, reactTag, dispatcher,
+                        ^(CGFloat afterVisibleY, BOOL cancelled) {
+                          CGFloat afterClipY =
+                              clipView != nil ? clipView.bounds.origin.y : 0;
+                          resolve(@{
+                            @"resolved" : @YES,
+                            @"reason" : cancelled ? @"cancelled" : @"ok",
+                            @"viewClass" : viewClass,
+                            @"beforeVisibleY" : @(beforeVisibleY),
+                            @"afterVisibleY" : @(afterVisibleY),
+                            @"beforeClipY" : @(beforeClipY),
+                            @"afterClipY" : @(afterClipY),
+                            @"documentHeight" :
+                                @(documentView != nil ? documentView.frame.size.height : 0),
+                            @"clipHeight" :
+                                @(clipView != nil ? clipView.bounds.size.height : 0),
+                            @"documentFlipped" :
+                                @(documentView != nil ? documentView.isFlipped : NO),
+                            @"clipFlipped" : @(clipView != nil ? clipView.isFlipped : NO),
+                            @"moved" : @(fabs(afterVisibleY - beforeVisibleY) > 1.0),
+                            @"atTarget" : @(fabs(afterVisibleY - offsetY) <= 2.0),
+                            @"animated" : @(animated),
+                            @"cancelled" : @(cancelled),
+                          });
+                        });
     }];
   });
 }
@@ -442,8 +659,12 @@ RCT_EXPORT_METHOD(scrollToOffset:(nonnull NSNumber *)reactTag
   }
   NSScrollView *scrollView = GumpLargestVisibleScrollView(self.window);
   if (scrollView != nil) {
-    GumpMoveClipView(scrollView, 0);
-    GumpEmitScrollEventsForScrollView(scrollView);
+    RCTScrollView *host = GumpHostForScrollView(scrollView);
+    NSNumber *reactTag = host != nil ? host.reactTag : nil;
+    id<RCTEventDispatcherProtocol> dispatcher = GumpEventDispatcher();
+    // Start the animated climb on mouseDown so we never wait on JS Pressable.
+    // PhotoGrid's nativeScrollToOffset(animated:true) chains onto this run.
+    GumpAnimateClipView(scrollView, 0, YES, reactTag, dispatcher, nil);
   }
   if (self.onNativePress) {
     self.onNativePress(@{@"native" : @YES});
