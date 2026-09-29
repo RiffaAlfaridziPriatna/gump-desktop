@@ -12,18 +12,21 @@ import {
   useScrollAwareTooltipHandlers,
 } from '@lib/ui/scrollAwareTooltip';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   ListRenderItemInfo,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 import IconCheckCircleOutline from '../../assets/images/icon_check_circle_outlined.svg';
+import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
+import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
 import IconExport from '../../assets/images/icon_export.svg';
 import IconPlus from '../../assets/images/icon_plus.svg';
 import IconUpload from '../../assets/images/icon_upload.svg';
@@ -41,6 +44,8 @@ const KEY_FACE_SIZE = 64;
 const KEY_FACE_GAP = 16;
 const KEY_FACE_COLUMNS = 3;
 const KEY_FACE_ROW_HEIGHT = KEY_FACE_SIZE + KEY_FACE_GAP;
+const KEY_FACES_HEADER_HEIGHT = 32;
+const LIST_HEADER_SECTION_GAP = 20;
 
 export type { KeyFaceWithSource };
 
@@ -147,6 +152,33 @@ const KeyFaceGridRow = memo(
   (prev, next) => prev.row === next.row && prev.isLastRow === next.isLastRow,
 );
 
+type KeyFacesSectionHeaderProps = {
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+};
+
+const KeyFacesSectionHeader = memo(function KeyFacesSectionHeader({
+  title,
+  expanded,
+  onToggle,
+}: KeyFacesSectionHeaderProps) {
+  const ChevronIcon = expanded ? IconChevronUp : IconChevronDown;
+
+  return (
+    <Pressable
+      onPress={onToggle}
+      style={styles.keyFacesSectionHeader}
+      accessibilityRole="button"
+      accessibilityState={{expanded}}>
+      <View style={styles.keyFacesSectionChevron}>
+        <ChevronIcon width={24} height={24} color={colors.white} />
+      </View>
+      <Text style={styles.keyFacesSectionTitle}>{title}</Text>
+    </Pressable>
+  );
+});
+
 function CulledAlbumDetailSidebarComponent({
   isMobileLayout,
   totalPhotos,
@@ -186,9 +218,17 @@ function CulledAlbumDetailSidebarComponent({
     {trackWheelScroll: false},
   );
 
+  // Manual sticky: pin Key Faces title once Cull Filters has scrolled away.
+  const [isKeyFacesTitleStuck, setIsKeyFacesTitleStuck] = useState(false);
+  const cullFiltersHeightRef = useRef(0);
+
   const keyFaceRows = useMemo(
     () => (isMobileLayout ? [] : buildKeyFaceRows(keyFaces)),
     [isMobileLayout, keyFaces],
+  );
+  const listData = useMemo(
+    () => (!isMobileLayout && keyFacesExpanded ? keyFaceRows : []),
+    [isMobileLayout, keyFacesExpanded, keyFaceRows],
   );
   const lastKeyFaceRowIndex = keyFaceRows.length - 1;
 
@@ -247,6 +287,136 @@ function CulledAlbumDetailSidebarComponent({
       index,
     }),
     [],
+  );
+
+  const handleCullFiltersLayout = useCallback((height: number) => {
+    const next = Math.floor(height);
+    if (next <= 0 || next === cullFiltersHeightRef.current) {
+      return;
+    }
+    cullFiltersHeightRef.current = next;
+  }, []);
+
+  const handleListScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      keyFaceScrollHandlers.onScroll?.(event);
+      if (isMobileLayout) {
+        return;
+      }
+      const offsetY = event.nativeEvent.contentOffset.y;
+      const stickAfter =
+        cullFiltersHeightRef.current + LIST_HEADER_SECTION_GAP;
+      const shouldStick = offsetY >= stickAfter;
+      setIsKeyFacesTitleStuck(current =>
+        current === shouldStick ? current : shouldStick,
+      );
+    },
+    // keyFaceScrollHandlers identity changes each render; only need onScroll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isMobileLayout, keyFaceScrollHandlers.onScroll],
+  );
+
+  const listHeader = useMemo(
+    () => (
+      <View style={styles.listHeader}>
+        <View
+          onLayout={event =>
+            handleCullFiltersLayout(event.nativeEvent.layout.height)
+          }>
+          <Accordion
+            title="Cull Filters"
+            expanded={cullFiltersExpanded}
+            onToggle={onCullFiltersToggle}
+            style={styles.cullFiltersAccordion}>
+            <View style={styles.accordionContent}>
+              <View style={styles.totalPhotosBadge}>
+                <Text style={styles.totalPhotosLabel}>Total Photos</Text>
+                <Text style={styles.totalPhotosValue}>{totalPhotos}</Text>
+              </View>
+              <Pressable
+                style={styles.mySelectionsRow}
+                onPress={handleSelectionFilterPress}>
+                {selectionFilter === 'selected' ? (
+                  <IconCheckCircle width={20} height={20} color={colors.text} />
+                ) : (
+                  <IconCheckCircleOutline
+                    width={20}
+                    height={20}
+                    color={colors.text}
+                  />
+                )}
+                <Text style={styles.mySelectionsLabel}>My Selections</Text>
+                <Text style={styles.mySelectionsCount}>{mySelectionsCount}</Text>
+              </Pressable>
+              <View style={styles.sidebarDivider} />
+              <View style={styles.filterRowContainer}>
+                {(Object.keys(FILTER_LABELS) as CullFilterKey[]).map(key => (
+                  <Checkbox
+                    key={key}
+                    checked={activeFilters[key]}
+                    onToggle={() => onToggleFilter(key)}
+                    size={20}
+                    style={styles.filterRow}
+                    color={activeFilters[key] ? colors.accent : colors.text}>
+                    <Text style={styles.filterLabel}>{FILTER_LABELS[key]}</Text>
+                    <Text style={styles.filterCount}>{filterCounts[key]}</Text>
+                  </Checkbox>
+                ))}
+              </View>
+            </View>
+          </Accordion>
+        </View>
+
+        {isMobileLayout ? (
+          <Accordion
+            title={`Key Faces (${keyFaces.length})`}
+            expanded={keyFacesExpanded}
+            onToggle={onKeyFacesToggle}
+            style={styles.keyFacesAccordion}>
+            <FlatList
+              {...keyFaceScrollHandlers}
+              data={keyFaces}
+              keyExtractor={keyExtractor}
+              renderItem={renderKeyFaceItem}
+              horizontal
+              style={styles.keyFaceScroll}
+              contentContainerStyle={styles.keyFaceGridMobile}
+              showsHorizontalScrollIndicator
+              initialNumToRender={8}
+              maxToRenderPerBatch={8}
+              windowSize={3}
+              updateCellsBatchingPeriod={150}
+              ItemSeparatorComponent={KeyFaceSeparator}
+            />
+          </Accordion>
+        ) : (
+          <KeyFacesSectionHeader
+            title={`Key Faces (${keyFaces.length})`}
+            expanded={keyFacesExpanded}
+            onToggle={onKeyFacesToggle}
+          />
+        )}
+      </View>
+    ),
+    [
+      activeFilters,
+      cullFiltersExpanded,
+      filterCounts,
+      handleCullFiltersLayout,
+      handleSelectionFilterPress,
+      isMobileLayout,
+      keyExtractor,
+      keyFaceScrollHandlers,
+      keyFaces,
+      keyFacesExpanded,
+      mySelectionsCount,
+      onCullFiltersToggle,
+      onKeyFacesToggle,
+      onToggleFilter,
+      renderKeyFaceItem,
+      selectionFilter,
+      totalPhotos,
+    ],
   );
 
   return (
@@ -322,94 +492,40 @@ function CulledAlbumDetailSidebarComponent({
         </Pressable>
       </View>
 
-      <ScrollView
-        style={styles.filtersScrollContainer}
-        contentContainerStyle={styles.filtersScrollContent}
-        showsVerticalScrollIndicator={!isMobileLayout}>
-        <Accordion
-          title="Cull Filters"
-          expanded={cullFiltersExpanded}
-          onToggle={onCullFiltersToggle}
-          style={styles.cullFiltersAccordion}>
-        <View style={styles.accordionContent}>
-          <View style={styles.totalPhotosBadge}>
-            <Text style={styles.totalPhotosLabel}>Total Photos</Text>
-            <Text style={styles.totalPhotosValue}>{totalPhotos}</Text>
-          </View>
-          <Pressable
-            style={styles.mySelectionsRow}
-            onPress={handleSelectionFilterPress}>
-            {selectionFilter === 'selected' ? (
-              <IconCheckCircle width={20} height={20} color={colors.text} />
-            ) : (
-              <IconCheckCircleOutline width={20} height={20} color={colors.text} />
-            )}
-            <Text style={styles.mySelectionsLabel}>My Selections</Text>
-            <Text style={styles.mySelectionsCount}>{mySelectionsCount}</Text>
-          </Pressable>
-          <View style={styles.sidebarDivider} />
-          <View style={styles.filterRowContainer}>
-            {(Object.keys(FILTER_LABELS) as CullFilterKey[]).map(key => (
-              <Checkbox
-                key={key}
-                checked={activeFilters[key]}
-                onToggle={() => onToggleFilter(key)}
-                size={20}
-                style={styles.filterRow}
-                color={activeFilters[key] ? colors.accent : colors.text}>
-                <Text style={styles.filterLabel}>{FILTER_LABELS[key]}</Text>
-                <Text style={styles.filterCount}>{filterCounts[key]}</Text>
-              </Checkbox>
-            ))}
-          </View>
+      <ScrollAwareTooltipContext.Provider value={scrollStoreRef.current}>
+        <View style={styles.listHost}>
+          <FlatList
+            {...keyFaceScrollHandlers}
+            data={listData}
+            keyExtractor={rowKeyExtractor}
+            renderItem={renderKeyFaceRow}
+            ListHeaderComponent={listHeader}
+            style={styles.list}
+            contentContainerStyle={styles.keyFaceGrid}
+            showsVerticalScrollIndicator={!isMobileLayout}
+            scrollEventThrottle={16}
+            onScroll={handleListScroll}
+            initialNumToRender={5}
+            maxToRenderPerBatch={3}
+            windowSize={5}
+            updateCellsBatchingPeriod={100}
+            removeClippedSubviews={Platform.OS !== 'windows'}
+            getItemLayout={isMobileLayout ? undefined : getKeyFaceRowLayout}
+            ItemSeparatorComponent={
+              listData.length > 0 ? KeyFaceSeparator : undefined
+            }
+          />
+          {!isMobileLayout && isKeyFacesTitleStuck ? (
+            <View style={styles.keyFacesStickyOverlay} pointerEvents="box-none">
+              <KeyFacesSectionHeader
+                title={`Key Faces (${keyFaces.length})`}
+                expanded={keyFacesExpanded}
+                onToggle={onKeyFacesToggle}
+              />
+            </View>
+          ) : null}
         </View>
-      </Accordion>
-
-      <Accordion
-        title={`Key Faces (${keyFaces.length})`}
-        expanded={keyFacesExpanded}
-        onToggle={onKeyFacesToggle}
-        style={styles.keyFacesAccordion}>
-        <ScrollAwareTooltipContext.Provider value={scrollStoreRef.current}>
-          <View style={styles.keyFaceScrollContainer}>
-            {isMobileLayout ? (
-            <FlatList
-              {...keyFaceScrollHandlers}
-              data={keyFaces}
-              keyExtractor={keyExtractor}
-              renderItem={renderKeyFaceItem}
-              horizontal
-              style={styles.keyFaceScroll}
-              contentContainerStyle={styles.keyFaceGridMobile}
-              showsHorizontalScrollIndicator
-              initialNumToRender={8}
-              maxToRenderPerBatch={8}
-              windowSize={3}
-              updateCellsBatchingPeriod={150}
-              ItemSeparatorComponent={KeyFaceSeparator}
-            />
-          ) : (
-            <FlatList
-              {...keyFaceScrollHandlers}
-              data={keyFaceRows}
-              keyExtractor={rowKeyExtractor}
-              renderItem={renderKeyFaceRow}
-              style={styles.keyFaceScroll}
-              contentContainerStyle={styles.keyFaceGrid}
-              showsVerticalScrollIndicator
-              initialNumToRender={5}
-              maxToRenderPerBatch={3}
-              windowSize={5}
-              updateCellsBatchingPeriod={100}
-              removeClippedSubviews={Platform.OS !== 'windows'}
-              getItemLayout={getKeyFaceRowLayout}
-              ItemSeparatorComponent={KeyFaceSeparator}
-            />
-          )}
-          </View>
-        </ScrollAwareTooltipContext.Provider>
-      </Accordion>
-      </ScrollView>
+      </ScrollAwareTooltipContext.Provider>
     </View>
   );
 }
@@ -423,28 +539,62 @@ export const CulledAlbumDetailSidebar = memo(CulledAlbumDetailSidebarComponent);
 const styles = StyleSheet.create({
   sidebar: {
     width: 246,
+    alignSelf: 'stretch',
     flexDirection: 'column',
     gap: 20,
     minHeight: 0,
+    overflow: 'hidden',
     paddingTop: 24,
     paddingBottom: 0,
   },
   sidebarMobile: {
     width: '100%',
+    alignSelf: undefined,
+    overflow: undefined,
     paddingTop: 12,
     paddingBottom: 12,
     flex: undefined,
   },
   actionStack: {
     gap: 16,
+    flexShrink: 0,
   },
-  filtersScrollContainer: {
+  listHost: {
     flex: 1,
     minHeight: 0,
+    position: 'relative',
   },
-  filtersScrollContent: {
-    gap: 20,
-    paddingBottom: 24,
+  list: {
+    flex: 1,
+  },
+  listHeader: {
+    gap: LIST_HEADER_SECTION_GAP,
+    marginBottom: 16,
+  },
+  keyFacesStickyOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    backgroundColor: colors.background,
+    paddingBottom: 8,
+  },
+  keyFacesSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: KEY_FACES_HEADER_HEIGHT,
+  },
+  keyFacesSectionChevron: {
+    width: 24,
+    height: 24,
+  },
+  keyFacesSectionTitle: {
+    flex: 1,
+    ...sansBoldStyle,
+    fontSize: 16,
+    color: colors.text,
   },
   uploadButton: {
     minHeight: 48,
@@ -570,11 +720,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textMuted,
   },
-  keyFaceScrollContainer: {
-    maxHeight: 400,
-  },
   keyFaceScroll: {
-    flex: 1,
+    flexGrow: 0,
   },
   keyFaceGrid: {
     paddingRight: 20,
