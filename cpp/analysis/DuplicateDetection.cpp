@@ -239,6 +239,18 @@ int PhotoQualityTier(const DuplicateDetectionPhoto &photo) {
 }
 
 int CompareDuplicateKeeperPreference(const DuplicateDetectionPhoto &left, const DuplicateDetectionPhoto &right) {
+  if (left.serverUploaded != right.serverUploaded) {
+    return left.serverUploaded ? 1 : -1;
+  }
+
+  if (left.serverUploaded && right.serverUploaded) {
+    int leftBatch = left.batchId > 0 ? left.batchId : INT_MAX;
+    int rightBatch = right.batchId > 0 ? right.batchId : INT_MAX;
+    if (leftBatch != rightBatch) {
+      return leftBatch < rightBatch ? 1 : -1;
+    }
+  }
+
   int tierDelta = PhotoQualityTier(left) - PhotoQualityTier(right);
   if (tierDelta != 0) {
     return tierDelta;

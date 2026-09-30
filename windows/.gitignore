@@ -23,6 +23,7 @@
 *.ilk
 *.log
 *.lib
+!GumpDesktop/vendor/WinSparkle/**/*.lib
 *.sbr
 *.sdf
 *.opensdf

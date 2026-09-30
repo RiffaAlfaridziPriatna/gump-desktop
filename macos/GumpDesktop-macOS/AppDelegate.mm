@@ -1,4 +1,5 @@
 #import "AppDelegate.h"
+#import "GumpUpdateController.h"
 
 #import <CoreText/CoreText.h>
 #import <React/RCTBundleURLProvider.h>
@@ -94,6 +95,9 @@ static void RegisterCustomFonts(void)
   self.dependencyProvider = [RCTAppDependencyProvider new];
 
   [super applicationDidFinishLaunching:notification];
+
+  // Sparkle + app-menu update items (prod builds only).
+  [GumpUpdateController bootstrap];
 
   dispatch_async(dispatch_get_main_queue(), ^{
     [self configureMainWindow];

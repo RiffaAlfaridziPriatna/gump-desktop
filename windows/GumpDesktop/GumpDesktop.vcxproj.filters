@@ -24,6 +24,15 @@
     <ClInclude Include="GumpFilePicker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="GumpUpdater.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GumpUpdateMenu.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GumpVersion.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="GumpLocalStorage.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -57,6 +66,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="GumpFilePicker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GumpUpdater.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GumpUpdateMenu.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GumpLocalStorage.cpp">

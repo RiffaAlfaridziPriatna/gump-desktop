@@ -2,11 +2,12 @@ import {
   CulledAlbumPhotoHoverContext,
   createCulledAlbumPhotoHoverStore,
 } from '@lib/culledAlbum/photoHover';
+import {flushPendingThumbnailDimensions} from '@lib/culledAlbum/persistThumbnailDimensions';
 import {getPhotoById} from '@lib/culledAlbum/store';
 import {
   scheduleThumbnailBackfillForPhotos,
 } from '@lib/culledAlbum/thumbnailBackfill';
-import {scheduleHydrateVisiblePhotos} from '@hooks/useVisiblePhotos';
+import {scheduleHydratePhotoIds} from '@hooks/useVisiblePhotos';
 import {
   cancelScrollImagePreload,
   getScrollPreloadRange,
@@ -19,7 +20,18 @@ import {
   CulledAlbumPhotoCard,
   CulledAlbumPhotoCardProps,
 } from '@components/culling/CulledAlbumPhotoCard';
-import {useCallback, useEffect, useMemo, useRef, memo} from 'react';
+import {
+  CulledAlbumImageLoadContext,
+  createCulledAlbumImageLoadStore,
+  type CulledAlbumImageLoadStore,
+} from '@components/culling/culledAlbumImageLoad';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  memo,
+} from 'react';
 import {
   FlatList,
   ListRenderItemInfo,
@@ -43,8 +55,12 @@ type CulledAlbumPhotoGridProps = {
   containerWidth: number;
   isMobileLayout: boolean;
   canDeletePhoto: boolean;
-  cullingHasUploads: boolean;
   hoverEnabled?: boolean;
+  /**
+   * When true (local import / analyze), shrink FlatList window and skip
+   * heavy media side-work so scroll stays interactive.
+   */
+  deferHeavyMediaWork?: boolean;
   contentContainerStyle?: StyleProp<ViewStyle>;
   onOpenDetail: CulledAlbumPhotoCardProps['onOpenDetail'];
   onToggleSelection: CulledAlbumPhotoCardProps['onToggleSelection'];
@@ -62,6 +78,16 @@ const VISIBLE_PADDING = SCROLL_GRID_VISIBLE_PADDING;
 const SCROLL_END_DELAY_MS = 150;
 const SCROLLBAR_GUTTER = 24;
 
+type ImageLoadStore = CulledAlbumImageLoadStore;
+
+const IDLE_IMAGE_LOAD_SEED = 24;
+/** Idle gate pad while not scrolling — stay ahead of FlatList window. */
+const IDLE_IMAGE_LOAD_PAD_ROWS = 2;
+/** Busy gate pad: tight admission after scroll settles. */
+const BUSY_IMAGE_LOAD_PAD_ROWS = 1;
+/** Above this, shrink idle FlatList window (heavy interactive cards). */
+const LARGE_ALBUM_PHOTO_THRESHOLD = 120;
+
 type GridListItem = {
   photoId: string;
   index: number;
@@ -78,8 +104,8 @@ type CulledAlbumPhotoRowViewProps = {
   albumId: string;
   cardWidth: number;
   canDeletePhoto: boolean;
-  cullingHasUploads: boolean;
   isMobileLayout: boolean;
+  deferHeavyMediaWork: boolean;
   onOpenDetail: CulledAlbumPhotoCardProps['onOpenDetail'];
   onToggleSelection: CulledAlbumPhotoCardProps['onToggleSelection'];
   onDeletePress: CulledAlbumPhotoCardProps['onDeletePress'];
@@ -92,8 +118,8 @@ const CulledAlbumPhotoRowView = memo(
     albumId,
     cardWidth,
     canDeletePhoto,
-    cullingHasUploads,
     isMobileLayout,
+    deferHeavyMediaWork,
     onOpenDetail,
     onToggleSelection,
     onDeletePress,
@@ -108,8 +134,8 @@ const CulledAlbumPhotoRowView = memo(
             photoId={cell.photoId}
             cardWidth={cardWidth}
             canDeletePhoto={canDeletePhoto}
-            cullingHasUploads={cullingHasUploads}
             isMobileLayout={isMobileLayout}
+            deferHeavyMediaWork={deferHeavyMediaWork}
             onOpenDetail={onOpenDetail}
             onToggleSelection={onToggleSelection}
             onDeletePress={onDeletePress}
@@ -131,8 +157,8 @@ const CulledAlbumPhotoRowView = memo(
     prev.albumId === next.albumId &&
     prev.cardWidth === next.cardWidth &&
     prev.canDeletePhoto === next.canDeletePhoto &&
-    prev.cullingHasUploads === next.cullingHasUploads &&
-    prev.isMobileLayout === next.isMobileLayout,
+    prev.isMobileLayout === next.isMobileLayout &&
+    prev.deferHeavyMediaWork === next.deferHeavyMediaWork,
 );
 
 function buildRows(photoIds: string[]): GridRow[] {
@@ -170,8 +196,8 @@ export function CulledAlbumPhotoGrid({
   containerWidth,
   isMobileLayout,
   canDeletePhoto,
-  cullingHasUploads,
   hoverEnabled = true,
+  deferHeavyMediaWork = false,
   contentContainerStyle,
   onOpenDetail,
   onToggleSelection,
@@ -192,6 +218,24 @@ export function CulledAlbumPhotoGrid({
     end: number;
     indices: number[];
   } | null>(null);
+  const deferHeavyMediaWorkRef = useRef(deferHeavyMediaWork);
+  deferHeavyMediaWorkRef.current = deferHeavyMediaWork;
+
+  const photoIdsKey = photos.map(photo => photo.photoId).join('\0');
+  const photoIds = useMemo(
+    () => (photoIdsKey ? photoIdsKey.split('\0') : []),
+    [photoIdsKey],
+  );
+  const photoIdsRef = useRef(photoIds);
+  photoIdsRef.current = photoIds;
+
+  const imageLoadStoreRef = useRef<ImageLoadStore | null>(null);
+  if (!imageLoadStoreRef.current) {
+    imageLoadStoreRef.current = createCulledAlbumImageLoadStore(
+      photoIds.slice(0, IDLE_IMAGE_LOAD_SEED),
+    );
+  }
+  const imageLoadStore = imageLoadStoreRef.current;
 
   onScrollInteractionStartRef.current = onScrollInteractionStart;
 
@@ -207,28 +251,42 @@ export function CulledAlbumPhotoGrid({
         )
       : 0;
   const cardWidth =
-    gridWidth > 0 ? (gridWidth - GRID_GAP * (COLUMNS - 1)) / COLUMNS : 0;
-  const thumbnailHeight = cardWidth / THUMBNAIL_ASPECT_RATIO;
+    gridWidth > GRID_GAP * (COLUMNS - 1)
+      ? (gridWidth - GRID_GAP * (COLUMNS - 1)) / COLUMNS
+      : 0;
+
+  const lastGoodCardWidthRef = useRef(cardWidth);
+  if (cardWidth > 0) {
+    lastGoodCardWidthRef.current = cardWidth;
+  }
+  const renderCardWidth =
+    cardWidth > 0 ? cardWidth : lastGoodCardWidthRef.current;
+  const thumbnailHeight = renderCardWidth / THUMBNAIL_ASPECT_RATIO;
   const itemHeight =
     thumbnailHeight + CARD_INTERNAL_GAP + CARD_INFO_ROW_HEIGHT;
   const rowHeight = itemHeight + GRID_GAP;
 
-  const photoIdsKey = photos.map(photo => photo.photoId).join('\0');
-  const photoIds = useMemo(
-    () => (photoIdsKey ? photoIdsKey.split('\0') : []),
-    [photoIdsKey],
-  );
-  const photoIdsRef = useRef(photoIds);
-  photoIdsRef.current = photoIds;
-
   const rows = useMemo(() => buildRows(photoIds), [photoIds]);
 
+  const prevPhotoIdsKeyRef = useRef(photoIdsKey);
   useEffect(() => {
+    if (prevPhotoIdsKeyRef.current === photoIdsKey) {
+      return;
+    }
+    prevPhotoIdsKeyRef.current = photoIdsKey;
     lastPreloadRangeRef.current = '';
     lastHydrateRangeRef.current = '';
     lastThumbnailRangeRef.current = '';
     pendingViewableRef.current = null;
-  }, [photoIdsKey]);
+
+    // Soft-reset image admission for the new filter set without remounting list.
+    imageLoadStore.setIds(new Set(photoIds.slice(0, IDLE_IMAGE_LOAD_SEED)));
+
+    // Safe scroll reset — empty FlatList can throw on scrollToOffset.
+    if (photoIds.length > 0) {
+      listRef.current?.scrollToOffset({offset: 0, animated: false});
+    }
+  }, [imageLoadStore, photoIds, photoIdsKey]);
 
   const getItemLayout = useCallback(
     (_data: ArrayLike<GridRow> | null | undefined, index: number) => ({
@@ -246,9 +304,40 @@ export function CulledAlbumPhotoGrid({
     }
   }, []);
 
-  const applyVisibleRange = useCallback(
-    (start: number, end: number, indices: number[]) => {
+  const admitImagesForRange = useCallback(
+    (start: number, end: number, padRows: number) => {
       const currentPhotoIds = photoIdsRef.current;
+      const padCells = padRows * COLUMNS;
+      const admitStart = Math.max(0, start - padCells);
+      const admitEnd = Math.min(currentPhotoIds.length, end + padCells + 1);
+      const nextLoadIds = new Set(imageLoadStore.getIds());
+      for (let i = admitStart; i < admitEnd; i++) {
+        const id = currentPhotoIds[i];
+        if (id) {
+          nextLoadIds.add(id);
+        }
+      }
+      imageLoadStore.setIds(nextLoadIds);
+    },
+    [imageLoadStore],
+  );
+
+  const applyVisibleRange = useCallback(
+    (start: number, end: number, indices: number[], options?: {heavy?: boolean}) => {
+      const heavy = options?.heavy !== false;
+      const currentPhotoIds = photoIdsRef.current;
+      const deferring = deferHeavyMediaWorkRef.current;
+      const padRows = deferring
+        ? BUSY_IMAGE_LOAD_PAD_ROWS
+        : IDLE_IMAGE_LOAD_PAD_ROWS;
+
+      // Always keep the image gate moving so cells paint during scroll.
+      admitImagesForRange(start, end, padRows);
+
+      if (!heavy || deferring) {
+        return;
+      }
+
       const {start: paddedStart, end: paddedEnd} = getScrollPreloadRange(
         start,
         end,
@@ -258,9 +347,16 @@ export function CulledAlbumPhotoGrid({
       const rangeKey = `${paddedStart}:${paddedEnd}`;
       const rangePhotoIds = currentPhotoIds.slice(paddedStart, paddedEnd);
 
+      // Hydrate the filtered-list band (not full-album indices).
+      const hydrateStart = Math.max(0, Math.min(...indices) - VISIBLE_PADDING);
+      const hydrateEnd = Math.min(
+        currentPhotoIds.length,
+        Math.max(...indices) + VISIBLE_PADDING + 1,
+      );
+      const hydrateIds = currentPhotoIds.slice(hydrateStart, hydrateEnd);
       if (lastHydrateRangeRef.current !== rangeKey) {
         lastHydrateRangeRef.current = rangeKey;
-        scheduleHydrateVisiblePhotos(albumId, indices, VISIBLE_PADDING);
+        scheduleHydratePhotoIds(albumId, hydrateIds);
       }
 
       if (lastThumbnailRangeRef.current !== rangeKey) {
@@ -284,7 +380,7 @@ export function CulledAlbumPhotoGrid({
         .filter((file): file is NonNullable<typeof file> => Boolean(file));
       scheduleScrollImagePreload(files);
     },
-    [albumId],
+    [admitImagesForRange, albumId],
   );
 
   const flushPendingVisibleRange = useCallback(() => {
@@ -293,7 +389,9 @@ export function CulledAlbumPhotoGrid({
       return;
     }
     pendingViewableRef.current = null;
-    applyVisibleRange(pending.start, pending.end, pending.indices);
+    applyVisibleRange(pending.start, pending.end, pending.indices, {
+      heavy: true,
+    });
   }, [applyVisibleRange]);
 
   const scheduleScrollEnd = useCallback(() => {
@@ -302,6 +400,7 @@ export function CulledAlbumPhotoGrid({
       hoverStoreRef.current.setScrolling(false);
       isScrollActiveRef.current = false;
       scrollEndTimerRef.current = null;
+      flushPendingThumbnailDimensions();
       flushPendingVisibleRange();
     }, SCROLL_END_DELAY_MS);
   }, [clearScrollEndTimer, flushPendingVisibleRange]);
@@ -310,8 +409,16 @@ export function CulledAlbumPhotoGrid({
     return () => {
       cancelScrollImagePreload();
       clearScrollEndTimer();
+      flushPendingThumbnailDimensions();
     };
   }, [clearScrollEndTimer]);
+
+  useEffect(() => {
+    if (deferHeavyMediaWork) {
+      return;
+    }
+    flushPendingVisibleRange();
+  }, [deferHeavyMediaWork, flushPendingVisibleRange]);
 
   const beginScrollInteraction = useCallback(() => {
     if (!isScrollActiveRef.current) {
@@ -347,7 +454,14 @@ export function CulledAlbumPhotoGrid({
 
       const minIndex = Math.min(...indices);
       const maxIndex = Math.max(...indices);
-      if (Platform.OS === 'macos' && isScrollActiveRef.current) {
+
+      // Match PhotoGrid: on macOS (and while analysis saturates JS), hold image
+      // admission until scroll settles. Mid-scroll decode storms are what make
+      // heavy cull cards feel far worse than AlbumDetail's image-only cells.
+      if (
+        isScrollActiveRef.current &&
+        (deferHeavyMediaWorkRef.current || Platform.OS === 'macos')
+      ) {
         pendingViewableRef.current = {
           start: minIndex,
           end: maxIndex,
@@ -356,7 +470,17 @@ export function CulledAlbumPhotoGrid({
         return;
       }
 
-      applyVisibleRange(minIndex, maxIndex, indices);
+      if (isScrollActiveRef.current) {
+        pendingViewableRef.current = {
+          start: minIndex,
+          end: maxIndex,
+          indices,
+        };
+        applyVisibleRange(minIndex, maxIndex, indices, {heavy: false});
+        return;
+      }
+
+      applyVisibleRange(minIndex, maxIndex, indices, {heavy: true});
     },
     [applyVisibleRange],
   );
@@ -379,10 +503,10 @@ export function CulledAlbumPhotoGrid({
       <CulledAlbumPhotoRowView
         row={row}
         albumId={albumId}
-        cardWidth={cardWidth}
+        cardWidth={renderCardWidth}
         canDeletePhoto={canDeletePhoto}
-        cullingHasUploads={cullingHasUploads}
         isMobileLayout={isMobileLayout}
+        deferHeavyMediaWork={deferHeavyMediaWork}
         onOpenDetail={onOpenDetail}
         onToggleSelection={onToggleSelection}
         onDeletePress={onDeletePress}
@@ -392,8 +516,8 @@ export function CulledAlbumPhotoGrid({
     [
       albumId,
       canDeletePhoto,
-      cardWidth,
-      cullingHasUploads,
+      deferHeavyMediaWork,
+      renderCardWidth,
       isMobileLayout,
       onDeletePress,
       onOpenDetail,
@@ -402,38 +526,51 @@ export function CulledAlbumPhotoGrid({
     ],
   );
 
+  const isLargeAlbum = photoIds.length >= LARGE_ALBUM_PHOTO_THRESHOLD;
+  const windowSize = deferHeavyMediaWork
+    ? 3
+    : Platform.OS === 'windows'
+      ? 3
+      : isLargeAlbum
+        ? 4
+        : 7;
+  const maxToRenderPerBatch = deferHeavyMediaWork || isLargeAlbum ? 3 : 6;
+  const updateCellsBatchingPeriod =
+    deferHeavyMediaWork || isLargeAlbum ? 100 : 50;
+
   if (photos.length === 0) {
     return null;
   }
 
-  if (cardWidth <= 0) {
+  if (renderCardWidth <= 0) {
     return <View style={styles.list} />;
   }
 
   return (
     <CulledAlbumPhotoHoverContext.Provider value={hoverStoreRef.current}>
-      <FlatList
-        ref={listRef}
-        key={photoIdsKey}
-        data={rows}
-        keyExtractor={item => item.key}
-        renderItem={renderRow}
-        getItemLayout={getItemLayout}
-        extraData={photoIdsKey}
-        contentContainerStyle={contentContainerStyle}
-        style={styles.list}
-        initialNumToRender={6}
-        maxToRenderPerBatch={2}
-        windowSize={3}
-        updateCellsBatchingPeriod={150}
-        removeClippedSubviews={Platform.OS !== 'windows'}
-        showsVerticalScrollIndicator
-        onScroll={handleScroll}
-        onScrollBeginDrag={handleScrollBegin}
-        onScrollEndDrag={handleScrollEnd}
-        onMomentumScrollEnd={handleScrollEnd}
-        viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
-      />
+      <CulledAlbumImageLoadContext.Provider value={imageLoadStore}>
+        <FlatList
+          ref={listRef}
+          data={rows}
+          keyExtractor={item => item.key}
+          renderItem={renderRow}
+          getItemLayout={getItemLayout}
+          contentContainerStyle={contentContainerStyle}
+          style={styles.list}
+          initialNumToRender={6}
+          maxToRenderPerBatch={maxToRenderPerBatch}
+          windowSize={windowSize}
+          updateCellsBatchingPeriod={updateCellsBatchingPeriod}
+          removeClippedSubviews={false}
+          showsVerticalScrollIndicator
+          onScroll={handleScroll}
+          onScrollBeginDrag={handleScrollBegin}
+          onScrollEndDrag={handleScrollEnd}
+          onMomentumScrollEnd={handleScrollEnd}
+          scrollEventThrottle={16}
+          viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
+        />
+      </CulledAlbumImageLoadContext.Provider>
     </CulledAlbumPhotoHoverContext.Provider>
   );
 }

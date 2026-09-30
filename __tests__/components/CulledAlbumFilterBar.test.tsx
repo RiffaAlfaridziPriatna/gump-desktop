@@ -45,7 +45,7 @@ describe('CulledAlbumFilterBar', () => {
     expect(props.onStarRatingFilterChange).toHaveBeenCalledWith([5, 3]);
   });
 
-  it('shows selected count and blocks upload after completion', () => {
+  it('shows selected count and disables upload when empty', () => {
     const idle = renderBar({selectedCount: 4});
     expect(
       idle.view.renderer.root.findAllByType(Text).some(
@@ -55,13 +55,31 @@ describe('CulledAlbumFilterBar', () => {
     press(getByLabel(idle.view.renderer, 'Upload selected photos'));
     expect(idle.props.onUploadSelected).toHaveBeenCalledTimes(1);
 
-    const uploaded = renderBar({uploaded: true, onUploadSelected: jest.fn()});
+    const disabled = renderBar({
+      selectedCount: 0,
+      uploadDisabled: true,
+      onUploadSelected: jest.fn(),
+    });
     expect(
-      uploaded.view.renderer.root.findAllByType(Text).some(
-        node => node.props.children === 'Uploaded',
+      disabled.view.renderer.root.findAllByType(Text).some(
+        node => node.props.children === 'Upload Selected',
       ),
     ).toBe(true);
-    press(getByLabel(uploaded.view.renderer, 'Upload selected photos'));
-    expect(uploaded.props.onUploadSelected).not.toHaveBeenCalled();
+    press(getByLabel(disabled.view.renderer, 'Upload selected photos'));
+    expect(disabled.props.onUploadSelected).not.toHaveBeenCalled();
+  });
+
+  it('shows culling in progress instead of upload actions', () => {
+    const {view, props} = renderBar({
+      cullingInProgress: true,
+      onAddPhotos: jest.fn(),
+      onUploadSelected: jest.fn(),
+    });
+    expect(
+      view.renderer.root.findAllByType(Text).some(
+        node => node.props.children === 'Culling in Progress...',
+      ),
+    ).toBe(true);
+    expect(props.onUploadSelected).not.toHaveBeenCalled();
   });
 });

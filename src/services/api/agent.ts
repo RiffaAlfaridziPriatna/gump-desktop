@@ -33,6 +33,7 @@ export class APIAgent {
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        'x-gump-client-app': 'desktop',
         ...headers,
       },
     };

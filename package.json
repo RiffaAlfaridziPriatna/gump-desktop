@@ -24,7 +24,10 @@
     "build:windows:msix:staging": "node scripts/build-windows.mjs msix staging",
     "build:all": "bash scripts/build.sh all",
     "windows": "node scripts/run-windows.mjs",
-    "test:windows": "jest --config jest.config.windows.js"
+    "test:windows": "jest --config jest.config.windows.js",
+    "release": "node scripts/release.mjs",
+    "release:dry": "node scripts/release.mjs --dry-run",
+    "generate-appcast": "node scripts/generate-appcast.mjs"
   },
   "dependencies": {
     "@op-engineering/op-sqlite": "^17.1.2",

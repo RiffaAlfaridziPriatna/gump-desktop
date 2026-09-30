@@ -1,0 +1,49 @@
+name: Branch flow guards
+
+# Soft policy enforced in CI (also add these jobs as required status checks
+# on the main ruleset in GitHub Settings → Rules → main):
+#   1) PRs into main must come from staging (promote path only).
+#   2) Automated appcast PRs (chore/appcast-*) remain allowed.
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  require-staging-into-main:
+    name: Require staging → main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert head branch is staging (or appcast bot)
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          echo "PR ${BASE_REF} ← ${HEAD_REF}"
+
+          if [[ "$BASE_REF" != "main" ]]; then
+            echo "Not targeting main — skip"
+            exit 0
+          fi
+
+          # Release workflow opens chore/appcast-<tag> → main for Sparkle feed only.
+          if [[ "$HEAD_REF" == chore/appcast-* ]]; then
+            echo "Allowed: automated appcast PR (${HEAD_REF})"
+            exit 0
+          fi
+
+          if [[ "$HEAD_REF" == "staging" ]]; then
+            echo "Allowed: staging → main"
+            exit 0
+          fi
+
+          echo "::error::PRs into main must come from 'staging' (got '${HEAD_REF}')."
+          echo "Open the PR against staging first, merge there, then PR staging → main."
+          echo "Exception: chore/appcast-* (Release bot) is allowed."
+          exit 1

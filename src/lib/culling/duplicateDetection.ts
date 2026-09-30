@@ -10,7 +10,10 @@ import {
 const YIELD_EVERY_N_PHOTOS = Platform.OS === 'windows' ? 10 : 25;
 
 export function photoQualityTier(
-  photo: Pick<DuplicateDetectionPhoto, 'blurred' | 'closedEyes'>,
+  photo: Pick<DuplicateDetectionPhoto, 'blurred' | 'closedEyes'> | {
+    blurred?: boolean;
+    closedEyes?: boolean;
+  },
 ): number {
   if (photo.blurred) {
     return 0;
@@ -22,7 +25,10 @@ export function photoQualityTier(
 }
 
 export function isDuplicateKeeperPhoto(
-  photo: Pick<DuplicateDetectionPhoto, 'blurred' | 'closedEyes'>,
+  photo: Pick<DuplicateDetectionPhoto, 'blurred' | 'closedEyes'> | {
+    blurred?: boolean;
+    closedEyes?: boolean;
+  },
 ): boolean {
   return photoQualityTier(photo) >= 2;
 }
@@ -62,11 +68,37 @@ function mergeIntoDuplicateGroup(
 }
 
 export function compareDuplicateKeeperPreference<
-  T extends Pick<
-    DuplicateDetectionPhoto,
-    'photoId' | 'fileName' | 'blurred' | 'closedEyes' | 'starRating' | 'capturedAt'
-  >,
+  T extends {
+    photoId?: string | null;
+    fileName?: string | null;
+    blurred?: boolean;
+    closedEyes?: boolean;
+    starRating?: number | null;
+    capturedAt?: number | null;
+    batchId?: number;
+    serverUploaded?: boolean;
+  },
 >(left: T, right: T): number {
+  const leftUploaded = Boolean(left.serverUploaded);
+  const rightUploaded = Boolean(right.serverUploaded);
+  if (leftUploaded !== rightUploaded) {
+    return leftUploaded ? 1 : -1;
+  }
+
+  if (leftUploaded && rightUploaded) {
+    const leftBatch =
+      typeof left.batchId === 'number' && Number.isFinite(left.batchId)
+        ? left.batchId
+        : Number.POSITIVE_INFINITY;
+    const rightBatch =
+      typeof right.batchId === 'number' && Number.isFinite(right.batchId)
+        ? right.batchId
+        : Number.POSITIVE_INFINITY;
+    if (leftBatch !== rightBatch) {
+      return leftBatch < rightBatch ? 1 : -1;
+    }
+  }
+
   const tierDelta = photoQualityTier(left) - photoQualityTier(right);
   if (tierDelta !== 0) {
     return tierDelta;
@@ -96,10 +128,16 @@ export function compareDuplicateKeeperPreference<
 }
 
 export function pickDuplicateGroupBestPhoto<
-  T extends Pick<
-    DuplicateDetectionPhoto,
-    'photoId' | 'fileName' | 'blurred' | 'closedEyes' | 'starRating' | 'capturedAt'
-  >,
+  T extends {
+    photoId?: string | null;
+    fileName?: string | null;
+    blurred?: boolean;
+    closedEyes?: boolean;
+    starRating?: number | null;
+    capturedAt?: number | null;
+    batchId?: number;
+    serverUploaded?: boolean;
+  },
 >(groupPhotos: T[]): T {
   return groupPhotos.reduce((best, current) =>
     compareDuplicateKeeperPreference(best, current) >= 0 ? best : current,

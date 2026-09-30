@@ -9,6 +9,7 @@ import {
   scheduleGridRevisionBump,
 } from './photoStateStore';
 import {scheduleRenderSync} from './photoRenderStore';
+import {bumpPhotoVersions} from './photoVersionStore';
 import {putCachedImageDimensions} from '@lib/media/imageDimensions';
 import {isUsableThumbnailUri} from '@lib/storage/localStorage';
 
@@ -48,6 +49,7 @@ export function setPhotoOrder(albumId: string, photoIds: string[]): void {
       },
     };
   });
+  bumpPhotoVersions(photoIds.map(photoId => photoKey(albumId, photoId)));
   scheduleRenderSync();
 }
 
@@ -92,6 +94,9 @@ export function hydratePhotos(
         }
       });
       scheduleGridRevisionBump(albumId);
+      bumpPhotoVersions(
+        loaded.map(photo => photoKey(albumId, photo.photoId)),
+      );
       scheduleRenderSync();
     }
   }

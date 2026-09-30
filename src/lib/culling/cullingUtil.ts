@@ -267,6 +267,8 @@ export const ADJACENT_BURST_INDEX_GAP = 2;
 export type DuplicateDetectionPhoto = CullingPhoto & {
   capturedAt?: number | null;
   perceptualHash?: string | null;
+  batchId?: number;
+  serverUploaded?: boolean;
 };
 
 type BurstFileNameParts = {

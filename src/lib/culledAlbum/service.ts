@@ -1,4 +1,6 @@
+import {clearFaceClusterIndex} from '@lib/culling/faceClusterIndex';
 import {deleteLocalAlbumFiles} from '@lib/storage/localStorage';
+import {resetLocalAlbumAccessSession} from './localAlbumAccess';
 import {getPhotosSnapshot, photoStateStore} from './photoStateStore';
 import {gumpPerfMark} from './perfDebug';
 import {readAllAlbumMeta} from './storage';
@@ -14,8 +16,35 @@ export async function purgeLocalCulledAlbum(albumId: string): Promise<void> {
 }
 
 /**
+ * Drop in-memory culled album state and queues without deleting SQLite or files.
+ * Used on logout so another account does not see the previous session in UI,
+ * while local album data remains available after the same user logs back in.
+ */
+export function unloadAllLocalCulledAlbumsFromMemory(): void {
+  const albumIds = Object.keys(culledAlbumStore.getState().albums);
+
+  for (const albumId of albumIds) {
+    clearFaceClusterIndex(albumId);
+    clearAlbumQueues(albumId);
+  }
+
+  clearAllUploadQueues();
+  resetLocalAlbumAccessSession();
+  culledAlbumStore.setState(state => {
+    state.albums = {};
+    state.error = null;
+  });
+  photoStateStore.setState(() => ({
+    photoState: {},
+    photoOrder: {},
+    gridRevision: {},
+  }));
+}
+
+/**
  * Remove every local culled album from SQLite, memory, queues, and files.
- * Used on logout so Home does not leak albums across accounts.
+ * Prefer {@link unloadAllLocalCulledAlbumsFromMemory} on logout; use this only
+ * when intentionally wiping device-local culled data.
  */
 export async function purgeAllLocalCulledAlbums(): Promise<void> {
   const fromStore = Object.keys(culledAlbumStore.getState().albums);
@@ -28,10 +57,16 @@ export async function purgeAllLocalCulledAlbums(): Promise<void> {
   }
 
   clearAllUploadQueues();
+  resetLocalAlbumAccessSession();
   culledAlbumStore.setState(state => {
     state.albums = {};
     state.error = null;
   });
+  photoStateStore.setState(() => ({
+    photoState: {},
+    photoOrder: {},
+    gridRevision: {},
+  }));
 }
 
 export function shouldOpenCulledDetailScreen(

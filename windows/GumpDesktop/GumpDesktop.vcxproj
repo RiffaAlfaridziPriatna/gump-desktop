@@ -78,16 +78,32 @@
       <AdditionalIncludeDirectories>
         $(MSBuildThisFileDirectory)..\..\cpp\face-detection;
         $(MSBuildThisFileDirectory)..\..\cpp\analysis;
+        $(MSBuildThisFileDirectory)vendor\WinSparkle\include;
         $(MSBuildThisFileDirectory);
         %(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>shell32.lib;user32.lib;gdi32.lib;windowsapp.lib;Microsoft.WindowsAppRuntime.Bootstrap.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>shell32.lib;user32.lib;gdi32.lib;windowsapp.lib;Microsoft.WindowsAppRuntime.Bootstrap.lib;WinSparkle.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <!-- Delay-load so missing Bootstrap.dll fails inside WinMain (MessageBox) instead of a pre-main OS loader dialog. -->
       <DelayLoadDLLs>Microsoft.WindowsAppRuntime.Bootstrap.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Platform)'=='x64'">
+    <Link>
+      <AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)vendor\WinSparkle\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
+    <Link>
+      <AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)vendor\WinSparkle\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Platform)'=='ARM64'">
+    <Link>
+      <AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)vendor\WinSparkle\ARM64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
@@ -107,6 +123,9 @@
   <ItemGroup>
     <ClInclude Include="GumpFilePicker.h" />
     <ClInclude Include="GumpLocalStorage.h" />
+    <ClInclude Include="GumpUpdater.h" />
+    <ClInclude Include="GumpUpdateMenu.h" />
+    <ClInclude Include="GumpVersion.h" />
     <ClInclude Include="..\..\cpp\face-detection\ScrfdFaceDetector.h" />
     <ClInclude Include="..\..\cpp\face-detection\OcecEyeStateClassifier.h" />
     <ClInclude Include="..\..\cpp\face-detection\Landmark106EarClassifier.h" />
@@ -124,6 +143,8 @@
     <ClCompile Include="GumpDesktop.cpp" />
     <ClCompile Include="GumpFilePicker.cpp" />
     <ClCompile Include="GumpLocalStorage.cpp" />
+    <ClCompile Include="GumpUpdater.cpp" />
+    <ClCompile Include="GumpUpdateMenu.cpp" />
     <ClCompile Include="..\..\cpp\face-detection\ScrfdFaceDetector.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
@@ -222,6 +243,18 @@
     </None>
     <None Include="..\..\src\assets\fonts\RedHatDisplay-Bold.ttf">
       <Link>Assets\Fonts\RedHatDisplay-Bold.ttf</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="vendor\WinSparkle\x64\WinSparkle.dll" Condition="'$(Platform)'=='x64'">
+      <Link>WinSparkle.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="vendor\WinSparkle\x86\WinSparkle.dll" Condition="'$(Platform)'=='Win32'">
+      <Link>WinSparkle.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="vendor\WinSparkle\ARM64\WinSparkle.dll" Condition="'$(Platform)'=='ARM64'">
+      <Link>WinSparkle.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

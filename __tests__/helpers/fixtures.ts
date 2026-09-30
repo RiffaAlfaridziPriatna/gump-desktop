@@ -98,6 +98,7 @@ export function makeCulledAlbumPhoto(
     blurred: false,
     closedEyes: false,
     duplicated: false,
+    batchId: 1,
     ...overrides,
   };
 }
