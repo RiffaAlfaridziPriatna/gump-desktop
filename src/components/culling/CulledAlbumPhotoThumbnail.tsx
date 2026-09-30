@@ -1,4 +1,4 @@
-import {useCulledAlbumPhoto} from '@context/culledAlbum';
+import {useShouldLoadCulledAlbumImage} from '@components/culling/culledAlbumImageLoad';
 import {persistThumbnailDimensions} from '@lib/culledAlbum/persistThumbnailDimensions';
 import {
   getCachedImageDimensions,
@@ -9,7 +9,6 @@ import {
   type ImageDimensions,
 } from '@lib/media/imageDimensions';
 import {isImagePrefetched} from '@lib/media/imagePreload';
-import {resolveGridDisplayUri} from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
 import {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
@@ -26,15 +25,21 @@ type CulledAlbumPhotoThumbnailProps = {
   albumId: string;
   photoId: string;
   width: number;
+  uri: string;
+  thumbnailWidth?: number | null;
+  thumbnailHeight?: number | null;
+  deferHeavyMediaWork?: boolean;
 };
 
 function resolveThumbnailSize(
-  file: {thumbnailWidth?: number | null; thumbnailHeight?: number | null} | undefined,
+  file: {thumbnailWidth?: number | null; thumbnailHeight?: number | null},
   uri: string,
 ): ImageDimensions | null {
-  const stored = file ? getFileThumbnailDimensions(file) : null;
+  const stored = getFileThumbnailDimensions(file);
   if (stored) {
-    putCachedImageDimensions(uri, stored);
+    if (uri) {
+      putCachedImageDimensions(uri, stored);
+    }
     return stored;
   }
   return uri ? getCachedImageDimensions(uri) ?? null : null;
@@ -48,13 +53,16 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
   albumId,
   photoId,
   width,
+  uri,
+  thumbnailWidth,
+  thumbnailHeight,
+  deferHeavyMediaWork = false,
 }: CulledAlbumPhotoThumbnailProps) {
-  const photo = useCulledAlbumPhoto(albumId, photoId);
-  const file = photo?.file;
-  const uri = file ? resolveGridDisplayUri(file) ?? '' : '';
+  const fileDims = {thumbnailWidth, thumbnailHeight};
+  const shouldLoadImage = useShouldLoadCulledAlbumImage(photoId);
   const height = width / THUMBNAIL_ASPECT_RATIO;
   const [imageSize, setImageSize] = useState<ImageDimensions | null>(() =>
-    resolveThumbnailSize(file, uri),
+    resolveThumbnailSize(fileDims, uri),
   );
   const [isLoaded, setIsLoaded] = useState(() => hasWarmThumbnail(uri));
   const displayedUriRef = useRef(uri);
@@ -64,9 +72,9 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
       return;
     }
     displayedUriRef.current = uri;
-    setImageSize(resolveThumbnailSize(file, uri));
+    setImageSize(resolveThumbnailSize(fileDims, uri));
     setIsLoaded(hasWarmThumbnail(uri));
-  }, [file, uri]);
+  }, [fileDims.thumbnailHeight, fileDims.thumbnailWidth, uri]);
 
   const imageLayout = useMemo(() => {
     if (!imageSize) {
@@ -82,7 +90,11 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
   }, [height, imageSize, width]);
 
   useEffect(() => {
-    const stored = file ? getFileThumbnailDimensions(file) : null;
+    if (deferHeavyMediaWork || !shouldLoadImage) {
+      return;
+    }
+
+    const stored = getFileThumbnailDimensions(fileDims);
     if (stored) {
       if (uri) {
         putCachedImageDimensions(uri, stored);
@@ -115,11 +127,23 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
     return () => {
       cancelled = true;
     };
-  }, [albumId, file, photoId, uri]);
+  }, [
+    albumId,
+    deferHeavyMediaWork,
+    fileDims.thumbnailHeight,
+    fileDims.thumbnailWidth,
+    photoId,
+    shouldLoadImage,
+    uri,
+  ]);
 
   const handleLoad = useCallback(
     (event: NativeSyntheticEvent<ImageLoadEventData>) => {
       setIsLoaded(true);
+
+      if (deferHeavyMediaWork) {
+        return;
+      }
 
       const {width: loadedWidth, height: loadedHeight} = event.nativeEvent.source;
       if (loadedWidth <= 0 || loadedHeight <= 0) {
@@ -136,7 +160,7 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
         return dimensions;
       });
     },
-    [albumId, photoId, uri],
+    [albumId, deferHeavyMediaWork, photoId, uri],
   );
 
   const handleError = useCallback(() => {
@@ -147,9 +171,11 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
     return null;
   }
 
+  const showImage = Boolean(uri) && (shouldLoadImage || isLoaded);
+
   return (
     <View style={[styles.container, {width, height}]} pointerEvents="box-none">
-      {uri && imageLayout ? (
+      {showImage ? (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
           <Image
             source={{uri}}
@@ -157,11 +183,20 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
             onError={handleError}
             style={[
               styles.containedImage,
+              imageLayout
+                ? {
+                    width: imageLayout.width,
+                    height: imageLayout.height,
+                    left: imageLayout.left,
+                    top: imageLayout.top,
+                  }
+                : {
+                    width,
+                    height,
+                    left: 0,
+                    top: 0,
+                  },
               {
-                width: imageLayout.width,
-                height: imageLayout.height,
-                left: imageLayout.left,
-                top: imageLayout.top,
                 opacity: isLoaded ? 1 : 0,
               },
             ]}

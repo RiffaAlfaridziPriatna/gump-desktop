@@ -1,4 +1,4 @@
-import goldenCases from '../tests/golden/photoFlagsGolden.json';
+import goldenCases from './fixtures/photoFlagsGolden.json';
 import {photoStateStore} from '../src/lib/culledAlbum/photoStateStore';
 import {
   buildKeyFaceVariantId,

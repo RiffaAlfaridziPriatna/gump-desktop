@@ -45,6 +45,7 @@ export class CulledAlbum {
   private _cullingCompleted: boolean;
   private _cullingHasUploads: boolean;
   private _nextFaceClusterId: number;
+  private _nextPhotoBatchId: number;
   private _totalPhotos: number;
   private _totalStorage: number;
   private _syncedMediaCount: number | null;
@@ -65,6 +66,7 @@ export class CulledAlbum {
     cullingCompleted?: boolean;
     cullingHasUploads?: boolean;
     nextFaceClusterId?: number;
+    nextPhotoBatchId?: number;
     totalPhotos?: number;
     totalStorage?: number;
     syncedMediaCount?: number | null;
@@ -85,6 +87,12 @@ export class CulledAlbum {
     this._cullingCompleted = data.cullingCompleted ?? false;
     this._cullingHasUploads = data.cullingHasUploads ?? false;
     this._nextFaceClusterId = data.nextFaceClusterId ?? 0;
+    this._nextPhotoBatchId =
+      typeof data.nextPhotoBatchId === 'number' &&
+      Number.isFinite(data.nextPhotoBatchId) &&
+      data.nextPhotoBatchId >= 1
+        ? data.nextPhotoBatchId
+        : 1;
     this._totalPhotos = data.totalPhotos ?? 0;
     this._totalStorage = data.totalStorage ?? 0;
     this._syncedMediaCount = data.syncedMediaCount ?? null;
@@ -105,6 +113,10 @@ export class CulledAlbum {
 
   get nextFaceClusterId(): number {
     return this._nextFaceClusterId;
+  }
+
+  get nextPhotoBatchId(): number {
+    return this._nextPhotoBatchId;
   }
 
   get totalPhotos(): number {
@@ -169,6 +181,16 @@ export class CulledAlbum {
     return current;
   }
 
+  setNextPhotoBatchId(nextPhotoBatchId: number): void {
+    if (
+      typeof nextPhotoBatchId === 'number' &&
+      Number.isFinite(nextPhotoBatchId) &&
+      nextPhotoBatchId >= 1
+    ) {
+      this._nextPhotoBatchId = nextPhotoBatchId;
+    }
+  }
+
   updateTotals(photoCount: number, storageBytes: number): void {
     this._totalPhotos = photoCount;
     this._totalStorage = storageBytes;
@@ -191,6 +213,7 @@ export class CulledAlbum {
       cullingCompleted: this._cullingCompleted,
       cullingHasUploads: this._cullingHasUploads,
       nextFaceClusterId: this._nextFaceClusterId,
+      nextPhotoBatchId: this._nextPhotoBatchId,
       totalPhotos: this._totalPhotos,
       totalStorage: this._totalStorage,
       syncedMediaCount: this._syncedMediaCount,
@@ -214,6 +237,7 @@ export class CulledAlbum {
       cullingCompleted: data.cullingCompleted,
       cullingHasUploads: data.cullingHasUploads,
       nextFaceClusterId: data.nextFaceClusterId,
+      nextPhotoBatchId: data.nextPhotoBatchId,
       totalPhotos: data.totalPhotos,
       totalStorage: data.totalStorage,
       syncedMediaCount: data.syncedMediaCount,

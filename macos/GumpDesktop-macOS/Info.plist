@@ -35,6 +35,8 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>GUMPAppBuildId</key>
+	<string>$(APP_BUILD_ID)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSAppTransportSecurity</key>
@@ -62,6 +64,18 @@
 	<true/>
 	<key>RCTNewArchEnabled</key>
 	<false/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/RiffaAlfaridziPriatna/gump-desktop-releases/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>VeDFFxhbxJDv7T2PLITqeemS3ccGhXjooGJW9bO7Nw8=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>14400</integer>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Fonts/DMSerifDisplay-Regular.ttf</string>

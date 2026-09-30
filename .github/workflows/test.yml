@@ -14,10 +14,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Same check as Release — fail PR in seconds if Xcode Resources are broken
+      - name: Verify macOS bundle resources
+        run: bash scripts/build/verify-macos-resources.sh
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies

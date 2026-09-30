@@ -1,0 +1,275 @@
+[
+  {
+    "name": "empty_faces",
+    "faces": [],
+    "expectedFlags": {
+      "aiSelected": false,
+      "maybe": false,
+      "blurred": false,
+      "closedEyes": false,
+      "selected": false
+    },
+    "expectedStarRating": 0
+  },
+  {
+    "name": "single_perfect_face",
+    "faces": [
+      {
+        "eyeStatus": "open",
+        "focusLevel": "good"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": true,
+      "maybe": false,
+      "blurred": false,
+      "closedEyes": false,
+      "selected": true
+    },
+    "expectedStarRating": 5
+  },
+  {
+    "name": "single_closed_eyes",
+    "faces": [
+      {
+        "eyeStatus": "closed",
+        "focusLevel": "good"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": false,
+      "maybe": false,
+      "blurred": false,
+      "closedEyes": true,
+      "selected": false
+    },
+    "expectedStarRating": 1
+  },
+  {
+    "name": "single_partial_eyes",
+    "faces": [
+      {
+        "eyeStatus": "partial",
+        "focusLevel": "good"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": false,
+      "maybe": true,
+      "blurred": false,
+      "closedEyes": false,
+      "selected": true
+    },
+    "expectedStarRating": 4
+  },
+  {
+    "name": "single_blurred",
+    "faces": [
+      {
+        "eyeStatus": "open",
+        "focusLevel": "blurred"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": false,
+      "maybe": false,
+      "blurred": true,
+      "closedEyes": false,
+      "selected": false
+    },
+    "expectedStarRating": 1
+  },
+  {
+    "name": "single_soft",
+    "faces": [
+      {
+        "eyeStatus": "open",
+        "focusLevel": "soft"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": false,
+      "maybe": true,
+      "blurred": false,
+      "closedEyes": false,
+      "selected": true
+    },
+    "expectedStarRating": 4
+  },
+  {
+    "name": "two_perfect_faces",
+    "faces": [
+      {
+        "eyeStatus": "open",
+        "focusLevel": "good"
+      },
+      {
+        "eyeStatus": "open",
+        "focusLevel": "good"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": true,
+      "maybe": false,
+      "blurred": false,
+      "closedEyes": false,
+      "selected": true
+    },
+    "expectedStarRating": 5
+  },
+  {
+    "name": "mixed_one_closed",
+    "faces": [
+      {
+        "eyeStatus": "open",
+        "focusLevel": "good"
+      },
+      {
+        "eyeStatus": "closed",
+        "focusLevel": "good"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": false,
+      "maybe": false,
+      "blurred": false,
+      "closedEyes": true,
+      "selected": false
+    },
+    "expectedStarRating": 2
+  },
+  {
+    "name": "mixed_one_partial",
+    "faces": [
+      {
+        "eyeStatus": "open",
+        "focusLevel": "good"
+      },
+      {
+        "eyeStatus": "partial",
+        "focusLevel": "good"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": false,
+      "maybe": true,
+      "blurred": false,
+      "closedEyes": false,
+      "selected": true
+    },
+    "expectedStarRating": 4
+  },
+  {
+    "name": "mixed_one_blurred",
+    "faces": [
+      {
+        "eyeStatus": "open",
+        "focusLevel": "good"
+      },
+      {
+        "eyeStatus": "open",
+        "focusLevel": "blurred"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": false,
+      "maybe": false,
+      "blurred": true,
+      "closedEyes": false,
+      "selected": false
+    },
+    "expectedStarRating": 2
+  },
+  {
+    "name": "mixed_one_soft",
+    "faces": [
+      {
+        "eyeStatus": "open",
+        "focusLevel": "good"
+      },
+      {
+        "eyeStatus": "open",
+        "focusLevel": "soft"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": false,
+      "maybe": true,
+      "blurred": false,
+      "closedEyes": false,
+      "selected": true
+    },
+    "expectedStarRating": 4
+  },
+  {
+    "name": "all_bad_closed_and_blurred",
+    "faces": [
+      {
+        "eyeStatus": "closed",
+        "focusLevel": "blurred"
+      },
+      {
+        "eyeStatus": "closed",
+        "focusLevel": "good"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": false,
+      "maybe": false,
+      "blurred": true,
+      "closedEyes": true,
+      "selected": false
+    },
+    "expectedStarRating": 1
+  },
+  {
+    "name": "three_mixed_quality",
+    "faces": [
+      {
+        "eyeStatus": "open",
+        "focusLevel": "good"
+      },
+      {
+        "eyeStatus": "partial",
+        "focusLevel": "soft"
+      },
+      {
+        "eyeStatus": "closed",
+        "focusLevel": "blurred"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": false,
+      "maybe": false,
+      "blurred": true,
+      "closedEyes": true,
+      "selected": false
+    },
+    "expectedStarRating": 2
+  },
+  {
+    "name": "all_partial_soft",
+    "faces": [
+      {
+        "eyeStatus": "partial",
+        "focusLevel": "soft"
+      },
+      {
+        "eyeStatus": "partial",
+        "focusLevel": "good"
+      },
+      {
+        "eyeStatus": "open",
+        "focusLevel": "soft"
+      }
+    ],
+    "expectedFlags": {
+      "aiSelected": false,
+      "maybe": true,
+      "blurred": false,
+      "closedEyes": false,
+      "selected": true
+    },
+    "expectedStarRating": 4
+  }
+]

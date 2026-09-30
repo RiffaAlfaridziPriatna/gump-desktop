@@ -570,4 +570,91 @@ describe('detectDuplicates', () => {
     expect(photos.a!.duplicated).toBe(false);
     expect(photos.b!.duplicated).toBe(true);
   });
+
+  it('keeps an earlier server-uploaded batch even when a later batch rates higher', () => {
+    const t0 = 1_700_000_000_000;
+    const photos: Record<string, DuplicateDetectionPhoto> = {
+      batch1: makePhoto({
+        photoId: 'batch1',
+        fileName: 'IMG_7001.JPG',
+        capturedAt: t0,
+        starRating: 4,
+        batchId: 1,
+        serverUploaded: true,
+        perceptualHash: 'aaaaaaaaaaaaaaaa',
+      }),
+      batch3: makePhoto({
+        photoId: 'batch3',
+        fileName: 'IMG_7002.JPG',
+        capturedAt: t0 + 2_000,
+        starRating: 5,
+        batchId: 3,
+        serverUploaded: false,
+        perceptualHash: 'aaaaaaaaaaaaaaa8',
+      }),
+    };
+
+    detectDuplicates(photos);
+
+    expect(photos.batch1!.duplicated).toBe(false);
+    expect(photos.batch3!.duplicated).toBe(true);
+  });
+
+  it('recalculates by stars when neither batch is server-uploaded', () => {
+    const t0 = 1_700_000_000_000;
+    const photos: Record<string, DuplicateDetectionPhoto> = {
+      batch2: makePhoto({
+        photoId: 'batch2',
+        fileName: 'IMG_8001.JPG',
+        capturedAt: t0,
+        starRating: 4,
+        batchId: 2,
+        serverUploaded: false,
+        perceptualHash: 'bbbbbbbbbbbbbbbb',
+      }),
+      batch3: makePhoto({
+        photoId: 'batch3',
+        fileName: 'IMG_8002.JPG',
+        capturedAt: t0 + 2_000,
+        starRating: 5,
+        batchId: 3,
+        serverUploaded: false,
+        perceptualHash: 'bbbbbbbbbbbbbbb8',
+      }),
+    };
+
+    detectDuplicates(photos);
+
+    expect(photos.batch3!.duplicated).toBe(false);
+    expect(photos.batch2!.duplicated).toBe(true);
+  });
+
+  it('prefers the earlier uploaded batch when both are server-uploaded', () => {
+    const t0 = 1_700_000_000_000;
+    const photos: Record<string, DuplicateDetectionPhoto> = {
+      batch1: makePhoto({
+        photoId: 'batch1',
+        fileName: 'IMG_9001.JPG',
+        capturedAt: t0,
+        starRating: 4,
+        batchId: 1,
+        serverUploaded: true,
+        perceptualHash: 'cccccccccccccccc',
+      }),
+      batch2: makePhoto({
+        photoId: 'batch2',
+        fileName: 'IMG_9002.JPG',
+        capturedAt: t0 + 2_000,
+        starRating: 5,
+        batchId: 2,
+        serverUploaded: true,
+        perceptualHash: 'ccccccccccccccc8',
+      }),
+    };
+
+    detectDuplicates(photos);
+
+    expect(photos.batch1!.duplicated).toBe(false);
+    expect(photos.batch2!.duplicated).toBe(true);
+  });
 });

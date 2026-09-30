@@ -35,6 +35,7 @@ export function legacyPhotoToDomain(
     blurred: photo.blurred,
     closedEyes: photo.closedEyes,
     duplicated: photo.duplicated,
+    batchId: photo.batchId,
   });
 }
 
@@ -70,5 +71,6 @@ export function domainPhotoToLegacy(photo: CulledPhoto): CulledAlbumPhoto {
     blurred: photo.blurred,
     closedEyes: photo.closedEyes,
     duplicated: photo.duplicated,
+    batchId: photo.batchId,
   };
 }

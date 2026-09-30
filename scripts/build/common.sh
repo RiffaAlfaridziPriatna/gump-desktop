@@ -71,6 +71,11 @@ load_gump_env() {
   else
     log "No env file at ${env_file}; continuing with defaults for ${env_name}"
   fi
+
+  # Prod releases must bake a real API URL into the JS bundle (babel inline).
+  if [[ "$env_name" == "prod" && -z "${API_BASE_URL:-}" ]]; then
+    die "API_BASE_URL is empty for GUMP_ENV=prod. Add it to .env (local) or secrets.API_BASE_URL (CI)."
+  fi
 }
 
 # Platform marketing version lives in VERSION.macos / VERSION.windows.

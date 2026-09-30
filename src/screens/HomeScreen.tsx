@@ -9,7 +9,10 @@ import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useDeleteCulledAlbum} from '@hooks/useDeleteCulledAlbum';
 import {useLayout} from '@hooks/useLayout';
 import {useProfileMenu} from '@hooks/useProfileMenu';
-import {toAlbumCardModel} from '@lib/culledAlbum/format';
+import {
+  LocalAlbumCardModel,
+  toAlbumCardModel,
+} from '@lib/culledAlbum/format';
 import {navigateToCulledAlbum} from '@lib/culledAlbum/navigateToCulledAlbum';
 import {CulledAlbumListItem} from '@lib/culledAlbum/types';
 import {
@@ -38,6 +41,11 @@ import GumpLogo from '../assets/images/logo.svg';
 
 type Props = StackScreenProps<MainStackParamList, 'Home'>;
 
+type HomeAlbumRow = {
+  album: CulledAlbumListItem;
+  model: LocalAlbumCardModel;
+};
+
 export default function HomeScreen({navigation}: Props) {
   const user = useAuthState(state => state.user);
   const profileMenu = useProfileMenu();
@@ -52,11 +60,17 @@ export default function HomeScreen({navigation}: Props) {
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [albumToDelete, setAlbumToDelete] = useState<CulledAlbumListItem | null>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
-  const cardModels = useMemo(
-    () => albums.map(album => toAlbumCardModel(album)),
+  const albumRows = useMemo<HomeAlbumRow[]>(
+    () =>
+      albums.map(album => ({
+        album,
+        model: toAlbumCardModel(album),
+      })),
     [albums],
   );
   const hasAlbums = albums.length > 0;
+  const ownerName =
+    user && user.role !== 'guest' ? user.name : undefined;
 
   useFocusEffect(
     useCallback(() => {
@@ -71,21 +85,66 @@ export default function HomeScreen({navigation}: Props) {
     }, [refresh]),
   );
 
-  async function handlePressAlbum(album: CulledAlbumListItem) {
-    if (expandedCardId !== null) {
-      setExpandedCardId(null);
-    }
+  const handlePressAlbum = useCallback(
+    (albumId: string) => {
+      const row = albumRows.find(item => item.album.albumId === albumId);
+      if (!row) {
+        return;
+      }
 
-    navigateToCulledAlbum(
-      navigation,
-      album,
-      user && user.role !== 'guest' ? user.name : album.name,
-    );
-  }
+      if (expandedCardId !== null) {
+        setExpandedCardId(null);
+      }
 
-  function handlePressMore(albumId: string) {
+      navigateToCulledAlbum(
+        navigation,
+        row.album,
+        ownerName ?? row.album.name,
+      );
+    },
+    [albumRows, expandedCardId, navigation, ownerName],
+  );
+
+  const handlePressMore = useCallback((albumId: string) => {
     setExpandedCardId(current => (current === albumId ? null : albumId));
-  }
+  }, []);
+
+  const handlePressDelete = useCallback(
+    (albumId: string) => {
+      const row = albumRows.find(item => item.album.albumId === albumId);
+      if (!row) {
+        return;
+      }
+      setAlbumToDelete(row.album);
+    },
+    [albumRows],
+  );
+
+  const keyExtractor = useCallback(
+    (row: HomeAlbumRow) => row.album.albumId,
+    [],
+  );
+
+  const renderAlbum = useCallback(
+    ({item}: {item: HomeAlbumRow}) => (
+      <AlbumCard
+        variant="homepage"
+        album={item.model}
+        ownerName={ownerName}
+        isExpanded={expandedCardId === item.album.albumId}
+        onPress={handlePressAlbum}
+        onPressMore={handlePressMore}
+        onPressDelete={handlePressDelete}
+      />
+    ),
+    [
+      expandedCardId,
+      handlePressAlbum,
+      handlePressDelete,
+      handlePressMore,
+      ownerName,
+    ],
+  );
 
   async function handleDeleteAlbum() {
     if (!albumToDelete) {
@@ -159,37 +218,20 @@ export default function HomeScreen({navigation}: Props) {
             </TouchableOpacity>
           </View>
 
-          <ScrollView
+          <AlbumGrid
+            data={albumRows}
+            keyExtractor={keyExtractor}
+            renderItem={renderAlbum}
+            columns={albumGridColumns}
+            gap={16}
             style={styles.scroll}
-            contentContainerStyle={[
-              styles.scrollContent,
-              {paddingHorizontal: screenPaddingHorizontal},
-            ]}
+            contentPaddingHorizontal={screenPaddingHorizontal}
+            contentContainerStyle={styles.scrollContent}
             scrollEnabled={!loadingAlbums}
-            refreshControl={
-              <RefreshControl
-                refreshing={loadingAlbums}
-                onRefresh={refresh}
-                colors={[colors.accent]}
-                tintColor={colors.accent}
-              />
-            }
-            scrollEventThrottle={200}>
-            <AlbumGrid columns={albumGridColumns} gap={16}>
-              {albums.map((album, index) => (
-                <AlbumCard
-                  key={album.albumId}
-                  variant="homepage"
-                  album={cardModels[index]!}
-                  ownerName={user && user.role !== 'guest' ? user.name : undefined}
-                  isExpanded={expandedCardId === album.albumId}
-                  onPress={() => handlePressAlbum(album)}
-                  onPressMore={() => handlePressMore(album.albumId)}
-                  onPressDelete={() => setAlbumToDelete(album)}
-                />
-              ))}
-            </AlbumGrid>
-          </ScrollView>
+            refreshing={loadingAlbums}
+            onRefresh={refresh}
+            extraData={expandedCardId}
+          />
         </>
       ) : (
         <ScrollView
@@ -249,6 +291,7 @@ export default function HomeScreen({navigation}: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    minHeight: 0,
     backgroundColor: colors.background,
   },
   header: {
@@ -342,6 +385,7 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
+    minHeight: 0,
   },
   scrollContent: {
     paddingVertical: 24,

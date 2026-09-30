@@ -144,5 +144,6 @@ const styles = StyleSheet.create({
   },
   sheet: {
     flex: 1,
+    minHeight: 0,
   },
 });

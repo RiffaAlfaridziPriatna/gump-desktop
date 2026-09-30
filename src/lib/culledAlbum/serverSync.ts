@@ -1,5 +1,9 @@
 import {make} from '@di/tsyringe';
 import {APIService, APIResponse} from '@services/api';
+import {
+  getSessionAccessibleLocalAlbumIds,
+  replaceSessionAccessibleLocalAlbumIds,
+} from './localAlbumAccess';
 import {culledAlbumStore, persistAlbum} from './store';
 import {getPhotosSnapshot} from './photoStateStore';
 import {
@@ -39,6 +43,37 @@ function applyServerMetadata(
   local.link = server.link;
   local.syncedMediaCount = server.totalMediaCount;
   local.syncedStorageGb = server.size;
+}
+
+/**
+ * Returns the subset of local album ids the current auth session can access.
+ * Uses GET /albums?ids=... so we do not need to page the full album catalog.
+ */
+export async function resolveAccessibleLocalAlbumIds(
+  albumIds: string[],
+): Promise<Set<string>> {
+  if (albumIds.length === 0) {
+    replaceSessionAccessibleLocalAlbumIds([]);
+    return new Set();
+  }
+
+  const api = make(APIService);
+  if (!api.agent.getToken()) {
+    return new Set();
+  }
+
+  const response = await api.album.getByIds(albumIds);
+  const accessibleIds = new Set(response.results.map(album => album.id));
+  const localIdSet = new Set(albumIds);
+
+  for (const albumId of getSessionAccessibleLocalAlbumIds()) {
+    if (localIdSet.has(albumId)) {
+      accessibleIds.add(albumId);
+    }
+  }
+
+  replaceSessionAccessibleLocalAlbumIds(accessibleIds);
+  return accessibleIds;
 }
 
 export async function syncCulledAlbumsWithServer(

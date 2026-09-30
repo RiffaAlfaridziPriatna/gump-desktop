@@ -14,6 +14,7 @@ Usage:
 
 Platforms:
   macos     app (default) | zip | distribute
+            | distribute-build | distribute-sign | distribute-notarize | distribute-package
   windows   exe (default) | msix
   all       build macos app (host-dependent) — Windows must be built on Windows
 

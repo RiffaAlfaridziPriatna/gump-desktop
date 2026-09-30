@@ -1,4 +1,9 @@
-import {useServerAlbumSync} from '@lib/culledAlbum/serverSync';
+import {useAuthState} from '@hooks/useAuth';
+import {isLocalAlbumMarkedAccessible} from '@lib/culledAlbum/localAlbumAccess';
+import {
+  resolveAccessibleLocalAlbumIds,
+  useServerAlbumSync,
+} from '@lib/culledAlbum/serverSync';
 import {
   culledAlbumStore,
   loadAllLocalAlbumsIntoStore,
@@ -9,6 +14,7 @@ import {
   shouldDeferHeavyWorkForNavigation,
 } from '@lib/navigation/uploadAwareNavigation';
 import {CulledAlbumListItem} from '@lib/culledAlbum/types';
+import {reportError} from '@lib/observability';
 import {useIsFocused} from '@react-navigation/native';
 import {useCallback, useEffect, useMemo, useState, useSyncExternalStore} from 'react';
 
@@ -94,11 +100,27 @@ function useAlbumListItems(): CulledAlbumListItem[] {
 
 export function useLocalCulledAlbumList() {
   const isFocused = useIsFocused();
+  const isAuthenticated = useAuthState(state => state.isAuthenticated);
   const [loadingAlbums, setLoadingAlbums] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [enableSync, setEnableSync] = useState(false);
+  // null = access not resolved yet (fail closed until getByIds returns)
+  const [accessibleAlbumIds, setAccessibleAlbumIds] = useState<ReadonlySet<
+    string
+  > | null>(null);
 
-  const albums = useAlbumListItems();
+  const storedAlbums = useAlbumListItems();
+
+  const albums = useMemo(() => {
+    if (accessibleAlbumIds == null) {
+      return [];
+    }
+    return storedAlbums.filter(
+      album =>
+        accessibleAlbumIds.has(album.albumId) ||
+        isLocalAlbumMarkedAccessible(album.albumId),
+    );
+  }, [storedAlbums, accessibleAlbumIds]);
 
   const albumIds = useMemo(
     () => albums.map(album => album.albumId),
@@ -108,6 +130,14 @@ export function useLocalCulledAlbumList() {
   useServerAlbumSync(albumIds, enableSync && isFocused);
 
   const refresh = useCallback(async () => {
+    if (!isAuthenticated) {
+      setAccessibleAlbumIds(null);
+      setLoadingAlbums(false);
+      setEnableSync(false);
+      setError(null);
+      return;
+    }
+
     if (shouldDeferHeavyWorkForNavigation()) {
       runOrDeferHeavyWorkForNavigation(() => {
         void refresh();
@@ -122,7 +152,17 @@ export function useLocalCulledAlbumList() {
       if (!hasActiveQueueWork()) {
         await loadAllLocalAlbumsIntoStore();
       }
+
+      const localIds = Object.keys(culledAlbumStore.getState().albums);
+      const accessibleIds = await resolveAccessibleLocalAlbumIds(localIds);
+      setAccessibleAlbumIds(accessibleIds);
     } catch (err) {
+      // Fail closed: do not show other accounts' local albums if access check fails.
+      setAccessibleAlbumIds(new Set());
+      reportError(err, {
+        source: 'localCulledAlbumList',
+        operation: 'resolve_accessible_albums',
+      });
       setError(
         err instanceof Error ? err.message : 'Failed to load local albums',
       );
@@ -130,10 +170,10 @@ export function useLocalCulledAlbumList() {
       setLoadingAlbums(false);
       setEnableSync(true);
     }
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
 
   const localAlbumIds = useMemo(
