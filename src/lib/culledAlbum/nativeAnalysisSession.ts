@@ -17,6 +17,8 @@ type NativeAnalysisSessionModule = {
       interJobDelayMs?: number;
       maxDecodePixelSize?: number;
       progressiveBatchSize?: number;
+      /** 0 disables per-photo timeout threads (Windows known-good path). */
+      photoTimeoutMs?: number;
     },
   ) => Promise<{success: boolean}>;
   cancelAnalysis: () => Promise<{success: boolean}>;
@@ -28,6 +30,12 @@ export type AnalysisSessionTuning = {
   interJobDelayMs: number;
   maxDecodePixelSize: number;
   progressiveBatchSize: number;
+  /**
+   * Wall-clock budget per photo for hung decode/detect skip.
+   * Windows keeps this at 0 (inline worker — any timeout>0 spawns a thread per
+   * photo and heated the machine during cull). macOS uses 30s empty fallback.
+   */
+  photoTimeoutMs: number;
 };
 
 let lowPowerModeEnabled = false;
@@ -43,14 +51,32 @@ export function getAnalysisSessionTuning(): AnalysisSessionTuning {
       interJobDelayMs: 200,
       maxDecodePixelSize: 2048,
       progressiveBatchSize: 20,
+      // Windows keeps timeout disabled (inline worker). Elsewhere: 30s hung skip.
+      photoTimeoutMs: Platform.OS === 'windows' ? 0 : 30_000,
+    };
+  }
+
+  // Windows keeps the same analysis decode size as macOS so cull quality does
+  // not drift. Thermal relief comes from inter-job delay + pool size 1 +
+  // tearing down the ORT session when idle — not from downscaling detection.
+  // photoTimeoutMs stays 0 on Windows: any timeout>0 spawns a thread per photo
+  // (even healthy ones), which was the main cull heat regression.
+  if (Platform.OS === 'windows') {
+    return {
+      maxConcurrency: 1,
+      interJobDelayMs: 150,
+      maxDecodePixelSize: 4096,
+      progressiveBatchSize: 20,
+      photoTimeoutMs: 0,
     };
   }
 
   return {
-    maxConcurrency: Platform.OS === 'windows' ? 1 : 2,
+    maxConcurrency: 2,
     interJobDelayMs: 50,
     maxDecodePixelSize: 4096,
     progressiveBatchSize: 20,
+    photoTimeoutMs: 30_000,
   };
 }
 
