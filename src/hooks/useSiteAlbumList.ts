@@ -6,7 +6,11 @@ import {
 } from '@lib/culledAlbum/selectAlbum';
 import {make} from '@di/tsyringe';
 import {APIService, APIResponse, assertAPIException} from '@services/api';
-import {useInfiniteQuery} from '@tanstack/react-query';
+import {
+  QueryClient,
+  useInfiniteQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import {useCallback, useEffect, useMemo} from 'react';
 
 export type SiteAlbumListSearchValues = {
@@ -34,6 +38,20 @@ export function siteAlbumListQueryKey(search: SiteAlbumListSearchValues = {}) {
   ] as const;
 }
 
+/**
+ * Drop cached pages and reload from the first cursor.
+ * Needed after albums change on web — plain refetch keeps old page cursors
+ * and can miss newly created empty albums.
+ */
+export function resetSiteAlbumList(
+  queryClient: QueryClient,
+  search: SiteAlbumListSearchValues = {},
+) {
+  return queryClient.resetQueries({
+    queryKey: siteAlbumListQueryKey(search),
+  });
+}
+
 type UseSiteAlbumListOptions = SiteAlbumListSearchValues & {
   /**
    * Keep fetching cursor pages until this many selectable (non-local) albums
@@ -52,6 +70,7 @@ export function useSiteAlbumList(options: UseSiteAlbumListOptions = {}) {
   const sort = search.sort ?? DEFAULT_SITE_ALBUM_SORT;
   const order = search.order ?? DEFAULT_SITE_ALBUM_ORDER;
   const api = make(APIService);
+  const queryClient = useQueryClient();
   const queryKey = siteAlbumListQueryKey({...search, sort, order});
 
   const {
@@ -61,7 +80,7 @@ export function useSiteAlbumList(options: UseSiteAlbumListOptions = {}) {
     hasNextPage,
     isFetching,
     isFetchingNextPage,
-    refetch,
+    isPending,
   } = useInfiniteQuery({
     queryKey,
     queryFn: async ({pageParam}) => {
@@ -140,12 +159,20 @@ export function useSiteAlbumList(options: UseSiteAlbumListOptions = {}) {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const refresh = useCallback(() => {
-    refetch();
-  }, [refetch]);
+    return resetSiteAlbumList(queryClient, {...search, sort, order});
+  }, [
+    queryClient,
+    search.keyword,
+    search.year,
+    search.month,
+    sort,
+    order,
+  ]);
 
   return {
-    // Initial load / pull-to-refresh only — not cursor pagination.
-    loadingAlbums: isFetching && !isFetchingNextPage,
+    // Full-screen load only while there is no cached page yet.
+    // Background focus/pull refetches keep the existing list visible.
+    loadingAlbums: isPending && isFetching && !isFetchingNextPage,
     albums,
     error: queryError ? String(queryError) : null,
     loadMore,

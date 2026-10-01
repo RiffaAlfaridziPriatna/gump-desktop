@@ -41,6 +41,10 @@ const windowsShims = {
     __dirname,
     'src/shims/react-native-device-info.windows.ts',
   ),
+  'react-native-localize': path.resolve(
+    __dirname,
+    'src/shims/react-native-localize.windows.ts',
+  ),
 };
 
 const config = {

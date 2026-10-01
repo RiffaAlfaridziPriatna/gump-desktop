@@ -99,12 +99,39 @@ export function AuthProvider({children}: PropsWithChildren) {
   }, [queryClient]);
 
   const loadStoredAuth = useCallback(async () => {
+    const AUTH_RESTORE_TIMEOUT_MS = 8_000;
     try {
-      const token = await getAuthToken();
+      const token = await Promise.race([
+        getAuthToken(),
+        new Promise<string | null>((_, reject) => {
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `getAuthToken timed out after ${AUTH_RESTORE_TIMEOUT_MS}ms`,
+                ),
+              ),
+            AUTH_RESTORE_TIMEOUT_MS,
+          );
+        }),
+      ]);
       if (token) {
         const api = make(APIService);
         api.agent.setToken(token);
-        const user = await api.auth.getCurrentUser();
+        const user = await Promise.race([
+          api.auth.getCurrentUser(),
+          new Promise<never>((_, reject) => {
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `getCurrentUser timed out after ${AUTH_RESTORE_TIMEOUT_MS}ms`,
+                  ),
+                ),
+              AUTH_RESTORE_TIMEOUT_MS,
+            );
+          }),
+        ]);
 
         if (user && user.role !== 'guest') {
           storeRef.current!.setState({
@@ -119,7 +146,19 @@ export function AuthProvider({children}: PropsWithChildren) {
       }
     } catch (error) {
       reportError(error, {source: 'auth', operation: 'restore_session'});
-      await deleteAuthToken();
+      try {
+        await Promise.race([
+          deleteAuthToken(),
+          new Promise<never>((_, reject) => {
+            setTimeout(
+              () => reject(new Error('deleteAuthToken timed out')),
+              2_000,
+            );
+          }),
+        ]);
+      } catch {
+        // AsyncStorage may be wedged; continue to unauthenticated UI.
+      }
     }
 
     storeRef.current!.setState({isLoading: false});
