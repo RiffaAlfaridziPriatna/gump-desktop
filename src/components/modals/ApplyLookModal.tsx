@@ -95,6 +95,12 @@ export function ApplyLookModal({
       return;
     }
     setApplying(true);
+    // Let React paint "Applying..." before updateLook touches the photo store.
+    await new Promise<void>(resolve => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
     try {
       await onApply(
         lookId,
