@@ -278,6 +278,17 @@ export function useCulledAlbumFilenameDuplicates(
   });
 }
 
+export function useCulledAlbumFilenameDuplicateToastMode(
+  albumId: string | null,
+): 'upload' | 'analyze' | null {
+  return useCulledAlbumStore(state => {
+    if (!albumId) {
+      return null;
+    }
+    return state.albums[albumId]?.filenameDuplicateToastMode ?? null;
+  });
+}
+
 /** @deprecated Prefer useCulledAlbumLocalImportProgress for upload toast progress. */
 export function useCulledAlbumUploadItems(albumId: string | null) {
   const snapshotRevision = useStateStore(

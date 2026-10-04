@@ -4,7 +4,10 @@ import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShel
 import {useAuthState} from '@context/auth';
 import {useCulledAlbumActions} from '@context/culledAlbum';
 import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
-import {useSiteAlbumList} from '@hooks/useSiteAlbumList';
+import {
+  resetSiteAlbumList,
+  useSiteAlbumList,
+} from '@hooks/useSiteAlbumList';
 import {useLayout} from '@hooks/useLayout';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {
@@ -20,6 +23,7 @@ import {MainStackParamList} from '../app/MainNavigator';
 import {APIResponse, FileAsset} from '@services/api';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useFocusEffect} from '@react-navigation/native';
+import {useQueryClient} from '@tanstack/react-query';
 import {useCallback, useMemo, useRef, useState} from 'react';
 import {TouchableOpacity} from '@components/ui';
 import {
@@ -46,8 +50,18 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
     screenPaddingHorizontal,
     albumGridColumns,
   } = useLayout();
-  const {loadingAlbums, albums, loadMore, hasMore, refresh} = useSiteAlbumList();
   const {localAlbumIds, refresh: refreshLocalAlbums} = useLocalCulledAlbumList();
+  const {
+    loadingAlbums,
+    albums,
+    loadMore,
+    hasMore,
+    refresh,
+  } = useSiteAlbumList({
+    prefetchUntilSelectable: getSelectAlbumPrefetchThreshold(albumGridColumns),
+    localAlbumIds,
+  });
+  const queryClient = useQueryClient();
   const {addPhotos} = useCulledAlbumActions();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -56,6 +70,7 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
   );
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
   const isLeavingRef = useRef(false);
 
   useFocusEffect(
@@ -63,10 +78,26 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
       if (isLeavingRef.current) {
         return;
       }
-      // Site albums are prefetched on app auth; only refresh local exclusions.
+      // Hard reset on open: plain refetch keeps old infinite-query cursors and
+      // can miss albums created on web since the last fetch.
+      void resetSiteAlbumList(queryClient);
       refreshLocalAlbums();
-    }, [refreshLocalAlbums]),
+
+      return () => {
+        if (isLeavingRef.current) {
+          return;
+        }
+        // Drop the select-album cursor cache on close so the next open starts
+        // from a fresh first page instead of stale pagination state.
+        void resetSiteAlbumList(queryClient);
+      };
+    }, [queryClient, refreshLocalAlbums]),
   );
+
+  const handlePullRefresh = useCallback(() => {
+    setPullRefreshing(true);
+    void Promise.resolve(refresh()).finally(() => setPullRefreshing(false));
+  }, [refresh]);
 
   const availableAlbums = useMemo(
     () => filterAvailableSourceAlbums(albums.results, localAlbumIds),
@@ -208,9 +239,9 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
           style={styles.scroll}
           contentPaddingHorizontal={screenPaddingHorizontal}
           contentContainerStyle={styles.scrollContent}
-          scrollEnabled={!loadingAlbums}
-          refreshing={loadingAlbums}
-          onRefresh={refresh}
+          scrollEnabled={!pullRefreshing}
+          refreshing={pullRefreshing}
+          onRefresh={handlePullRefresh}
           onEndReached={hasMore ? loadMore : undefined}
           extraData={selectedId}
           ListEmptyComponent={

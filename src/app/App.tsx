@@ -4,10 +4,9 @@ import {ErrorProvider} from '@context/error';
 import {AppErrorBoundary, ErrorToast} from '@components/error';
 import {
   installGlobalErrorReporting,
-  isPostHogEnabled,
-  posthog,
   reportError,
 } from '@lib/observability';
+import {PostHogAppShell} from '@lib/observability/PostHogAppShell';
 import {colors} from '@lib/ui/colors';
 import {DefaultTheme, NavigationContainer} from '@react-navigation/native';
 import {ActivityIndicator, Platform, StyleSheet, View} from 'react-native';
@@ -17,7 +16,6 @@ import {
   QueryClient,
   QueryClientProvider,
 } from '@tanstack/react-query';
-import {PostHogProvider} from 'posthog-react-native';
 import {AuthNavigator} from './AuthNavigator';
 import {MainNavigator} from './MainNavigator';
 
@@ -94,33 +92,25 @@ const AppRoot =
     : require('react-native-gesture-handler').GestureHandlerRootView;
 
 export default function App() {
-  const tree = (
-    <AppRoot style={styles.root}>
-      <AppErrorBoundary>
-        <QueryClientProvider client={queryClient}>
-          <ErrorProvider>
-            <AuthProvider>
-              <CulledAlbumProvider>
-                <NavigationContainer theme={DarkTheme}>
-                  <RootNavigator />
-                </NavigationContainer>
-                <ErrorToast />
-              </CulledAlbumProvider>
-            </AuthProvider>
-          </ErrorProvider>
-        </QueryClientProvider>
-      </AppErrorBoundary>
-    </AppRoot>
-  );
-
-  if (!isPostHogEnabled || !posthog) {
-    return tree;
-  }
-
   return (
-    <PostHogProvider client={posthog} autocapture={false}>
-      {tree}
-    </PostHogProvider>
+    <PostHogAppShell>
+      <AppRoot style={styles.root}>
+        <AppErrorBoundary>
+          <QueryClientProvider client={queryClient}>
+            <ErrorProvider>
+              <AuthProvider>
+                <CulledAlbumProvider>
+                  <NavigationContainer theme={DarkTheme}>
+                    <RootNavigator />
+                  </NavigationContainer>
+                  <ErrorToast />
+                </CulledAlbumProvider>
+              </AuthProvider>
+            </ErrorProvider>
+          </QueryClientProvider>
+        </AppErrorBoundary>
+      </AppRoot>
+    </PostHogAppShell>
   );
 }
 
