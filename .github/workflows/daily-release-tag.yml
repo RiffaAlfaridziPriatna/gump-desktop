@@ -1,8 +1,8 @@
 name: Daily release tag
 
 # Batches main into at most one date tag per Asia/Jakarta day.
-# Pushes the date tag, then explicitly workflow_dispatch-es Release.
-# (Tag pushes — even with a PAT — often do not cascade to on: push tags.)
+# Pushes the date tag with GITHUB_TOKEN (no cascade), then workflow_dispatch-es
+# Release once. Do not PAT-push the tag — that + dispatch = two Release runs.
 
 on:
   schedule:
@@ -42,8 +42,7 @@ jobs:
 
       - name: Create daily release tag
         env:
-          RELEASE_BOT_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
-          # GITHUB_TOKEN may workflow_dispatch other workflows; PAT tag push often cannot cascade.
+          # Tag push with GITHUB_TOKEN will not cascade; dispatch below is the sole Release trigger.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_DATE: ${{ github.event.inputs.date || '' }}
           FORCE: ${{ github.event.inputs.force || 'false' }}

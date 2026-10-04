@@ -7,6 +7,7 @@ import {createCullingPhotoId} from '@lib/culling/cullingPhotoId';
 import {reportError} from '@lib/observability/reportError';
 import {createStateStore} from '@lib/react/state';
 import {FileAsset} from '@services/upload/types';
+import {Platform} from 'react-native';
 import {mergeAlbumPhotos, mergeWithMemoryAlbum} from './merge';
 import {
   createLocalImportBatchCounts,
@@ -781,11 +782,14 @@ export function clearLocalImportBatch(albumId: string): void {
 export function setFilenameDuplicateNames(
   albumId: string,
   names: string[],
+  toastMode: 'upload' | 'analyze' = 'analyze',
 ): void {
   culledAlbumStore.setState(state => {
     const album = state.albums[albumId];
     if (album) {
       album.filenameDuplicateNames = names;
+      album.filenameDuplicateToastMode =
+        names.length > 0 ? toastMode : undefined;
     }
   });
 }
@@ -795,6 +799,7 @@ export function clearFilenameDuplicateNames(albumId: string): void {
     const album = state.albums[albumId];
     if (album) {
       album.filenameDuplicateNames = [];
+      album.filenameDuplicateToastMode = undefined;
     }
   });
 }
@@ -1274,7 +1279,15 @@ export function clearAnalysisBatch(albumId: string): void {
   });
 }
 
-export function setAnalysisBatchCounts(
+const ANALYSIS_COUNTS_THROTTLE_MS = Platform.OS === 'windows' ? 1000 : 0;
+
+const pendingAnalysisCountsByAlbum = new Map<string, AnalysisBatchCounts>();
+const analysisCountsTimers = new Map<
+  string,
+  ReturnType<typeof setTimeout>
+>();
+
+function applyAnalysisBatchCounts(
   albumId: string,
   counts: AnalysisBatchCounts,
 ): void {
@@ -1299,6 +1312,68 @@ export function setAnalysisBatchCounts(
       },
     );
   });
+}
+
+function isTerminalAnalysisBatchCounts(counts: AnalysisBatchCounts): boolean {
+  const settled = counts.analyzed + counts.failed;
+  return (
+    counts.total > 0 &&
+    counts.pending === 0 &&
+    counts.analyzing === 0 &&
+    settled >= counts.total
+  );
+}
+
+export function flushPendingAnalysisBatchCounts(albumId?: string): void {
+  const albumIds =
+    albumId != null
+      ? [albumId]
+      : [...pendingAnalysisCountsByAlbum.keys()];
+
+  for (const id of albumIds) {
+    const timer = analysisCountsTimers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      analysisCountsTimers.delete(id);
+    }
+    const pending = pendingAnalysisCountsByAlbum.get(id);
+    if (!pending) {
+      continue;
+    }
+    pendingAnalysisCountsByAlbum.delete(id);
+    applyAnalysisBatchCounts(id, pending);
+  }
+}
+
+export function setAnalysisBatchCounts(
+  albumId: string,
+  counts: AnalysisBatchCounts,
+): void {
+  if (
+    ANALYSIS_COUNTS_THROTTLE_MS <= 0 ||
+    isTerminalAnalysisBatchCounts(counts)
+  ) {
+    flushPendingAnalysisBatchCounts(albumId);
+    applyAnalysisBatchCounts(albumId, counts);
+    return;
+  }
+
+  pendingAnalysisCountsByAlbum.set(albumId, counts);
+  if (analysisCountsTimers.has(albumId)) {
+    return;
+  }
+
+  analysisCountsTimers.set(
+    albumId,
+    setTimeout(() => {
+      analysisCountsTimers.delete(albumId);
+      const pending = pendingAnalysisCountsByAlbum.get(albumId);
+      pendingAnalysisCountsByAlbum.delete(albumId);
+      if (pending) {
+        applyAnalysisBatchCounts(albumId, pending);
+      }
+    }, ANALYSIS_COUNTS_THROTTLE_MS),
+  );
 }
 
 export function reconcileAnalysisBatchCounts(albumId: string): void {

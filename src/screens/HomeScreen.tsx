@@ -213,7 +213,7 @@ export default function HomeScreen({navigation}: Props) {
                 navigation.navigate('SelectAlbum', uploadAwareRouteParams())
               }
               activeOpacity={0.8}>
-              <Text style={styles.cullingButtonText}>Start New Culling</Text>
+              <Text style={styles.cullingButtonText}>Select Album</Text>
               <IconChevronRight width={24} height={24} color={colors.white} />
             </TouchableOpacity>
           </View>

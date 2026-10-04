@@ -3,6 +3,7 @@ import {
   useCulledAlbumActions,
   useCulledAlbumAnalysisCounts,
   useCulledAlbumFilenameDuplicates,
+  useCulledAlbumFilenameDuplicateToastMode,
   useCulledAlbumLocalImportProgress,
   useCulledAlbumServerUploadBatch,
   useCulledAlbumUiState,
@@ -44,10 +45,11 @@ if (
 const SLIDE_DISTANCE = 120;
 const ANIMATION_MS = 220;
 const AUTO_CLOSE_DELAY_MS = 5000;
-const MIN_MS_PER_PHOTO = 80;
-const MAX_MS_PER_PHOTO = 350;
-const DEFAULT_MS_PER_PHOTO = 180;
-const MAX_LEAD_PHOTOS = 20;
+const MIN_MS_PER_STEP = 80;
+const MAX_MS_PER_STEP = 800;
+const DEFAULT_MS_PER_STEP = 200;
+const TOAST_WIDTH = 450;
+const TOAST_WIDTH_WITH_DUPLICATES = 540;
 const DUPLICATE_ROW_HEIGHT = 28;
 const DUPLICATE_ROW_GAP = 8;
 const DUPLICATE_LIST_MAX_ROWS = 3;
@@ -60,6 +62,13 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/**
+ * Catch up displayed remaining toward the native target one step at a time.
+ * Never goes ahead: displayedRemaining >= targetRemaining always.
+ * Pace = (elapsed since last native update + time left in current step) /
+ *        pending steps — so a jump of N over T ms ticks ~every T/N ms.
+ * Uses setTimeout (not rAF) so Windows analyze toasts stay cheap.
+ */
 function useInterpolatedRemaining(
   enabled: boolean,
   targetRemaining: number,
@@ -67,106 +76,143 @@ function useInterpolatedRemaining(
   resetKey: string,
   batchTotal: number,
 ): number {
-  const [displayedRemaining, setDisplayedRemaining] = useState(targetRemaining);
-  const displayedRef = useRef(targetRemaining);
-  const targetRef = useRef(targetRemaining);
-  const resetKeyRef = useRef(resetKey);
-  const msPerPhotoRef = useRef(DEFAULT_MS_PER_PHOTO);
-  const lastNativeTargetRef = useRef(targetRemaining);
-  const lastNativeAtRef = useRef(0);
-  const lastNativeGapRef = useRef(MAX_LEAD_PHOTOS);
+  const clampedTarget = Math.max(0, Math.round(targetRemaining));
+  const [displayedRemaining, setDisplayedRemaining] = useState(clampedTarget);
 
-  targetRef.current = Math.max(0, Math.round(targetRemaining));
+  const displayedRef = useRef(clampedTarget);
+  const targetRef = useRef(clampedTarget);
+  const batchTotalRef = useRef(batchTotal);
+  const enabledRef = useRef(enabled);
+  const shouldSnapRef = useRef(shouldSnap);
+  const resetKeyRef = useRef(resetKey);
+  const stepMsRef = useRef(DEFAULT_MS_PER_STEP);
+  const lastTargetRef = useRef(clampedTarget);
+  const lastTargetAtRef = useRef(0);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nextTickAtRef = useRef(0);
+
+  targetRef.current = clampedTarget;
+  batchTotalRef.current = batchTotal;
+  enabledRef.current = enabled;
+  shouldSnapRef.current = shouldSnap;
 
   useEffect(() => {
-    const clampedTarget = targetRef.current;
+    return () => {
+      if (timeoutRef.current != null) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      nextTickAtRef.current = 0;
+    };
+  }, []);
+
+  useEffect(() => {
+    const clearTick = () => {
+      if (timeoutRef.current != null) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      nextTickAtRef.current = 0;
+    };
+
+    const publish = (value: number) => {
+      let next = Math.max(0, Math.round(value));
+      if (batchTotalRef.current > 0) {
+        next = Math.min(batchTotalRef.current, next);
+      }
+      // Never ahead of native: remaining must stay >= target.
+      next = Math.max(next, targetRef.current);
+      if (next === displayedRef.current) {
+        return;
+      }
+      displayedRef.current = next;
+      setDisplayedRemaining(next);
+    };
+
+    const scheduleTick = () => {
+      if (timeoutRef.current != null) {
+        return;
+      }
+      if (
+        !enabledRef.current ||
+        shouldSnapRef.current ||
+        displayedRef.current <= targetRef.current
+      ) {
+        return;
+      }
+      const stepMs = stepMsRef.current;
+      nextTickAtRef.current = Date.now() + stepMs;
+      timeoutRef.current = setTimeout(() => {
+        timeoutRef.current = null;
+        nextTickAtRef.current = 0;
+        if (displayedRef.current > targetRef.current) {
+          publish(displayedRef.current - 1);
+        }
+        scheduleTick();
+      }, stepMs);
+    };
+
     const didReset = resetKeyRef.current !== resetKey;
     resetKeyRef.current = resetKey;
 
+    if (!enabled || shouldSnap) {
+      clearTick();
+      displayedRef.current = clampedTarget;
+      setDisplayedRemaining(clampedTarget);
+      lastTargetRef.current = clampedTarget;
+      lastTargetAtRef.current = Date.now();
+      return;
+    }
+
     if (didReset) {
-      lastNativeTargetRef.current = clampedTarget;
-      lastNativeAtRef.current = 0;
-      lastNativeGapRef.current = MAX_LEAD_PHOTOS;
-      msPerPhotoRef.current = DEFAULT_MS_PER_PHOTO;
+      clearTick();
+      lastTargetRef.current = clampedTarget;
+      lastTargetAtRef.current = Date.now();
+      stepMsRef.current = DEFAULT_MS_PER_STEP;
       displayedRef.current = clampedTarget;
       setDisplayedRemaining(clampedTarget);
       return;
     }
 
-    if (lastNativeTargetRef.current > clampedTarget) {
-      const gap = lastNativeTargetRef.current - clampedTarget;
-      const elapsed = Date.now() - lastNativeAtRef.current;
-      if (gap > 0 && lastNativeAtRef.current > 0 && elapsed > 250) {
-        msPerPhotoRef.current = clampNumber(
-          elapsed / gap,
-          MIN_MS_PER_PHOTO,
-          MAX_MS_PER_PHOTO,
-        );
-        lastNativeGapRef.current = clampNumber(gap, 1, MAX_LEAD_PHOTOS);
-      }
-    }
+    const previousTarget = lastTargetRef.current;
+    const now = Date.now();
+    const elapsed =
+      lastTargetAtRef.current > 0 ? Math.max(0, now - lastTargetAtRef.current) : 0;
 
-    lastNativeTargetRef.current = clampedTarget;
-    lastNativeAtRef.current = Date.now();
-  }, [resetKey, targetRemaining]);
-
-  useEffect(() => {
-    if (!enabled || shouldSnap) {
-      displayedRef.current = targetRef.current;
-      setDisplayedRemaining(targetRef.current);
+    if (clampedTarget > displayedRef.current) {
+      clearTick();
+      publish(clampedTarget);
+      lastTargetRef.current = clampedTarget;
+      lastTargetAtRef.current = now;
       return;
     }
 
-    if (batchTotal > 0 && displayedRef.current > batchTotal) {
-      displayedRef.current = batchTotal;
-      setDisplayedRemaining(batchTotal);
+    if (clampedTarget < previousTarget) {
+      const pendingSteps = displayedRef.current - clampedTarget;
+      const timeCredit =
+        nextTickAtRef.current > now ? nextTickAtRef.current - now : 0;
+      if (pendingSteps > 0 && (elapsed > 0 || timeCredit > 0)) {
+        stepMsRef.current = clampNumber(
+          (elapsed + timeCredit) / pendingSteps,
+          MIN_MS_PER_STEP,
+          MAX_MS_PER_STEP,
+        );
+      } else if (pendingSteps > 0) {
+        stepMsRef.current = DEFAULT_MS_PER_STEP;
+      }
+      // Restart drip at the new pace (timeCredit already folded into stepMs).
+      clearTick();
     }
 
-    let accumulatedMs = 0;
-    let lastNow = 0;
-    let frameId = 0;
+    lastTargetRef.current = clampedTarget;
+    lastTargetAtRef.current = now;
 
-    const tick = (now: number) => {
-      if (lastNow === 0) {
-        lastNow = now;
-      }
-      accumulatedMs += Math.min(50, now - lastNow);
-      lastNow = now;
+    if (displayedRef.current < clampedTarget) {
+      publish(clampedTarget);
+    }
 
-      const nativeRemaining = targetRef.current;
-      const lead = lastNativeGapRef.current;
-      const floor =
-        nativeRemaining > lead
-          ? nativeRemaining - lead
-          : nativeRemaining;
-      let current = displayedRef.current;
-      if (batchTotal > 0 && current > batchTotal) {
-        current = batchTotal;
-      }
-
-      const goal = current > nativeRemaining ? nativeRemaining : floor;
-      const stepMs = msPerPhotoRef.current;
-
-      if (current > goal) {
-        while (accumulatedMs >= stepMs && current > goal) {
-          accumulatedMs -= stepMs;
-          current -= 1;
-        }
-      } else {
-        accumulatedMs = 0;
-      }
-
-      if (current !== displayedRef.current) {
-        displayedRef.current = current;
-        setDisplayedRemaining(current);
-      }
-
-      frameId = requestAnimationFrame(tick);
-    };
-
-    frameId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frameId);
-  }, [batchTotal, enabled, resetKey, shouldSnap]);
+    scheduleTick();
+  }, [batchTotal, clampedTarget, enabled, resetKey, shouldSnap]);
 
   if (!enabled) {
     return targetRemaining;
@@ -242,10 +288,11 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     clearFilenameDuplicates,
   } = useCulledAlbumActions();
 
-  const filenameDuplicates = useCulledAlbumFilenameDuplicates(
-    mode === 'analyze' ? albumId : null,
-  );
-  const hasFilenameDuplicates = filenameDuplicates.length > 0;
+  const filenameDuplicates = useCulledAlbumFilenameDuplicates(albumId);
+  const filenameDuplicateToastMode =
+    useCulledAlbumFilenameDuplicateToastMode(albumId);
+  const hasFilenameDuplicates =
+    filenameDuplicates.length > 0 && filenameDuplicateToastMode === mode;
   const [duplicatesExpanded, setDuplicatesExpanded] = useState(false);
 
   const items = mode === 'serverUpload' ? serverUploadItems : [];
@@ -273,11 +320,11 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
         : items.length > 0;
 
   const duplicatesOnly =
-    mode === 'analyze' &&
     hasFilenameDuplicates &&
     queueOperation.status === 'idle' &&
-    (analysisCounts?.total ?? 0) === 0 &&
-    queueOperation.batchTotal === 0;
+    queueOperation.batchTotal === 0 &&
+    (mode === 'upload' ||
+      (mode === 'analyze' && (analysisCounts?.total ?? 0) === 0));
 
   const shouldBeVisible =
     (visible && hasRenderableBatch) || duplicatesOnly;
@@ -469,7 +516,9 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
         ? 'Finalizing analysis...'
         : 'Canceling upload...'
     : mode === 'upload'
-      ? `Uploading ${uploadInProgressRemaining} photos`
+      ? duplicatesOnly
+        ? 'Uploaded 0 photos'
+        : `Uploading ${uploadInProgressRemaining} photos`
       : mode === 'analyze'
         ? isFinalizingAnalysis
           ? 'Finalizing analysis...'
@@ -489,11 +538,10 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
         : `Uploaded ${counts.completed} photos to server`;
 
   const showFilenameDuplicatesChrome =
-    mode === 'analyze' &&
     hasFilenameDuplicates &&
     !isCanceling &&
-    !isFinalizingAnalysis &&
-    !completed;
+    !(mode === 'analyze' && isFinalizingAnalysis) &&
+    !(mode === 'analyze' && completed);
 
   const duplicateCountLabel = showFilenameDuplicatesChrome
     ? `${filenameDuplicates.length} duplicate${
@@ -501,17 +549,21 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
       }`
     : null;
 
-  const analyzeTitleParts: string[] = [];
-  if (mode === 'analyze' && !(completed && !isCanceling)) {
-    if (inProgressLabel) {
-      analyzeTitleParts.push(inProgressLabel);
+  const toastTitleParts: string[] = [];
+  if (!(completed && !isCanceling && mode === 'analyze')) {
+    if (completed && !isCanceling && mode === 'upload') {
+      toastTitleParts.push(completedLabel);
+    } else if (!completed || isCanceling) {
+      if (inProgressLabel) {
+        toastTitleParts.push(inProgressLabel);
+      }
     }
     if (duplicateCountLabel) {
-      analyzeTitleParts.push(duplicateCountLabel);
+      toastTitleParts.push(duplicateCountLabel);
     }
   }
-  const analyzeInProgressTitle =
-    analyzeTitleParts.length > 0 ? analyzeTitleParts.join(' • ') : null;
+  const composedInProgressTitle =
+    toastTitleParts.length > 0 ? toastTitleParts.join(' • ') : null;
 
   useEffect(() => {
     if (!showFilenameDuplicatesChrome) {
@@ -557,7 +609,14 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
   ]);
 
   useEffect(() => {
-    if (!visible || !completed || batchTotal === 0 || isCanceling || duplicatesOnly) {
+    if (
+      !visible ||
+      !completed ||
+      batchTotal === 0 ||
+      isCanceling ||
+      duplicatesOnly ||
+      duplicatesExpanded
+    ) {
       return;
     }
     const timer = setTimeout(() => {
@@ -569,6 +628,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     albumId,
     batchTotal,
     completed,
+    duplicatesExpanded,
     duplicatesOnly,
     hideToast,
     isCanceling,
@@ -735,11 +795,8 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
       : queueOperation.status === 'completed');
 
   const titleText =
-    completed && !isCanceling
-      ? completedLabel
-      : mode === 'analyze' && analyzeInProgressTitle
-        ? analyzeInProgressTitle
-        : inProgressLabel ?? '';
+    composedInProgressTitle ??
+    (completed && !isCanceling ? completedLabel : inProgressLabel ?? '');
 
   const showDuplicatesToggle = showFilenameDuplicatesChrome;
 
@@ -750,12 +807,17 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     <Animated.View
       style={[
         styles.container,
-        {maxWidth: deviceWidth},
+        {
+          width: showFilenameDuplicatesChrome
+            ? TOAST_WIDTH_WITH_DUPLICATES
+            : TOAST_WIDTH,
+          maxWidth: deviceWidth,
+        },
         {transform: [{translateY}], opacity},
       ]}>
       <View style={styles.header}>
         <View style={styles.titleContainer}>
-          <Text style={styles.title} numberOfLines={2}>
+          <Text style={styles.title} numberOfLines={1}>
             {titleText}
           </Text>
           {showDuplicatesToggle ? (
@@ -834,7 +896,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     left: 0,
-    width: 450,
     backgroundColor: colors.white,
     zIndex: 100,
     paddingHorizontal: 32,
@@ -853,9 +914,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    minWidth: 0,
   },
   title: {
     ...sansBoldStyle,
+    flexShrink: 1,
     fontSize: 16,
     letterSpacing: 0,
     color: colors.textDark,
@@ -864,11 +927,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 16,
     color: colors.textDark,
+    flexShrink: 0,
   },
   showHideText: {
     fontFamily: fonts.sans,
     fontSize: 16,
     color: colors.accent,
+    flexShrink: 0,
   },
   errorText: {
     fontFamily: fonts.sans,
@@ -882,6 +947,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.textMuted,
+    flexShrink: 0,
   },
   progressBarContainer: {
     width: '100%',

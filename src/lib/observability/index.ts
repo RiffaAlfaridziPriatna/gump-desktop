@@ -19,4 +19,6 @@ export {
   identifyUser,
   resetIdentifiedUser,
   addErrorStep,
+  captureAppEvent,
 } from './posthogClient';
+export {PostHogAppShell} from './PostHogAppShell';
