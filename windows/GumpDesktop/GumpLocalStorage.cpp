@@ -18,6 +18,7 @@
 #include <Shellapi.h>
 #include <shobjidl.h>
 #include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 
 #include <winrt/Windows.Foundation.h>
@@ -94,14 +95,46 @@ std::string ToUtf8(std::wstring_view value) {
   return utf8;
 }
 
+std::string PercentDecodeUtf8(std::string_view value) {
+  std::string out;
+  out.reserve(value.size());
+  for (size_t i = 0; i < value.size(); ++i) {
+    if (value[i] == '%' && i + 2 < value.size()) {
+      const char hex[] = {value[i + 1], value[i + 2], '\0'};
+      char *end = nullptr;
+      const unsigned long code = std::strtoul(hex, &end, 16);
+      if (end != nullptr && *end == '\0') {
+        out.push_back(static_cast<char>(code));
+        i += 2;
+        continue;
+      }
+    }
+    out.push_back(value[i]);
+  }
+  return out;
+}
+
+std::string_view StripUriQueryAndFragment(std::string_view uri) {
+  const size_t query = uri.find('?');
+  if (query != std::string_view::npos) {
+    uri = uri.substr(0, query);
+  }
+  const size_t hash = uri.find('#');
+  if (hash != std::string_view::npos) {
+    uri = uri.substr(0, hash);
+  }
+  return uri;
+}
+
 std::filesystem::path PathFromUri(std::string_view uri) {
+  uri = StripUriQueryAndFragment(uri);
   if (uri.empty()) {
     return {};
   }
 
-  std::string_view pathPart = uri;
+  std::string pathUtf8;
   if (uri.rfind("file://", 0) == 0) {
-    pathPart = uri.substr(7);
+    std::string_view pathPart = uri.substr(7);
     // file:///C:\path and file:///C:/path both need the leading slash removed
     // before Windows can resolve the drive letter path.
     if (pathPart.size() >= 3 && pathPart[0] == '/' && pathPart[2] == ':') {
@@ -110,9 +143,12 @@ std::filesystem::path PathFromUri(std::string_view uri) {
         pathPart.remove_prefix(1);
       }
     }
+    pathUtf8 = PercentDecodeUtf8(pathPart);
+  } else {
+    pathUtf8 = PercentDecodeUtf8(uri);
   }
 
-  std::filesystem::path path(ToWide(pathPart));
+  std::filesystem::path path(ToWide(pathUtf8));
   path.make_preferred();
   return path;
 }
@@ -1893,6 +1929,7 @@ void GumpLocalStorage::EnsureExportStagingDirectory(ReactPromiseJS &&promise) no
       []() {
         const auto path = ExportStagingDirectory();
         EnsureDirectory(path);
+        EnsureDirectory(path / L"looks");
         return winrtRN::JSValue(winrtRN::JSValueObject{
             {"path", ToUtf8(path.wstring())},
             {"displayPath", "Gump / exports"},
@@ -2261,12 +2298,28 @@ std::optional<std::filesystem::path> ResolveLookCubePath(const std::string &look
   if (lookId.empty() || lookId == "original") {
     return std::nullopt;
   }
-  const auto moduleDir = ModuleDirectory();
   const auto fileName = ToWide(lookId + ".cube");
-  for (const auto &base : {moduleDir / L"Assets" / L"Looks", moduleDir / L"Looks"}) {
-    const auto candidate = base / fileName;
-    if (std::filesystem::exists(candidate)) {
-      return candidate;
+  std::vector<std::filesystem::path> roots;
+  const auto moduleDir = ModuleDirectory();
+  if (!moduleDir.empty()) {
+    roots.push_back(moduleDir);
+    auto parent = moduleDir.parent_path();
+    for (int depth = 0; depth < 5 && !parent.empty(); ++depth) {
+      roots.push_back(parent);
+      parent = parent.parent_path();
+    }
+  }
+  static constexpr std::wstring_view kRelativeLookDirs[] = {
+      L"Assets\\Looks",
+      L"Looks",
+      L"GumpDesktop\\Assets\\Looks",
+  };
+  for (const auto &root : roots) {
+    for (const auto rel : kRelativeLookDirs) {
+      const auto candidate = root / rel / fileName;
+      if (std::filesystem::exists(candidate)) {
+        return candidate;
+      }
     }
   }
   return std::nullopt;
@@ -2275,8 +2328,8 @@ std::optional<std::filesystem::path> ResolveLookCubePath(const std::string &look
 std::optional<LookCubeLut> LoadCubeLut(const std::filesystem::path &path);
 
 std::optional<LookCubeLut> LoadCubeLut(const std::filesystem::path &path) {
-  std::ifstream input(path);
-  if (!input) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input.is_open()) {
     return std::nullopt;
   }
   LookCubeLut lut;
@@ -2548,19 +2601,32 @@ void GumpLocalStorage::ApplyLook(
        maxPixelSize,
        jpegQuality]() {
         const auto sourcePath = PathFromUri(sourceUri);
-        if (sourcePath.empty() || !std::filesystem::exists(sourcePath) || destPath.empty()) {
-          return winrtRN::JSValue(winrtRN::JSValueObject{{"uri", nullptr}});
+        if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
+          throw std::runtime_error("Apply look source file not found");
+        }
+        if (destPath.empty()) {
+          throw std::runtime_error("Apply look destination path is empty");
+        }
+
+        const std::string resolvedLookId = lookId.empty() ? "original" : lookId;
+        const float intensityPercent = static_cast<float>(intensity);
+        if (resolvedLookId != "original" && intensityPercent > 0.0f &&
+            !ResolveLookCubePath(resolvedLookId).has_value()) {
+          throw std::runtime_error(
+              "Look LUT (.cube) is missing next to the app (Assets/Looks). "
+              "Rebuild or reinstall GUMP Desktop.");
         }
 
         const auto outPath = ApplyLookLutToPath(
             sourcePath,
             std::filesystem::path(ToWide(destPath)),
-            lookId.empty() ? "original" : lookId,
-            static_cast<float>(intensity),
+            resolvedLookId,
+            intensityPercent,
             maxPixelSize > 0 ? static_cast<uint32_t>(maxPixelSize) : kDetailMaxPixelSize,
             jpegQuality > 0 ? static_cast<float>(jpegQuality) : kDetailJpegQuality);
         if (!outPath.has_value()) {
-          return winrtRN::JSValue(winrtRN::JSValueObject{{"uri", nullptr}});
+          throw std::runtime_error(
+              "Apply look could not decode the photo or write the baked JPEG");
         }
 
         return winrtRN::JSValue(winrtRN::JSValueObject{

@@ -369,6 +369,38 @@ export type ApplyLookNativeResult = {
   path?: string | null;
 };
 
+/** Strip cache-busters and decode file URIs before native PathFromUri (esp. Windows). */
+export function normalizeNativeFileUri(uri: string): string {
+  let value = uri.trim();
+  if (!value) {
+    return value;
+  }
+  const queryIndex = value.indexOf('?');
+  if (queryIndex >= 0) {
+    value = value.slice(0, queryIndex);
+  }
+  const hashIndex = value.indexOf('#');
+  if (hashIndex >= 0) {
+    value = value.slice(0, hashIndex);
+  }
+  if (!value.toLowerCase().startsWith('file://')) {
+    return value;
+  }
+  let pathPart = value.slice('file://'.length);
+  if (/^\/[a-zA-Z]:/.test(pathPart)) {
+    pathPart = pathPart.slice(1);
+  }
+  try {
+    pathPart = decodeURIComponent(pathPart);
+  } catch {
+    // Keep literal path when URI encoding is malformed.
+  }
+  const slashPath = pathPart.replace(/\\/g, '/');
+  return slashPath.match(/^[a-zA-Z]:/)
+    ? `file:///${slashPath}`
+    : `file://${slashPath.startsWith('/') ? '' : '/'}${slashPath}`;
+}
+
 export async function applyLookToJpeg(options: {
   sourceUri: string;
   destPath: string;
@@ -384,7 +416,7 @@ export async function applyLookToJpeg(options: {
   }
 
   const result = await NativeLocalStorage.applyLook(
-    options.sourceUri,
+    normalizeNativeFileUri(options.sourceUri),
     options.destPath,
     options.lookId,
     options.intensity,
