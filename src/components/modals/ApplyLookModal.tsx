@@ -49,10 +49,12 @@ function resolvePreviewUri(photo: CulledAlbumPhoto | undefined): string {
   if (!photo) {
     return '';
   }
+  // Native applyLook decodes with EXIF; album master file is the most reliable bake source on Windows.
   return (
+    photo.file.uri ||
     resolveDetailDisplayUri(photo.file) ||
     resolveGridDisplayUri(photo.file) ||
-    photo.file.uri
+    ''
   );
 }
 

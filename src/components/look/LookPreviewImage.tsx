@@ -61,7 +61,9 @@ export const LookPreviewImage = memo(function LookPreviewImage({
           }
         })
         .catch(error => {
-          console.warn('[LookPreviewImage] LUT preview bake failed', error);
+          const detail =
+            error instanceof Error ? error.message : String(error);
+          console.warn('[LookPreviewImage] LUT preview bake failed:', detail);
         });
     }, PREVIEW_DEBOUNCE_MS);
 
