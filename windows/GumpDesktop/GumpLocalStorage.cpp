@@ -45,6 +45,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace winrtRN = winrt::Microsoft::ReactNative;
@@ -2327,7 +2328,7 @@ std::optional<std::filesystem::path> ResolveLookCubePath(const std::string &look
 
 std::optional<LookCubeLut> LoadCubeLut(const std::filesystem::path &path);
 
-std::optional<LookCubeLut> LoadCubeLut(const std::filesystem::path &path) {
+std::optional<LookCubeLut> LoadCubeLutUncached(const std::filesystem::path &path) {
   std::ifstream input(path, std::ios::binary);
   if (!input.is_open()) {
     return std::nullopt;
@@ -2368,6 +2369,27 @@ std::optional<LookCubeLut> LoadCubeLut(const std::filesystem::path &path) {
   }
   lut.rgb.resize(expected);
   return lut;
+}
+
+/** Parse each .cube once — modal opens bake main + 3 chips and re-read ~7MB files otherwise. */
+std::optional<LookCubeLut> LoadCubeLut(const std::filesystem::path &path) {
+  static std::mutex mutex;
+  static std::unordered_map<std::wstring, LookCubeLut> cache;
+  const auto key = path.wstring();
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    const auto it = cache.find(key);
+    if (it != cache.end()) {
+      return it->second;
+    }
+  }
+  auto loaded = LoadCubeLutUncached(path);
+  if (!loaded.has_value()) {
+    return std::nullopt;
+  }
+  std::lock_guard<std::mutex> lock(mutex);
+  cache.emplace(key, *loaded);
+  return loaded;
 }
 
 void SmoothCubeLutLight(LookCubeLut &lut, int passes) {

@@ -1,8 +1,7 @@
 import {colors} from '@lib/ui/colors';
-import {useCallback, useMemo, useRef, useState} from 'react';
+import {useCallback, useRef, useState} from 'react';
 import {
-  LayoutChangeEvent,
-  PanResponder,
+  type GestureResponderEvent,
   StyleSheet,
   View,
 } from 'react-native';
@@ -15,86 +14,73 @@ type IntensitySliderProps = {
 
 const THUMB_SIZE = 16;
 const TRACK_HEIGHT = 6;
-const HIT_HEIGHT = 28;
-const THUMB_HIT_SLOP = 24;
+const HIT_HEIGHT = 32;
 
 function clampIntensity(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+/**
+ * Pointer-driven slider (mouse/touch). Uses pageX + measureInWindow instead of
+ * PanResponder — RNW ScrollView/Modal often swallows pan move events.
+ */
 export function IntensitySlider({
   value,
   onChange,
   disabled = false,
 }: IntensitySliderProps) {
+  const hitRef = useRef<View>(null);
   const trackWidthRef = useRef(0);
-  const dragOriginXRef = useRef(0);
-  const valueRef = useRef(value);
-  valueRef.current = value;
+  const trackOriginXRef = useRef(0);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
   const [trackWidth, setTrackWidth] = useState(0);
 
-  const emitFromTrackX = useCallback((trackX: number) => {
+  const emitFromPageX = useCallback((pageX: number) => {
     const width = trackWidthRef.current;
     if (width <= 0) {
       return;
     }
+    const trackX = pageX - trackOriginXRef.current;
     onChangeRef.current(clampIntensity((trackX / width) * 100));
   }, []);
 
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => !disabled,
-        onMoveShouldSetPanResponder: (_event, gestureState) =>
-          !disabled && Math.abs(gestureState.dx) > 2,
-        // Claim horizontal drags before ScrollView steals them (Windows RNW).
-        onStartShouldSetPanResponderCapture: () => !disabled,
-        onMoveShouldSetPanResponderCapture: (_event, gestureState) =>
-          !disabled && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-        onPanResponderTerminationRequest: () => false,
-        onShouldBlockNativeResponder: () => true,
-        onPanResponderGrant: event => {
-          const width = trackWidthRef.current;
-          if (width <= 0) {
-            return;
-          }
+  const syncTrackGeometry = useCallback((then?: (pageX: number) => void, pageX?: number) => {
+    hitRef.current?.measureInWindow((x, _y, width) => {
+      if (width > 0) {
+        trackOriginXRef.current = x;
+        if (width !== trackWidthRef.current) {
+          trackWidthRef.current = width;
+          setTrackWidth(width);
+        }
+      }
+      if (then != null && pageX != null) {
+        then(pageX);
+      }
+    });
+  }, []);
 
-          const valueX = (valueRef.current / 100) * width;
-          const touchX = event.nativeEvent.locationX;
-          // Thumb touches often report locationX relative to the thumb (0–16),
-          // not the track — that would jump 80% → ~0%. Keep current value then.
-          const looksThumbLocal =
-            touchX >= 0 &&
-            touchX <= THUMB_SIZE + 4 &&
-            Math.abs(touchX - valueX) > THUMB_HIT_SLOP;
-          const nearThumb = Math.abs(touchX - valueX) <= THUMB_HIT_SLOP;
-
-          if (looksThumbLocal || nearThumb) {
-            dragOriginXRef.current = valueX;
-            return;
-          }
-
-          dragOriginXRef.current = touchX;
-          emitFromTrackX(touchX);
-        },
-        onPanResponderMove: (_event, gestureState) => {
-          emitFromTrackX(dragOriginXRef.current + gestureState.dx);
-        },
-      }),
-    [disabled, emitFromTrackX],
+  const handleGrant = useCallback(
+    (event: GestureResponderEvent) => {
+      if (disabled) {
+        return;
+      }
+      const pageX = event.nativeEvent.pageX;
+      syncTrackGeometry(emitFromPageX, pageX);
+    },
+    [disabled, emitFromPageX, syncTrackGeometry],
   );
 
-  const handleLayout = useCallback((event: LayoutChangeEvent) => {
-    const width = event.nativeEvent.layout.width;
-    if (width === trackWidthRef.current) {
-      return;
-    }
-    trackWidthRef.current = width;
-    setTrackWidth(width);
-  }, []);
+  const handleMove = useCallback(
+    (event: GestureResponderEvent) => {
+      if (disabled) {
+        return;
+      }
+      emitFromPageX(event.nativeEvent.pageX);
+    },
+    [disabled, emitFromPageX],
+  );
 
   const fillWidth = trackWidth > 0 ? (value / 100) * trackWidth : 0;
   const thumbLeft = Math.max(
@@ -105,16 +91,30 @@ export function IntensitySlider({
 
   return (
     <View
+      ref={hitRef}
       style={[styles.hitArea, disabled && styles.trackDisabled]}
-      onLayout={handleLayout}
-      {...panResponder.panHandlers}
+      onLayout={event => {
+        const width = event.nativeEvent.layout.width;
+        if (width > 0 && width !== trackWidthRef.current) {
+          trackWidthRef.current = width;
+          setTrackWidth(width);
+        }
+        syncTrackGeometry();
+      }}
+      onStartShouldSetResponder={() => !disabled}
+      onMoveShouldSetResponder={() => !disabled}
+      onStartShouldSetResponderCapture={() => !disabled}
+      onMoveShouldSetResponderCapture={() => !disabled}
+      onResponderTerminationRequest={() => false}
+      onResponderGrant={handleGrant}
+      onResponderMove={handleMove}
       accessibilityRole="adjustable"
       accessibilityLabel="Look intensity"
+      accessibilityState={{disabled}}
       accessibilityValue={{min: 0, max: 100, now: value}}>
       <View style={styles.track} pointerEvents="none">
         <View style={[styles.fill, {width: fillWidth}]} />
       </View>
-      {/* Thumb is a sibling of the track so Windows clipping of overflow:visible cannot cut it. */}
       <View
         pointerEvents="none"
         style={[styles.thumb, {left: thumbLeft, top: thumbTop}]}

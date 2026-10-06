@@ -49,29 +49,22 @@ function ModalDecor() {
 }
 
 /**
- * Oriented derivative for on-screen preview. Windows Image does not apply EXIF,
- * so portrait masters look sideways — prefer detail/thumb only when usable.
+ * Oriented derivative for modal preview + LUT bake. Prefer the 1920 thumb over
+ * 4096 detail — modal is ~480px wide and baking from detail/master is slow.
+ * Never use the album master on Windows (XAML Image skips EXIF).
  */
 function resolvePreviewDisplayUri(photo: CulledAlbumPhoto | undefined): string {
   if (!photo) {
     return '';
   }
-  if (isUsableDetailUri(photo.file.detailUri)) {
-    return photo.file.detailUri!;
-  }
   if (isUsableThumbnailUri(photo.file.thumbnailUri)) {
     return photo.file.thumbnailUri!;
   }
+  if (isUsableDetailUri(photo.file.detailUri)) {
+    return photo.file.detailUri!;
+  }
   // Last resort (may look sideways on Windows until derivatives exist).
   return photo.file.uri || '';
-}
-
-/** Album master for native LUT bake (EXIF-aware decoder). */
-function resolvePreviewBakeUri(photo: CulledAlbumPhoto | undefined): string {
-  if (!photo) {
-    return '';
-  }
-  return photo.file.uri || resolvePreviewDisplayUri(photo);
 }
 
 export function ApplyLookModal({
@@ -81,12 +74,10 @@ export function ApplyLookModal({
   onApply,
 }: ApplyLookModalProps) {
   const previewPhoto = selectedPhotos[0];
+  // Bake from oriented detail/thumb (not the multi‑MB master). Derivatives are
+  // already EXIF-correct and decode much faster for modal + chip previews.
   const previewUri = useMemo(
     () => resolvePreviewDisplayUri(previewPhoto),
-    [previewPhoto],
-  );
-  const previewBakeUri = useMemo(
-    () => resolvePreviewBakeUri(previewPhoto),
     [previewPhoto],
   );
 
@@ -168,97 +159,100 @@ export function ApplyLookModal({
       height={740}
       contentStyle={styles.modalContent}>
       <ModalDecor />
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        scrollEnabled={scrollEnabled}
-        showsVerticalScrollIndicator={scrollEnabled}
-        bounces={false}
-        nestedScrollEnabled
-        keyboardShouldPersistTaps="handled"
-        onLayout={event => {
-          viewportHeightRef.current = event.nativeEvent.layout.height;
-          syncScrollEnabled();
-        }}
-        onContentSizeChange={(_width, height) => {
-          contentHeightRef.current = height;
-          syncScrollEnabled();
-        }}>
-        <View style={styles.content}>
-          <Text style={styles.title}>Apply Look</Text>
+      <View style={styles.body}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          scrollEnabled={scrollEnabled}
+          showsVerticalScrollIndicator={scrollEnabled}
+          bounces={false}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+          onLayout={event => {
+            viewportHeightRef.current = event.nativeEvent.layout.height;
+            syncScrollEnabled();
+          }}
+          onContentSizeChange={(_width, height) => {
+            contentHeightRef.current = height;
+            syncScrollEnabled();
+          }}>
+          <View style={styles.content}>
+            <Text style={styles.title}>Apply Look</Text>
 
-          <View style={styles.previewContainer}>
-            {previewUri ? (
-              <ContainedLookImage
-                uri={previewUri}
-                bakeSourceUri={previewBakeUri}
-                width={480}
-                height={326}
-                lookId={lookId}
-                lookIntensity={intensityDisabled ? 0 : intensity}
-                isTransparent={false}
-              />
-            ) : (
-              <View style={styles.previewPlaceholder} />
-            )}
+            <View style={styles.previewContainer}>
+              {previewUri ? (
+                <ContainedLookImage
+                  uri={previewUri}
+                  width={480}
+                  height={326}
+                  lookId={lookId}
+                  lookIntensity={intensityDisabled ? 0 : intensity}
+                  isTransparent={false}
+                />
+              ) : (
+                <View style={styles.previewPlaceholder} />
+              )}
 
-            <View style={styles.lookRow}>
-              {LOOK_CATALOG.map(look => {
-                const selected = look.id === lookId;
-                return (
-                  <Pressable
-                    key={look.id}
-                    onPress={() => setLookId(look.id)}
-                    style={[
-                      styles.lookItem,
-                      selected && styles.lookItemSelected,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityState={{selected}}
-                    accessibilityLabel={look.label}>
-                    {previewUri ? (
-                      <ContainedLookImage
-                        uri={previewUri}
-                        bakeSourceUri={previewBakeUri}
-                        width={106}
-                        height={70}
-                        borderRadius={4}
-                        lookId={look.id}
-                        // Chips match Figma: always show full-strength look.
-                        lookIntensity={look.id === 'original' ? 0 : 100}
-                      />
-                    ) : (
-                      <View
-                        style={[
-                          styles.thumbPlaceholder,
-                          selected && styles.thumbPlaceholderSelected,
-                        ]}
-                      />
-                    )}
-                    <Text
+              <View style={styles.lookRow}>
+                {LOOK_CATALOG.map(look => {
+                  const selected = look.id === lookId;
+                  return (
+                    <Pressable
+                      key={look.id}
+                      onPress={() => setLookId(look.id)}
                       style={[
-                        styles.lookLabel,
-                        selected && styles.lookLabelSelected,
+                        styles.lookItem,
+                        selected && styles.lookItemSelected,
                       ]}
-                      numberOfLines={1}>
-                      {look.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+                      accessibilityRole="button"
+                      accessibilityState={{selected}}
+                      accessibilityLabel={look.label}>
+                      {previewUri ? (
+                        <ContainedLookImage
+                          uri={previewUri}
+                          width={106}
+                          height={70}
+                          borderRadius={4}
+                          lookId={look.id}
+                          // Chips match Figma: always show full-strength look.
+                          lookIntensity={look.id === 'original' ? 0 : 100}
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            styles.thumbPlaceholder,
+                            selected && styles.thumbPlaceholderSelected,
+                          ]}
+                        />
+                      )}
+                      <Text
+                        style={[
+                          styles.lookLabel,
+                          selected && styles.lookLabelSelected,
+                        ]}
+                        numberOfLines={1}>
+                        {look.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
+          </View>
+        </ScrollView>
 
-            <View style={styles.intensityRow}>
-              <Text style={styles.intensityLabel}>Intensity</Text>
-              <IntensitySlider
-                value={intensity}
-                onChange={setIntensity}
-                disabled={intensityDisabled}
-              />
-              <Text style={styles.intensityValue}>
-                {intensityDisabled ? '—' : `${intensity}%`}
-              </Text>
-            </View>
+        {/* Keep intensity outside ScrollView — RNW steals horizontal drags otherwise. */}
+        <View style={styles.footer}>
+          <View style={styles.intensityRow}>
+            <Text style={styles.intensityLabel}>Intensity</Text>
+            <IntensitySlider
+              value={intensity}
+              onChange={setIntensity}
+              disabled={intensityDisabled}
+            />
+            <Text style={styles.intensityValue}>
+              {intensityDisabled ? '—' : `${intensity}%`}
+            </Text>
           </View>
 
           <View style={styles.buttonContainer}>
@@ -280,7 +274,7 @@ export function ApplyLookModal({
             </Pressable>
           </View>
         </View>
-      </ScrollView>
+      </View>
     </Modal>
   );
 }
@@ -292,6 +286,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     alignItems: 'stretch',
   },
+  body: {
+    flex: 1,
+    width: '100%',
+    alignSelf: 'stretch',
+  },
   scroll: {
     flex: 1,
     width: '100%',
@@ -302,13 +301,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingTop: 40,
-    paddingBottom: 24,
+    paddingBottom: 16,
     paddingHorizontal: 32,
   },
   content: {
     width: '100%',
     alignItems: 'center',
     gap: 24,
+  },
+  footer: {
+    width: '100%',
+    alignItems: 'center',
+    gap: 16,
+    paddingHorizontal: 32,
+    paddingBottom: 24,
+    paddingTop: 8,
   },
   title: {
     fontFamily: fonts.serif,
