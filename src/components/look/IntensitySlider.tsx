@@ -10,6 +10,9 @@ type IntensitySliderProps = {
   value: number;
   onChange: (value: number) => void;
   disabled?: boolean;
+  /** Parent can disable ScrollView while dragging (needed on Windows RNW). */
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 };
 
 const THUMB_SIZE = 16;
@@ -28,12 +31,18 @@ export function IntensitySlider({
   value,
   onChange,
   disabled = false,
+  onDragStart,
+  onDragEnd,
 }: IntensitySliderProps) {
   const hitRef = useRef<View>(null);
   const trackWidthRef = useRef(0);
   const trackOriginXRef = useRef(0);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onDragStartRef = useRef(onDragStart);
+  onDragStartRef.current = onDragStart;
+  const onDragEndRef = useRef(onDragEnd);
+  onDragEndRef.current = onDragEnd;
 
   const [trackWidth, setTrackWidth] = useState(0);
 
@@ -66,6 +75,7 @@ export function IntensitySlider({
       if (disabled) {
         return;
       }
+      onDragStartRef.current?.();
       const pageX = event.nativeEvent.pageX;
       syncTrackGeometry(emitFromPageX, pageX);
     },
@@ -81,6 +91,10 @@ export function IntensitySlider({
     },
     [disabled, emitFromPageX],
   );
+
+  const handleRelease = useCallback(() => {
+    onDragEndRef.current?.();
+  }, []);
 
   const fillWidth = trackWidth > 0 ? (value / 100) * trackWidth : 0;
   const thumbLeft = Math.max(
@@ -108,6 +122,8 @@ export function IntensitySlider({
       onResponderTerminationRequest={() => false}
       onResponderGrant={handleGrant}
       onResponderMove={handleMove}
+      onResponderRelease={handleRelease}
+      onResponderTerminate={handleRelease}
       accessibilityRole="adjustable"
       accessibilityLabel="Look intensity"
       accessibilityState={{disabled}}

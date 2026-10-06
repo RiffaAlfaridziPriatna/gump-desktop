@@ -84,9 +84,11 @@ export function ApplyLookModal({
   const [lookId, setLookId] = useState<LookId>('warmRomantic');
   const [intensity, setIntensity] = useState(DEFAULT_LOOK_INTENSITY);
   const [applying, setApplying] = useState(false);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
 
   useEffect(() => {
     if (!visible) {
+      setScrollEnabled(true);
       return;
     }
     const seed = selectedPhotos[0];
@@ -99,9 +101,18 @@ export function ApplyLookModal({
     setLookId(nextId);
     setIntensity(seed?.lookIntensity ?? DEFAULT_LOOK_INTENSITY);
     setApplying(false);
+    setScrollEnabled(true);
   }, [selectedPhotos, visible]);
 
   const intensityDisabled = lookId === 'original';
+
+  const handleIntensityDragStart = useCallback(() => {
+    setScrollEnabled(false);
+  }, []);
+
+  const handleIntensityDragEnd = useCallback(() => {
+    setScrollEnabled(true);
+  }, []);
 
   const handleApply = useCallback(async () => {
     if (applying || selectedPhotos.length === 0) {
@@ -143,96 +154,94 @@ export function ApplyLookModal({
       height={740}
       contentStyle={styles.modalContent}>
       <ModalDecor />
-      <View style={styles.body}>
-        {/*
-          Scroll preview + look chips for short viewports. Keep intensity/actions
-          in a sticky footer outside ScrollView so Windows mouse drag still works.
-          Avoid flexGrow+justifyContent:center on scroll content — that clipped
-          chips when overflow was disabled.
-        */}
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          nestedScrollEnabled
-          bounces={false}
-          showsVerticalScrollIndicator>
-          <View style={styles.main}>
-            <Text style={styles.title}>Apply Look</Text>
+      {/*
+        One ScrollView for the whole modal (preview, looks, intensity, actions).
+        Disable scroll only while dragging intensity so Windows mouse drag works.
+        Do not use flexGrow+justifyContent:center — that clipped content on RNW.
+      */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        scrollEnabled={scrollEnabled}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+        bounces={false}
+        showsVerticalScrollIndicator>
+        <View style={styles.content}>
+          <Text style={styles.title}>Apply Look</Text>
 
-            <View style={styles.previewContainer}>
-              {previewUri ? (
-                <ContainedLookImage
-                  uri={previewUri}
-                  width={480}
-                  height={326}
-                  lookId={lookId}
-                  lookIntensity={intensityDisabled ? 0 : intensity}
-                  isTransparent={false}
-                />
-              ) : (
-                <View style={styles.previewPlaceholder} />
-              )}
+          <View style={styles.previewContainer}>
+            {previewUri ? (
+              <ContainedLookImage
+                uri={previewUri}
+                width={480}
+                height={326}
+                lookId={lookId}
+                lookIntensity={intensityDisabled ? 0 : intensity}
+                isTransparent={false}
+              />
+            ) : (
+              <View style={styles.previewPlaceholder} />
+            )}
 
-              <View style={styles.lookRow}>
-                {LOOK_CATALOG.map(look => {
-                  const selected = look.id === lookId;
-                  return (
-                    <Pressable
-                      key={look.id}
-                      onPress={() => setLookId(look.id)}
-                      style={[
-                        styles.lookItem,
-                        selected && styles.lookItemSelected,
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityState={{selected}}
-                      accessibilityLabel={look.label}>
-                      {previewUri ? (
-                        <ContainedLookImage
-                          uri={previewUri}
-                          width={106}
-                          height={70}
-                          borderRadius={4}
-                          lookId={look.id}
-                          // Chips match Figma: always show full-strength look.
-                          lookIntensity={look.id === 'original' ? 0 : 100}
-                        />
-                      ) : (
-                        <View
-                          style={[
-                            styles.thumbPlaceholder,
-                            selected && styles.thumbPlaceholderSelected,
-                          ]}
-                        />
-                      )}
-                      <Text
+            <View style={styles.lookRow}>
+              {LOOK_CATALOG.map(look => {
+                const selected = look.id === lookId;
+                return (
+                  <Pressable
+                    key={look.id}
+                    onPress={() => setLookId(look.id)}
+                    style={[
+                      styles.lookItem,
+                      selected && styles.lookItemSelected,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityState={{selected}}
+                    accessibilityLabel={look.label}>
+                    {previewUri ? (
+                      <ContainedLookImage
+                        uri={previewUri}
+                        width={106}
+                        height={70}
+                        borderRadius={4}
+                        lookId={look.id}
+                        // Chips match Figma: always show full-strength look.
+                        lookIntensity={look.id === 'original' ? 0 : 100}
+                      />
+                    ) : (
+                      <View
                         style={[
-                          styles.lookLabel,
-                          selected && styles.lookLabelSelected,
+                          styles.thumbPlaceholder,
+                          selected && styles.thumbPlaceholderSelected,
                         ]}
-                        numberOfLines={1}>
-                        {look.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+                      />
+                    )}
+                    <Text
+                      style={[
+                        styles.lookLabel,
+                        selected && styles.lookLabelSelected,
+                      ]}
+                      numberOfLines={1}>
+                      {look.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
-          </View>
-        </ScrollView>
 
-        <View style={styles.footer}>
-          <View style={styles.intensityRow}>
-            <Text style={styles.intensityLabel}>Intensity</Text>
-            <IntensitySlider
-              value={intensity}
-              onChange={setIntensity}
-              disabled={intensityDisabled}
-            />
-            <Text style={styles.intensityValue}>
-              {intensityDisabled ? '—' : `${intensity}%`}
-            </Text>
+            <View style={styles.intensityRow}>
+              <Text style={styles.intensityLabel}>Intensity</Text>
+              <IntensitySlider
+                value={intensity}
+                onChange={setIntensity}
+                disabled={intensityDisabled}
+                onDragStart={handleIntensityDragStart}
+                onDragEnd={handleIntensityDragEnd}
+              />
+              <Text style={styles.intensityValue}>
+                {intensityDisabled ? '—' : `${intensity}%`}
+              </Text>
+            </View>
           </View>
 
           <View style={styles.buttonContainer}>
@@ -254,7 +263,7 @@ export function ApplyLookModal({
             </Pressable>
           </View>
         </View>
-      </View>
+      </ScrollView>
     </Modal>
   );
 }
@@ -266,38 +275,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     alignItems: 'stretch',
   },
-  body: {
-    flex: 1,
-    width: '100%',
-    alignSelf: 'stretch',
-    minHeight: 0,
-  },
   scroll: {
     flex: 1,
     width: '100%',
     alignSelf: 'stretch',
-    // Let the ScrollView shrink inside the modal flex column (Windows/RNW).
     minHeight: 0,
   },
   scrollContent: {
     alignItems: 'center',
     paddingTop: 40,
-    paddingBottom: 16,
+    paddingBottom: 24,
     paddingHorizontal: 32,
   },
-  main: {
+  content: {
     width: '100%',
     alignItems: 'center',
     gap: 24,
-  },
-  footer: {
-    width: '100%',
-    alignItems: 'center',
-    gap: 16,
-    paddingHorizontal: 32,
-    paddingBottom: 24,
-    paddingTop: 8,
-    flexShrink: 0,
   },
   title: {
     fontFamily: fonts.serif,
@@ -370,7 +363,6 @@ const styles = StyleSheet.create({
     gap: 16,
     paddingVertical: 8,
     paddingHorizontal: 24,
-    // Keep intensity thumb (sibling of track) from being clipped by the row.
     overflow: 'visible',
   },
   intensityLabel: {
