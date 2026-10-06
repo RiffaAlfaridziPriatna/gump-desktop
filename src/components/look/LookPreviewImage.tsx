@@ -4,6 +4,7 @@ import {
   hasAppliedLook,
   type LookId,
 } from '@lib/look/types';
+import {getErrorMessage} from '@lib/observability';
 import {memo, useEffect, useState} from 'react';
 import {
   Image,
@@ -15,7 +16,13 @@ import {
 } from 'react-native';
 
 type LookPreviewImageProps = {
+  /** Oriented display URI (thumb/detail). Used when look is original / intensity 0. */
   uri: string;
+  /**
+   * Optional bake source (album master). Prefer this for LUT bake when display
+   * URI is an oriented derivative — Windows Image cannot EXIF-rotate masters.
+   */
+  bakeSourceUri?: string | null;
   lookId?: LookId | null;
   lookIntensity?: number | null;
   style?: StyleProp<ImageStyle>;
@@ -32,6 +39,7 @@ const PREVIEW_DEBOUNCE_MS = 90;
  */
 export const LookPreviewImage = memo(function LookPreviewImage({
   uri,
+  bakeSourceUri,
   lookId = 'original',
   lookIntensity = DEFAULT_LOOK_INTENSITY,
   style,
@@ -39,7 +47,9 @@ export const LookPreviewImage = memo(function LookPreviewImage({
   onError,
 }: LookPreviewImageProps) {
   const intensity = lookIntensity ?? DEFAULT_LOOK_INTENSITY;
-  const needsLookBake = Boolean(uri) && hasAppliedLook(lookId) && intensity > 0;
+  const bakeUri = bakeSourceUri || uri;
+  const needsLookBake =
+    Boolean(bakeUri) && hasAppliedLook(lookId) && intensity > 0;
   const [displayUri, setDisplayUri] = useState(() =>
     needsLookBake ? '' : uri,
   );
@@ -54,16 +64,25 @@ export const LookPreviewImage = memo(function LookPreviewImage({
     setDisplayUri('');
     let cancelled = false;
     const timer = setTimeout(() => {
-      bakeLookPreviewUri(uri, lookId, intensity)
+      bakeLookPreviewUri(bakeUri, lookId, intensity)
         .then(bakedUri => {
           if (!cancelled && bakedUri) {
             setDisplayUri(bakedUri);
           }
         })
         .catch(error => {
-          const detail =
-            error instanceof Error ? error.message : String(error);
-          console.warn('[LookPreviewImage] LUT preview bake failed:', detail);
+          let detail = getErrorMessage(error);
+          if (!detail && error && typeof error === 'object') {
+            try {
+              detail = JSON.stringify(error);
+            } catch {
+              detail = Object.prototype.toString.call(error);
+            }
+          }
+          console.warn(
+            '[LookPreviewImage] LUT preview bake failed:',
+            detail || 'unknown error',
+          );
         });
     }, PREVIEW_DEBOUNCE_MS);
 
@@ -71,7 +90,7 @@ export const LookPreviewImage = memo(function LookPreviewImage({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [intensity, lookId, uri]);
+  }, [bakeUri, intensity, lookId, uri]);
 
   if (!uri || !displayUri) {
     return null;

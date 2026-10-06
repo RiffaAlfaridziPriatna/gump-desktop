@@ -14,6 +14,8 @@ type IntensitySliderProps = {
 };
 
 const THUMB_SIZE = 16;
+const TRACK_HEIGHT = 6;
+const HIT_HEIGHT = 28;
 const THUMB_HIT_SLOP = 24;
 
 function clampIntensity(value: number): number {
@@ -46,8 +48,14 @@ export function IntensitySlider({
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => !disabled,
-        onMoveShouldSetPanResponder: () => !disabled,
+        onMoveShouldSetPanResponder: (_event, gestureState) =>
+          !disabled && Math.abs(gestureState.dx) > 2,
+        // Claim horizontal drags before ScrollView steals them (Windows RNW).
+        onStartShouldSetPanResponderCapture: () => !disabled,
+        onMoveShouldSetPanResponderCapture: (_event, gestureState) =>
+          !disabled && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
         onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: event => {
           const width = trackWidthRef.current;
           if (width <= 0) {
@@ -93,6 +101,7 @@ export function IntensitySlider({
     0,
     Math.min(trackWidth - THUMB_SIZE, fillWidth - THUMB_SIZE / 2),
   );
+  const thumbTop = (HIT_HEIGHT - THUMB_SIZE) / 2;
 
   return (
     <View
@@ -104,8 +113,12 @@ export function IntensitySlider({
       accessibilityValue={{min: 0, max: 100, now: value}}>
       <View style={styles.track} pointerEvents="none">
         <View style={[styles.fill, {width: fillWidth}]} />
-        <View style={[styles.thumb, {left: thumbLeft}]} />
       </View>
+      {/* Thumb is a sibling of the track so Windows clipping of overflow:visible cannot cut it. */}
+      <View
+        pointerEvents="none"
+        style={[styles.thumb, {left: thumbLeft, top: thumbTop}]}
+      />
     </View>
   );
 }
@@ -113,15 +126,16 @@ export function IntensitySlider({
 const styles = StyleSheet.create({
   hitArea: {
     flex: 1,
-    height: 24,
+    height: HIT_HEIGHT,
     justifyContent: 'center',
+    position: 'relative',
+    overflow: 'visible',
   },
   track: {
-    height: 6,
+    height: TRACK_HEIGHT,
     borderRadius: 4,
     backgroundColor: colors.progressTrack,
-    justifyContent: 'center',
-    overflow: 'visible',
+    overflow: 'hidden',
   },
   trackDisabled: {
     opacity: 0.4,
@@ -142,6 +156,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     borderWidth: 1,
     borderColor: colors.white,
-    top: -5,
   },
 });
