@@ -14,7 +14,7 @@ import {
 import { colors } from '@lib/ui/colors';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import CircleBlue from '../../assets/images/upload/blue_circle.svg';
 import HalfCircle from '../../assets/images/upload/half_circle.svg';
 import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
@@ -145,73 +145,82 @@ export function ApplyLookModal({
       <ModalDecor />
       <View style={styles.body}>
         {/*
-          Main column is a plain View (not ScrollView+flexGrow center). On Windows,
-          that combo clipped the look chips below the fold while scroll stayed off.
-          Intensity stays outside any ScrollView so RNW mouse drags still work.
+          Scroll preview + look chips for short viewports. Keep intensity/actions
+          in a sticky footer outside ScrollView so Windows mouse drag still works.
+          Avoid flexGrow+justifyContent:center on scroll content — that clipped
+          chips when overflow was disabled.
         */}
-        <View style={styles.main}>
-          <Text style={styles.title}>Apply Look</Text>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          bounces={false}
+          showsVerticalScrollIndicator>
+          <View style={styles.main}>
+            <Text style={styles.title}>Apply Look</Text>
 
-          <View style={styles.previewContainer}>
-            {previewUri ? (
-              <ContainedLookImage
-                uri={previewUri}
-                width={480}
-                height={326}
-                lookId={lookId}
-                lookIntensity={intensityDisabled ? 0 : intensity}
-                isTransparent={false}
-              />
-            ) : (
-              <View style={styles.previewPlaceholder} />
-            )}
+            <View style={styles.previewContainer}>
+              {previewUri ? (
+                <ContainedLookImage
+                  uri={previewUri}
+                  width={480}
+                  height={326}
+                  lookId={lookId}
+                  lookIntensity={intensityDisabled ? 0 : intensity}
+                  isTransparent={false}
+                />
+              ) : (
+                <View style={styles.previewPlaceholder} />
+              )}
 
-            <View style={styles.lookRow}>
-              {LOOK_CATALOG.map(look => {
-                const selected = look.id === lookId;
-                return (
-                  <Pressable
-                    key={look.id}
-                    onPress={() => setLookId(look.id)}
-                    style={[
-                      styles.lookItem,
-                      selected && styles.lookItemSelected,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityState={{selected}}
-                    accessibilityLabel={look.label}>
-                    {previewUri ? (
-                      <ContainedLookImage
-                        uri={previewUri}
-                        width={106}
-                        height={70}
-                        borderRadius={4}
-                        lookId={look.id}
-                        // Chips match Figma: always show full-strength look.
-                        lookIntensity={look.id === 'original' ? 0 : 100}
-                      />
-                    ) : (
-                      <View
-                        style={[
-                          styles.thumbPlaceholder,
-                          selected && styles.thumbPlaceholderSelected,
-                        ]}
-                      />
-                    )}
-                    <Text
+              <View style={styles.lookRow}>
+                {LOOK_CATALOG.map(look => {
+                  const selected = look.id === lookId;
+                  return (
+                    <Pressable
+                      key={look.id}
+                      onPress={() => setLookId(look.id)}
                       style={[
-                        styles.lookLabel,
-                        selected && styles.lookLabelSelected,
+                        styles.lookItem,
+                        selected && styles.lookItemSelected,
                       ]}
-                      numberOfLines={1}>
-                      {look.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+                      accessibilityRole="button"
+                      accessibilityState={{selected}}
+                      accessibilityLabel={look.label}>
+                      {previewUri ? (
+                        <ContainedLookImage
+                          uri={previewUri}
+                          width={106}
+                          height={70}
+                          borderRadius={4}
+                          lookId={look.id}
+                          // Chips match Figma: always show full-strength look.
+                          lookIntensity={look.id === 'original' ? 0 : 100}
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            styles.thumbPlaceholder,
+                            selected && styles.thumbPlaceholderSelected,
+                          ]}
+                        />
+                      )}
+                      <Text
+                        style={[
+                          styles.lookLabel,
+                          selected && styles.lookLabelSelected,
+                        ]}
+                        numberOfLines={1}>
+                        {look.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
           </View>
-        </View>
+        </ScrollView>
 
         <View style={styles.footer}>
           <View style={styles.intensityRow}>
@@ -261,16 +270,25 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     alignSelf: 'stretch',
-    justifyContent: 'space-between',
+    minHeight: 0,
+  },
+  scroll: {
+    flex: 1,
+    width: '100%',
+    alignSelf: 'stretch',
+    // Let the ScrollView shrink inside the modal flex column (Windows/RNW).
+    minHeight: 0,
+  },
+  scrollContent: {
+    alignItems: 'center',
+    paddingTop: 40,
+    paddingBottom: 16,
+    paddingHorizontal: 32,
   },
   main: {
-    flexGrow: 1,
     width: '100%',
     alignItems: 'center',
-    justifyContent: 'flex-start',
     gap: 24,
-    paddingTop: 40,
-    paddingHorizontal: 32,
   },
   footer: {
     width: '100%',
