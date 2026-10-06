@@ -19,6 +19,8 @@ import {
 
 type ContainedLookImageProps = {
   uri: string;
+  /** Optional master URI for LUT bake; display still uses `uri` (oriented). */
+  bakeSourceUri?: string | null;
   width: number;
   height: number;
   lookId?: LookId | null;
@@ -33,6 +35,7 @@ type ContainedLookImageProps = {
  */
 export const ContainedLookImage = memo(function ContainedLookImage({
   uri,
+  bakeSourceUri,
   width,
   height,
   lookId,
@@ -129,6 +132,7 @@ export const ContainedLookImage = memo(function ContainedLookImage({
         imageLayout ? (
           <LookPreviewImage
             uri={uri}
+            bakeSourceUri={bakeSourceUri}
             lookId={lookId}
             lookIntensity={lookIntensity}
             onLoad={handleLoad}

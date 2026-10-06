@@ -7,7 +7,10 @@ import {
   DEFAULT_LOOK_INTENSITY,
   type LookId,
 } from '@lib/look/types';
-import { resolveDetailDisplayUri, resolveGridDisplayUri } from '@lib/storage/localStorage';
+import {
+  isUsableDetailUri,
+  isUsableThumbnailUri,
+} from '@lib/storage/localStorage';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -45,17 +48,30 @@ function ModalDecor() {
   );
 }
 
-function resolvePreviewUri(photo: CulledAlbumPhoto | undefined): string {
+/**
+ * Oriented derivative for on-screen preview. Windows Image does not apply EXIF,
+ * so portrait masters look sideways — prefer detail/thumb only when usable.
+ */
+function resolvePreviewDisplayUri(photo: CulledAlbumPhoto | undefined): string {
   if (!photo) {
     return '';
   }
-  // Native applyLook decodes with EXIF; album master file is the most reliable bake source on Windows.
-  return (
-    photo.file.uri ||
-    resolveDetailDisplayUri(photo.file) ||
-    resolveGridDisplayUri(photo.file) ||
-    ''
-  );
+  if (isUsableDetailUri(photo.file.detailUri)) {
+    return photo.file.detailUri!;
+  }
+  if (isUsableThumbnailUri(photo.file.thumbnailUri)) {
+    return photo.file.thumbnailUri!;
+  }
+  // Last resort (may look sideways on Windows until derivatives exist).
+  return photo.file.uri || '';
+}
+
+/** Album master for native LUT bake (EXIF-aware decoder). */
+function resolvePreviewBakeUri(photo: CulledAlbumPhoto | undefined): string {
+  if (!photo) {
+    return '';
+  }
+  return photo.file.uri || resolvePreviewDisplayUri(photo);
 }
 
 export function ApplyLookModal({
@@ -66,7 +82,11 @@ export function ApplyLookModal({
 }: ApplyLookModalProps) {
   const previewPhoto = selectedPhotos[0];
   const previewUri = useMemo(
-    () => resolvePreviewUri(previewPhoto),
+    () => resolvePreviewDisplayUri(previewPhoto),
+    [previewPhoto],
+  );
+  const previewBakeUri = useMemo(
+    () => resolvePreviewBakeUri(previewPhoto),
     [previewPhoto],
   );
 
@@ -163,9 +183,7 @@ export function ApplyLookModal({
         onContentSizeChange={(_width, height) => {
           contentHeightRef.current = height;
           syncScrollEnabled();
-        }}
-        onStartShouldSetResponder={() => true}
-        onMoveShouldSetResponder={() => true}>
+        }}>
         <View style={styles.content}>
           <Text style={styles.title}>Apply Look</Text>
 
@@ -173,6 +191,7 @@ export function ApplyLookModal({
             {previewUri ? (
               <ContainedLookImage
                 uri={previewUri}
+                bakeSourceUri={previewBakeUri}
                 width={480}
                 height={326}
                 lookId={lookId}
@@ -200,6 +219,7 @@ export function ApplyLookModal({
                     {previewUri ? (
                       <ContainedLookImage
                         uri={previewUri}
+                        bakeSourceUri={previewBakeUri}
                         width={106}
                         height={70}
                         borderRadius={4}
@@ -361,6 +381,8 @@ const styles = StyleSheet.create({
     gap: 16,
     paddingVertical: 8,
     paddingHorizontal: 24,
+    // Keep intensity thumb (sibling of track) from being clipped by the row.
+    overflow: 'visible',
   },
   intensityLabel: {
     fontFamily: fonts.sans,
