@@ -255,6 +255,49 @@ static void RegisterCustomFonts(PCWSTR appDirectory) noexcept {
   }
 }
 
+/** Surface missing Apply Look LUTs early — bake fails for every photo without them. */
+static void WarnIfLookCubesMissing(PCWSTR appDirectory) noexcept {
+  static constexpr PCWSTR kCubeFiles[] = {
+      L"cleanNatural.cube",
+      L"warmRomantic.cube",
+      L"filmMood.cube",
+  };
+
+  const std::filesystem::path looksDir =
+      std::filesystem::path(appDirectory) / L"Assets" / L"Looks";
+  std::wstring missing;
+  for (PCWSTR fileName : kCubeFiles) {
+    const std::filesystem::path cubePath = looksDir / fileName;
+    if (std::filesystem::exists(cubePath)) {
+      continue;
+    }
+    if (!missing.empty()) {
+      missing += L"\n";
+    }
+    missing += cubePath.wstring();
+  }
+  if (missing.empty()) {
+    return;
+  }
+
+  const std::wstring debugLine =
+      L"[GUMP] Look LUT (.cube) missing — Apply Look bake will fail:\n" +
+      missing + L"\n";
+  OutputDebugStringW(debugLine.c_str());
+
+  std::wstring message =
+      L"Apply Look LUT files (.cube) are missing next to GumpDesktop.exe.\n\n"
+      L"Expected:\n  Assets\\Looks\\*.cube\n\n"
+      L"Rebuild with npm run windows so GumpLookAssets.targets copies them.\n\n"
+      L"Missing:\n" +
+      missing;
+  MessageBoxW(
+      nullptr,
+      message.c_str(),
+      L"GUMP Desktop — Apply Look assets",
+      MB_OK | MB_ICONWARNING);
+}
+
 static void ShowStartupError(PCWSTR title, PCWSTR message) noexcept {
   MessageBoxW(nullptr, message, title, MB_OK | MB_ICONERROR);
 }
@@ -467,6 +510,7 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
       return 1;
     }
     RegisterCustomFonts(appDirectory);
+    WarnIfLookCubesMissing(appDirectory);
 
     // Create a ReactNativeWin32App with the ReactNativeAppBuilder
     auto reactNativeWin32App{winrt::Microsoft::ReactNative::ReactNativeAppBuilder().Build()};
