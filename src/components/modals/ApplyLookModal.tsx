@@ -13,8 +13,8 @@ import {
 } from '@lib/storage/localStorage';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import CircleBlue from '../../assets/images/upload/blue_circle.svg';
 import HalfCircle from '../../assets/images/upload/half_circle.svg';
 import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
@@ -84,25 +84,9 @@ export function ApplyLookModal({
   const [lookId, setLookId] = useState<LookId>('warmRomantic');
   const [intensity, setIntensity] = useState(DEFAULT_LOOK_INTENSITY);
   const [applying, setApplying] = useState(false);
-  const [scrollEnabled, setScrollEnabled] = useState(false);
-  const viewportHeightRef = useRef(0);
-  const contentHeightRef = useRef(0);
-
-  const syncScrollEnabled = useCallback(() => {
-    const viewportH = viewportHeightRef.current;
-    const contentH = contentHeightRef.current;
-    if (viewportH <= 0 || contentH <= 0) {
-      setScrollEnabled(false);
-      return;
-    }
-    setScrollEnabled(contentH > viewportH + 1);
-  }, []);
 
   useEffect(() => {
     if (!visible) {
-      viewportHeightRef.current = 0;
-      contentHeightRef.current = 0;
-      setScrollEnabled(false);
       return;
     }
     const seed = selectedPhotos[0];
@@ -160,88 +144,75 @@ export function ApplyLookModal({
       contentStyle={styles.modalContent}>
       <ModalDecor />
       <View style={styles.body}>
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          scrollEnabled={scrollEnabled}
-          showsVerticalScrollIndicator={scrollEnabled}
-          bounces={false}
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-          onLayout={event => {
-            viewportHeightRef.current = event.nativeEvent.layout.height;
-            syncScrollEnabled();
-          }}
-          onContentSizeChange={(_width, height) => {
-            contentHeightRef.current = height;
-            syncScrollEnabled();
-          }}>
-          <View style={styles.content}>
-            <Text style={styles.title}>Apply Look</Text>
+        {/*
+          Main column is a plain View (not ScrollView+flexGrow center). On Windows,
+          that combo clipped the look chips below the fold while scroll stayed off.
+          Intensity stays outside any ScrollView so RNW mouse drags still work.
+        */}
+        <View style={styles.main}>
+          <Text style={styles.title}>Apply Look</Text>
 
-            <View style={styles.previewContainer}>
-              {previewUri ? (
-                <ContainedLookImage
-                  uri={previewUri}
-                  width={480}
-                  height={326}
-                  lookId={lookId}
-                  lookIntensity={intensityDisabled ? 0 : intensity}
-                  isTransparent={false}
-                />
-              ) : (
-                <View style={styles.previewPlaceholder} />
-              )}
+          <View style={styles.previewContainer}>
+            {previewUri ? (
+              <ContainedLookImage
+                uri={previewUri}
+                width={480}
+                height={326}
+                lookId={lookId}
+                lookIntensity={intensityDisabled ? 0 : intensity}
+                isTransparent={false}
+              />
+            ) : (
+              <View style={styles.previewPlaceholder} />
+            )}
 
-              <View style={styles.lookRow}>
-                {LOOK_CATALOG.map(look => {
-                  const selected = look.id === lookId;
-                  return (
-                    <Pressable
-                      key={look.id}
-                      onPress={() => setLookId(look.id)}
-                      style={[
-                        styles.lookItem,
-                        selected && styles.lookItemSelected,
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityState={{selected}}
-                      accessibilityLabel={look.label}>
-                      {previewUri ? (
-                        <ContainedLookImage
-                          uri={previewUri}
-                          width={106}
-                          height={70}
-                          borderRadius={4}
-                          lookId={look.id}
-                          // Chips match Figma: always show full-strength look.
-                          lookIntensity={look.id === 'original' ? 0 : 100}
-                        />
-                      ) : (
-                        <View
-                          style={[
-                            styles.thumbPlaceholder,
-                            selected && styles.thumbPlaceholderSelected,
-                          ]}
-                        />
-                      )}
-                      <Text
+            <View style={styles.lookRow}>
+              {LOOK_CATALOG.map(look => {
+                const selected = look.id === lookId;
+                return (
+                  <Pressable
+                    key={look.id}
+                    onPress={() => setLookId(look.id)}
+                    style={[
+                      styles.lookItem,
+                      selected && styles.lookItemSelected,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityState={{selected}}
+                    accessibilityLabel={look.label}>
+                    {previewUri ? (
+                      <ContainedLookImage
+                        uri={previewUri}
+                        width={106}
+                        height={70}
+                        borderRadius={4}
+                        lookId={look.id}
+                        // Chips match Figma: always show full-strength look.
+                        lookIntensity={look.id === 'original' ? 0 : 100}
+                      />
+                    ) : (
+                      <View
                         style={[
-                          styles.lookLabel,
-                          selected && styles.lookLabelSelected,
+                          styles.thumbPlaceholder,
+                          selected && styles.thumbPlaceholderSelected,
                         ]}
-                        numberOfLines={1}>
-                        {look.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+                      />
+                    )}
+                    <Text
+                      style={[
+                        styles.lookLabel,
+                        selected && styles.lookLabelSelected,
+                      ]}
+                      numberOfLines={1}>
+                      {look.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
-        </ScrollView>
+        </View>
 
-        {/* Keep intensity outside ScrollView — RNW steals horizontal drags otherwise. */}
         <View style={styles.footer}>
           <View style={styles.intensityRow}>
             <Text style={styles.intensityLabel}>Intensity</Text>
@@ -290,24 +261,16 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     alignSelf: 'stretch',
+    justifyContent: 'space-between',
   },
-  scroll: {
-    flex: 1,
-    width: '100%',
-    alignSelf: 'stretch',
-  },
-  scrollContent: {
+  main: {
     flexGrow: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 40,
-    paddingBottom: 16,
-    paddingHorizontal: 32,
-  },
-  content: {
     width: '100%',
     alignItems: 'center',
+    justifyContent: 'flex-start',
     gap: 24,
+    paddingTop: 40,
+    paddingHorizontal: 32,
   },
   footer: {
     width: '100%',
@@ -316,6 +279,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     paddingBottom: 24,
     paddingTop: 8,
+    flexShrink: 0,
   },
   title: {
     fontFamily: fonts.serif,
