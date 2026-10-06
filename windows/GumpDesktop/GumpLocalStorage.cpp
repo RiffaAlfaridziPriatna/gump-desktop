@@ -2488,7 +2488,7 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
   ThumbnailConcurrencyGuard concurrencyGuard;
   const auto bitmap = DecodeOrientedScaledBitmapWithFallback(sourcePath, maxPixelSize);
   if (!bitmap) {
-    return std::nullopt;
+    throw std::runtime_error("Apply look could not decode the photo");
   }
   const auto pixels = ReadBitmapPixels(bitmap);
 
@@ -2497,11 +2497,13 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
   if (applyLut) {
     const auto cubePath = ResolveLookCubePath(lookId);
     if (!cubePath.has_value()) {
-      return std::nullopt;
+      throw std::runtime_error(
+          "Look LUT (.cube) is missing next to the app (Assets/Looks)");
     }
     lut = LoadCubeLut(*cubePath);
     if (!lut.has_value()) {
-      return std::nullopt;
+      throw std::runtime_error(
+          "Apply look could not parse Look LUT (.cube) file");
     }
     // Film Mood curve70+warm+pull20 cube is already smooth — skip lattice smooth.
   }
@@ -2515,70 +2517,75 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
       pixels.width,
       pixels.height,
       BitmapAlphaMode::Premultiplied);
-  BitmapBuffer destBuffer = output.LockBuffer(BitmapBufferAccessMode::Write);
-  const auto destPlane = destBuffer.GetPlaneDescription(0);
-  const auto destReference = destBuffer.CreateReference();
-  auto destAccess = destReference.as<::Windows::Foundation::IMemoryBufferByteAccess>();
-  uint8_t *destData = nullptr;
-  uint32_t capacity = 0;
-  winrt::check_hresult(destAccess->GetBuffer(&destData, &capacity));
+  // Scope the write lock so BitmapEncoder can read the bitmap afterward.
+  // Holding LockBuffer across WriteSoftwareBitmapJpeg fails JPEG encode on Windows.
+  {
+    BitmapBuffer destBuffer = output.LockBuffer(BitmapBufferAccessMode::Write);
+    const auto destPlane = destBuffer.GetPlaneDescription(0);
+    const auto destReference = destBuffer.CreateReference();
+    auto destAccess = destReference.as<::Windows::Foundation::IMemoryBufferByteAccess>();
+    uint8_t *destData = nullptr;
+    uint32_t capacity = 0;
+    winrt::check_hresult(destAccess->GetBuffer(&destData, &capacity));
 
-  for (int y = 0; y < pixels.height; ++y) {
-    const uint8_t *srcRow = pixels.bytes.data() + static_cast<size_t>(y) * pixels.stride;
-    uint8_t *destRow = destData + static_cast<size_t>(y) * destPlane.Stride;
-    for (int x = 0; x < pixels.width; ++x) {
-      const size_t offset = static_cast<size_t>(x) * 4U;
-      const float b = srcRow[offset + 0] / 255.0f;
-      const float g = srcRow[offset + 1] / 255.0f;
-      const float r = srcRow[offset + 2] / 255.0f;
-      const float a = srcRow[offset + 3] / 255.0f;
+    for (int y = 0; y < pixels.height; ++y) {
+      const uint8_t *srcRow = pixels.bytes.data() + static_cast<size_t>(y) * pixels.stride;
+      uint8_t *destRow = destData + static_cast<size_t>(y) * destPlane.Stride;
+      for (int x = 0; x < pixels.width; ++x) {
+        const size_t offset = static_cast<size_t>(x) * 4U;
+        const float b = srcRow[offset + 0] / 255.0f;
+        const float g = srcRow[offset + 1] / 255.0f;
+        const float r = srcRow[offset + 2] / 255.0f;
+        const float a = srcRow[offset + 3] / 255.0f;
 
-      float rOut = r;
-      float gOut = g;
-      float bOut = b;
-      if (lut.has_value()) {
-        float localT = cubeIntensityT;
-        if (highlightSoft > 0.001f) {
-          const float luma = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-          float hi = (luma - 0.55f) / 0.40f;
-          hi = std::clamp(hi, 0.0f, 1.0f);
-          hi = hi * hi * (3.0f - 2.0f * hi);
-          localT = cubeIntensityT * (1.0f - highlightSoft * hi);
+        float rOut = r;
+        float gOut = g;
+        float bOut = b;
+        if (lut.has_value()) {
+          float localT = cubeIntensityT;
+          if (highlightSoft > 0.001f) {
+            const float luma = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+            float hi = (luma - 0.55f) / 0.40f;
+            hi = std::clamp(hi, 0.0f, 1.0f);
+            hi = hi * hi * (3.0f - 2.0f * hi);
+            localT = cubeIntensityT * (1.0f - highlightSoft * hi);
+          }
+          SampleCubeLut(*lut, r, g, b, localT, rOut, gOut, bOut);
         }
-        SampleCubeLut(*lut, r, g, b, localT, rOut, gOut, bOut);
+
+        // Ordered dither reduces 8-bit banding after aggressive LUT remap.
+        static constexpr float kBayer4[4][4] = {
+            {0 / 16.0f, 8 / 16.0f, 2 / 16.0f, 10 / 16.0f},
+            {12 / 16.0f, 4 / 16.0f, 14 / 16.0f, 6 / 16.0f},
+            {3 / 16.0f, 11 / 16.0f, 1 / 16.0f, 9 / 16.0f},
+            {15 / 16.0f, 7 / 16.0f, 13 / 16.0f, 5 / 16.0f},
+        };
+        const float dither = (kBayer4[y & 3][x & 3] - 0.5f) * 0.85f;
+        destRow[offset + 0] = ClampToByte(bOut * 255.0f + dither);
+        destRow[offset + 1] = ClampToByte(gOut * 255.0f + dither);
+        destRow[offset + 2] = ClampToByte(rOut * 255.0f + dither);
+        destRow[offset + 3] = ClampToByte(a * 255.0f);
       }
-
-      // Ordered dither reduces 8-bit banding after aggressive LUT remap.
-      static constexpr float kBayer4[4][4] = {
-          {0 / 16.0f, 8 / 16.0f, 2 / 16.0f, 10 / 16.0f},
-          {12 / 16.0f, 4 / 16.0f, 14 / 16.0f, 6 / 16.0f},
-          {3 / 16.0f, 11 / 16.0f, 1 / 16.0f, 9 / 16.0f},
-          {15 / 16.0f, 7 / 16.0f, 13 / 16.0f, 5 / 16.0f},
-      };
-      const float dither = (kBayer4[y & 3][x & 3] - 0.5f) * 0.85f;
-      destRow[offset + 0] = ClampToByte(bOut * 255.0f + dither);
-      destRow[offset + 1] = ClampToByte(gOut * 255.0f + dither);
-      destRow[offset + 2] = ClampToByte(rOut * 255.0f + dither);
-      destRow[offset + 3] = ClampToByte(a * 255.0f);
     }
-  }
 
-  if ((lookId == "warmRomantic" || lookId == "cleanNatural" || lookId == "filmMood") &&
-      intensityT > 0.0f) {
-    ApplyLookFinishingBgra(
-        lookId,
-        destData,
-        pixels.width,
-        pixels.height,
-        destPlane.Stride,
-        intensityT);
+    if ((lookId == "warmRomantic" || lookId == "cleanNatural" || lookId == "filmMood") &&
+        intensityT > 0.0f) {
+      ApplyLookFinishingBgra(
+          lookId,
+          destData,
+          pixels.width,
+          pixels.height,
+          destPlane.Stride,
+          intensityT);
+    }
   }
 
   EnsureDirectory(destPath.parent_path());
   std::error_code removeError;
   std::filesystem::remove(destPath, removeError);
   if (!WriteSoftwareBitmapJpeg(output, destPath, jpegQuality)) {
-    return std::nullopt;
+    throw std::runtime_error(
+        "Apply look could not write the baked JPEG to export staging");
   }
   return destPath;
 }
@@ -2625,8 +2632,7 @@ void GumpLocalStorage::ApplyLook(
             maxPixelSize > 0 ? static_cast<uint32_t>(maxPixelSize) : kDetailMaxPixelSize,
             jpegQuality > 0 ? static_cast<float>(jpegQuality) : kDetailJpegQuality);
         if (!outPath.has_value()) {
-          throw std::runtime_error(
-              "Apply look could not decode the photo or write the baked JPEG");
+          throw std::runtime_error("Apply look bake failed");
         }
 
         return winrtRN::JSValue(winrtRN::JSValueObject{
