@@ -203,6 +203,8 @@
     <Import Project="$(ReactNativeWindowsDir)\PropertySheets\External\Microsoft.ReactNative.Composition.CppApp.targets" Condition="Exists('$(ReactNativeWindowsDir)\PropertySheets\External\Microsoft.ReactNative.Composition.CppApp.targets')" />
   </ImportGroup>
   <Import Project="AutolinkedNativeModules.Copy.targets" />
+  <!-- Explicit OutDir copy + build fail if missing (do not rely on None+CopyToOutputDirectory). -->
+  <Import Project="GumpLookAssets.targets" />
   <ItemGroup>
     <None Include="Models\eye_state_ocec_s.onnx">
       <Link>Assets\Models\eye_state_ocec_s.onnx</Link>
@@ -217,6 +219,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
 
+    <!-- Listed for IDE visibility; runtime copy is enforced by GumpLookAssets.targets. -->
     <None Include="Looks\cleanNatural.cube">
       <Link>Assets\Looks\cleanNatural.cube</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

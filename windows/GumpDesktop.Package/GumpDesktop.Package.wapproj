@@ -58,6 +58,16 @@
     <Content Include="Images\Square44x44Logo.targetsize-24_altform-unplated.png" />
     <Content Include="Images\StoreLogo.png" />
     <Content Include="Images\Wide310x150Logo.scale-200.png" />
+    <!-- Ensure Apply Look LUTs ship in the AppX layout (not only loose OutDir). -->
+    <Content Include="..\GumpDesktop\Looks\cleanNatural.cube">
+      <Link>Assets\Looks\cleanNatural.cube</Link>
+    </Content>
+    <Content Include="..\GumpDesktop\Looks\warmRomantic.cube">
+      <Link>Assets\Looks\warmRomantic.cube</Link>
+    </Content>
+    <Content Include="..\GumpDesktop\Looks\filmMood.cube">
+      <Link>Assets\Looks\filmMood.cube</Link>
+    </Content>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\GumpDesktop\GumpDesktop.vcxproj">
