@@ -21,4 +21,11 @@ export {
   addErrorStep,
   captureAppEvent,
 } from './posthogClient';
+export {
+  beginTimedFlow,
+  endTimedFlow,
+  localImportFlowKey,
+  cullingFlowKey,
+  serverUploadFlowKey,
+} from './flowTiming';
 export {PostHogAppShell} from './PostHogAppShell';

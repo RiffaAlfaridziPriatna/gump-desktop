@@ -17,6 +17,7 @@ import {
 import {registerLocalAlbum} from '@lib/culledAlbum/store';
 import {uploadAwareParams} from '@lib/navigation/uploadAwareNavigation';
 import {createCulledAlbumFromSelection} from '@lib/culledAlbum/types';
+import {captureAppEvent} from '@lib/observability/posthogClient';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
@@ -151,7 +152,12 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
     try {
       const localAlbum = createCulledAlbumFromSelection(selectedAlbum);
       await registerLocalAlbum(localAlbum);
-      addPhotos(localAlbum.albumId, files);
+      addPhotos(localAlbum.albumId, files, {source: 'create'});
+      captureAppEvent('album_create_completed', {
+        albumId: localAlbum.albumId,
+        photoCount: files.length,
+        sourceAlbumId: selectedAlbum.id,
+      });
       isLeavingRef.current = true;
       navigation.replace(
         'AlbumDetail',
@@ -169,6 +175,10 @@ export default function SelectAlbumScreen({navigation, route}: Props) {
           ? error.message
           : 'Failed to start culling session',
       );
+      captureAppEvent('album_create_failed', {
+        photoCount: files.length,
+        sourceAlbumId: selectedAlbum.id,
+      });
       setShowUploadModal(true);
     }
   }

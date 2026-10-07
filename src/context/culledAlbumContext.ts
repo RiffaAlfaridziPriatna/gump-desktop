@@ -17,6 +17,8 @@ export type CulledAlbumActions = {
       autoStartAnalysis?: boolean;
       /** CulledAlbumDetail Add Photos: soft UI sync during local import only. */
       stabilizeDetailUiDuringImport?: boolean;
+      /** Analytics source for the local-import funnel. */
+      source?: 'create' | 'album_detail' | 'culled_add_more';
     },
   ) => void;
   resumeLocalImport: (albumId: string) => void;

@@ -3,6 +3,7 @@ import {
   prioritizeNavigationInteraction,
   uploadAwareParams,
 } from '@lib/navigation/uploadAwareNavigation';
+import {captureAppEvent} from '@lib/observability/posthogClient';
 import type {MainStackParamList} from '../../app/MainNavigator';
 import type {StackNavigationProp} from '@react-navigation/stack';
 import {resolveCulledAlbumRouteFromMemory} from './service';
@@ -78,6 +79,12 @@ export function navigateToCulledAlbum(
   }
 
   const route = resolveRouteFromListItem(album);
+  captureAppEvent('album_opened', {
+    albumId: album.albumId,
+    route,
+    cullingCompleted: Boolean(album.cullingCompleted),
+    photoCount: album.totalPhotos ?? 0,
+  });
 
   if (route === 'CulledAlbumDetail') {
     if (navigateToServerUploadProgressIfActive(navigation, album)) {

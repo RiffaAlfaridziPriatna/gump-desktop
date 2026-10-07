@@ -3,6 +3,13 @@ import {resolveUseCases} from '@di/useCases';
 import {createAnalysisQueue} from '@lib/culledAlbum/analysisQueue';
 import {purgeLocalCulledAlbum} from '@lib/culledAlbum/service';
 import {reportError} from '@lib/observability/reportError';
+import {
+  beginTimedFlow,
+  cullingFlowKey,
+  endTimedFlow,
+  localImportFlowKey,
+  serverUploadFlowKey,
+} from '@lib/observability/flowTiming';
 import {addErrorStep, captureAppEvent} from '@lib/observability/posthogClient';
 import {
   addPhotosToAlbum,
@@ -164,15 +171,29 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
         await cullingEngine.completeAnalysis(albumId);
         await markCullingCompleted(albumId);
         setQueueOperationStatus(albumId, 'analysis', 'completed');
-        addErrorStep('culling_completed', getAlbumTraceContext(albumId));
+        const trace = getAlbumTraceContext(albumId);
+        const {durationMs} = endTimedFlow(cullingFlowKey(albumId));
+        addErrorStep('culling_completed', trace);
+        captureAppEvent('culling_completed', {
+          ...trace,
+          durationMs,
+          partial: false,
+        });
       },
       onError: (albumId, message) => {
         uiStoreRef.current!.setState({analyzeError: message});
         setQueueOperationStatus(albumId, 'analysis', 'failed');
+        const trace = getAlbumTraceContext(albumId);
+        const {durationMs} = endTimedFlow(cullingFlowKey(albumId));
         reportError(new Error(message), {
           source: 'analysis_queue',
           operation: 'analysis_failed',
-          ...getAlbumTraceContext(albumId),
+          ...trace,
+        });
+        captureAppEvent('culling_failed', {
+          ...trace,
+          durationMs,
+          reason: message.slice(0, 200),
         });
       },
     });
@@ -218,7 +239,10 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
           analysisAlbum?.analysisBatchPhotoIds.length ??
           0,
       );
-      addErrorStep('culling_resumed', getAlbumTraceContext(albumId));
+      const resumeTrace = getAlbumTraceContext(albumId);
+      beginTimedFlow(cullingFlowKey(albumId), resumeTrace);
+      addErrorStep('culling_resumed', resumeTrace);
+      captureAppEvent('culling_resumed', resumeTrace);
       analysisQueueRef.current!.processPending(albumId);
     }
 
@@ -286,6 +310,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     options?: {
       autoStartAnalysis?: boolean;
       stabilizeDetailUiDuringImport?: boolean;
+      source?: 'create' | 'album_detail' | 'culled_add_more';
     },
   ) => {
     const existingNames = new Set(
@@ -329,10 +354,20 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
     uiStoreRef.current!.setState({uploadError: null});
     beginLocalImportQueue(albumId, added.length);
-    addErrorStep('local_import_started', {
+    const source = options?.source ?? 'album_detail';
+    const importTrace = {
       ...getAlbumTraceContext(albumId),
       addedCount: added.length,
+      rejectedDuplicateCount: rejectedNames.length,
+      source,
+      autoStartAnalysis: Boolean(options?.autoStartAnalysis),
+    };
+    beginTimedFlow(localImportFlowKey(albumId), {
+      source,
+      autoStartAnalysis: Boolean(options?.autoStartAnalysis),
     });
+    addErrorStep('local_import_started', importTrace);
+    captureAppEvent('local_import_started', importTrace);
     uploadQueueRef.current!.beginBatch(albumId);
     uploadQueueRef.current!.processPending(albumId);
   }, []);
@@ -342,6 +377,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     uiStoreRef.current!.setState({analyzeError: null});
 
     const trace = getAlbumTraceContext(albumId);
+    beginTimedFlow(cullingFlowKey(albumId), trace);
     addErrorStep('culling_started', trace);
     captureAppEvent('culling_started', trace);
 
@@ -375,6 +411,9 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       ...getAlbumTraceContext(albumId),
       selectedCount: photoIds.length,
     };
+    beginTimedFlow(serverUploadFlowKey(albumId), {
+      selectedCount: photoIds.length,
+    });
     addErrorStep('server_upload_started', trace);
     captureAppEvent('server_upload_started', trace);
 
@@ -481,6 +520,16 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       failedCount,
     });
 
+    const {durationMs, properties} = endTimedFlow(localImportFlowKey(albumId));
+    captureAppEvent('local_import_cancelled', {
+      ...getAlbumTraceContext(albumId),
+      ...properties,
+      uploadedCount,
+      failedCount,
+      removedCount: removedPhotoIds.length,
+      durationMs,
+    });
+
     let shouldAutoStartAnalysis = false;
     culledAlbumStore.setState(state => {
       const album = state.albums[albumId];
@@ -547,6 +596,13 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
           error ?? 'All photos failed to analyze. Please try again.',
       });
       setQueueOperationStatus(albumId, 'analysis', 'failed');
+      const cancelTrace = getAlbumTraceContext(albumId);
+      const {durationMs} = endTimedFlow(cullingFlowKey(albumId));
+      captureAppEvent('culling_cancelled', {
+        ...cancelTrace,
+        durationMs,
+        analyzedCount: 0,
+      });
       await persistAlbum(albumId).catch(() => undefined);
       return;
     }
@@ -556,6 +612,15 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
       await cullingEngine.completeAnalysis(albumId);
       await markCullingCompleted(albumId);
       setQueueOperationStatus(albumId, 'analysis', 'completed');
+      const partialTrace = getAlbumTraceContext(albumId);
+      const {durationMs} = endTimedFlow(cullingFlowKey(albumId));
+      addErrorStep('culling_completed', partialTrace);
+      captureAppEvent('culling_completed', {
+        ...partialTrace,
+        durationMs,
+        partial: true,
+        analyzedCount,
+      });
     } catch (completeError) {
       syncedAlbumsRef.current.delete(albumId);
       const message =
@@ -564,6 +629,14 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
           : 'Failed to complete culling analysis';
       uiStoreRef.current!.setState({analyzeError: message});
       setQueueOperationStatus(albumId, 'analysis', 'failed');
+      const failTrace = getAlbumTraceContext(albumId);
+      const {durationMs} = endTimedFlow(cullingFlowKey(albumId));
+      captureAppEvent('culling_failed', {
+        ...failTrace,
+        durationMs,
+        reason: message.slice(0, 200),
+        partial: true,
+      });
       console.error(
         '[CulledAlbum] Failed to finalize analysis after cancel',
         completeError,

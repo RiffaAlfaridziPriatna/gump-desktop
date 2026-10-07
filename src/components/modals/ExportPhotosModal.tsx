@@ -17,6 +17,7 @@ import type {
   ExportZipResult,
 } from '@lib/export/types';
 import { photoNeedsLookBake } from '@lib/look/bakeLook';
+import { captureAppEvent } from '@lib/observability/posthogClient';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -182,6 +183,14 @@ export function ExportPhotosModal({
     setPreparedExport(null);
     setDownloadedExport(null);
     setFailureKind(null);
+    const photoCount = selectedPhotos.length;
+    const startedAt = Date.now();
+    captureAppEvent('export_prepare_started', {
+      albumId,
+      photoCount,
+      quality,
+      looksNeedBake,
+    });
 
     try {
       const result = await prepareSelectedPhotosExport({
@@ -209,6 +218,13 @@ export function ExportPhotosModal({
       setPreparedExport(result);
       setProgressPercent(100);
       setStep('ready');
+      captureAppEvent('export_prepare_completed', {
+        albumId,
+        photoCount,
+        quality,
+        looksNeedBake,
+        durationMs: Date.now() - startedAt,
+      });
     } catch (error) {
       if (prepareRequestIdRef.current !== requestId) {
         return;
@@ -216,6 +232,13 @@ export function ExportPhotosModal({
       console.error('[ExportPhotosModal] Failed to prepare export', error);
       setFailureKind('prepare');
       setStep('failed');
+      captureAppEvent('export_prepare_failed', {
+        albumId,
+        photoCount,
+        quality,
+        looksNeedBake,
+        durationMs: Date.now() - startedAt,
+      });
     }
   }, [albumId, albumName, looksNeedBake, quality, selectedPhotos]);
 
@@ -226,6 +249,14 @@ export function ExportPhotosModal({
         setStep('failed');
         return;
       }
+
+      const photoCount = preparedExport.photoCount ?? selectedPhotos.length;
+      const startedAt = Date.now();
+      captureAppEvent('export_download_started', {
+        albumId,
+        photoCount,
+        quality,
+      });
 
       try {
         const downloaded = await downloadPreparedExport({
@@ -239,13 +270,25 @@ export function ExportPhotosModal({
         });
         setFailureKind(null);
         setStep('success');
+        captureAppEvent('export_download_completed', {
+          albumId,
+          photoCount,
+          quality,
+          durationMs: Date.now() - startedAt,
+        });
       } catch (error) {
         console.error('[ExportPhotosModal] Failed to download export', error);
         setFailureKind('download');
         setStep('failed');
+        captureAppEvent('export_download_failed', {
+          albumId,
+          photoCount,
+          quality,
+          durationMs: Date.now() - startedAt,
+        });
       }
     },
-    [exportDirectory, preparedExport],
+    [albumId, exportDirectory, preparedExport, quality, selectedPhotos.length],
   );
 
   const handlePrepareExport = useCallback(() => {

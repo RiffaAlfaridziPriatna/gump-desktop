@@ -303,7 +303,7 @@ export default function AlbumDetailScreen({ navigation, route }: Props) {
       if (files.length === 0) {
         return;
       }
-      addPhotos(albumId, files);
+      addPhotos(albumId, files, {source: 'album_detail'});
     } catch (error) {
       console.error('[AlbumDetailScreen] Failed to pick images', error);
     }
