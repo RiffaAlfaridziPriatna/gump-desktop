@@ -42,6 +42,7 @@ import {
   isServerUploadBatchFinished,
 } from '@lib/culledAlbum/serverUploadProgress';
 import {getPhotoById, saveLastCullFilters} from '@lib/culledAlbum/store';
+import {captureAppEvent} from '@lib/observability/posthogClient';
 import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
 import {
   getUploadLookBakeState,
@@ -323,8 +324,20 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     }
     const photoId = photoToDelete.photoId;
     setPhotoToDelete(null);
-    await deletePhoto(photoId);
-  }, [deletePhoto, photoToDelete]);
+    try {
+      await deletePhoto(photoId);
+      captureAppEvent('photo_deleted', {
+        albumId,
+        photoId,
+      });
+    } catch (error) {
+      console.error('[CulledAlbumDetailScreen] Failed to delete photo', error);
+      captureAppEvent('photo_deleted_failed', {
+        albumId,
+        photoId,
+      });
+    }
+  }, [albumId, deletePhoto, photoToDelete]);
 
   const handleStartUpload = useCallback(async () => {
     const photoIds = pendingUploadPhotos.map(photo => photo.photoId);
@@ -511,6 +524,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       addPhotos(albumId, files, {
         autoStartAnalysis: true,
         stabilizeDetailUiDuringImport: true,
+        source: 'culled_add_more',
       });
     },
     [addPhotos, albumId],
@@ -533,10 +547,34 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const handleApplyLook = useCallback(
     async (lookId: LookId, lookIntensity: number) => {
       const photoIds = actionAlbumPhotos.map(photo => photo.photoId);
-      await cullingEngine.updateLook(albumId, photoIds, {
+      const photoCount = photoIds.length;
+      captureAppEvent('apply_look_started', {
+        albumId,
         lookId,
         lookIntensity,
+        photoCount,
       });
+      try {
+        await cullingEngine.updateLook(albumId, photoIds, {
+          lookId,
+          lookIntensity,
+        });
+        captureAppEvent('apply_look_completed', {
+          albumId,
+          lookId,
+          lookIntensity,
+          photoCount,
+        });
+      } catch (error) {
+        console.error('[CulledAlbumDetailScreen] Failed to apply look', error);
+        captureAppEvent('apply_look_failed', {
+          albumId,
+          lookId,
+          lookIntensity,
+          photoCount,
+        });
+        throw error;
+      }
     },
     [albumId, actionAlbumPhotos],
   );
