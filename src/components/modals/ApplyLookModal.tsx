@@ -29,24 +29,40 @@ type ApplyLookModalProps = {
 };
 
 const SCROLL_OVERFLOW_EPS = 1;
+/** Fallback until title overlay reports its laid-out height. */
+const TITLE_OVERLAY_FALLBACK_HEIGHT = 98;
 
-function ModalDecor() {
+/** Stacking: scroll (0) < title (1) < top decoration (2). */
+const Z_SCROLL = 0;
+const Z_TITLE = 1;
+const Z_TOP_DECOR = 2;
+
+/** Corner shapes that sit under the title — keep behind the title band. */
+function BottomDecor() {
   return (
     <>
+      <QuarterCircleRed style={styles.quarterRedDecor} width={80} height={80} />
+      <CircleBlue style={styles.circleBlueDecor} width={32} height={32} />
+    </>
+  );
+}
+
+/** Top shapes above the title band so white title bg doesn't clip them. */
+function TopDecor() {
+  return (
+    <View style={styles.topDecorLayer} pointerEvents="none">
       <HalfCircle style={styles.halfCircleDecor} width={72} />
       <QuarterCircleOrange
         style={styles.quarterOrangeDecor}
         width={98}
         height={98}
       />
-      <QuarterCircleRed style={styles.quarterRedDecor} width={80} height={80} />
-      <CircleBlue style={styles.circleBlueDecor} width={32} height={32} />
       <CircleLightBlue
         style={styles.circleLightBlueDecor}
         width={36}
         height={36}
       />
-    </>
+    </View>
   );
 }
 
@@ -89,6 +105,9 @@ export function ApplyLookModal({
   /** False while dragging intensity so Windows mouse drag isn't swallowed. */
   const [intensityScrollAllowed, setIntensityScrollAllowed] = useState(true);
   const [canScroll, setCanScroll] = useState(false);
+  const [titleOverlayHeight, setTitleOverlayHeight] = useState(
+    TITLE_OVERLAY_FALLBACK_HEIGHT,
+  );
   const viewportHeightRef = useRef(0);
   const contentHeightRef = useRef(0);
 
@@ -108,6 +127,7 @@ export function ApplyLookModal({
       contentHeightRef.current = 0;
       setCanScroll(false);
       setIntensityScrollAllowed(true);
+      setTitleOverlayHeight(TITLE_OVERLAY_FALLBACK_HEIGHT);
       return;
     }
     const seed = selectedPhotos[0];
@@ -172,17 +192,22 @@ export function ApplyLookModal({
       width={720}
       height={740}
       contentStyle={styles.modalContent}>
-      <ModalDecor />
       {/*
-        Title stays fixed; only body scrolls. Disable scroll while dragging
-        intensity so Windows mouse drag works. Scrollbar only when overflow.
-        Do not use flexGrow+justifyContent:center — that clipped content on RNW.
+        Layers (z): scroll 0 → title 1 → top decor 2.
+        One flex:1 ScrollView fills the modal (required on RNW — a title flex
+        sibling above ScrollView breaks height constraints). Title is an absolute
+        white band so it stays pinned. Top decor sits above that band; bottom
+        decor stays at corners under the scroll surface. Disable scroll while
+        dragging intensity (Windows). Scrollbar only when overflow.
       */}
+      <BottomDecor />
       <View style={styles.body}>
-        <Text style={styles.title}>Apply Look</Text>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {paddingTop: titleOverlayHeight},
+          ]}
           scrollEnabled={canScroll && intensityScrollAllowed}
           keyboardShouldPersistTaps="handled"
           nestedScrollEnabled
@@ -292,7 +317,20 @@ export function ApplyLookModal({
             </View>
           </View>
         </ScrollView>
+
+        <View
+          style={styles.titleOverlay}
+          pointerEvents="none"
+          onLayout={event => {
+            const next = Math.ceil(event.nativeEvent.layout.height);
+            if (next > 0) {
+              setTitleOverlayHeight(current => (current === next ? current : next));
+            }
+          }}>
+          <Text style={styles.title}>Apply Look</Text>
+        </View>
       </View>
+      <TopDecor />
     </Modal>
   );
 }
@@ -309,16 +347,18 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 0,
     alignItems: 'stretch',
+    overflow: 'hidden',
+    zIndex: Z_SCROLL,
   },
   scroll: {
     flex: 1,
     width: '100%',
     alignSelf: 'stretch',
     minHeight: 0,
+    zIndex: Z_SCROLL,
   },
   scrollContent: {
     alignItems: 'center',
-    paddingTop: 24,
     paddingBottom: 24,
     paddingHorizontal: 32,
   },
@@ -327,6 +367,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 24,
   },
+  titleOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: Z_TITLE,
+    backgroundColor: colors.white,
+    paddingTop: 40,
+    paddingBottom: 24,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+  },
   title: {
     fontFamily: fonts.serif,
     fontSize: 28,
@@ -334,8 +386,10 @@ const styles = StyleSheet.create({
     color: colors.textDark,
     textAlign: 'center',
     fontWeight: '700',
-    paddingTop: 40,
-    paddingHorizontal: 32,
+  },
+  topDecorLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: Z_TOP_DECOR,
   },
   previewContainer: {
     gap: 12,
