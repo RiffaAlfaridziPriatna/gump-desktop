@@ -13,7 +13,7 @@ import {
 } from '@lib/storage/localStorage';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import CircleBlue from '../../assets/images/upload/blue_circle.svg';
 import HalfCircle from '../../assets/images/upload/half_circle.svg';
@@ -27,6 +27,8 @@ type ApplyLookModalProps = {
   onClose: () => void;
   onApply: (lookId: LookId, lookIntensity: number) => Promise<void>;
 };
+
+const SCROLL_OVERFLOW_EPS = 1;
 
 function ModalDecor() {
   return (
@@ -84,11 +86,28 @@ export function ApplyLookModal({
   const [lookId, setLookId] = useState<LookId>('warmRomantic');
   const [intensity, setIntensity] = useState(DEFAULT_LOOK_INTENSITY);
   const [applying, setApplying] = useState(false);
-  const [scrollEnabled, setScrollEnabled] = useState(true);
+  /** False while dragging intensity so Windows mouse drag isn't swallowed. */
+  const [intensityScrollAllowed, setIntensityScrollAllowed] = useState(true);
+  const [canScroll, setCanScroll] = useState(false);
+  const viewportHeightRef = useRef(0);
+  const contentHeightRef = useRef(0);
+
+  const syncCanScroll = useCallback(() => {
+    const viewportH = viewportHeightRef.current;
+    const contentH = contentHeightRef.current;
+    if (viewportH <= 0 || contentH <= 0) {
+      setCanScroll(false);
+      return;
+    }
+    setCanScroll(contentH > viewportH + SCROLL_OVERFLOW_EPS);
+  }, []);
 
   useEffect(() => {
     if (!visible) {
-      setScrollEnabled(true);
+      viewportHeightRef.current = 0;
+      contentHeightRef.current = 0;
+      setCanScroll(false);
+      setIntensityScrollAllowed(true);
       return;
     }
     const seed = selectedPhotos[0];
@@ -101,17 +120,17 @@ export function ApplyLookModal({
     setLookId(nextId);
     setIntensity(seed?.lookIntensity ?? DEFAULT_LOOK_INTENSITY);
     setApplying(false);
-    setScrollEnabled(true);
+    setIntensityScrollAllowed(true);
   }, [selectedPhotos, visible]);
 
   const intensityDisabled = lookId === 'original';
 
   const handleIntensityDragStart = useCallback(() => {
-    setScrollEnabled(false);
+    setIntensityScrollAllowed(false);
   }, []);
 
   const handleIntensityDragEnd = useCallback(() => {
-    setScrollEnabled(true);
+    setIntensityScrollAllowed(true);
   }, []);
 
   const handleApply = useCallback(async () => {
@@ -155,115 +174,125 @@ export function ApplyLookModal({
       contentStyle={styles.modalContent}>
       <ModalDecor />
       {/*
-        One ScrollView for the whole modal (preview, looks, intensity, actions).
-        Disable scroll only while dragging intensity so Windows mouse drag works.
+        Title stays fixed; only body scrolls. Disable scroll while dragging
+        intensity so Windows mouse drag works. Scrollbar only when overflow.
         Do not use flexGrow+justifyContent:center — that clipped content on RNW.
       */}
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        scrollEnabled={scrollEnabled}
-        keyboardShouldPersistTaps="handled"
-        nestedScrollEnabled
-        bounces={false}
-        showsVerticalScrollIndicator>
-        <View style={styles.content}>
-          <Text style={styles.title}>Apply Look</Text>
+      <View style={styles.body}>
+        <Text style={styles.title}>Apply Look</Text>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          scrollEnabled={canScroll && intensityScrollAllowed}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          bounces={false}
+          showsVerticalScrollIndicator={canScroll}
+          persistentScrollbar={canScroll}
+          onLayout={event => {
+            viewportHeightRef.current = event.nativeEvent.layout.height;
+            syncCanScroll();
+          }}
+          onContentSizeChange={(_width, height) => {
+            contentHeightRef.current = height;
+            syncCanScroll();
+          }}>
+          <View style={styles.content}>
+            <View style={styles.previewContainer}>
+              {previewUri ? (
+                <ContainedLookImage
+                  uri={previewUri}
+                  width={480}
+                  height={326}
+                  lookId={lookId}
+                  lookIntensity={intensityDisabled ? 0 : intensity}
+                  isTransparent={false}
+                />
+              ) : (
+                <View style={styles.previewPlaceholder} />
+              )}
 
-          <View style={styles.previewContainer}>
-            {previewUri ? (
-              <ContainedLookImage
-                uri={previewUri}
-                width={480}
-                height={326}
-                lookId={lookId}
-                lookIntensity={intensityDisabled ? 0 : intensity}
-                isTransparent={false}
-              />
-            ) : (
-              <View style={styles.previewPlaceholder} />
-            )}
-
-            <View style={styles.lookRow}>
-              {LOOK_CATALOG.map(look => {
-                const selected = look.id === lookId;
-                return (
-                  <Pressable
-                    key={look.id}
-                    onPress={() => setLookId(look.id)}
-                    style={[
-                      styles.lookItem,
-                      selected && styles.lookItemSelected,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityState={{selected}}
-                    accessibilityLabel={look.label}>
-                    {previewUri ? (
-                      <ContainedLookImage
-                        uri={previewUri}
-                        width={106}
-                        height={70}
-                        borderRadius={4}
-                        lookId={look.id}
-                        // Chips match Figma: always show full-strength look.
-                        lookIntensity={look.id === 'original' ? 0 : 100}
-                      />
-                    ) : (
-                      <View
-                        style={[
-                          styles.thumbPlaceholder,
-                          selected && styles.thumbPlaceholderSelected,
-                        ]}
-                      />
-                    )}
-                    <Text
+              <View style={styles.lookRow}>
+                {LOOK_CATALOG.map(look => {
+                  const selected = look.id === lookId;
+                  return (
+                    <Pressable
+                      key={look.id}
+                      onPress={() => setLookId(look.id)}
                       style={[
-                        styles.lookLabel,
-                        selected && styles.lookLabelSelected,
+                        styles.lookItem,
+                        selected && styles.lookItemSelected,
                       ]}
-                      numberOfLines={1}>
-                      {look.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+                      accessibilityRole="button"
+                      accessibilityState={{selected}}
+                      accessibilityLabel={look.label}>
+                      {previewUri ? (
+                        <ContainedLookImage
+                          uri={previewUri}
+                          width={106}
+                          height={70}
+                          borderRadius={4}
+                          lookId={look.id}
+                          // Chips match Figma: always show full-strength look.
+                          lookIntensity={look.id === 'original' ? 0 : 100}
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            styles.thumbPlaceholder,
+                            selected && styles.thumbPlaceholderSelected,
+                          ]}
+                        />
+                      )}
+                      <Text
+                        style={[
+                          styles.lookLabel,
+                          selected && styles.lookLabelSelected,
+                        ]}
+                        numberOfLines={1}>
+                        {look.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={styles.intensityRow}>
+                <Text style={styles.intensityLabel}>Intensity</Text>
+                <IntensitySlider
+                  value={intensity}
+                  onChange={setIntensity}
+                  disabled={intensityDisabled}
+                  onDragStart={handleIntensityDragStart}
+                  onDragEnd={handleIntensityDragEnd}
+                />
+                <Text style={styles.intensityValue}>
+                  {intensityDisabled ? '—' : `${intensity}%`}
+                </Text>
+              </View>
             </View>
 
-            <View style={styles.intensityRow}>
-              <Text style={styles.intensityLabel}>Intensity</Text>
-              <IntensitySlider
-                value={intensity}
-                onChange={setIntensity}
-                disabled={intensityDisabled}
-                onDragStart={handleIntensityDragStart}
-                onDragEnd={handleIntensityDragEnd}
-              />
-              <Text style={styles.intensityValue}>
-                {intensityDisabled ? '—' : `${intensity}%`}
-              </Text>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.applyButton,
+                  applying && styles.applyButtonDisabled,
+                ]}
+                onPress={handleApply}
+                disabled={applying || selectedPhotos.length === 0}
+                activeOpacity={0.8}>
+                <Text style={styles.applyButtonText}>
+                  {applying ? 'Applying...' : 'Apply to Selected'}
+                </Text>
+              </TouchableOpacity>
+
+              <Pressable onPress={onClose} accessibilityRole="button">
+                <Text style={styles.cancelText}>Cancel</Text>
+              </Pressable>
             </View>
           </View>
-
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[
-                styles.applyButton,
-                applying && styles.applyButtonDisabled,
-              ]}
-              onPress={handleApply}
-              disabled={applying || selectedPhotos.length === 0}
-              activeOpacity={0.8}>
-              <Text style={styles.applyButtonText}>
-                {applying ? 'Applying...' : 'Apply to Selected'}
-              </Text>
-            </TouchableOpacity>
-
-            <Pressable onPress={onClose} accessibilityRole="button">
-              <Text style={styles.cancelText}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
     </Modal>
   );
 }
@@ -275,6 +304,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     alignItems: 'stretch',
   },
+  body: {
+    flex: 1,
+    width: '100%',
+    minHeight: 0,
+    alignItems: 'stretch',
+  },
   scroll: {
     flex: 1,
     width: '100%',
@@ -283,7 +318,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     alignItems: 'center',
-    paddingTop: 40,
+    paddingTop: 24,
     paddingBottom: 24,
     paddingHorizontal: 32,
   },
@@ -299,6 +334,8 @@ const styles = StyleSheet.create({
     color: colors.textDark,
     textAlign: 'center',
     fontWeight: '700',
+    paddingTop: 40,
+    paddingHorizontal: 32,
   },
   previewContainer: {
     gap: 12,
