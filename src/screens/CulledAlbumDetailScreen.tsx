@@ -261,10 +261,11 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       navigation.navigate('CulledAlbumPhotoDetail', {
         albumId,
         photoId,
+        photoIds: filteredPhotos.map(photo => photo.photoId),
         ...(typeof faceIndex === 'number' ? {faceIndex} : {}),
       });
     },
-    [albumId, navigation],
+    [albumId, filteredPhotos, navigation],
   );
 
   const handleKeyFacePress = useCallback(

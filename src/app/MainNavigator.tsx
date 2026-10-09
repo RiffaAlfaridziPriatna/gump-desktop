@@ -33,6 +33,8 @@ export type MainStackParamList = {
     albumId: string;
     photoId: string;
     faceIndex?: number;
+    /** Grid order at open time (respects active cull filters). */
+    photoIds?: string[];
   }>;
   CulledAlbumUploadProgress: WithInstantNav<{
     albumId: string;
