@@ -12,6 +12,7 @@ import {
 } from '@lib/export/prepareExport';
 import type {
   ExportDirectoryInfo,
+  ExportFormat,
   ExportPhotosModalStep,
   ExportQuality,
   ExportZipResult,
@@ -33,6 +34,11 @@ import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
 import QuarterCircleOrange from '../../assets/images/upload/orange_quarter_circle.svg';
 import QuarterCircleRed from '../../assets/images/upload/red_quarter_circle.svg';
 
+const EXPORT_FORMAT_OPTIONS: ReadonlyArray<{
+  id: ExportFormat;
+  label: string;
+}> = [{ id: 'zip', label: 'ZIP' }];
+
 type ExportPhotosModalProps = {
   visible: boolean;
   photoCount: number;
@@ -41,6 +47,64 @@ type ExportPhotosModalProps = {
   selectedPhotos: CulledAlbumPhoto[];
   onClose: () => void;
 };
+
+type FormatExportDropdownProps = {
+  value: ExportFormat;
+  open: boolean;
+  onToggle: () => void;
+  onSelect: (format: ExportFormat) => void;
+};
+
+function FormatExportDropdown({
+  value,
+  open,
+  onToggle,
+  onSelect,
+}: FormatExportDropdownProps) {
+  const selectedLabel =
+    EXPORT_FORMAT_OPTIONS.find(option => option.id === value)?.label ?? 'ZIP';
+
+  return (
+    <View style={styles.formatDropdownRoot}>
+      <Pressable
+        onPress={onToggle}
+        style={styles.formatValue}
+        accessibilityRole="button"
+        accessibilityState={{expanded: open}}
+        accessibilityLabel={`Export format ${selectedLabel}`}>
+        <Text style={styles.formatValueText}>{selectedLabel}</Text>
+        <View
+          style={[
+            styles.formatChevron,
+            open && styles.formatChevronOpen,
+          ]}>
+          <IconChevronDown width={24} height={24} color={colors.textMuted} />
+        </View>
+      </Pressable>
+
+      {open ? (
+        <View style={styles.formatMenu} accessibilityRole="menu">
+          {EXPORT_FORMAT_OPTIONS.map((option, index) => {
+            const isLast = index === EXPORT_FORMAT_OPTIONS.length - 1;
+            return (
+              <Pressable
+                key={option.id}
+                onPress={() => onSelect(option.id)}
+                style={[
+                  styles.formatMenuItem,
+                  !isLast && styles.formatMenuItemBorder,
+                ]}
+                accessibilityRole="menuitem"
+                accessibilityState={{selected: option.id === value}}>
+                <Text style={styles.formatMenuItemText}>{option.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 type QualityOptionProps = {
   title: string;
@@ -136,6 +200,8 @@ export function ExportPhotosModal({
 }: ExportPhotosModalProps) {
   const [step, setStep] = useState<ExportPhotosModalStep>('options');
   const [quality, setQuality] = useState<ExportQuality>('compressed');
+  const [format, setFormat] = useState<ExportFormat>('zip');
+  const [formatMenuOpen, setFormatMenuOpen] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
   const [preparedExport, setPreparedExport] = useState<PreparedExport | null>(
     null,
@@ -155,6 +221,8 @@ export function ExportPhotosModal({
     }
     setStep('options');
     setQuality('compressed');
+    setFormat('zip');
+    setFormatMenuOpen(false);
     setProgressPercent(0);
     setPreparedExport(null);
     setDownloadedExport(null);
@@ -163,11 +231,26 @@ export function ExportPhotosModal({
   }, [visible]);
 
   const handleSelectCompressed = useCallback(() => {
+    setFormatMenuOpen(false);
     setQuality('compressed');
   }, []);
 
   const handleSelectOriginal = useCallback(() => {
+    setFormatMenuOpen(false);
     setQuality('original');
+  }, []);
+
+  const handleToggleFormatMenu = useCallback(() => {
+    setFormatMenuOpen(prev => !prev);
+  }, []);
+
+  const handleSelectFormat = useCallback((nextFormat: ExportFormat) => {
+    setFormat(nextFormat);
+    setFormatMenuOpen(false);
+  }, []);
+
+  const handleDismissFormatMenu = useCallback(() => {
+    setFormatMenuOpen(false);
   }, []);
 
   const looksNeedBake = useMemo(
@@ -292,6 +375,7 @@ export function ExportPhotosModal({
   );
 
   const handlePrepareExport = useCallback(() => {
+    setFormatMenuOpen(false);
     runPrepareExport().catch(() => undefined);
   }, [runPrepareExport]);
 
@@ -355,6 +439,15 @@ export function ExportPhotosModal({
 
       {step === 'options' && (
         <View style={styles.optionsContent}>
+          {formatMenuOpen ? (
+            <Pressable
+              style={styles.formatDismissOverlay}
+              onPress={handleDismissFormatMenu}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss format menu"
+            />
+          ) : null}
+
           <View style={styles.titleBlock}>
             <Text style={styles.title}>Export Photos ({photoCount})</Text>
             <Text style={styles.subtitle}>
@@ -385,10 +478,12 @@ export function ExportPhotosModal({
 
             <View style={styles.formatRow}>
               <Text style={styles.formatLabel}>Format</Text>
-              <View style={styles.formatValue}>
-                <Text style={styles.formatValueText}>ZIP</Text>
-                <IconChevronDown width={20} height={20} color={colors.textMuted} />
-              </View>
+              <FormatExportDropdown
+                value={format}
+                open={formatMenuOpen}
+                onToggle={handleToggleFormatMenu}
+                onSelect={handleSelectFormat}
+              />
             </View>
           </View>
 
@@ -537,6 +632,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 20,
     width: 480,
+    position: 'relative',
+    zIndex: 1,
+  },
+  formatDismissOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
   },
   centeredContent: {
     flex: 1,
@@ -651,11 +752,16 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
+    zIndex: 2,
   },
   formatLabel: {
     fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textDark,
+  },
+  formatDropdownRoot: {
+    position: 'relative',
+    zIndex: 3,
   },
   formatValue: {
     flexDirection: 'row',
@@ -663,14 +769,49 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 6,
     borderWidth: 1,
-    borderColor: colors.divider,
+    borderColor: colors.textDark,
     borderRadius: 22,
     paddingHorizontal: 16,
     paddingVertical: 8,
     width: 100,
+    backgroundColor: colors.white,
   },
   formatValueText: {
     fontFamily: fonts.sans,
+    fontSize: 16,
+    color: colors.textDark,
+  },
+  formatChevron: {
+    transform: [{rotate: '0deg'}],
+  },
+  formatChevronOpen: {
+    transform: [{rotate: '180deg'}],
+  },
+  formatMenu: {
+    position: 'absolute',
+    top: '100%',
+    right: 0,
+    marginTop: 4,
+    minWidth: 100,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.textDark,
+    borderRadius: 8,
+    overflow: 'hidden',
+    zIndex: 4,
+  },
+  formatMenuItem: {
+    paddingTop: 8,
+    paddingRight: 16,
+    paddingBottom: 8,
+    paddingLeft: 16,
+  },
+  formatMenuItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.textDark,
+  },
+  formatMenuItemText: {
+    ...sansBoldStyle,
     fontSize: 16,
     color: colors.textDark,
   },
