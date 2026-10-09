@@ -2660,6 +2660,7 @@ void GumpLocalStorage::ApplyLook(
         return winrtRN::JSValue(winrtRN::JSValueObject{
             {"uri", FileUri(*outPath)},
             {"path", ToUtf8(outPath->wstring())},
+            {"size", static_cast<double>(std::filesystem::file_size(*outPath))},
         });
       },
       std::move(promise));

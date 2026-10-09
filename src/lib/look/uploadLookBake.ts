@@ -16,6 +16,11 @@ export type UploadLookBakeState = {
   error?: string;
 };
 
+export type BakedUploadFile = {
+  uri: string;
+  size: number;
+};
+
 const IDLE_SNAPSHOT: UploadLookBakeState = Object.freeze({
   status: 'idle',
   completed: 0,
@@ -29,7 +34,7 @@ type AlbumBakeSession = {
   total: number;
   percent: number;
   error?: string;
-  uriByPhotoId: Map<string, string>;
+  fileByPhotoId: Map<string, BakedUploadFile>;
   listeners: Set<() => void>;
   snapshot: UploadLookBakeState;
 };
@@ -60,7 +65,7 @@ function getOrCreateSession(albumId: string): AlbumBakeSession {
     completed: 0,
     total: 0,
     percent: 0,
-    uriByPhotoId: new Map(),
+    fileByPhotoId: new Map(),
     listeners: new Set(),
     snapshot: IDLE_SNAPSHOT,
   };
@@ -94,11 +99,11 @@ export function subscribeUploadLookBake(
   };
 }
 
-export function getBakedUploadUri(
+export function getBakedUploadFile(
   albumId: string,
   photoId: string,
-): string | undefined {
-  return sessions.get(albumId)?.uriByPhotoId.get(photoId);
+): BakedUploadFile | undefined {
+  return sessions.get(albumId)?.fileByPhotoId.get(photoId);
 }
 
 export function clearUploadLookBake(albumId: string): void {
@@ -113,7 +118,7 @@ export function beginUploadLookBake(albumId: string, photoCount: number): void {
   session.total = photoCount;
   session.percent = 0;
   session.error = undefined;
-  session.uriByPhotoId = new Map();
+  session.fileByPhotoId = new Map();
   emit(albumId);
 }
 
@@ -158,7 +163,7 @@ export async function bakeLooksForUploadBatch(
     .filter((photo): photo is CulledAlbumPhoto => Boolean(photo));
   const needingBake = photos.filter(photoNeedsLookBake);
 
-  session.uriByPhotoId = new Map();
+  session.fileByPhotoId = new Map();
   session.error = undefined;
 
   if (needingBake.length === 0) {
@@ -177,7 +182,7 @@ export async function bakeLooksForUploadBatch(
   emit(albumId);
 
   try {
-    const uriByPhotoId = await bakeLooksForPhotos(
+    const bakedByPhotoId = await bakeLooksForPhotos(
       needingBake,
       'original',
       (progress: BakeLookProgress) => {
@@ -188,7 +193,11 @@ export async function bakeLooksForUploadBatch(
         emit(albumId);
       },
     );
-    session.uriByPhotoId = uriByPhotoId;
+    const fileByPhotoId = new Map<string, BakedUploadFile>();
+    for (const [photoId, baked] of bakedByPhotoId) {
+      fileByPhotoId.set(photoId, {uri: baked.uri, size: baked.size});
+    }
+    session.fileByPhotoId = fileByPhotoId;
     session.status = 'ready';
     session.percent = 100;
     emit(albumId);

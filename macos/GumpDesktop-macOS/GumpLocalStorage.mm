@@ -3945,9 +3945,14 @@ RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
                          jpegQuality:jpegQuality.doubleValue];
       dispatch_async(dispatch_get_main_queue(), ^{
         if (generatedPath.length > 0) {
+          NSDictionary *attributes =
+              [[NSFileManager defaultManager] attributesOfItemAtPath:generatedPath
+                                                               error:nil];
+          NSNumber *fileSize = attributes[NSFileSize] ?: @(0);
           resolve(@{
             @"uri" : [NSString stringWithFormat:@"file://%@", generatedPath],
             @"path" : generatedPath,
+            @"size" : fileSize,
           });
         } else {
           resolve(@{@"uri" : [NSNull null]});
