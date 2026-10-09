@@ -63,7 +63,7 @@ type NativeLocalStorageModule = {
     intensity: number,
     maxPixelSize: number,
     jpegQuality: number,
-  ) => Promise<{uri: string | null; path?: string | null}>;
+  ) => Promise<{uri: string | null; path?: string | null; size?: number | null}>;
 };
 
 const NativeLocalStorage = NativeModules.GumpLocalStorage as
@@ -367,6 +367,8 @@ export async function ensureFaceCrops(
 export type ApplyLookNativeResult = {
   uri: string | null;
   path?: string | null;
+  /** Byte length of the baked JPEG when the native module reports it. */
+  size?: number | null;
 };
 
 /** Strip cache-busters and decode file URIs before native PathFromUri (esp. Windows). */
@@ -424,9 +426,28 @@ export async function applyLookToJpeg(options: {
     options.jpegQuality,
   );
 
+  const size =
+    typeof result.size === 'number' && Number.isFinite(result.size) && result.size > 0
+      ? Math.round(result.size)
+      : null;
+
   return {
     uri: result.uri ?? null,
     path: result.path ?? null,
+    size,
   };
+}
+
+/** Byte length of a local file URI (used when native bake omits size). */
+export async function getLocalFileByteSize(uri: string): Promise<number> {
+  const response = await fetch(normalizeNativeFileUri(uri));
+  if (!response.ok) {
+    throw new Error(`Failed to read baked file size (${response.status})`);
+  }
+  const blob = await response.blob();
+  if (blob.size <= 0) {
+    throw new Error('Baked look file is empty');
+  }
+  return blob.size;
 }
 

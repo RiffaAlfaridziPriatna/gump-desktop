@@ -1,8 +1,9 @@
 import {resolveUseCases} from '@di/useCases';
 import {make} from '@di/tsyringe';
-import {getBakedUploadUri} from '@lib/look/uploadLookBake';
+import {getBakedUploadFile} from '@lib/look/uploadLookBake';
 import {APIException, APIService} from '@services/api';
 import type {FileAsset} from '@services/upload/types';
+import {resolveUploadFileAsset} from './resolveUploadFileAsset';
 import {CulledAlbumPhoto} from './types';
 import {getPhotoById, updatePhoto} from './store';
 
@@ -18,18 +19,7 @@ function resolveUploadFile(
   albumId: string,
   photo: CulledAlbumPhoto,
 ): FileAsset {
-  const bakedUri = getBakedUploadUri(albumId, photo.photoId);
-  if (!bakedUri) {
-    return photo.file;
-  }
-
-  const baseName = photo.file.name.replace(/\.[^.]+$/, '') || photo.photoId;
-  return {
-    ...photo.file,
-    uri: bakedUri,
-    name: `${baseName}.jpg`,
-    type: 'image/jpeg',
-  };
+  return resolveUploadFileAsset(photo, getBakedUploadFile(albumId, photo.photoId));
 }
 
 async function uploadFile(

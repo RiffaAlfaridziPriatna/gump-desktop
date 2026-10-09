@@ -6,7 +6,10 @@ import {
   type LookId,
 } from '@lib/look/types';
 import {ensureExportStagingDirectory} from '@lib/export/nativeExport';
-import {applyLookToJpeg} from '@lib/storage/localStorage';
+import {
+  applyLookToJpeg,
+  getLocalFileByteSize,
+} from '@lib/storage/localStorage';
 import type {FileAsset} from '@services/upload/types';
 
 export const LOOK_BAKE_CONCURRENCY = 4;
@@ -25,6 +28,8 @@ export type BakedLookResult = {
   photoId: string;
   uri: string;
   path?: string;
+  /** Byte length of the baked JPEG (required for multipart upload sessions). */
+  size: number;
 };
 
 const QUALITY_SETTINGS: Record<
@@ -125,7 +130,11 @@ export async function bakePhotoLook(
   quality: BakeLookQuality = 'compressed',
 ): Promise<BakedLookResult> {
   if (!photoNeedsLookBake(photo)) {
-    return {photoId: photo.photoId, uri: photo.file.uri};
+    return {
+      photoId: photo.photoId,
+      uri: photo.file.uri,
+      size: photo.file.size,
+    };
   }
 
   const settings = QUALITY_SETTINGS[quality];
@@ -146,10 +155,16 @@ export async function bakePhotoLook(
     throw new Error(`Failed to apply look to ${photo.file.name}`);
   }
 
+  const size =
+    typeof baked.size === 'number' && baked.size > 0
+      ? baked.size
+      : await getLocalFileByteSize(baked.uri);
+
   return {
     photoId: photo.photoId,
     uri: baked.uri,
     path: baked.path ?? undefined,
+    size,
   };
 }
 
@@ -266,14 +281,14 @@ export async function bakeLooksForPhotos(
   photos: CulledAlbumPhoto[],
   quality: BakeLookQuality = 'compressed',
   onProgress?: (progress: BakeLookProgress) => void,
-): Promise<Map<string, string>> {
-  const uriByPhotoId = new Map<string, string>();
+): Promise<Map<string, BakedLookResult>> {
+  const resultByPhotoId = new Map<string, BakedLookResult>();
   const needingBake = photos.filter(photoNeedsLookBake);
   const total = needingBake.length;
 
   if (total === 0) {
     onProgress?.({completed: 0, total: 0, percent: 100});
-    return uriByPhotoId;
+    return resultByPhotoId;
   }
 
   onProgress?.({completed: 0, total, percent: 0});
@@ -292,7 +307,7 @@ export async function bakeLooksForPhotos(
   );
 
   for (const result of baked) {
-    uriByPhotoId.set(result.photoId, result.uri);
+    resultByPhotoId.set(result.photoId, result);
   }
-  return uriByPhotoId;
+  return resultByPhotoId;
 }

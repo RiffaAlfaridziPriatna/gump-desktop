@@ -122,10 +122,10 @@ export async function prepareSelectedPhotosExport(
   const total = photos.length;
   const rawEntries: ExportZipEntry[] = [];
 
-  let bakedUriByPhotoId = new Map<string, string>();
+  const bakedUriByPhotoId = new Map<string, string>();
   const looksToBake = photos.filter(photoNeedsLookBake);
   if (looksToBake.length > 0) {
-    bakedUriByPhotoId = await bakeLooksForPhotos(
+    const bakedByPhotoId = await bakeLooksForPhotos(
       looksToBake,
       quality,
       progress => {
@@ -137,6 +137,9 @@ export async function prepareSelectedPhotosExport(
         });
       },
     );
+    for (const [photoId, baked] of bakedByPhotoId) {
+      bakedUriByPhotoId.set(photoId, baked.uri);
+    }
   }
 
   for (let index = 0; index < photos.length; index++) {
