@@ -31,16 +31,18 @@ type ApplyLookModalProps = {
 const SCROLL_OVERFLOW_EPS = 1;
 /** Fallback until title overlay reports its laid-out height. */
 const TITLE_OVERLAY_FALLBACK_HEIGHT = 98;
-/**
- * Keep overlays clear of the Windows persistent scrollbar track.
- * RNW draws the indicator inside the ScrollView's right edge.
- */
-const SCROLLBAR_GUTTER = 14;
+/** Always-on Windows thumb (Fabric native shy thumbs vanish into white). */
+const CUSTOM_SCROLL_THUMB_WIDTH = 3;
+const CUSTOM_SCROLL_THUMB_MIN_HEIGHT = 28;
+const CUSTOM_SCROLL_THUMB_INSET = 4;
 
-/** Stacking: scroll (0) < title (1) < top decoration (2). */
+/** Stacking: scroll (0) < title (1) < top decoration (2) < custom thumb (3). */
 const Z_SCROLL = 0;
 const Z_TITLE = 1;
 const Z_TOP_DECOR = 2;
+const Z_SCROLL_THUMB = 3;
+
+const USE_CUSTOM_SCROLL_THUMB = Platform.OS === 'windows';
 
 /** Corner shapes that sit under the title — keep behind the title band. */
 function BottomDecor() {
@@ -54,9 +56,9 @@ function BottomDecor() {
 
 /**
  * Top shapes above the title band so white title bg doesn't clip them.
- * No absoluteFill wrapper — that would paint over the scrollbar track.
+ * No absoluteFill wrapper — that would paint over the scroll edge.
  */
-function TopDecor({ rightInset }: { rightInset: number }) {
+function TopDecor() {
   return (
     <>
       <HalfCircle
@@ -65,26 +67,56 @@ function TopDecor({ rightInset }: { rightInset: number }) {
         pointerEvents="none"
       />
       <QuarterCircleOrange
-        style={[
-          styles.quarterOrangeDecor,
-          styles.topDecorItem,
-          {right: rightInset},
-        ]}
+        style={[styles.quarterOrangeDecor, styles.topDecorItem]}
         width={98}
         height={98}
         pointerEvents="none"
       />
       <CircleLightBlue
-        style={[
-          styles.circleLightBlueDecor,
-          styles.topDecorItem,
-          {right: rightInset},
-        ]}
+        style={[styles.circleLightBlueDecor, styles.topDecorItem]}
         width={36}
         height={36}
         pointerEvents="none"
       />
     </>
+  );
+}
+
+function WindowsScrollThumb({
+  visible,
+  viewportHeight,
+  contentHeight,
+  scrollOffset,
+}: {
+  visible: boolean;
+  viewportHeight: number;
+  contentHeight: number;
+  scrollOffset: number;
+}) {
+  if (!visible || viewportHeight <= 0 || contentHeight <= viewportHeight) {
+    return null;
+  }
+
+  const trackHeight = Math.max(0, viewportHeight - CUSTOM_SCROLL_THUMB_INSET * 2);
+  const thumbHeight = Math.max(
+    CUSTOM_SCROLL_THUMB_MIN_HEIGHT,
+    (viewportHeight / contentHeight) * trackHeight,
+  );
+  const maxOffset = contentHeight - viewportHeight;
+  const maxThumbTravel = Math.max(0, trackHeight - thumbHeight);
+  const thumbTop =
+    CUSTOM_SCROLL_THUMB_INSET +
+    (maxOffset > 0 ? (scrollOffset / maxOffset) * maxThumbTravel : 0);
+
+  return (
+    <View style={styles.customScrollThumbTrack} pointerEvents="none">
+      <View
+        style={[
+          styles.customScrollThumb,
+          {height: thumbHeight, transform: [{translateY: thumbTop}]},
+        ]}
+      />
+    </View>
   );
 }
 
@@ -127,15 +159,20 @@ export function ApplyLookModal({
   /** False while dragging intensity so Windows mouse drag isn't swallowed. */
   const [intensityScrollAllowed, setIntensityScrollAllowed] = useState(true);
   const [canScroll, setCanScroll] = useState(false);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
   const [titleOverlayHeight, setTitleOverlayHeight] = useState(
     TITLE_OVERLAY_FALLBACK_HEIGHT,
   );
   const viewportHeightRef = useRef(0);
   const contentHeightRef = useRef(0);
 
-  const syncCanScroll = useCallback(() => {
+  const syncScrollMetrics = useCallback(() => {
     const viewportH = viewportHeightRef.current;
     const contentH = contentHeightRef.current;
+    setViewportHeight(viewportH);
+    setContentHeight(contentH);
     if (viewportH <= 0 || contentH <= 0) {
       setCanScroll(false);
       return;
@@ -148,6 +185,9 @@ export function ApplyLookModal({
       viewportHeightRef.current = 0;
       contentHeightRef.current = 0;
       setCanScroll(false);
+      setScrollOffset(0);
+      setViewportHeight(0);
+      setContentHeight(0);
       setIntensityScrollAllowed(true);
       setTitleOverlayHeight(TITLE_OVERLAY_FALLBACK_HEIGHT);
       return;
@@ -166,10 +206,6 @@ export function ApplyLookModal({
   }, [selectedPhotos, visible]);
 
   const intensityDisabled = lookId === 'original';
-
-  // Persistent scrollbar only on Windows; macOS overlay scrollbars need no gutter.
-  const scrollbarGutter =
-    Platform.OS === 'windows' && canScroll ? SCROLLBAR_GUTTER : 0;
 
   const handleIntensityDragStart = useCallback(() => {
     setIntensityScrollAllowed(false);
@@ -219,12 +255,14 @@ export function ApplyLookModal({
       height={740}
       contentStyle={styles.modalContent}>
       {/*
-        Layers (z): scroll 0 → title 1 → top decor 2.
+        Layers (z): scroll/title in body → top decor 2 → Windows thumb 3.
         One flex:1 ScrollView fills the modal (required on RNW — a title flex
         sibling above ScrollView breaks height constraints). Title is an absolute
         white band so it stays pinned. Top decor sits above that band; bottom
         decor stays at corners under the scroll surface. Disable scroll while
-        dragging intensity (Windows). Scrollbar only when overflow.
+        dragging intensity (Windows).
+        Fabric's native shy scrollbar flashes wide then hides until hover — on
+        Windows we draw a custom always-on thin thumb instead when overflowing.
       */}
       <BottomDecor />
       <View style={styles.body}>
@@ -234,20 +272,28 @@ export function ApplyLookModal({
             styles.scrollContent,
             {paddingTop: titleOverlayHeight},
           ]}
-          scrollEnabled={canScroll && intensityScrollAllowed}
+          scrollEnabled={intensityScrollAllowed}
           keyboardShouldPersistTaps="handled"
           nestedScrollEnabled
           bounces={false}
-          showsVerticalScrollIndicator={canScroll}
-          persistentScrollbar={canScroll}
+          showsVerticalScrollIndicator={!USE_CUSTOM_SCROLL_THUMB}
           onLayout={event => {
             viewportHeightRef.current = event.nativeEvent.layout.height;
-            syncCanScroll();
+            syncScrollMetrics();
           }}
           onContentSizeChange={(_width, height) => {
             contentHeightRef.current = height;
-            syncCanScroll();
-          }}>
+            syncScrollMetrics();
+          }}
+          onScroll={event => {
+            const {contentOffset, contentSize, layoutMeasurement} =
+              event.nativeEvent;
+            viewportHeightRef.current = layoutMeasurement.height;
+            contentHeightRef.current = contentSize.height;
+            setScrollOffset(Math.max(0, contentOffset.y));
+            syncScrollMetrics();
+          }}
+          scrollEventThrottle={16}>
           <View style={styles.content}>
             <View style={styles.previewContainer}>
               {previewUri ? (
@@ -345,7 +391,7 @@ export function ApplyLookModal({
         </ScrollView>
 
         <View
-          style={[styles.titleOverlay, {right: scrollbarGutter}]}
+          style={styles.titleOverlay}
           pointerEvents="none"
           onLayout={event => {
             const next = Math.ceil(event.nativeEvent.layout.height);
@@ -356,7 +402,16 @@ export function ApplyLookModal({
           <Text style={styles.title}>Apply Look</Text>
         </View>
       </View>
-      <TopDecor rightInset={scrollbarGutter} />
+      <TopDecor />
+      {/* Sibling of body/decor — must not live inside body or zIndex is trapped. */}
+      {USE_CUSTOM_SCROLL_THUMB ? (
+        <WindowsScrollThumb
+          visible={canScroll}
+          viewportHeight={viewportHeight}
+          contentHeight={contentHeight}
+          scrollOffset={scrollOffset}
+        />
+      ) : null}
     </Modal>
   );
 }
@@ -397,7 +452,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
-    // `right` set at render: Windows gutter when scrollable, else 0 (macOS).
     right: 0,
     zIndex: Z_TITLE,
     backgroundColor: colors.white,
@@ -416,6 +470,20 @@ const styles = StyleSheet.create({
   },
   topDecorItem: {
     zIndex: Z_TOP_DECOR,
+  },
+  customScrollThumbTrack: {
+    position: 'absolute',
+    top: 0,
+    right: CUSTOM_SCROLL_THUMB_INSET,
+    bottom: 0,
+    width: CUSTOM_SCROLL_THUMB_WIDTH,
+    zIndex: Z_SCROLL_THUMB,
+  },
+  customScrollThumb: {
+    width: CUSTOM_SCROLL_THUMB_WIDTH,
+    borderRadius: CUSTOM_SCROLL_THUMB_WIDTH,
+    backgroundColor: colors.textMuted,
+    opacity: 0.45,
   },
   previewContainer: {
     gap: 12,
