@@ -1,0 +1,220 @@
+import {Pressable} from '@components/ui';
+import {colors} from '@lib/ui/colors';
+import {useFocusEffect, useIsFocused} from '@react-navigation/native';
+import {useCallback, useRef, useState, type ReactNode} from 'react';
+import {
+  findNodeHandle,
+  Platform,
+  StyleSheet,
+  UIManager,
+  View,
+  type NativeSyntheticEvent,
+} from 'react-native';
+import IconChevronLeft from '../../assets/images/icon_chevron_left.svg';
+import IconChevronRight from '../../assets/images/icon_chevron_right.svg';
+
+const CHEVRON_SIZE = 72;
+/** Slightly larger than the icon so the hover/click target matches the visual button. */
+const NAV_BUTTON_HIT = 88;
+const isDesktopPlatform =
+  Platform.OS === 'macos' || Platform.OS === 'windows';
+
+/**
+ * Focus a desktop View so keyDownEvents are delivered.
+ * Prefer UIManager.focus over host `.focus()` — the latter routes through
+ * TextInputState and can later dispatch `blur` to a stale react tag, crashing
+ * macOS with "Bridge module (null) does not conform to RCTBridgeModule".
+ */
+function focusDesktopView(node: View | null) {
+  if (!node || !isDesktopPlatform) {
+    return;
+  }
+  const reactTag = findNodeHandle(node);
+  if (reactTag == null) {
+    return;
+  }
+  const focus = (
+    UIManager as typeof UIManager & {focus?: (tag: number) => void}
+  ).focus;
+  focus?.(reactTag);
+}
+
+type PhotoNavKeyEvent = NativeSyntheticEvent<{
+  ArrowLeft?: boolean;
+  ArrowRight?: boolean;
+  key?: string;
+  code?: string;
+}>;
+
+type Props = {
+  canGoPrev: boolean;
+  canGoNext: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  /** Hover chevrons are desktop-only; keyboard nav still works when enabled. */
+  showHoverChevrons: boolean;
+  children: ReactNode;
+};
+
+function matchesPhotoNavKey(
+  nativeEvent: PhotoNavKeyEvent['nativeEvent'],
+  direction: 'prev' | 'next',
+): boolean {
+  if (direction === 'prev') {
+    if (nativeEvent.ArrowLeft) {
+      return true;
+    }
+    const key = nativeEvent.key ?? nativeEvent.code;
+    return key === 'ArrowLeft';
+  }
+
+  if (nativeEvent.ArrowRight) {
+    return true;
+  }
+  const key = nativeEvent.key ?? nativeEvent.code;
+  return key === 'ArrowRight';
+}
+
+const photoNavKeyDownEvents =
+  Platform.OS === 'windows'
+    ? [{code: 'ArrowLeft'}, {code: 'ArrowRight'}]
+    : [{key: 'ArrowLeft'}, {key: 'ArrowRight'}];
+
+export function PhotoDetailNavigationFrame({
+  canGoPrev,
+  canGoNext,
+  onPrev,
+  onNext,
+  showHoverChevrons,
+  children,
+}: Props) {
+  const [photoHovered, setPhotoHovered] = useState(false);
+  const [prevHovered, setPrevHovered] = useState(false);
+  const [nextHovered, setNextHovered] = useState(false);
+  const focusRef = useRef<View>(null);
+  const isFocused = useIsFocused();
+
+  const handleKeyDown = useCallback(
+    (event: unknown) => {
+      if (!isFocused) {
+        return;
+      }
+
+      const nativeEvent = (event as PhotoNavKeyEvent).nativeEvent;
+      if (matchesPhotoNavKey(nativeEvent, 'prev') && canGoPrev) {
+        onPrev();
+        return;
+      }
+      if (matchesPhotoNavKey(nativeEvent, 'next') && canGoNext) {
+        onNext();
+      }
+    },
+    [canGoNext, canGoPrev, isFocused, onNext, onPrev],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isDesktopPlatform) {
+        return;
+      }
+      const frameId = requestAnimationFrame(() => {
+        focusDesktopView(focusRef.current);
+      });
+      return () => cancelAnimationFrame(frameId);
+    }, []),
+  );
+
+  const showChevrons = showHoverChevrons && photoHovered;
+
+  return (
+    <View
+      ref={focusRef}
+      style={styles.frame}
+      tabIndex={0}
+      focusable
+      enableFocusRing={false}
+      onMouseEnter={
+        showHoverChevrons ? () => setPhotoHovered(true) : undefined
+      }
+      onMouseLeave={
+        showHoverChevrons
+          ? () => {
+              setPhotoHovered(false);
+              setPrevHovered(false);
+              setNextHovered(false);
+            }
+          : undefined
+      }
+      onKeyDown={handleKeyDown}
+      keyDownEvents={photoNavKeyDownEvents}
+    >
+      {children}
+
+      {showChevrons ? (
+        <View pointerEvents="box-none" style={styles.navOverlay}>
+          {canGoPrev ? (
+            <Pressable
+              style={[styles.navButton, styles.navButtonLeft]}
+              onPress={onPrev}
+              onHoverIn={() => setPrevHovered(true)}
+              onHoverOut={() => setPrevHovered(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Previous photo"
+            >
+              <IconChevronLeft
+                width={CHEVRON_SIZE}
+                height={CHEVRON_SIZE}
+                color={prevHovered ? colors.white : colors.textGray}
+              />
+            </Pressable>
+          ) : null}
+
+          {canGoNext ? (
+            <Pressable
+              style={[styles.navButton, styles.navButtonRight]}
+              onPress={onNext}
+              onHoverIn={() => setNextHovered(true)}
+              onHoverOut={() => setNextHovered(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Next photo"
+            >
+              <IconChevronRight
+                width={CHEVRON_SIZE}
+                height={CHEVRON_SIZE}
+                color={nextHovered ? colors.white : colors.textGray}
+              />
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  frame: {
+    flex: 1,
+    minHeight: 0,
+    minWidth: 0,
+    position: 'relative',
+  },
+  navOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  navButton: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -NAV_BUTTON_HIT / 2,
+    width: NAV_BUTTON_HIT,
+    height: NAV_BUTTON_HIT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+  },
+  navButtonLeft: {
+    left: 8,
+  },
+  navButtonRight: {
+    right: 8,
+  },
+});
