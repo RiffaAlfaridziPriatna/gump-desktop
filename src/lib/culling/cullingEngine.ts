@@ -888,6 +888,9 @@ export const cullingEngine = {
       });
     }
     await persistAlbum(albumId);
+    // Persist the photo row (star/selection) — persistAlbum defaults to
+    // includePhotos: false, so without this the DB keeps the previous rating.
+    syncPhotoFromStore(albumId, photoId);
     const photo = getPhotoById(albumId, photoId);
     if (!photo) {
       throw new Error('Photo analysis not found');

@@ -2,7 +2,7 @@ import {FaceStatusTooltip, type KeyFaceTooltipAnchor} from '@components/culling/
 import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
 import {PhotoDetailImageViewer} from '@components/culling/PhotoDetailImageViewer';
 import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
-import {useCulledAlbumPhotosState, useCulledAlbumStore} from '@context/culledAlbum';
+import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
@@ -159,21 +159,11 @@ export default function CulledAlbumPhotoDetailScreen({
     {albumId},
   );
   const {isMobileLayout, screenPaddingHorizontal} = useLayout();
-  const albumPhotos = useCulledAlbumPhotosState(albumId);
-  const photo = useMemo(
-    () => albumPhotos.find(entry => entry.photoId === photoId),
-    [albumPhotos, photoId],
-  );
-
-  const [analysis, setAnalysis] = useState(() =>
-    photo ? toCullingPhoto(photo) : null,
-  );
-
-  useEffect(() => {
-    if (photo) {
-      setAnalysis(toCullingPhoto(photo));
-    }
-  }, [photo]);
+  // Live per-photo subscription (same path as CulledAlbumPhotoCard) so star /
+  // selection edits from the album grid stay in sync after in-place store updates.
+  const photo = useCulledAlbumPhoto(albumId, photoId);
+  const analysis =
+    photo?.analysisStatus === 'analyzed' ? toCullingPhoto(photo) : null;
   const [zoomFaceIndex, setZoomFaceIndex] = useState<number | null>(() =>
     typeof initialFaceIndex === 'number' ? initialFaceIndex : null,
   );
@@ -333,10 +323,9 @@ export default function CulledAlbumPhotoDetailScreen({
       return;
     }
 
-    const updated = await cullingEngine.updateSelection(albumId, photoId, {
+    await cullingEngine.updateSelection(albumId, photoId, {
       selected: !analysis.selected,
     });
-    setAnalysis(current => (current ? {...current, ...updated} : current));
   }
 
   async function updateStarRating(starIndex: number) {
@@ -346,12 +335,7 @@ export default function CulledAlbumPhotoDetailScreen({
 
     const targetRating = starIndex + 1;
     const nextRating = starRating === targetRating ? 0 : targetRating;
-    const updated = await cullingEngine.updateStarRating(
-      albumId,
-      photoId,
-      nextRating,
-    );
-    setAnalysis(current => (current ? {...current, ...updated} : current));
+    await cullingEngine.updateStarRating(albumId, photoId, nextRating);
   }
 
   const handleKeyFacePress = useCallback((index: number) => {
