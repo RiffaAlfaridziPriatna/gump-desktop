@@ -14,7 +14,7 @@ import {
 import { colors } from '@lib/ui/colors';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import CircleBlue from '../../assets/images/upload/blue_circle.svg';
 import HalfCircle from '../../assets/images/upload/half_circle.svg';
 import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
@@ -31,6 +31,11 @@ type ApplyLookModalProps = {
 const SCROLL_OVERFLOW_EPS = 1;
 /** Fallback until title overlay reports its laid-out height. */
 const TITLE_OVERLAY_FALLBACK_HEIGHT = 98;
+/**
+ * Keep overlays clear of the Windows persistent scrollbar track.
+ * RNW draws the indicator inside the ScrollView's right edge.
+ */
+const SCROLLBAR_GUTTER = 14;
 
 /** Stacking: scroll (0) < title (1) < top decoration (2). */
 const Z_SCROLL = 0;
@@ -47,22 +52,39 @@ function BottomDecor() {
   );
 }
 
-/** Top shapes above the title band so white title bg doesn't clip them. */
-function TopDecor() {
+/**
+ * Top shapes above the title band so white title bg doesn't clip them.
+ * No absoluteFill wrapper — that would paint over the scrollbar track.
+ */
+function TopDecor({ rightInset }: { rightInset: number }) {
   return (
-    <View style={styles.topDecorLayer} pointerEvents="none">
-      <HalfCircle style={styles.halfCircleDecor} width={72} />
+    <>
+      <HalfCircle
+        style={[styles.halfCircleDecor, styles.topDecorItem]}
+        width={72}
+        pointerEvents="none"
+      />
       <QuarterCircleOrange
-        style={styles.quarterOrangeDecor}
+        style={[
+          styles.quarterOrangeDecor,
+          styles.topDecorItem,
+          {right: rightInset},
+        ]}
         width={98}
         height={98}
+        pointerEvents="none"
       />
       <CircleLightBlue
-        style={styles.circleLightBlueDecor}
+        style={[
+          styles.circleLightBlueDecor,
+          styles.topDecorItem,
+          {right: rightInset},
+        ]}
         width={36}
         height={36}
+        pointerEvents="none"
       />
-    </View>
+    </>
   );
 }
 
@@ -144,6 +166,10 @@ export function ApplyLookModal({
   }, [selectedPhotos, visible]);
 
   const intensityDisabled = lookId === 'original';
+
+  // Persistent scrollbar only on Windows; macOS overlay scrollbars need no gutter.
+  const scrollbarGutter =
+    Platform.OS === 'windows' && canScroll ? SCROLLBAR_GUTTER : 0;
 
   const handleIntensityDragStart = useCallback(() => {
     setIntensityScrollAllowed(false);
@@ -319,7 +345,7 @@ export function ApplyLookModal({
         </ScrollView>
 
         <View
-          style={styles.titleOverlay}
+          style={[styles.titleOverlay, {right: scrollbarGutter}]}
           pointerEvents="none"
           onLayout={event => {
             const next = Math.ceil(event.nativeEvent.layout.height);
@@ -330,7 +356,7 @@ export function ApplyLookModal({
           <Text style={styles.title}>Apply Look</Text>
         </View>
       </View>
-      <TopDecor />
+      <TopDecor rightInset={scrollbarGutter} />
     </Modal>
   );
 }
@@ -371,6 +397,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
+    // `right` set at render: Windows gutter when scrollable, else 0 (macOS).
     right: 0,
     zIndex: Z_TITLE,
     backgroundColor: colors.white,
@@ -387,8 +414,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '700',
   },
-  topDecorLayer: {
-    ...StyleSheet.absoluteFillObject,
+  topDecorItem: {
     zIndex: Z_TOP_DECOR,
   },
   previewContainer: {
