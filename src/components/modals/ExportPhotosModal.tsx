@@ -25,6 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
+import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
 import IconFolder from '../../assets/images/icon_folder.svg';
 import IconFolderZip from '../../assets/images/icon_folder_zip.svg';
 import IconLock from '../../assets/images/icon_lock.svg';
@@ -63,6 +64,8 @@ function FormatExportDropdown({
 }: FormatExportDropdownProps) {
   const selectedLabel =
     EXPORT_FORMAT_OPTIONS.find(option => option.id === value)?.label ?? 'ZIP';
+  // Swap icons instead of rotate — Windows misplaces transformed SVG views.
+  const ChevronIcon = open ? IconChevronUp : IconChevronDown;
 
   return (
     <View style={styles.formatSection}>
@@ -81,13 +84,7 @@ function FormatExportDropdown({
             accessibilityState={{expanded: open}}
             accessibilityLabel={`Export format ${selectedLabel}`}>
             <Text style={styles.formatValueText}>{selectedLabel}</Text>
-            <View
-              style={[
-                styles.formatChevron,
-                open && styles.formatChevronOpen,
-              ]}>
-              <IconChevronDown width={20} height={20} color={colors.textDark} />
-            </View>
+            <ChevronIcon width={20} height={20} color={colors.textDark} />
           </TouchableOpacity>
         </View>
       </View>
@@ -794,12 +791,6 @@ const styles = StyleSheet.create({
     ...sansBoldStyle,
     fontSize: 16,
     color: colors.textDark,
-  },
-  formatChevron: {
-    transform: [{rotate: '0deg'}],
-  },
-  formatChevronOpen: {
-    transform: [{rotate: '180deg'}],
   },
   // Pull up by formatRow's bottom padding (12) so the 4px gap is from the
   // ZIP trigger, not from the outer row edge.
