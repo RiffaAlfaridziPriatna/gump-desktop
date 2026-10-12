@@ -292,8 +292,11 @@ export function PhotoDetailImageViewer({
   const canRenderOverlays = imageDecoded && !loadFailed && imageLayout !== null;
   const showLoadingOverlay = !imageDecoded && !loadFailed;
 
+  // key forces a remount when the photo changes. Windows Image often keeps
+  // the previous bitmap if only source.uri updates on the same native view.
   const fallbackImage = (
     <Image
+      key={photoId}
       source={{uri}}
       resizeMode="contain"
       style={StyleSheet.absoluteFill}
@@ -313,6 +316,7 @@ export function PhotoDetailImageViewer({
       <View style={styles.imageFrame}>
         {imageLayout ? (
           <Image
+            key={photoId}
             source={{uri}}
             resizeMode="contain"
             style={{

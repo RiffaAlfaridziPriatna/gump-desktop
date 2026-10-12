@@ -238,7 +238,10 @@ export default function CulledAlbumPhotoDetailScreen({
   const photoThumbnailUri = photo?.file.thumbnailUri;
   const photoDetailUri = photo?.file.detailUri;
 
-  useEffect(() => {
+  // Layout phase so uri and photoId stay in sync before paint. A deferred
+  // useEffect left Windows Image one frame on the previous uri, and its
+  // native Image often never swapped after that.
+  useLayoutEffect(() => {
     if (!photoFileUri) {
       setUri('');
       return;
