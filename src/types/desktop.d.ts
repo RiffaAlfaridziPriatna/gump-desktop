@@ -16,7 +16,15 @@ declare module 'react-native' {
     onMouseEnter?: (event: unknown) => void;
     onMouseLeave?: (event: unknown) => void;
     onKeyDown?: (event: unknown) => void;
-    keyDownEvents?: Array<{key?: string; code?: string}>;
+    keyDownEvents?: Array<{
+      key?: string;
+      code?: string;
+      handledEventPhase?: number;
+    }>;
+  }
+
+  interface PressableProps {
+    focusable?: boolean;
   }
 
   interface TextInputProps {

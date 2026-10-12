@@ -75,9 +75,15 @@ function matchesPhotoNavKey(
   return key === 'ArrowRight';
 }
 
+/** Bubbling (3) so Windows marks ArrowLeft/Right handled on this focused view. */
+const HANDLED_BUBBLING = 3;
+
 const photoNavKeyDownEvents =
   Platform.OS === 'windows'
-    ? [{code: 'ArrowLeft'}, {code: 'ArrowRight'}]
+    ? [
+        {code: 'ArrowLeft', handledEventPhase: HANDLED_BUBBLING},
+        {code: 'ArrowRight', handledEventPhase: HANDLED_BUBBLING},
+      ]
     : [{key: 'ArrowLeft'}, {key: 'ArrowRight'}];
 
 export function PhotoDetailNavigationFrame({
@@ -93,6 +99,18 @@ export function PhotoDetailNavigationFrame({
   const [nextHovered, setNextHovered] = useState(false);
   const focusRef = useRef<View>(null);
   const isFocused = useIsFocused();
+  const canGoPrevRef = useRef(canGoPrev);
+  const canGoNextRef = useRef(canGoNext);
+  const onPrevRef = useRef(onPrev);
+  const onNextRef = useRef(onNext);
+  canGoPrevRef.current = canGoPrev;
+  canGoNextRef.current = canGoNext;
+  onPrevRef.current = onPrev;
+  onNextRef.current = onNext;
+
+  const claimKeyboardFocus = useCallback(() => {
+    focusDesktopView(focusRef.current);
+  }, []);
 
   const handleKeyDown = useCallback(
     (event: unknown) => {
@@ -101,27 +119,36 @@ export function PhotoDetailNavigationFrame({
       }
 
       const nativeEvent = (event as PhotoNavKeyEvent).nativeEvent;
-      if (matchesPhotoNavKey(nativeEvent, 'prev') && canGoPrev) {
-        onPrev();
+      if (matchesPhotoNavKey(nativeEvent, 'prev') && canGoPrevRef.current) {
+        onPrevRef.current();
         return;
       }
-      if (matchesPhotoNavKey(nativeEvent, 'next') && canGoNext) {
-        onNext();
+      if (matchesPhotoNavKey(nativeEvent, 'next') && canGoNextRef.current) {
+        onNextRef.current();
       }
     },
-    [canGoNext, canGoPrev, isFocused, onNext, onPrev],
+    [isFocused],
   );
+
+  const handlePrevPress = useCallback(() => {
+    onPrev();
+    // Windows moves focus to the Pressable on click; reclaim so arrows keep working.
+    requestAnimationFrame(claimKeyboardFocus);
+  }, [claimKeyboardFocus, onPrev]);
+
+  const handleNextPress = useCallback(() => {
+    onNext();
+    requestAnimationFrame(claimKeyboardFocus);
+  }, [claimKeyboardFocus, onNext]);
 
   useFocusEffect(
     useCallback(() => {
       if (!isDesktopPlatform) {
         return;
       }
-      const frameId = requestAnimationFrame(() => {
-        focusDesktopView(focusRef.current);
-      });
+      const frameId = requestAnimationFrame(claimKeyboardFocus);
       return () => cancelAnimationFrame(frameId);
-    }, []),
+    }, [claimKeyboardFocus]),
   );
 
   const showChevrons = showHoverChevrons && photoHovered;
@@ -134,7 +161,12 @@ export function PhotoDetailNavigationFrame({
       focusable
       enableFocusRing={false}
       onMouseEnter={
-        showHoverChevrons ? () => setPhotoHovered(true) : undefined
+        showHoverChevrons
+          ? () => {
+              setPhotoHovered(true);
+              claimKeyboardFocus();
+            }
+          : undefined
       }
       onMouseLeave={
         showHoverChevrons
@@ -155,7 +187,10 @@ export function PhotoDetailNavigationFrame({
           {canGoPrev ? (
             <Pressable
               style={[styles.navButton, styles.navButtonLeft]}
-              onPress={onPrev}
+              onPress={handlePrevPress}
+              // Keep keyboard focus on the frame — Windows otherwise routes
+              // ArrowLeft/Right only to the focused Pressable.
+              focusable={false}
               onHoverIn={() => setPrevHovered(true)}
               onHoverOut={() => setPrevHovered(false)}
               accessibilityRole="button"
@@ -172,7 +207,8 @@ export function PhotoDetailNavigationFrame({
           {canGoNext ? (
             <Pressable
               style={[styles.navButton, styles.navButtonRight]}
-              onPress={onNext}
+              onPress={handleNextPress}
+              focusable={false}
               onHoverIn={() => setNextHovered(true)}
               onHoverOut={() => setNextHovered(false)}
               accessibilityRole="button"
