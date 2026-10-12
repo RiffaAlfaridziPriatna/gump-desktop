@@ -60,6 +60,17 @@ const EYE_OPEN_CONFIDENCE_THRESHOLD = 70;
 const EYE_CLOSED_CONFIDENCE_THRESHOLD = 88;
 const FOCUS_GOOD_THRESHOLD = 65;
 const FOCUS_SOFT_THRESHOLD = 40;
+/** Match native large-frontal OCEC three-way remap (normalized face area). */
+const LARGE_FRONTAL_FACE_AREA = 0.008;
+const LARGE_FRONTAL_OPEN_MIN = 0.92;
+const LARGE_FRONTAL_OPEN_AVG = 0.92;
+const LARGE_FRONTAL_CLOSED_MAX = 0.18;
+const LARGE_FRONTAL_CLOSED_MIN = 0.12;
+const LARGE_FRONTAL_SOFT_CLOSED_MIN = 0.55;
+const LARGE_FRONTAL_SOFT_CLOSED_MIN_FLOOR = 0.45;
+const LARGE_FRONTAL_SOFT_CLOSED_AVG = 0.7;
+const LARGE_FRONTAL_SOFT_CLOSED_MAX = 0.88;
+const LARGE_FRONTAL_SOFT_CLOSED_ASYM = 0.28;
 
 export {
   faceBoxesAreSpatiallyRedundant,
@@ -79,6 +90,7 @@ export type EyesOpenSignal = {
 export function classifyEyeStatus(
   eyesOpen?: EyesOpenSignal,
   _pose?: {pitch?: number},
+  faceArea?: number,
 ): APIResponse.CullingEyeStatus {
   if (!eyesOpen || eyesOpen.confidence === undefined) {
     return 'partial';
@@ -92,6 +104,45 @@ export function classifyEyeStatus(
     Number.isFinite(left) &&
     typeof right === 'number' &&
     Number.isFinite(right);
+  const largeFrontal =
+    typeof faceArea === 'number' &&
+    Number.isFinite(faceArea) &&
+    faceArea >= LARGE_FRONTAL_FACE_AREA &&
+    hasProbs;
+
+  if (largeFrontal) {
+    const maxOpen = Math.max(left!, right!);
+    const minOpen = Math.min(left!, right!);
+    const avgOpen = (left! + right!) * 0.5;
+    if (
+      minOpen >= LARGE_FRONTAL_OPEN_MIN &&
+      avgOpen >= LARGE_FRONTAL_OPEN_AVG
+    ) {
+      return 'open';
+    }
+    const hardClosed =
+      maxOpen <= LARGE_FRONTAL_CLOSED_MAX &&
+      minOpen <= LARGE_FRONTAL_CLOSED_MIN;
+    const asymOpen = maxOpen - minOpen;
+    const softClosed =
+      minOpen >= LARGE_FRONTAL_SOFT_CLOSED_MIN_FLOOR &&
+      minOpen <= LARGE_FRONTAL_SOFT_CLOSED_MIN &&
+      avgOpen <= LARGE_FRONTAL_SOFT_CLOSED_AVG &&
+      maxOpen <= LARGE_FRONTAL_SOFT_CLOSED_MAX &&
+      asymOpen >= LARGE_FRONTAL_SOFT_CLOSED_ASYM;
+    if (hardClosed || softClosed) {
+      if (
+        !eyesOpen.value ||
+        confidence >= EYE_CLOSED_CONFIDENCE_THRESHOLD ||
+        softClosed
+      ) {
+        return 'closed';
+      }
+      return 'partial';
+    }
+    // Mild squint / mid-band → partial.
+    return 'partial';
+  }
 
   if (hasProbs) {
     const maxOpen = Math.max(left!, right!);
