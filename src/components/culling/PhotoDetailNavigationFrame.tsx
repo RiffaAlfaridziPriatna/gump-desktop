@@ -5,6 +5,7 @@ import {useCallback, useEffect, useRef, useState, type ReactNode} from 'react';
 import {
   DeviceEventEmitter,
   findNodeHandle,
+  NativeModules,
   Platform,
   StyleSheet,
   UIManager,
@@ -21,16 +22,16 @@ const isDesktopPlatform =
   Platform.OS === 'macos' || Platform.OS === 'windows';
 
 /**
- * Focus a desktop View so keyDownEvents are delivered (macOS).
+ * Focus a desktop View so keyDownEvents are delivered.
  * Prefer UIManager.focus over host `.focus()` — the latter routes through
  * TextInputState and can later dispatch `blur` to a stale react tag, crashing
  * macOS with "Bridge module (null) does not conform to RCTBridgeModule".
  *
- * Windows New Architecture does not expose UIManager.focus; arrow keys there
- * come from the GumpKeyboard native hook instead of View onKeyDown.
+ * Windows New Architecture does not register UIManager.focus (iOS-only). Use
+ * the public Fabric command path instead — no react-native deep imports.
  */
 function focusDesktopView(node: View | null) {
-  if (!node || Platform.OS !== 'macos') {
+  if (!node || !isDesktopPlatform) {
     return;
   }
 
@@ -38,6 +39,16 @@ function focusDesktopView(node: View | null) {
   if (reactTag == null) {
     return;
   }
+
+  if (Platform.OS === 'windows') {
+    try {
+      UIManager.dispatchViewManagerCommand(reactTag, 'focus', []);
+    } catch {
+      // GumpKeyboard native hook is the fallback for arrow keys.
+    }
+    return;
+  }
+
   const focus = (
     UIManager as typeof UIManager & {focus?: (tag: number) => void}
   ).focus;
@@ -156,12 +167,15 @@ export function PhotoDetailNavigationFrame({
     }, [claimKeyboardFocus]),
   );
 
-  // Windows New Arch: View onKeyDown requires focus, but UIManager.focus is
-  // unavailable. GumpKeyboard emits arrow keys while our HWND is foreground.
+  // Windows fallback: GumpKeyboard emits arrow keys while our HWND is
+  // foreground. Touching the native module forces turbo-module Initialize so
+  // the hook can EmitJSEvent (lazy modules stay null until first access).
   useEffect(() => {
     if (Platform.OS !== 'windows' || !isFocused) {
       return;
     }
+
+    void NativeModules.GumpKeyboard;
 
     const subscription = DeviceEventEmitter.addListener(
       'gumpKeyDown',

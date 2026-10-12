@@ -16,7 +16,14 @@ bool IsTargetWindowForeground() noexcept {
   if (!foreground) {
     return false;
   }
-  return foreground == g_targetHwnd || IsChild(g_targetHwnd, foreground);
+  if (foreground == g_targetHwnd || IsChild(g_targetHwnd, foreground) ||
+      IsChild(foreground, g_targetHwnd)) {
+    return true;
+  }
+  // WinUI islands often surface a related root HWND as foreground.
+  const HWND foregroundRoot = GetAncestor(foreground, GA_ROOT);
+  const HWND targetRoot = GetAncestor(g_targetHwnd, GA_ROOT);
+  return foregroundRoot != nullptr && foregroundRoot == targetRoot;
 }
 
 void EmitIfArrowKey(DWORD vkCode) noexcept {
