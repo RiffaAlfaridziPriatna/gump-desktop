@@ -124,6 +124,7 @@
     <ClInclude Include="GumpFilePicker.h" />
     <ClInclude Include="GumpLocalStorage.h" />
     <ClInclude Include="GumpUpdater.h" />
+    <ClInclude Include="GumpKeyboard.h" />
     <ClInclude Include="GumpUpdateMenu.h" />
     <ClInclude Include="GumpVersion.h" />
     <ClInclude Include="..\..\cpp\face-detection\ScrfdFaceDetector.h" />
@@ -144,6 +145,7 @@
     <ClCompile Include="GumpFilePicker.cpp" />
     <ClCompile Include="GumpLocalStorage.cpp" />
     <ClCompile Include="GumpUpdater.cpp" />
+    <ClCompile Include="GumpKeyboard.cpp" />
     <ClCompile Include="GumpUpdateMenu.cpp" />
     <ClCompile Include="..\..\cpp\face-detection\ScrfdFaceDetector.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
