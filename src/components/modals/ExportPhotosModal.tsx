@@ -65,23 +65,37 @@ function FormatExportDropdown({
     EXPORT_FORMAT_OPTIONS.find(option => option.id === value)?.label ?? 'ZIP';
 
   return (
-    <View style={styles.formatDropdownRoot}>
-      <Pressable
-        onPress={onToggle}
-        style={styles.formatValue}
-        accessibilityRole="button"
-        accessibilityState={{expanded: open}}
-        accessibilityLabel={`Export format ${selectedLabel}`}>
-        <Text style={styles.formatValueText}>{selectedLabel}</Text>
-        <View
-          style={[
-            styles.formatChevron,
-            open && styles.formatChevronOpen,
-          ]}>
-          <IconChevronDown width={24} height={24} color={colors.textMuted} />
+    <View style={styles.formatSection}>
+      <View style={styles.formatRow}>
+        <Text style={styles.formatLabel}>Format</Text>
+        {/*
+          Border lives on a non-pressable shell. On Windows, pressable focus
+          chrome stacked on the same view as borderRadius draws a double outline.
+        */}
+        <View style={styles.formatValueShell}>
+          <TouchableOpacity
+            onPress={onToggle}
+            style={styles.formatValue}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityState={{expanded: open}}
+            accessibilityLabel={`Export format ${selectedLabel}`}>
+            <Text style={styles.formatValueText}>{selectedLabel}</Text>
+            <View
+              style={[
+                styles.formatChevron,
+                open && styles.formatChevronOpen,
+              ]}>
+              <IconChevronDown width={20} height={20} color={colors.textDark} />
+            </View>
+          </TouchableOpacity>
         </View>
-      </Pressable>
+      </View>
 
+      {/*
+        Menu is a sibling of the bordered row (not a child). Windows clips
+        absolute children of borderRadius views; macOS often does not.
+      */}
       {open ? (
         <View style={styles.formatMenu} accessibilityRole="menu">
           {EXPORT_FORMAT_OPTIONS.map((option, index) => {
@@ -476,15 +490,12 @@ export function ExportPhotosModal({
               </View>
             </View>
 
-            <View style={styles.formatRow}>
-              <Text style={styles.formatLabel}>Format</Text>
-              <FormatExportDropdown
-                value={format}
-                open={formatMenuOpen}
-                onToggle={handleToggleFormatMenu}
-                onSelect={handleSelectFormat}
-              />
-            </View>
+            <FormatExportDropdown
+              value={format}
+              open={formatMenuOpen}
+              onToggle={handleToggleFormatMenu}
+              onSelect={handleSelectFormat}
+            />
           </View>
 
           <TouchableOpacity
@@ -668,6 +679,7 @@ const styles = StyleSheet.create({
   },
   exportOptions: {
     gap: 16,
+    zIndex: 2,
   },
   qualityCard: {
     borderWidth: 1,
@@ -743,6 +755,10 @@ const styles = StyleSheet.create({
   qualityPaidWrapper: {
     gap: 8,
   },
+  formatSection: {
+    position: 'relative',
+    zIndex: 3,
+  },
   formatRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -752,32 +768,30 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    zIndex: 2,
   },
   formatLabel: {
     fontFamily: fonts.sans,
     fontSize: 14,
     color: colors.textDark,
   },
-  formatDropdownRoot: {
-    position: 'relative',
-    zIndex: 3,
+  formatValueShell: {
+    borderWidth: 1,
+    borderColor: colors.textDark,
+    borderRadius: 22,
+    backgroundColor: colors.white,
+    overflow: 'hidden',
   },
   formatValue: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 6,
-    borderWidth: 1,
-    borderColor: colors.textDark,
-    borderRadius: 22,
     paddingHorizontal: 16,
     paddingVertical: 8,
     width: 100,
-    backgroundColor: colors.white,
   },
   formatValueText: {
-    fontFamily: fonts.sans,
+    ...sansBoldStyle,
     fontSize: 16,
     color: colors.textDark,
   },
@@ -787,11 +801,13 @@ const styles = StyleSheet.create({
   formatChevronOpen: {
     transform: [{rotate: '180deg'}],
   },
+  // Pull up by formatRow's bottom padding (12) so the 4px gap is from the
+  // ZIP trigger, not from the outer row edge.
   formatMenu: {
     position: 'absolute',
     top: '100%',
-    right: 0,
-    marginTop: 4,
+    right: 16,
+    marginTop: -8,
     minWidth: 100,
     backgroundColor: colors.white,
     borderWidth: 1,
