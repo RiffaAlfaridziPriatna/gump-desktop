@@ -44,7 +44,7 @@ std::string ClassifyFocusLevel(float sharpness) {
   return "blurred";
 }
 
-std::string ClassifyEyeStatus(const EyesOpenResult &eyesOpen) {
+std::string ClassifyEyeStatus(const EyesOpenResult &eyesOpen, float faceArea) {
   if (!IsFiniteNumber(eyesOpen.confidence)) {
     return "partial";
   }
@@ -53,6 +53,34 @@ std::string ClassifyEyeStatus(const EyesOpenResult &eyesOpen) {
   const float left = eyesOpen.leftProbability;
   const float right = eyesOpen.rightProbability;
   const bool hasProbs = IsFiniteNumber(left) && IsFiniteNumber(right);
+  const bool largeFrontal =
+      faceArea >= kLargeFrontalFaceArea && hasProbs;
+
+  if (largeFrontal) {
+    const float maxOpen = std::max(left, right);
+    const float minOpen = std::min(left, right);
+    const float avgOpen = (left + right) * 0.5f;
+    if (minOpen >= kLargeFrontalOpenMin && avgOpen >= kLargeFrontalOpenAvg) {
+      return "open";
+    }
+    const bool hardClosed =
+        maxOpen <= kLargeFrontalClosedMax && minOpen <= kLargeFrontalClosedMin;
+    const float asymOpen = maxOpen - minOpen;
+    const bool softClosed = minOpen >= kLargeFrontalSoftClosedMinFloor &&
+                            minOpen <= kLargeFrontalSoftClosedMin &&
+                            avgOpen <= kLargeFrontalSoftClosedAvg &&
+                            maxOpen <= kLargeFrontalSoftClosedMax &&
+                            asymOpen >= kLargeFrontalSoftClosedAsym;
+    if (hardClosed || softClosed) {
+      if (!eyesOpen.value || confidence >= kEyeClosedConfidenceThreshold || softClosed) {
+        return "closed";
+      }
+      return "partial";
+    }
+    // Mild squint / mid-band → partial.
+    (void)confidence;
+    return "partial";
+  }
 
   if (hasProbs) {
     const float maxOpen = std::max(left, right);
@@ -174,7 +202,9 @@ void ApplyCrowdPartialEyeBudget(std::vector<FaceResult> &faces, int target) {
 void ApplyProductEyeAndFocusLabels(std::vector<FaceResult> &faces) {
   ApplyCrowdPartialEyeBudget(faces, kCrowdPartialTarget);
   for (auto &face : faces) {
-    face.eyeStatus = ClassifyEyeStatus(face.eyesOpen);
+    const float faceArea =
+        std::max(0.0f, face.width) * std::max(0.0f, face.height);
+    face.eyeStatus = ClassifyEyeStatus(face.eyesOpen, faceArea);
     face.focusLevel = ClassifyFocusLevel(face.sharpness);
   }
 }

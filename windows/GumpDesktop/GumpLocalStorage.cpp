@@ -772,7 +772,7 @@ FaceDetection::FaceDetectionPipeline &SharedFacePipeline() {
     for (const auto &base : {moduleDir / L"Assets" / L"Models", moduleDir / L"Models"}) {
       const auto scrfd = base / L"face_detection_scrfd_2.5g_bnkps.onnx";
       const auto ocec = base / L"eye_state_ocec_s.onnx";
-      // Landmark106 EAR is available but OFF by default (see phase23 eval).
+      // Landmark106 EAR stays OFF — Contour EAR does not beat OCEC size-aware bars.
       if (std::filesystem::exists(scrfd) && std::filesystem::exists(ocec)) {
         config.scrfdModelPath = scrfd.string();
         config.ocecModelPath = ocec.string();
@@ -823,7 +823,9 @@ SoftwareBitmap LoadSoftwareBitmapScaled(
       targetSize.height != decoder.PixelHeight()) {
     transform.ScaledWidth(targetSize.width);
     transform.ScaledHeight(targetSize.height);
-    transform.InterpolationMode(BitmapInterpolationMode::Linear);
+    // Fant matches ImageIO thumbnail quality more closely than Linear and
+    // only runs once per analysis buffer (concurrency 1 on Windows).
+    transform.InterpolationMode(BitmapInterpolationMode::Fant);
   }
 
   return decoder
@@ -927,7 +929,8 @@ SoftwareBitmap LoadSoftwareBitmapRegion(
   if (scaled.width != bounds.Width || scaled.height != bounds.Height) {
     transform.ScaledWidth(scaled.width);
     transform.ScaledHeight(scaled.height);
-    transform.InterpolationMode(BitmapInterpolationMode::Linear);
+    // Same Fant path as analysis decode for hi-res eye/focus crops.
+    transform.InterpolationMode(BitmapInterpolationMode::Fant);
   }
 
   return decoder

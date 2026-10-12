@@ -105,6 +105,110 @@ describe('classifyEyeStatus', () => {
       }),
     ).toBe('closed');
   });
+
+  it('labels large frontal shut+glasses glare as closed', () => {
+    expect(
+      classifyEyeStatus(
+        {
+          value: false,
+          confidence: 92,
+          leftProbability: 0.49,
+          rightProbability: 0.83,
+        },
+        undefined,
+        0.022,
+      ),
+    ).toBe('closed');
+  });
+
+  it('does not soft-close speaking/side-gaze asymmetry below glare floor', () => {
+    // TR5_1080-style speaker asymmetry — open/looking, not shut+glare.
+    expect(
+      classifyEyeStatus(
+        {
+          value: true,
+          confidence: 72,
+          leftProbability: 0.401,
+          rightProbability: 0.793,
+        },
+        undefined,
+        0.021,
+      ),
+    ).toBe('partial');
+    // DSC04792 side-gaze — one SCRFD eye crop collapsed.
+    expect(
+      classifyEyeStatus(
+        {
+          value: true,
+          confidence: 72,
+          leftProbability: 0.779,
+          rightProbability: 0.005,
+        },
+        undefined,
+        0.015,
+      ),
+    ).toBe('partial');
+  });
+
+  it('does not soft-close bilateral mid-band without asymmetry', () => {
+    expect(
+      classifyEyeStatus(
+        {
+          value: true,
+          confidence: 72,
+          leftProbability: 0.48,
+          rightProbability: 0.52,
+        },
+        undefined,
+        0.022,
+      ),
+    ).toBe('partial');
+  });
+
+  it('keeps clear bilateral open on large frontal faces', () => {
+    expect(
+      classifyEyeStatus(
+        {
+          value: true,
+          confidence: 90,
+          leftProbability: 0.95,
+          rightProbability: 0.94,
+        },
+        undefined,
+        0.022,
+      ),
+    ).toBe('open');
+  });
+
+  it('labels large frontal bilateral shut as closed', () => {
+    expect(
+      classifyEyeStatus(
+        {
+          value: false,
+          confidence: 92,
+          leftProbability: 0.05,
+          rightProbability: 0.08,
+        },
+        undefined,
+        0.022,
+      ),
+    ).toBe('closed');
+  });
+
+  it('labels large frontal mild squint below open bar as partial', () => {
+    expect(
+      classifyEyeStatus(
+        {
+          value: true,
+          confidence: 72,
+          leftProbability: 0.908,
+          rightProbability: 0.935,
+        },
+        undefined,
+        0.017,
+      ),
+    ).toBe('partial');
+  });
 });
 
 describe('classifyFocus', () => {

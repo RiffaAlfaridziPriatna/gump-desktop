@@ -60,8 +60,8 @@ struct PipelineConfig {
   std::string ocecModelPath;
   // Optional InsightFace 2d106det — EAR for medium+ faces; OCEC remains fallback.
   std::string landmark106ModelPath;
-  // Prefer EAR when face area >= this fraction of the frame (else OCEC / open-bias).
-  float earMinFaceArea{0.0018f};
+  // Prefer EAR on Key Face–sized fronts only (else OCEC / open-bias). Heat-gated.
+  float earMinFaceArea{0.008f};
   // Production defaults favor precision (flowers/ties/hands are common SCRFD FPs).
   // Harness can still pass --score 0.12 for Vision-floor recall experiments.
   float scoreThreshold{0.50f};
