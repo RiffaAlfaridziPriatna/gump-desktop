@@ -21,27 +21,16 @@ const isDesktopPlatform =
   Platform.OS === 'macos' || Platform.OS === 'windows';
 
 /**
- * Focus a desktop View so keyDownEvents are delivered.
+ * Focus a desktop View so keyDownEvents are delivered (macOS).
  * Prefer UIManager.focus over host `.focus()` — the latter routes through
  * TextInputState and can later dispatch `blur` to a stale react tag, crashing
  * macOS with "Bridge module (null) does not conform to RCTBridgeModule".
  *
- * On Windows New Architecture, UIManager.focus is not registered (iOS-only in
- * BridgelessUIManager), so we dispatch Fabric's "focus" command instead.
+ * Windows New Architecture does not expose UIManager.focus; arrow keys there
+ * come from the GumpKeyboard native hook instead of View onKeyDown.
  */
 function focusDesktopView(node: View | null) {
-  if (!node || !isDesktopPlatform) {
-    return;
-  }
-
-  if (Platform.OS === 'windows') {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const {dispatchCommand} = require('react-native/Libraries/ReactNative/RendererProxy');
-      dispatchCommand(node, 'focus', []);
-    } catch {
-      // Fall through — Windows also uses the GumpKeyboard native hook.
-    }
+  if (!node || Platform.OS !== 'macos') {
     return;
   }
 
