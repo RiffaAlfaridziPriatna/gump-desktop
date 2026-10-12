@@ -1,8 +1,9 @@
 import {Pressable} from '@components/ui';
 import {colors} from '@lib/ui/colors';
 import {useFocusEffect, useIsFocused} from '@react-navigation/native';
-import {useCallback, useRef, useState, type ReactNode} from 'react';
+import {useCallback, useEffect, useRef, useState, type ReactNode} from 'react';
 import {
+  DeviceEventEmitter,
   findNodeHandle,
   Platform,
   StyleSheet,
@@ -24,11 +25,26 @@ const isDesktopPlatform =
  * Prefer UIManager.focus over host `.focus()` — the latter routes through
  * TextInputState and can later dispatch `blur` to a stale react tag, crashing
  * macOS with "Bridge module (null) does not conform to RCTBridgeModule".
+ *
+ * On Windows New Architecture, UIManager.focus is not registered (iOS-only in
+ * BridgelessUIManager), so we dispatch Fabric's "focus" command instead.
  */
 function focusDesktopView(node: View | null) {
   if (!node || !isDesktopPlatform) {
     return;
   }
+
+  if (Platform.OS === 'windows') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const {dispatchCommand} = require('react-native/Libraries/ReactNative/RendererProxy');
+      dispatchCommand(node, 'focus', []);
+    } catch {
+      // Fall through — Windows also uses the GumpKeyboard native hook.
+    }
+    return;
+  }
+
   const reactTag = findNodeHandle(node);
   if (reactTag == null) {
     return;
@@ -150,6 +166,31 @@ export function PhotoDetailNavigationFrame({
       return () => cancelAnimationFrame(frameId);
     }, [claimKeyboardFocus]),
   );
+
+  // Windows New Arch: View onKeyDown requires focus, but UIManager.focus is
+  // unavailable. GumpKeyboard emits arrow keys while our HWND is foreground.
+  useEffect(() => {
+    if (Platform.OS !== 'windows' || !isFocused) {
+      return;
+    }
+
+    const subscription = DeviceEventEmitter.addListener(
+      'gumpKeyDown',
+      (event: {code?: string}) => {
+        if (event?.code === 'ArrowLeft' && canGoPrevRef.current) {
+          onPrevRef.current();
+          return;
+        }
+        if (event?.code === 'ArrowRight' && canGoNextRef.current) {
+          onNextRef.current();
+        }
+      },
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isFocused]);
 
   const showChevrons = showHoverChevrons && photoHovered;
 

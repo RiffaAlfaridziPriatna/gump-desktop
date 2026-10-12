@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "GumpDesktop.h"
+#include "GumpKeyboard.h"
 #include "GumpUpdateMenu.h"
 #include "GumpVersion.h"
 
@@ -514,6 +515,7 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
     if (const HWND hwnd = GetHwnd(appWindow)) {
       ApplyWindowIcons(hwnd, instance);
       ApplyInitialWindowPlacement(appWindow, hwnd);
+      GumpDesktop::SetKeyboardTargetHwnd(hwnd);
       GumpDesktop::GumpUpdateMenu::Bootstrap(hwnd);
     } else {
       appWindow.Resize({1000, 800});
