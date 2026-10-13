@@ -26,6 +26,13 @@ describe('analysisEngine', () => {
     expect(needsReanalysisForEngine('scrfd-ocec-6')).toBe(true);
     expect(needsReanalysisForEngine('scrfd-ocec-7')).toBe(true);
     expect(needsReanalysisForEngine('scrfd-ocec-14')).toBe(true);
+    expect(needsReanalysisForEngine('scrfd-ocec-15')).toBe(true);
+    expect(needsReanalysisForEngine('scrfd-ocec-16')).toBe(true);
+    expect(needsReanalysisForEngine('scrfd-ocec-17')).toBe(true);
+    expect(needsReanalysisForEngine('scrfd-ocec-18')).toBe(true);
+    expect(needsReanalysisForEngine('scrfd-ocec-19')).toBe(true);
+    expect(needsReanalysisForEngine('scrfd-ocec-20')).toBe(true);
+    expect(needsReanalysisForEngine('scrfd-ocec-21')).toBe(true);
     expect(needsReanalysisForEngine(SCRFD_OCEC_ENGINE_VERSION)).toBe(false);
   });
 });
