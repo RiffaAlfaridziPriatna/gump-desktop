@@ -89,7 +89,7 @@ export function makeCulledAlbumPhoto(
     serverUploadProgress: 0,
     analysisProgress: 100,
     analysisStatus: 'analyzed',
-    analysisEngineVersion: 'scrfd-ocec-15',
+    analysisEngineVersion: 'scrfd-ocec-22',
     faces: [],
     selected: false,
     starRating: 0,

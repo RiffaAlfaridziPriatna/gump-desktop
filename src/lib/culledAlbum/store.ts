@@ -3,6 +3,7 @@ import {container} from '@di/container';
 import {TOKENS} from '@di/tokens';
 import {IPhotoRepository} from '@/domain/repositories/IPhotoRepository';
 import {syncPhotosFromStoreAwait} from '@/application/syncPhotoRepository';
+import {needsReanalysisForEngine} from '@lib/culling/analysisEngine';
 import {createCullingPhotoId} from '@lib/culling/cullingPhotoId';
 import {reportError} from '@lib/observability/reportError';
 import {createStateStore} from '@lib/react/state';
@@ -1241,9 +1242,12 @@ export function queuePhotosForAnalysis(albumId: string): number {
       continue;
     }
     // Already-culled photos stay out of this pass so toast/progress reflect
-    // only newly queued work (e.g. 148 adds, not 148 + 178 prior).
+    // only newly queued work — unless the analysis engine version bumped
+    // (label/threshold changes require a real re-cull, e.g. glare closed).
     if (photo.analysisStatus === 'analyzed') {
-      continue;
+      if (!needsReanalysisForEngine(photo.analysisEngineVersion)) {
+        continue;
+      }
     }
     photo.analysisProgress = 0;
     photo.analysisStatus = 'pending';

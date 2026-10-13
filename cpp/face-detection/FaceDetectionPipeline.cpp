@@ -69,6 +69,16 @@ constexpr float kLargeFrontalSoftClosedMinFloor = 0.45f;
 constexpr float kLargeFrontalSoftClosedAvg = 0.70f;
 constexpr float kLargeFrontalSoftClosedMax = 0.88f;
 constexpr float kLargeFrontalSoftClosedAsym = 0.28f;
+// Deep vs mid glare (see FaceLabeling.h). Gap excludes TR5 speaker ~0.145/0.86.
+constexpr float kLargeFrontalGlareDeepMinMax = 0.10f;
+constexpr float kLargeFrontalGlareDeepMaxMin = 0.78f;
+constexpr float kLargeFrontalGlareDeepAvg = 0.55f;
+constexpr float kLargeFrontalGlareDeepAsym = 0.55f;
+constexpr float kLargeFrontalGlareMidMinFloor = 0.20f;
+constexpr float kLargeFrontalGlareMidMin = 0.50f;
+constexpr float kLargeFrontalGlareMidMaxMin = 0.88f;
+constexpr float kLargeFrontalGlareMidAvg = 0.72f;
+constexpr float kLargeFrontalGlareMidAsym = 0.35f;
 
 // Brightness is hard-coded on macOS; keep the same contract for TS.
 constexpr float kMacOsBrightnessPlaceholder = 60.0f;
@@ -928,10 +938,20 @@ void FillPhotometrics(
                             avgOpen <= kLargeFrontalSoftClosedAvg &&
                             maxOpen <= kLargeFrontalSoftClosedMax &&
                             asymOpen >= kLargeFrontalSoftClosedAsym;
+    const bool glareDeepClosed = minOpen <= kLargeFrontalGlareDeepMinMax &&
+                                 avgOpen <= kLargeFrontalGlareDeepAvg &&
+                                 maxOpen >= kLargeFrontalGlareDeepMaxMin &&
+                                 asymOpen >= kLargeFrontalGlareDeepAsym;
+    const bool glareMidClosed = minOpen >= kLargeFrontalGlareMidMinFloor &&
+                                minOpen <= kLargeFrontalGlareMidMin &&
+                                avgOpen <= kLargeFrontalGlareMidAvg &&
+                                maxOpen >= kLargeFrontalGlareMidMaxMin &&
+                                asymOpen >= kLargeFrontalGlareMidAsym;
+    const bool glareClosed = glareDeepClosed || glareMidClosed;
     if (minOpen >= kLargeFrontalOpenMin && avgOpen >= kLargeFrontalOpenAvg) {
       eyesOpen.value = true;
       eyesOpen.confidence = 90.0f;
-    } else if (hardClosed || softClosed) {
+    } else if (hardClosed || softClosed || glareClosed) {
       eyesOpen.value = false;
       eyesOpen.confidence = 92.0f;
     } else {
