@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -62,12 +63,54 @@ std::string ReadEnvVar(const char *name) {
 #endif
 }
 
+// RN Windows often launches the .exe without the parent CMD env. Prefer a
+// marker file under the OS app-data dir (always visible to the process).
+std::filesystem::path GumpDataDirectory() {
+#if defined(_WIN32)
+  const std::string localAppData = ReadEnvVar("LOCALAPPDATA");
+  if (localAppData.empty()) {
+    return {};
+  }
+  return std::filesystem::path(localAppData) / "Gump";
+#else
+  const std::string home = ReadEnvVar("HOME");
+  if (home.empty()) {
+    return {};
+  }
+  return std::filesystem::path(home) / "Library" / "Application Support" / "Gump";
+#endif
+}
+
+bool EyeProbDumpEnabled(std::filesystem::path *outPath) {
+  const std::filesystem::path dataDir = GumpDataDirectory();
+  const std::filesystem::path defaultOut =
+      dataDir.empty() ? std::filesystem::path{} : dataDir / "eye_probs.jsonl";
+  const std::filesystem::path marker =
+      dataDir.empty() ? std::filesystem::path{} : dataDir / "ENABLE_EYE_PROB_DUMP";
+
+  const std::string dumpSpec = ReadEnvVar("GUMP_DUMP_EYE_PROBS");
+  const bool markerOn = !marker.empty() && std::filesystem::exists(marker);
+  if (dumpSpec.empty() && !markerOn) {
+    return false;
+  }
+
+  if (outPath != nullptr) {
+    if (!dumpSpec.empty() && dumpSpec != "1" && dumpSpec != "true" &&
+        dumpSpec != "stderr") {
+      *outPath = std::filesystem::path(dumpSpec);
+    } else {
+      *outPath = defaultOut;
+    }
+  }
+  return true;
+}
+
 void MaybeDumpEyeProbs(
     const std::string &photoId,
     const std::string &fileName,
     const std::vector<FaceDetection::FaceResult> &faces) {
-  const std::string dumpSpec = ReadEnvVar("GUMP_DUMP_EYE_PROBS");
-  if (dumpSpec.empty()) {
+  std::filesystem::path outPath;
+  if (!EyeProbDumpEnabled(&outPath) || outPath.empty()) {
     return;
   }
 
@@ -91,15 +134,22 @@ void MaybeDumpEyeProbs(
   }
   payload += "]}\n";
 
-  // "1" / "true" / "stderr" → stderr; otherwise treat as append path (jsonl).
-  const bool toStderr = dumpSpec == "1" || dumpSpec == "true" || dumpSpec == "stderr";
-  if (toStderr) {
+  const std::string dumpSpec = ReadEnvVar("GUMP_DUMP_EYE_PROBS");
+  if (dumpSpec == "stderr") {
     std::cerr << "[GUMP_DUMP_EYE_PROBS] " << payload;
-    return;
   }
-  std::ofstream out(dumpSpec, std::ios::app);
-  if (out) {
-    out << payload;
+
+  try {
+    const auto parent = outPath.parent_path();
+    if (!parent.empty()) {
+      std::filesystem::create_directories(parent);
+    }
+    std::ofstream out(outPath, std::ios::app | std::ios::binary);
+    if (out) {
+      out << payload;
+    }
+  } catch (...) {
+    // Dump must never break cull.
   }
 }
 
