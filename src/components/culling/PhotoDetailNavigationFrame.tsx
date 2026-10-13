@@ -133,6 +133,11 @@ export function PhotoDetailNavigationFrame({
       if (!isFocused) {
         return;
       }
+      // Windows: arrow keys are handled only by GumpKeyboard → DeviceEventEmitter.
+      // Handling them here too advances two photos per keypress.
+      if (Platform.OS === 'windows') {
+        return;
+      }
 
       const nativeEvent = (event as PhotoNavKeyEvent).nativeEvent;
       if (matchesPhotoNavKey(nativeEvent, 'prev') && canGoPrevRef.current) {
