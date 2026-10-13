@@ -14,6 +14,7 @@
 #include <memory>
 #include <queue>
 #include <system_error>
+#include <vector>
 
 namespace Analysis {
 namespace {
@@ -63,8 +64,27 @@ std::string ReadEnvVar(const char *name) {
 #endif
 }
 
-// RN Windows often launches the .exe without the parent CMD env. Prefer a
-// marker file under the OS app-data dir (always visible to the process).
+std::filesystem::path UserDocumentsDirectory() {
+#if defined(_WIN32)
+  const std::string profile = ReadEnvVar("USERPROFILE");
+  if (!profile.empty()) {
+    return std::filesystem::path(profile) / "Documents";
+  }
+  const std::string homeDrive = ReadEnvVar("HOMEDRIVE");
+  const std::string homePath = ReadEnvVar("HOMEPATH");
+  if (!homeDrive.empty() && !homePath.empty()) {
+    return std::filesystem::path(homeDrive + homePath) / "Documents";
+  }
+  return {};
+#else
+  const std::string home = ReadEnvVar("HOME");
+  if (home.empty()) {
+    return {};
+  }
+  return std::filesystem::path(home) / "Documents";
+#endif
+}
+
 std::filesystem::path GumpDataDirectory() {
 #if defined(_WIN32)
   const std::string localAppData = ReadEnvVar("LOCALAPPDATA");
@@ -81,36 +101,95 @@ std::filesystem::path GumpDataDirectory() {
 #endif
 }
 
-bool EyeProbDumpEnabled(std::filesystem::path *outPath) {
+bool PathExists(const std::filesystem::path &path) {
+  if (path.empty()) {
+    return false;
+  }
+  std::error_code ec;
+  return std::filesystem::exists(path, ec);
+}
+
+bool AppendTextFile(const std::filesystem::path &path, const std::string &text) {
+  if (path.empty()) {
+    return false;
+  }
+  try {
+    const auto parent = path.parent_path();
+    if (!parent.empty()) {
+      std::error_code ec;
+      std::filesystem::create_directories(parent, ec);
+    }
+#if defined(_WIN32)
+    // Prefer wchar open — more reliable than narrow ofstream on Win paths.
+    std::ofstream out(path.wstring(), std::ios::app | std::ios::binary);
+#else
+    std::ofstream out(path, std::ios::app | std::ios::binary);
+#endif
+    if (!out) {
+      return false;
+    }
+    out << text;
+    return static_cast<bool>(out);
+  } catch (...) {
+    return false;
+  }
+}
+
+// RN Windows often drops CMD env. Enable via marker file in Documents (easy)
+// or %LOCALAPPDATA%\Gump. Always write jsonl to Documents when enabled.
+bool EyeProbDumpEnabled(std::vector<std::filesystem::path> *outPaths) {
+  const std::filesystem::path docs = UserDocumentsDirectory();
   const std::filesystem::path dataDir = GumpDataDirectory();
-  const std::filesystem::path defaultOut =
-      dataDir.empty() ? std::filesystem::path{} : dataDir / "eye_probs.jsonl";
-  const std::filesystem::path marker =
+  const std::filesystem::path docsMarker = docs / "ENABLE_EYE_PROB_DUMP";
+  const std::filesystem::path appMarker =
       dataDir.empty() ? std::filesystem::path{} : dataDir / "ENABLE_EYE_PROB_DUMP";
 
   const std::string dumpSpec = ReadEnvVar("GUMP_DUMP_EYE_PROBS");
-  const bool markerOn = !marker.empty() && std::filesystem::exists(marker);
+  const bool markerOn = PathExists(docsMarker) || PathExists(appMarker);
   if (dumpSpec.empty() && !markerOn) {
     return false;
   }
 
-  if (outPath != nullptr) {
+  if (outPaths != nullptr) {
+    outPaths->clear();
     if (!dumpSpec.empty() && dumpSpec != "1" && dumpSpec != "true" &&
         dumpSpec != "stderr") {
-      *outPath = std::filesystem::path(dumpSpec);
-    } else {
-      *outPath = defaultOut;
+      outPaths->push_back(std::filesystem::path(dumpSpec));
+    }
+    if (!docs.empty()) {
+      outPaths->push_back(docs / "gump_eye_probs.jsonl");
+    }
+    if (!dataDir.empty()) {
+      outPaths->push_back(dataDir / "eye_probs.jsonl");
     }
   }
   return true;
+}
+
+void ArmEyeProbDumpIfEnabled() {
+  std::vector<std::filesystem::path> paths;
+  if (!EyeProbDumpEnabled(&paths)) {
+    return;
+  }
+  const std::string line =
+      std::string("{\"armed\":true,\"note\":\"eye dump enabled; cull to append probs\"}\n");
+  for (const auto &path : paths) {
+    AppendTextFile(path, line);
+  }
+  const std::filesystem::path docs = UserDocumentsDirectory();
+  if (!docs.empty()) {
+    AppendTextFile(
+        docs / "gump_eye_dump_READY.txt",
+        "Eye prob dump is ON.\nOpen gump_eye_probs.jsonl in this same Documents folder after cull.\n");
+  }
 }
 
 void MaybeDumpEyeProbs(
     const std::string &photoId,
     const std::string &fileName,
     const std::vector<FaceDetection::FaceResult> &faces) {
-  std::filesystem::path outPath;
-  if (!EyeProbDumpEnabled(&outPath) || outPath.empty()) {
+  std::vector<std::filesystem::path> outPaths;
+  if (!EyeProbDumpEnabled(&outPaths) || outPaths.empty()) {
     return;
   }
 
@@ -139,17 +218,8 @@ void MaybeDumpEyeProbs(
     std::cerr << "[GUMP_DUMP_EYE_PROBS] " << payload;
   }
 
-  try {
-    const auto parent = outPath.parent_path();
-    if (!parent.empty()) {
-      std::filesystem::create_directories(parent);
-    }
-    std::ofstream out(outPath, std::ios::app | std::ios::binary);
-    if (out) {
-      out << payload;
-    }
-  } catch (...) {
-    // Dump must never break cull.
+  for (const auto &path : outPaths) {
+    AppendTextFile(path, payload);
   }
 }
 
@@ -934,6 +1004,9 @@ bool AnalysisSession::Start(const SessionConfig &config) {
   if (!impl_->Initialize()) {
     return false;
   }
+
+  // If dump is armed, write READY + seed jsonl immediately (proves rebuild/marker).
+  ArmEyeProbDumpIfEnabled();
 
   impl_->running.store(true);
   impl_->cancelled.store(false);
