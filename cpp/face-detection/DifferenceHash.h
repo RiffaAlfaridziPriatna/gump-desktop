@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace FaceDetection {
 
@@ -13,6 +14,35 @@ constexpr int kMeasurementMaxPixelSize = 4096;
 /// Longest-edge of each measurement crop after regional decode. OCEC/EAR
 /// operate on a small face window; do not keep a full-frame 4096 BGRA.
 constexpr int kMeasurementCropOutputMaxPixelSize = 768;
+
+struct OwnedBgra {
+  std::vector<uint8_t> bytes;
+  int width{0};
+  int height{0};
+  int stride{0};
+};
+
+/// Copy a pixel rect out of a BGRA8 buffer (clamped). Shared by Mac/Win crops.
+bool cropBgra(
+    const uint8_t *bgraPixels,
+    int imageWidth,
+    int imageHeight,
+    int stride,
+    int x,
+    int y,
+    int width,
+    int height,
+    OwnedBgra &out);
+
+/// Bilinear longest-edge resize — same filter on both platforms (not WIC/ImageIO).
+/// No-op copy when max(width,height) <= maxLongEdge.
+bool resizeBgraLongEdge(
+    const uint8_t *bgraPixels,
+    int imageWidth,
+    int imageHeight,
+    int stride,
+    int maxLongEdge,
+    OwnedBgra &out);
 
 /// 64-bit difference hash (dHash) from a BGRA8 buffer.
 /// Both desktop platforms must call this on the *same* analysis-sized buffer used
