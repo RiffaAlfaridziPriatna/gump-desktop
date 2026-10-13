@@ -78,6 +78,7 @@
       <AdditionalIncludeDirectories>
         $(MSBuildThisFileDirectory)..\..\cpp\face-detection;
         $(MSBuildThisFileDirectory)..\..\cpp\analysis;
+        $(MSBuildThisFileDirectory)..\..\cpp\third_party\stb;
         $(MSBuildThisFileDirectory)vendor\WinSparkle\include;
         $(MSBuildThisFileDirectory);
         %(AdditionalIncludeDirectories)
@@ -134,6 +135,7 @@
     <ClInclude Include="..\..\cpp\face-detection\FaceLabeling.h" />
     <ClInclude Include="..\..\cpp\face-detection\DifferenceHash.h" />
     <ClInclude Include="..\..\cpp\face-detection\ExifDateTime.h" />
+    <ClInclude Include="..\..\cpp\analysis\SharedJpegDecode.h" />
     <ClInclude Include="GumpDesktop.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="AutolinkedNativeModules.g.h" />
@@ -172,6 +174,9 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\..\cpp\analysis\AnalysisSession.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\analysis\SharedJpegDecode.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\..\cpp\analysis\PhotoFlags.cpp">
