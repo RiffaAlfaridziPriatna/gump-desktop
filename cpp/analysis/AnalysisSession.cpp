@@ -7,7 +7,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
-#include <cstring>
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -44,12 +43,31 @@ std::string JsonEscape(const std::string &value) {
   return out;
 }
 
+std::string ReadEnvVar(const char *name) {
+  if (name == nullptr || name[0] == '\0') {
+    return {};
+  }
+#if defined(_WIN32)
+  char *buffer = nullptr;
+  size_t length = 0;
+  if (_dupenv_s(&buffer, &length, name) != 0 || buffer == nullptr) {
+    return {};
+  }
+  std::string value(buffer);
+  free(buffer);
+  return value;
+#else
+  const char *value = std::getenv(name);
+  return value == nullptr ? std::string{} : std::string(value);
+#endif
+}
+
 void MaybeDumpEyeProbs(
     const std::string &photoId,
     const std::string &fileName,
     const std::vector<FaceDetection::FaceResult> &faces) {
-  const char *dumpSpec = std::getenv("GUMP_DUMP_EYE_PROBS");
-  if (dumpSpec == nullptr || dumpSpec[0] == '\0') {
+  const std::string dumpSpec = ReadEnvVar("GUMP_DUMP_EYE_PROBS");
+  if (dumpSpec.empty()) {
     return;
   }
 
@@ -74,9 +92,7 @@ void MaybeDumpEyeProbs(
   payload += "]}\n";
 
   // "1" / "true" / "stderr" → stderr; otherwise treat as append path (jsonl).
-  const bool toStderr = std::strcmp(dumpSpec, "1") == 0 ||
-                        std::strcmp(dumpSpec, "true") == 0 ||
-                        std::strcmp(dumpSpec, "stderr") == 0;
+  const bool toStderr = dumpSpec == "1" || dumpSpec == "true" || dumpSpec == "stderr";
   if (toStderr) {
     std::cerr << "[GUMP_DUMP_EYE_PROBS] " << payload;
     return;
