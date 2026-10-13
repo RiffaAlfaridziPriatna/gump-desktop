@@ -1,9 +1,14 @@
 #include "AnalysisSession.h"
 
+#include "DifferenceHash.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
 #include <future>
 #include <iostream>
 #include <memory>
@@ -15,6 +20,71 @@ namespace {
 
 ImageRegion ImageRegionFromFace(const FaceDetection::NormalizedRect &rect) {
   return {rect.left, rect.top, rect.width, rect.height};
+}
+
+std::string JsonEscape(const std::string &value) {
+  std::string out;
+  out.reserve(value.size() + 8);
+  for (char ch : value) {
+    switch (ch) {
+    case '\\':
+      out += "\\\\";
+      break;
+    case '"':
+      out += "\\\"";
+      break;
+    case '\n':
+      out += "\\n";
+      break;
+    default:
+      out.push_back(ch);
+      break;
+    }
+  }
+  return out;
+}
+
+void MaybeDumpEyeProbs(
+    const std::string &photoId,
+    const std::string &fileName,
+    const std::vector<FaceDetection::FaceResult> &faces) {
+  const char *dumpSpec = std::getenv("GUMP_DUMP_EYE_PROBS");
+  if (dumpSpec == nullptr || dumpSpec[0] == '\0') {
+    return;
+  }
+
+  std::string payload = "{\"photoId\":\"" + JsonEscape(photoId) +
+                        "\",\"fileName\":\"" + JsonEscape(fileName) +
+                        "\",\"faces\":[";
+  for (size_t i = 0; i < faces.size(); ++i) {
+    const auto &face = faces[i];
+    const float area = face.width * face.height;
+    if (i > 0) {
+      payload += ',';
+    }
+    payload += "{\"i\":" + std::to_string(i) +
+               ",\"area\":" + std::to_string(area) +
+               ",\"left\":" + std::to_string(face.left) +
+               ",\"top\":" + std::to_string(face.top) +
+               ",\"eyeStatus\":\"" + JsonEscape(face.eyeStatus) + "\"" +
+               ",\"L\":" + std::to_string(face.eyesOpen.leftProbability) +
+               ",\"R\":" + std::to_string(face.eyesOpen.rightProbability) +
+               ",\"conf\":" + std::to_string(face.eyesOpen.confidence) + "}";
+  }
+  payload += "]}\n";
+
+  // "1" / "true" / "stderr" → stderr; otherwise treat as append path (jsonl).
+  const bool toStderr = std::strcmp(dumpSpec, "1") == 0 ||
+                        std::strcmp(dumpSpec, "true") == 0 ||
+                        std::strcmp(dumpSpec, "stderr") == 0;
+  if (toStderr) {
+    std::cerr << "[GUMP_DUMP_EYE_PROBS] " << payload;
+    return;
+  }
+  std::ofstream out(dumpSpec, std::ios::app);
+  if (out) {
+    out << payload;
+  }
 }
 
 void MeasureFacesOnBuffer(
@@ -57,17 +127,36 @@ void MeasureFacesFromHiResCrops(
       uri, regions, measurementMaxPixelSize);
   bool measuredAny = false;
   const size_t count = std::min(faces.size(), crops.size());
+  const int outputCap = FaceDetection::kMeasurementCropOutputMaxPixelSize;
   for (size_t index = 0; index < count; ++index) {
     const auto &crop = crops[index];
     if (!crop.success || crop.bgraPixels == nullptr) {
       continue;
     }
+    const uint8_t *pixels = crop.bgraPixels;
+    int width = crop.width;
+    int height = crop.height;
+    int stride = crop.stride;
+    FaceDetection::OwnedBgra resized;
+    if (std::max(width, height) > outputCap &&
+        FaceDetection::resizeBgraLongEdge(
+            crop.bgraPixels,
+            crop.width,
+            crop.height,
+            crop.stride,
+            outputCap,
+            resized)) {
+      pixels = resized.bytes.data();
+      width = resized.width;
+      height = resized.height;
+      stride = resized.stride;
+    }
     pipeline.refineFacePhotometrics(
         faces[index],
-        crop.bgraPixels,
-        crop.width,
-        crop.height,
-        crop.stride,
+        pixels,
+        width,
+        height,
+        stride,
         {regions[index].left,
          regions[index].top,
          regions[index].width,
@@ -311,6 +400,7 @@ struct AnalysisSession::Impl {
       result.flags = DerivePhotoFlags(result.faces);
       result.starRating = DeriveStarRating(result.faces);
       result.success = true;
+      MaybeDumpEyeProbs(result.photoId, job.input.fileName, result.faces);
 
     } catch (const std::exception &e) {
       auto fallback = EmptyFallbackResult(

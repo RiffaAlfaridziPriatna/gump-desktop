@@ -315,6 +315,8 @@ public:
         return results;
       }
 
+      // Size source per face (MeasurementSourcePixelSize), crop in display space.
+      // AnalysisSession applies shared bilinear long-edge cap (768) afterward.
       const int outputCap = FaceDetection::kMeasurementCropOutputMaxPixelSize;
       for (size_t index = 0; index < regions.size(); ++index) {
         @autoreleasepool {

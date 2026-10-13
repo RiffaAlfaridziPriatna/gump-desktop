@@ -39,6 +39,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace winrtRN = winrt::Microsoft::ReactNative;
@@ -1663,44 +1664,61 @@ public:
       return results;
     }
 
-    (void)sourceMaxPixelSize;
-
+    // Match macOS: Fant-scale the *source* to MeasurementSourcePixelSize, then
+    // crop in oriented display space (no encoded-bounds EXIF remap). Shared C++
+    // then bilinear-caps the crop to kMeasurementCropOutputMaxPixelSize.
     try {
       const auto path = PathFromUri(uri);
-      const auto file = GetStorageFileFromPath(path);
-      const auto stream = file.OpenAsync(FileAccessMode::Read).get();
-      const auto decoder = BitmapDecoder::CreateAsync(stream).get();
-      const int encodedWidth = static_cast<int>(decoder.PixelWidth());
-      const int encodedHeight = static_cast<int>(decoder.PixelHeight());
-      int orientedWidth = static_cast<int>(decoder.OrientedPixelWidth());
-      int orientedHeight = static_cast<int>(decoder.OrientedPixelHeight());
-      if (orientedWidth <= 0 || orientedHeight <= 0) {
-        orientedWidth = encodedWidth;
-        orientedHeight = encodedHeight;
-      }
-      const uint16_t orientation = ReadExifOrientation(decoder);
-      const uint32_t outputCap = static_cast<uint32_t>(
-          FaceDetection::kMeasurementCropOutputMaxPixelSize);
+      const int outputCap = FaceDetection::kMeasurementCropOutputMaxPixelSize;
+      // Reuse scaled frames when several Key Faces need the same sourceMax.
+      std::unordered_map<int, std::shared_ptr<BitmapPixels>> scaledBySourceMax;
 
       for (size_t index = 0; index < regions.size(); ++index) {
-        const auto orientedRect = Analysis::PixelRectFromNormalized(
-            regions[index], orientedWidth, orientedHeight);
-        const auto encodedRect = Analysis::MapOrientedPixelRectToEncoded(
-            orientedRect,
-            orientedWidth,
-            orientedHeight,
-            encodedWidth,
-            encodedHeight,
-            orientation);
-        if (encodedRect.width <= 0 || encodedRect.height <= 0) {
-          results[index].error = "Empty crop region";
-          continue;
-        }
-
         try {
-          const auto bitmap =
-              LoadSoftwareBitmapRegion(decoder, encodedRect, outputCap);
-          auto pixels = std::make_shared<BitmapPixels>(ReadBitmapPixels(bitmap));
+          const int sourceMax = Analysis::MeasurementSourcePixelSize(
+              regions[index], sourceMaxPixelSize, outputCap);
+          std::shared_ptr<BitmapPixels> scaled;
+          const auto cached = scaledBySourceMax.find(sourceMax);
+          if (cached != scaledBySourceMax.end()) {
+            scaled = cached->second;
+          } else {
+            const auto bitmap = LoadSoftwareBitmapScaled(
+                path, static_cast<uint32_t>(sourceMax));
+            scaled = std::make_shared<BitmapPixels>(ReadBitmapPixels(bitmap));
+            scaledBySourceMax.emplace(sourceMax, scaled);
+          }
+          if (!scaled || scaled->width <= 0 || scaled->height <= 0) {
+            results[index].error = "Scaled source decode failed";
+            continue;
+          }
+
+          const auto rect = Analysis::PixelRectFromNormalized(
+              regions[index], scaled->width, scaled->height);
+          if (rect.width <= 0 || rect.height <= 0) {
+            results[index].error = "Empty crop region";
+            continue;
+          }
+
+          FaceDetection::OwnedBgra cropped;
+          if (!FaceDetection::cropBgra(
+                  scaled->bytes.data(),
+                  scaled->width,
+                  scaled->height,
+                  scaled->stride,
+                  rect.x,
+                  rect.y,
+                  rect.width,
+                  rect.height,
+                  cropped)) {
+            results[index].error = "Crop failed";
+            continue;
+          }
+
+          auto pixels = std::make_shared<BitmapPixels>();
+          pixels->width = cropped.width;
+          pixels->height = cropped.height;
+          pixels->stride = cropped.stride;
+          pixels->bytes = std::move(cropped.bytes);
           results[index].width = pixels->width;
           results[index].height = pixels->height;
           results[index].stride = pixels->stride;
