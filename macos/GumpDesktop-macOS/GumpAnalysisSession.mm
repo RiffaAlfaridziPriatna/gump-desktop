@@ -5,11 +5,14 @@
 #import <ImageIO/ImageIO.h>
 
 #include "../../cpp/analysis/AnalysisSession.h"
+#include "../../cpp/analysis/SharedJpegDecode.h"
+#include "../../cpp/face-detection/DifferenceHash.h"
 #include "../../cpp/face-detection/ExifDateTime.h"
 
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -271,6 +274,23 @@ public:
         return result;
       }
 
+      const std::string pathUtf8 = path.UTF8String ? path.UTF8String : "";
+      // JPEG: shared stb decode (Mac/Win pixel parity for SCRFD/OCEC).
+      if (Analysis::IsJpegPath(pathUtf8)) {
+        FaceDetection::OwnedBgra decoded;
+        std::string err;
+        if (Analysis::DecodeJpegFileToBgra(pathUtf8, maxPixelSize, decoded, &err)) {
+          auto owned = std::make_shared<FaceDetection::OwnedBgra>(std::move(decoded));
+          result.width = owned->width;
+          result.height = owned->height;
+          result.stride = owned->stride;
+          result.bgraPixels = owned->bytes.data();
+          result.platformHandle = owned;
+          result.success = true;
+          return result;
+        }
+      }
+
       CGImageRef cgImage = orientedCGImageFromPath(path, maxPixelSize);
       if (cgImage == nullptr) {
         result.error = "Failed to decode image";
@@ -315,9 +335,71 @@ public:
         return results;
       }
 
-      // Size source per face (MeasurementSourcePixelSize), crop in display space.
-      // AnalysisSession applies shared bilinear long-edge cap (768) afterward.
+      const std::string pathUtf8 = path.UTF8String ? path.UTF8String : "";
       const int outputCap = FaceDetection::kMeasurementCropOutputMaxPixelSize;
+
+      // JPEG: one shared decode, then bilinear sourceMax + crop (matches Win).
+      if (Analysis::IsJpegPath(pathUtf8)) {
+        FaceDetection::OwnedBgra oriented;
+        std::string err;
+        if (!Analysis::DecodeJpegFileToOrientedBgra(pathUtf8, oriented, &err)) {
+          for (auto &result : results) {
+            result.error = err.empty() ? "Shared JPEG decode failed" : err;
+          }
+          return results;
+        }
+        std::unordered_map<int, std::shared_ptr<FaceDetection::OwnedBgra>> scaledBySourceMax;
+        for (size_t index = 0; index < regions.size(); ++index) {
+          const int sourceMax = Analysis::MeasurementSourcePixelSize(
+              regions[index], sourceMaxPixelSize, outputCap);
+          std::shared_ptr<FaceDetection::OwnedBgra> scaled;
+          const auto cached = scaledBySourceMax.find(sourceMax);
+          if (cached != scaledBySourceMax.end()) {
+            scaled = cached->second;
+          } else {
+            auto fresh = std::make_shared<FaceDetection::OwnedBgra>();
+            if (!FaceDetection::resizeBgraLongEdge(
+                    oriented.bytes.data(),
+                    oriented.width,
+                    oriented.height,
+                    oriented.stride,
+                    sourceMax,
+                    *fresh)) {
+              results[index].error = "Region source resize failed";
+              continue;
+            }
+            scaled = fresh;
+            scaledBySourceMax.emplace(sourceMax, scaled);
+          }
+          const auto rect = Analysis::PixelRectFromNormalized(
+              regions[index], scaled->width, scaled->height);
+          FaceDetection::OwnedBgra cropped;
+          if (rect.width <= 0 || rect.height <= 0 ||
+              !FaceDetection::cropBgra(
+                  scaled->bytes.data(),
+                  scaled->width,
+                  scaled->height,
+                  scaled->stride,
+                  rect.x,
+                  rect.y,
+                  rect.width,
+                  rect.height,
+                  cropped)) {
+            results[index].error = "Crop failed";
+            continue;
+          }
+          auto owned = std::make_shared<FaceDetection::OwnedBgra>(std::move(cropped));
+          results[index].width = owned->width;
+          results[index].height = owned->height;
+          results[index].stride = owned->stride;
+          results[index].bgraPixels = owned->bytes.data();
+          results[index].platformHandle = owned;
+          results[index].success = true;
+        }
+        return results;
+      }
+
+      // Non-JPEG (HEIC/PNG): ImageIO thumbnail + crop.
       for (size_t index = 0; index < regions.size(); ++index) {
         @autoreleasepool {
           const int sourceMax = Analysis::MeasurementSourcePixelSize(

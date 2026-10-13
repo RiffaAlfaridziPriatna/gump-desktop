@@ -10,6 +10,7 @@
 #include "../../cpp/analysis/PhotoFlags.h"
 #include "../../cpp/analysis/FaceCluster.h"
 #include "../../cpp/analysis/DuplicateDetection.h"
+#include "../../cpp/analysis/SharedJpegDecode.h"
 
 #include <ShlObj.h>
 #include <combaseapi.h>
@@ -1641,6 +1642,22 @@ public:
     Analysis::DecodedImage result;
     try {
       const auto path = PathFromUri(uri);
+      const std::string pathUtf8 = path.string();
+      // JPEG: shared stb decode (same pixels as macOS analysis).
+      if (Analysis::IsJpegPath(pathUtf8)) {
+        FaceDetection::OwnedBgra decoded;
+        std::string err;
+        if (Analysis::DecodeJpegFileToBgra(pathUtf8, maxPixelSize, decoded, &err)) {
+          auto owned = std::make_shared<FaceDetection::OwnedBgra>(std::move(decoded));
+          result.width = owned->width;
+          result.height = owned->height;
+          result.stride = owned->stride;
+          result.bgraPixels = owned->bytes.data();
+          result.platformHandle = std::move(owned);
+          result.success = true;
+          return result;
+        }
+      }
       const auto bitmap = LoadSoftwareBitmapScaled(path, static_cast<uint32_t>(maxPixelSize));
       auto pixels = std::make_shared<BitmapPixels>(ReadBitmapPixels(bitmap));
       result.width = pixels->width;
@@ -1664,15 +1681,80 @@ public:
       return results;
     }
 
-    // Match macOS: Fant-scale the *source* to MeasurementSourcePixelSize, then
-    // crop in oriented display space (no encoded-bounds EXIF remap). Shared C++
-    // then bilinear-caps the crop to kMeasurementCropOutputMaxPixelSize.
     try {
       const auto path = PathFromUri(uri);
+      const std::string pathUtf8 = path.string();
       const int outputCap = FaceDetection::kMeasurementCropOutputMaxPixelSize;
-      // Reuse scaled frames when several Key Faces need the same sourceMax.
-      std::unordered_map<int, std::shared_ptr<BitmapPixels>> scaledBySourceMax;
 
+      // JPEG: one shared decode + bilinear sourceMax crops (Mac/Win parity).
+      if (Analysis::IsJpegPath(pathUtf8)) {
+        FaceDetection::OwnedBgra oriented;
+        std::string err;
+        if (!Analysis::DecodeJpegFileToOrientedBgra(pathUtf8, oriented, &err)) {
+          for (auto &result : results) {
+            result.error = err.empty() ? "Shared JPEG decode failed" : err;
+          }
+          return results;
+        }
+        std::unordered_map<int, std::shared_ptr<FaceDetection::OwnedBgra>> scaledBySourceMax;
+        for (size_t index = 0; index < regions.size(); ++index) {
+          try {
+            const int sourceMax = Analysis::MeasurementSourcePixelSize(
+                regions[index], sourceMaxPixelSize, outputCap);
+            std::shared_ptr<FaceDetection::OwnedBgra> scaled;
+            const auto cached = scaledBySourceMax.find(sourceMax);
+            if (cached != scaledBySourceMax.end()) {
+              scaled = cached->second;
+            } else {
+              auto fresh = std::make_shared<FaceDetection::OwnedBgra>();
+              if (!FaceDetection::resizeBgraLongEdge(
+                      oriented.bytes.data(),
+                      oriented.width,
+                      oriented.height,
+                      oriented.stride,
+                      sourceMax,
+                      *fresh)) {
+                results[index].error = "Region source resize failed";
+                continue;
+              }
+              scaled = fresh;
+              scaledBySourceMax.emplace(sourceMax, scaled);
+            }
+            const auto rect = Analysis::PixelRectFromNormalized(
+                regions[index], scaled->width, scaled->height);
+            FaceDetection::OwnedBgra cropped;
+            if (rect.width <= 0 || rect.height <= 0 ||
+                !FaceDetection::cropBgra(
+                    scaled->bytes.data(),
+                    scaled->width,
+                    scaled->height,
+                    scaled->stride,
+                    rect.x,
+                    rect.y,
+                    rect.width,
+                    rect.height,
+                    cropped)) {
+              results[index].error = "Crop failed";
+              continue;
+            }
+            auto owned = std::make_shared<FaceDetection::OwnedBgra>(std::move(cropped));
+            results[index].width = owned->width;
+            results[index].height = owned->height;
+            results[index].stride = owned->stride;
+            results[index].bgraPixels = owned->bytes.data();
+            results[index].platformHandle = std::move(owned);
+            results[index].success = true;
+          } catch (const std::exception &error) {
+            results[index].error = error.what();
+          } catch (...) {
+            results[index].error = "Regional decode failed";
+          }
+        }
+        return results;
+      }
+
+      // Non-JPEG: WIC Fant scale → crop (HEIC/PNG fallback).
+      std::unordered_map<int, std::shared_ptr<BitmapPixels>> scaledBySourceMax;
       for (size_t index = 0; index < regions.size(); ++index) {
         try {
           const int sourceMax = Analysis::MeasurementSourcePixelSize(

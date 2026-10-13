@@ -37,6 +37,7 @@
 		E3A4B5C60123456700000002 /* PhotoFlags.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000003 /* PhotoFlags.cpp */; };
 		E3A4B5C60123456700000003 /* FaceCluster.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000005 /* FaceCluster.cpp */; };
 		E3A4B5C60123456700000004 /* DuplicateDetection.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C61123456700000007 /* DuplicateDetection.cpp */; };
+		E3A4B5C60123456700000009 /* SharedJpegDecode.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E3A4B5C6112345670000000B /* SharedJpegDecode.cpp */; };
 		E4A5B6C70123456700000001 /* GumpUpdateController.mm in Sources */ = {isa = PBXBuildFile; fileRef = E4A5B6C71123456700000001 /* GumpUpdateController.mm */; };
 		F1A2C3D40123456700000001 /* GumpScrollView.mm in Sources */ = {isa = PBXBuildFile; fileRef = F1A2C3D41123456700000001 /* GumpScrollView.mm */; };
 /* End PBXBuildFile section */
@@ -96,6 +97,8 @@
 		E3A4B5C61123456700000007 /* DuplicateDetection.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = DuplicateDetection.cpp; path = ../cpp/analysis/DuplicateDetection.cpp; sourceTree = SOURCE_ROOT; };
 		E3A4B5C61123456700000008 /* DuplicateDetection.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DuplicateDetection.h; path = ../cpp/analysis/DuplicateDetection.h; sourceTree = SOURCE_ROOT; };
 		E3A4B5C61123456700000009 /* PlatformDecoder.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PlatformDecoder.h; path = ../cpp/analysis/PlatformDecoder.h; sourceTree = SOURCE_ROOT; };
+		E3A4B5C6112345670000000A /* SharedJpegDecode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SharedJpegDecode.h; path = ../cpp/analysis/SharedJpegDecode.h; sourceTree = SOURCE_ROOT; };
+		E3A4B5C6112345670000000B /* SharedJpegDecode.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SharedJpegDecode.cpp; path = ../cpp/analysis/SharedJpegDecode.cpp; sourceTree = SOURCE_ROOT; };
 		E4A5B6C71123456700000001 /* GumpUpdateController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpUpdateController.mm; sourceTree = "<group>"; };
 		E4A5B6C71123456700000002 /* GumpUpdateController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpUpdateController.h; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
@@ -251,13 +254,15 @@
 			children = (
 				E3A4B5C61123456700000002 /* AnalysisSession.h */,
 				E3A4B5C61123456700000001 /* AnalysisSession.cpp */,
+				E3A4B5C6112345670000000A /* SharedJpegDecode.h */,
+				E3A4B5C6112345670000000B /* SharedJpegDecode.cpp */,
+				E3A4B5C61123456700000009 /* PlatformDecoder.h */,
 				E3A4B5C61123456700000004 /* PhotoFlags.h */,
 				E3A4B5C61123456700000003 /* PhotoFlags.cpp */,
 				E3A4B5C61123456700000006 /* FaceCluster.h */,
 				E3A4B5C61123456700000005 /* FaceCluster.cpp */,
 				E3A4B5C61123456700000008 /* DuplicateDetection.h */,
 				E3A4B5C61123456700000007 /* DuplicateDetection.cpp */,
-				E3A4B5C61123456700000009 /* PlatformDecoder.h */,
 			);
 			name = Analysis;
 			sourceTree = "<group>";
@@ -496,6 +501,7 @@
 				E4A5B6C70123456700000001 /* GumpUpdateController.mm in Sources */,
 				F1A2C3D40123456700000001 /* GumpScrollView.mm in Sources */,
 				E3A4B5C60123456700000001 /* AnalysisSession.cpp in Sources */,
+				E3A4B5C60123456700000009 /* SharedJpegDecode.cpp in Sources */,
 				E3A4B5C60123456700000002 /* PhotoFlags.cpp in Sources */,
 				E3A4B5C60123456700000003 /* FaceCluster.cpp in Sources */,
 				E3A4B5C60123456700000004 /* DuplicateDetection.cpp in Sources */,
@@ -584,6 +590,7 @@
 					"$(inherited)",
 					"$(SRCROOT)/../cpp/face-detection",
 					"$(SRCROOT)/../cpp/analysis",
+					"$(SRCROOT)/../cpp/third_party/stb",
 				);
 				INFOPLIST_FILE = "GumpDesktop-macos/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -622,6 +629,7 @@
 					"$(inherited)",
 					"$(SRCROOT)/../cpp/face-detection",
 					"$(SRCROOT)/../cpp/analysis",
+					"$(SRCROOT)/../cpp/third_party/stb",
 				);
 				INFOPLIST_FILE = "GumpDesktop-macos/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
