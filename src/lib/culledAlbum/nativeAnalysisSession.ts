@@ -56,11 +56,9 @@ export function getAnalysisSessionTuning(): AnalysisSessionTuning {
     };
   }
 
-  // Windows keeps the same analysis decode size as macOS so cull quality does
-  // not drift. Thermal relief comes from inter-job delay + pool size 1 +
-  // tearing down the ORT session when idle — not from downscaling detection.
-  // photoTimeoutMs stays 0 on Windows: any timeout>0 spawns a thread per photo
-  // (even healthy ones), which was the main cull heat regression.
+  // Windows: keep detect at 4096 for now; thermal relief is concurrency 1 +
+  // inter-job delay + tearing down ORT when idle. photoTimeoutMs stays 0:
+  // any timeout>0 spawns a thread per photo (even healthy ones).
   if (Platform.OS === 'windows') {
     return {
       maxConcurrency: 1,
@@ -71,9 +69,12 @@ export function getAnalysisSessionTuning(): AnalysisSessionTuning {
     };
   }
 
+  // macOS Phase 2+3: concurrency 3 (matched pipeline pool), 25ms floor delay,
+  // adaptive delay still on but capped at 100ms in AnalysisSession. Detect
+  // stays 4096 (Phase 1 2048 regresses via empty-face retries).
   return {
-    maxConcurrency: 2,
-    interJobDelayMs: 50,
+    maxConcurrency: 3,
+    interJobDelayMs: 25,
     maxDecodePixelSize: 4096,
     progressiveBatchSize: 20,
     photoTimeoutMs: 30_000,
