@@ -1,6 +1,9 @@
 import {resolveUseCases} from '@di/useCases';
 import {make} from '@di/tsyringe';
+import {getBakedUploadFile} from '@lib/look/uploadLookBake';
 import {APIException, APIService} from '@services/api';
+import type {FileAsset} from '@services/upload/types';
+import {resolveUploadFileAsset} from './resolveUploadFileAsset';
 import {CulledAlbumPhoto} from './types';
 import {getPhotoById, updatePhoto} from './store';
 
@@ -12,13 +15,23 @@ function isRetryableServerError(err: unknown): boolean {
   return err instanceof APIException && err.statusCode >= 500;
 }
 
+function resolveUploadFile(
+  albumId: string,
+  photo: CulledAlbumPhoto,
+): FileAsset {
+  return resolveUploadFileAsset(photo, getBakedUploadFile(albumId, photo.photoId));
+}
+
 async function uploadFile(
   photo: CulledAlbumPhoto,
   albumId: string,
   onProgress: (progress: number) => void,
 ): Promise<void> {
   const api = make(APIService);
-  await api.media.upload({file: photo.file, albumId}, onProgress);
+  await api.media.upload(
+    {file: resolveUploadFile(albumId, photo), albumId},
+    onProgress,
+  );
 }
 
 export async function uploadServerPhoto(

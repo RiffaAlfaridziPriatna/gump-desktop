@@ -4,6 +4,7 @@
 #include "ExifDateTime.h"
 #include "FaceDetectionPipeline.h"
 #include "MediaDerivatives.h"
+#include "ZipStore.h"
 
 // Analysis session includes
 #include "../../cpp/analysis/AnalysisSession.h"
@@ -14,7 +15,10 @@
 #include <ShlObj.h>
 #include <combaseapi.h>
 #include <MemoryBuffer.h>
+#include <Shellapi.h>
+#include <shobjidl.h>
 #include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 
 #include <winrt/Windows.Foundation.h>
@@ -28,17 +32,20 @@
 #include <winrt/Windows.Web.Http.Headers.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace winrtRN = winrt::Microsoft::ReactNative;
@@ -89,14 +96,46 @@ std::string ToUtf8(std::wstring_view value) {
   return utf8;
 }
 
+std::string PercentDecodeUtf8(std::string_view value) {
+  std::string out;
+  out.reserve(value.size());
+  for (size_t i = 0; i < value.size(); ++i) {
+    if (value[i] == '%' && i + 2 < value.size()) {
+      const char hex[] = {value[i + 1], value[i + 2], '\0'};
+      char *end = nullptr;
+      const unsigned long code = std::strtoul(hex, &end, 16);
+      if (end != nullptr && *end == '\0') {
+        out.push_back(static_cast<char>(code));
+        i += 2;
+        continue;
+      }
+    }
+    out.push_back(value[i]);
+  }
+  return out;
+}
+
+std::string_view StripUriQueryAndFragment(std::string_view uri) {
+  const size_t query = uri.find('?');
+  if (query != std::string_view::npos) {
+    uri = uri.substr(0, query);
+  }
+  const size_t hash = uri.find('#');
+  if (hash != std::string_view::npos) {
+    uri = uri.substr(0, hash);
+  }
+  return uri;
+}
+
 std::filesystem::path PathFromUri(std::string_view uri) {
+  uri = StripUriQueryAndFragment(uri);
   if (uri.empty()) {
     return {};
   }
 
-  std::string_view pathPart = uri;
+  std::string pathUtf8;
   if (uri.rfind("file://", 0) == 0) {
-    pathPart = uri.substr(7);
+    std::string_view pathPart = uri.substr(7);
     // file:///C:\path and file:///C:/path both need the leading slash removed
     // before Windows can resolve the drive letter path.
     if (pathPart.size() >= 3 && pathPart[0] == '/' && pathPart[2] == ':') {
@@ -105,9 +144,12 @@ std::filesystem::path PathFromUri(std::string_view uri) {
         pathPart.remove_prefix(1);
       }
     }
+    pathUtf8 = PercentDecodeUtf8(pathPart);
+  } else {
+    pathUtf8 = PercentDecodeUtf8(uri);
   }
 
-  std::filesystem::path path(ToWide(pathPart));
+  std::filesystem::path path(ToWide(pathUtf8));
   path.make_preferred();
   return path;
 }
@@ -1620,6 +1662,1006 @@ void GumpLocalStorage::ComputePerceptualHash(std::string uri, ReactPromiseJS &&p
         }
 
         return winrtRN::JSValue(FormatHashHex(*hash));
+      },
+      std::move(promise));
+}
+
+std::filesystem::path DownloadsGumpDirectory() {
+  PWSTR downloads = nullptr;
+  if (FAILED(SHGetKnownFolderPath(FOLDERID_Downloads, 0, nullptr, &downloads)) || downloads == nullptr) {
+    throw std::runtime_error("Unable to resolve Downloads folder");
+  }
+  std::filesystem::path base(downloads);
+  CoTaskMemFree(downloads);
+  return base / L"Gump";
+}
+
+std::string DisplayPathForDirectory(const std::filesystem::path &path) {
+  PWSTR downloads = nullptr;
+  std::filesystem::path downloadsRoot;
+  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Downloads, 0, nullptr, &downloads)) && downloads != nullptr) {
+    downloadsRoot = downloads;
+    CoTaskMemFree(downloads);
+  }
+
+  auto normalized = path;
+  normalized.make_preferred();
+  if (!downloadsRoot.empty()) {
+    downloadsRoot.make_preferred();
+    const auto downloadsText = downloadsRoot.wstring();
+    const auto pathText = normalized.wstring();
+    if (pathText == downloadsText) {
+      return "Downloads";
+    }
+    if (pathText.rfind(downloadsText + L"\\", 0) == 0) {
+      auto relative = pathText.substr(downloadsText.size() + 1);
+      std::string display = "Downloads";
+      size_t start = 0;
+      while (start <= relative.size()) {
+        const auto slash = relative.find(L'\\', start);
+        const auto part = relative.substr(start, slash == std::wstring::npos ? std::wstring::npos : slash - start);
+        if (!part.empty()) {
+          display += " / ";
+          display += ToUtf8(part);
+        }
+        if (slash == std::wstring::npos) {
+          break;
+        }
+        start = slash + 1;
+      }
+      return display;
+    }
+  }
+
+  const auto parent = normalized.parent_path().filename().wstring();
+  const auto leaf = normalized.filename().wstring();
+  if (!parent.empty()) {
+    return ToUtf8(parent) + " / " + ToUtf8(leaf);
+  }
+  return ToUtf8(leaf);
+}
+
+void EnsureDirectory(const std::filesystem::path &path) {
+  std::error_code error;
+  if (std::filesystem::exists(path, error)) {
+    if (!std::filesystem::is_directory(path, error)) {
+      throw std::runtime_error("Export path is not a directory");
+    }
+    return;
+  }
+  if (!std::filesystem::create_directories(path, error) && error) {
+    throw std::runtime_error("Unable to create export directory");
+  }
+}
+
+void GumpLocalStorage::EnsureDefaultExportDirectory(ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      []() {
+        const auto path = DownloadsGumpDirectory();
+        EnsureDirectory(path);
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"path", ToUtf8(path.wstring())},
+            {"displayPath", DisplayPathForDirectory(path)},
+        });
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::PickExportDirectory(ReactPromiseJS &&promise) noexcept {
+  try {
+    winrt::com_ptr<IFileOpenDialog> dialog;
+    HRESULT hr = CoCreateInstance(
+        CLSID_FileOpenDialog,
+        nullptr,
+        CLSCTX_INPROC_SERVER,
+        IID_PPV_ARGS(dialog.put()));
+    if (FAILED(hr) || !dialog) {
+      promise.Reject(winrtRN::ReactError{"Error", "Unable to open folder picker"});
+      return;
+    }
+
+    DWORD options = 0;
+    dialog->GetOptions(&options);
+    dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+    dialog->SetTitle(L"Choose a folder to save your export");
+
+    hr = dialog->Show(GetActiveWindow());
+    if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+      promise.Resolve(winrtRN::JSValue(nullptr));
+      return;
+    }
+    if (FAILED(hr)) {
+      promise.Reject(winrtRN::ReactError{"Error", "Folder picker failed"});
+      return;
+    }
+
+    winrt::com_ptr<IShellItem> item;
+    hr = dialog->GetResult(item.put());
+    if (FAILED(hr) || !item) {
+      promise.Resolve(winrtRN::JSValue(nullptr));
+      return;
+    }
+
+    PWSTR filePath = nullptr;
+    hr = item->GetDisplayName(SIGDN_FILESYSPATH, &filePath);
+    if (FAILED(hr) || filePath == nullptr) {
+      promise.Reject(winrtRN::ReactError{"Error", "Unable to read selected folder"});
+      return;
+    }
+
+    std::filesystem::path selected(filePath);
+    CoTaskMemFree(filePath);
+    EnsureDirectory(selected);
+
+    promise.Resolve(winrtRN::JSValue(winrtRN::JSValueObject{
+        {"path", ToUtf8(selected.wstring())},
+        {"displayPath", DisplayPathForDirectory(selected)},
+    }));
+  } catch (const std::exception &error) {
+    promise.Reject(winrtRN::ReactError{"Error", error.what()});
+  }
+}
+
+void GumpLocalStorage::ResolveUniqueZipPath(
+    std::string directory,
+    std::string fileName,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [directory = std::move(directory), fileName = std::move(fileName)]() {
+        if (directory.empty() || fileName.empty()) {
+          throw std::runtime_error("Directory and file name are required");
+        }
+
+        const auto dirPath = std::filesystem::path(ToWide(directory));
+        const auto requested = std::filesystem::path(ToWide(fileName));
+        const auto stem = requested.stem().wstring();
+        const auto extension = requested.has_extension() ? requested.extension().wstring() : L".zip";
+
+        auto candidate = dirPath / requested;
+        int suffix = 1;
+        while (std::filesystem::exists(candidate)) {
+          candidate = dirPath / (stem + L" (" + std::to_wstring(suffix) + L")" + extension);
+          suffix += 1;
+        }
+
+        return winrtRN::JSValue(ToUtf8(candidate.wstring()));
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::CreateZipFromEntries(
+    winrtRN::JSValueArray entries,
+    std::string zipPath,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [entries = std::move(entries), zipPath = std::move(zipPath)]() {
+        if (zipPath.empty()) {
+          throw std::runtime_error("Zip path is required");
+        }
+        if (entries.size() == 0) {
+          throw std::runtime_error("At least one zip entry is required");
+        }
+
+        const auto destination = std::filesystem::path(ToWide(zipPath));
+        EnsureDirectory(destination.parent_path());
+
+        std::vector<ZipStore::Entry> zipEntries;
+        zipEntries.reserve(entries.size());
+        for (const auto &rawEntry : entries) {
+          if (rawEntry.Type() != winrtRN::JSValueType::Object) {
+            throw std::runtime_error("Invalid zip entry");
+          }
+          const auto &object = rawEntry.AsObject();
+          const auto uri = object["uri"].AsString();
+          const auto name = object["name"].AsString();
+          if (uri.empty() || name.empty()) {
+            throw std::runtime_error("Zip entry requires uri and name");
+          }
+          const auto sourcePath = PathFromUri(uri);
+          if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
+            throw std::runtime_error("Zip source file not found");
+          }
+          zipEntries.push_back(ZipStore::Entry{sourcePath, name});
+        }
+
+        std::error_code removeError;
+        std::filesystem::remove(destination, removeError);
+
+        const auto result = ZipStore::CreateZip(destination, zipEntries);
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"path", ToUtf8(destination.wstring())},
+            {"uri", "file://" + ToUtf8(destination.wstring())},
+            {"fileName", ToUtf8(destination.filename().wstring())},
+            {"byteSize", static_cast<double>(result.byteSize)},
+        });
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::OpenInFileManager(std::string path, winrtRN::ReactPromise<bool> &&promise) noexcept {
+  RunAsyncBool(
+      [path = std::move(path)]() {
+        if (path.empty()) {
+          throw std::runtime_error("Path is required");
+        }
+
+        const auto target = std::filesystem::path(ToWide(path));
+        if (!std::filesystem::exists(target)) {
+          throw std::runtime_error("Path not found");
+        }
+
+        if (std::filesystem::is_directory(target)) {
+          const auto result = ShellExecuteW(
+              nullptr,
+              L"explore",
+              target.c_str(),
+              nullptr,
+              nullptr,
+              SW_SHOWNORMAL);
+          return reinterpret_cast<INT_PTR>(result) > 32;
+        }
+
+        std::wstring params = L"/select,\"" + target.wstring() + L"\"";
+        const auto result = ShellExecuteW(
+            nullptr,
+            L"open",
+            L"explorer.exe",
+            params.c_str(),
+            nullptr,
+            SW_SHOWNORMAL);
+        return reinterpret_cast<INT_PTR>(result) > 32;
+      },
+      std::move(promise));
+}
+
+std::filesystem::path ExportStagingDirectory() {
+  PWSTR localAppData = nullptr;
+  if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppData)) ||
+      localAppData == nullptr) {
+    throw std::runtime_error("Unable to resolve local app data");
+  }
+  std::filesystem::path base(localAppData);
+  CoTaskMemFree(localAppData);
+  return base / L"Gump" / L"exports";
+}
+
+void GumpLocalStorage::EnsureExportStagingDirectory(ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      []() {
+        const auto path = ExportStagingDirectory();
+        EnsureDirectory(path);
+        EnsureDirectory(path / L"looks");
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"path", ToUtf8(path.wstring())},
+            {"displayPath", "Gump / exports"},
+        });
+      },
+      std::move(promise));
+}
+
+void GumpLocalStorage::CopyFile(
+    std::string sourcePath,
+    std::string destinationPath,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [sourcePath = std::move(sourcePath), destinationPath = std::move(destinationPath)]() {
+        if (sourcePath.empty() || destinationPath.empty()) {
+          throw std::runtime_error("Source and destination paths are required");
+        }
+
+        const auto source = std::filesystem::path(ToWide(sourcePath));
+        const auto destination = std::filesystem::path(ToWide(destinationPath));
+        if (!std::filesystem::exists(source)) {
+          throw std::runtime_error("Source file not found");
+        }
+
+        EnsureDirectory(destination.parent_path());
+        std::error_code removeError;
+        std::filesystem::remove(destination, removeError);
+        std::error_code copyError;
+        std::filesystem::copy_file(
+            source,
+            destination,
+            std::filesystem::copy_options::overwrite_existing,
+            copyError);
+        if (copyError) {
+          throw std::runtime_error("Unable to copy export file");
+        }
+
+        const auto byteSize = static_cast<double>(std::filesystem::file_size(destination));
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"path", ToUtf8(destination.wstring())},
+            {"uri", "file://" + ToUtf8(destination.wstring())},
+            {"fileName", ToUtf8(destination.filename().wstring())},
+            {"byteSize", byteSize},
+        });
+      },
+      std::move(promise));
+}
+
+namespace {
+
+uint8_t ClampToByte(float value) {
+  if (value <= 0.0f) {
+    return 0;
+  }
+  if (value >= 255.0f) {
+    return 255;
+  }
+  return static_cast<uint8_t>(value + 0.5f);
+}
+
+float LumaBgr(float b, float g, float r) {
+  return 0.0722f * b + 0.7152f * g + 0.2126f * r;
+}
+
+void SeparableBoxBlurBgra(
+    std::vector<uint8_t> &bgra,
+    int width,
+    int height,
+    int stride,
+    int radius) {
+  if (radius < 1 || width < 2 || height < 2) {
+    return;
+  }
+  const int n = width * height;
+  std::vector<float> tmp(static_cast<size_t>(n) * 3U);
+  std::vector<float> out(static_cast<size_t>(n) * 3U);
+
+  auto sample = [&](int x, int y, int c) -> float {
+    x = std::clamp(x, 0, width - 1);
+    y = std::clamp(y, 0, height - 1);
+    return bgra[static_cast<size_t>(y) * static_cast<size_t>(stride) +
+                static_cast<size_t>(x) * 4U + static_cast<size_t>(c)] /
+           255.0f;
+  };
+
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      float sumB = 0, sumG = 0, sumR = 0;
+      const int count = radius * 2 + 1;
+      for (int k = -radius; k <= radius; ++k) {
+        sumB += sample(x + k, y, 0);
+        sumG += sample(x + k, y, 1);
+        sumR += sample(x + k, y, 2);
+      }
+      const size_t idx = (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 3U;
+      tmp[idx + 0] = sumB / static_cast<float>(count);
+      tmp[idx + 1] = sumG / static_cast<float>(count);
+      tmp[idx + 2] = sumR / static_cast<float>(count);
+    }
+  }
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      float sumB = 0, sumG = 0, sumR = 0;
+      const int count = radius * 2 + 1;
+      for (int k = -radius; k <= radius; ++k) {
+        const int yy = std::clamp(y + k, 0, height - 1);
+        const size_t idx = (static_cast<size_t>(yy) * width + static_cast<size_t>(x)) * 3U;
+        sumB += tmp[idx + 0];
+        sumG += tmp[idx + 1];
+        sumR += tmp[idx + 2];
+      }
+      const size_t idx = (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 3U;
+      out[idx + 0] = sumB / static_cast<float>(count);
+      out[idx + 1] = sumG / static_cast<float>(count);
+      out[idx + 2] = sumR / static_cast<float>(count);
+    }
+  }
+  for (int y = 0; y < height; ++y) {
+    uint8_t *row = bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
+    for (int x = 0; x < width; ++x) {
+      const size_t idx = (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 3U;
+      const size_t o = static_cast<size_t>(x) * 4U;
+      row[o + 0] = ClampToByte(out[idx + 0] * 255.0f);
+      row[o + 1] = ClampToByte(out[idx + 1] * 255.0f);
+      row[o + 2] = ClampToByte(out[idx + 2] * 255.0f);
+    }
+  }
+}
+
+void BlendTowardBlurBgra(
+    std::vector<uint8_t> &bgra,
+    int width,
+    int height,
+    int stride,
+    int radius,
+    float amount) {
+  if (amount <= 0.001f || radius < 1) {
+    return;
+  }
+  amount = std::clamp(amount, 0.0f, 1.0f);
+  std::vector<uint8_t> blurred = bgra;
+  SeparableBoxBlurBgra(blurred, width, height, stride, radius);
+  for (int y = 0; y < height; ++y) {
+    uint8_t *row = bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
+    const uint8_t *brow =
+        blurred.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
+    for (int x = 0; x < width; ++x) {
+      const size_t o = static_cast<size_t>(x) * 4U;
+      for (int c = 0; c < 3; ++c) {
+        const float src = row[o + c];
+        const float blu = brow[o + c];
+        row[o + c] = ClampToByte(src * (1.0f - amount) + blu * amount);
+      }
+    }
+  }
+}
+
+uint32_t GrainHash(uint32_t x, uint32_t y) {
+  uint32_t n = x * 374761393u + y * 668265263u + 1013904223u;
+  n = (n ^ (n >> 13)) * 1274126177u;
+  return n ^ (n >> 16);
+}
+
+void ApplyLookFinishingBgra(
+    const std::string &lookId,
+    uint8_t *destData,
+    int width,
+    int height,
+    int stride,
+    float intensityT) {
+  const float t = std::clamp(intensityT, 0.0f, 1.0f);
+  if (t <= 0.0f || width < 2 || height < 2 || destData == nullptr) {
+    return;
+  }
+
+  float texture = 0, clarity = 0, dehaze = 0;
+  float vigAmount = 0, vigMidpoint = 50, vigFeather = 0.75f;
+  float grainAmount = 0, grainSize = 25, grainRough = 45;
+  float warmNudge = 0, settleNudge = 0;
+  float darken = 0, blueCrush = 0;
+  bool vigFrameEllipse = false;
+  if (lookId == "warmRomantic") {
+    texture = -5;
+    clarity = -8;
+    dehaze = -3;
+    vigAmount = -8;
+    vigMidpoint = 45;
+    grainAmount = 10;
+    grainSize = 25;
+    grainRough = 45;
+    warmNudge = 0.045f;
+    settleNudge = 0.035f;
+  } else if (lookId == "cleanNatural") {
+    texture = -5;
+    clarity = -5;
+  } else if (lookId == "filmMood") {
+    // Cube = curve70 + warm + pull20. Frame ellipse vignette matches FM_latest_03b.
+    texture = -3;
+    clarity = 0;
+    dehaze = 0;
+    vigAmount = -30;
+    vigMidpoint = 40;
+    vigFeather = 0.75f;
+    vigFrameEllipse = true;
+    grainAmount = 0;
+    warmNudge = 0.0f;
+    settleNudge = 0.0f;
+    blueCrush = 0.0f;
+    darken = 0.0f;
+  } else {
+    return;
+  }
+
+  std::vector<uint8_t> bgra(static_cast<size_t>(height) * static_cast<size_t>(stride));
+  for (int y = 0; y < height; ++y) {
+    std::memcpy(
+        bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride),
+        destData + static_cast<size_t>(y) * static_cast<size_t>(stride),
+        static_cast<size_t>(width) * 4U);
+  }
+
+  if (texture < 0) {
+    const int texRadius =
+        std::max(1, static_cast<int>(std::lround(std::min(width, height) * 0.0015)));
+    BlendTowardBlurBgra(
+        bgra, width, height, stride, texRadius, (std::abs(texture) / 100.0f) * 0.55f * t);
+  }
+
+  if (clarity < 0) {
+    const int clarRadius =
+        std::max(4, static_cast<int>(std::lround(std::min(width, height) * 0.012)));
+    BlendTowardBlurBgra(
+        bgra, width, height, stride, clarRadius, (std::abs(clarity) / 100.0f) * 0.95f * t);
+  } else if (clarity > 0) {
+    // Positive clarity: unsharp via blur residual.
+    const int radius =
+        std::max(2, static_cast<int>(std::lround(std::min(width, height) * 0.006)));
+    std::vector<uint8_t> blurred = bgra;
+    SeparableBoxBlurBgra(blurred, width, height, stride, radius);
+    const float amt = (clarity / 100.0f) * 1.1f * t;
+    for (int y = 0; y < height; ++y) {
+      uint8_t *row = bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
+      const uint8_t *brow =
+          blurred.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
+      for (int x = 0; x < width; ++x) {
+        const size_t o = static_cast<size_t>(x) * 4U;
+        for (int c = 0; c < 3; ++c) {
+          const float src = row[o + c];
+          const float blu = brow[o + c];
+          row[o + c] = ClampToByte(src + (src - blu) * amt);
+        }
+      }
+    }
+  }
+
+  const float dehazeT = (dehaze / 100.0f) * t;
+  // Circular WR path keeps 0.85 scale; ellipse Film Mood uses LR amount 1:1.
+  const float vigAmt =
+      (std::abs(vigAmount) / 100.0f) * t * (vigFrameEllipse ? 1.0f : 0.85f);
+  const float grainAmt = (grainAmount / 100.0f) * t;
+  const float warm = warmNudge * t;
+  const float settle = settleNudge * t;
+  const float dark = darken * t;
+  const float crushB = blueCrush * t;
+  const float keep = 1.0f - dark;
+  const float cx = (width - 1) * 0.5f;
+  const float cy = (height - 1) * 0.5f;
+  const float minSide = static_cast<float>(std::min(width, height));
+  const float vigRadius = minSide * (0.62f + (vigMidpoint / 100.0f) * 0.28f);
+  const float vigRadiusSq = vigRadius * vigRadius;
+  const float vigInner = std::clamp((vigMidpoint / 100.0f) * 0.95f, 0.0f, 0.9f);
+  const float vigWidth = 0.18f + vigFeather * 0.50f;
+
+  for (int y = 0; y < height; ++y) {
+    uint8_t *row = bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride);
+    for (int x = 0; x < width; ++x) {
+      const size_t o = static_cast<size_t>(x) * 4U;
+      float b = row[o + 0] / 255.0f;
+      float g = row[o + 1] / 255.0f;
+      float r = row[o + 2] / 255.0f;
+
+      if (std::abs(dehazeT) > 0.0005f) {
+        const float contrast = 1.0f + dehazeT * 0.35f;
+        const float brightness = dehazeT < 0 ? (-dehazeT * 0.02f) : (-dehazeT * 0.01f);
+        const float sat = 1.0f + dehazeT * 0.08f;
+        b = (b - 0.5f) * contrast + 0.5f + brightness;
+        g = (g - 0.5f) * contrast + 0.5f + brightness;
+        r = (r - 0.5f) * contrast + 0.5f + brightness;
+        const float yL = LumaBgr(b, g, r);
+        b = yL + (b - yL) * sat;
+        g = yL + (g - yL) * sat;
+        r = yL + (r - yL) * sat;
+      }
+
+      if (warm > 0.0f || settle > 0.0f || dark > 0.0f || crushB > 0.0f) {
+        r = r * keep * (1.0f + warm * 0.55f) - settle * 0.55f;
+        g = g * keep * (1.0f + warm * 0.05f) - settle * 0.75f;
+        b = b * keep * (1.0f - warm * 0.70f - crushB) - settle * 0.35f;
+      }
+      r = std::clamp(r, 0.0f, 1.0f);
+      g = std::clamp(g, 0.0f, 1.0f);
+      b = std::clamp(b, 0.0f, 1.0f);
+
+      if (vigAmount < 0 && vigAmt > 0.0005f) {
+        float falloff = 0.0f;
+        if (vigFrameEllipse) {
+          const float nx = (static_cast<float>(x) - cx) / std::max(cx, 1.0f);
+          const float ny = (static_cast<float>(y) - cy) / std::max(cy, 1.0f);
+          const float rr =
+              std::sqrt(nx * nx + ny * ny) * 0.70710678118f;  // / sqrt(2)
+          falloff = std::clamp((rr - vigInner) / std::max(vigWidth, 1e-6f), 0.0f, 1.0f);
+          falloff = falloff * falloff * (3.0f - 2.0f * falloff);
+          const float Y = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+          const float hi = std::clamp((Y - 0.78f) / 0.22f, 0.0f, 1.0f) * 0.30f;
+          const float strength = vigAmt * falloff * (1.0f - hi);
+          b *= (1.0f - strength);
+          g *= (1.0f - strength);
+          r *= (1.0f - strength);
+        } else {
+          const float dx = static_cast<float>(x) - cx;
+          const float dy = static_cast<float>(y) - cy;
+          falloff = (dx * dx + dy * dy) / std::max(vigRadiusSq, 1.0f);
+          falloff = std::clamp(falloff, 0.0f, 1.0f);
+          falloff = falloff * falloff * (3.0f - 2.0f * falloff);
+          const float darkenV = 1.0f - vigAmt * falloff;
+          b *= darkenV;
+          g *= darkenV;
+          r *= darkenV;
+        }
+      }
+
+      if (grainAmt > 0.0005f) {
+        const uint32_t h = GrainHash(static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+        // Size modulates hash lattice a bit.
+        const uint32_t sx = static_cast<uint32_t>(x * (40.0f / std::max(grainSize, 1.0f)));
+        const uint32_t sy = static_cast<uint32_t>(y * (40.0f / std::max(grainSize, 1.0f)));
+        const uint32_t h2 = GrainHash(sx, sy) ^ h;
+        const float n = (static_cast<float>(h2 & 255u) / 255.0f - 0.5f);
+        const float rough = grainRough / 100.0f;
+        const float grain = n * grainAmt * (0.35f + rough * 0.25f);
+        b = std::clamp(b + grain, 0.0f, 1.0f);
+        g = std::clamp(g + grain, 0.0f, 1.0f);
+        r = std::clamp(r + grain, 0.0f, 1.0f);
+      }
+
+      row[o + 0] = ClampToByte(b * 255.0f);
+      row[o + 1] = ClampToByte(g * 255.0f);
+      row[o + 2] = ClampToByte(r * 255.0f);
+    }
+  }
+
+  for (int y = 0; y < height; ++y) {
+    std::memcpy(
+        destData + static_cast<size_t>(y) * static_cast<size_t>(stride),
+        bgra.data() + static_cast<size_t>(y) * static_cast<size_t>(stride),
+        static_cast<size_t>(width) * 4U);
+  }
+}
+
+struct LookCubeLut {
+  int size = 0;
+  std::vector<float> rgb; // size^3 * 3, R-fast then G then B
+};
+
+std::optional<std::filesystem::path> ResolveLookCubePath(const std::string &lookId) {
+  if (lookId.empty() || lookId == "original") {
+    return std::nullopt;
+  }
+  const auto fileName = ToWide(lookId + ".cube");
+  std::vector<std::filesystem::path> roots;
+  const auto moduleDir = ModuleDirectory();
+  if (!moduleDir.empty()) {
+    roots.push_back(moduleDir);
+    auto parent = moduleDir.parent_path();
+    for (int depth = 0; depth < 5 && !parent.empty(); ++depth) {
+      roots.push_back(parent);
+      parent = parent.parent_path();
+    }
+  }
+  static constexpr std::wstring_view kRelativeLookDirs[] = {
+      L"Assets\\Looks",
+      L"Looks",
+      L"GumpDesktop\\Assets\\Looks",
+  };
+  for (const auto &root : roots) {
+    for (const auto rel : kRelativeLookDirs) {
+      const auto candidate = root / rel / fileName;
+      if (std::filesystem::exists(candidate)) {
+        return candidate;
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<LookCubeLut> LoadCubeLut(const std::filesystem::path &path);
+
+std::optional<LookCubeLut> LoadCubeLutUncached(const std::filesystem::path &path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input.is_open()) {
+    return std::nullopt;
+  }
+  LookCubeLut lut;
+  std::string line;
+  while (std::getline(input, line)) {
+    if (line.empty() || line[0] == '#') {
+      continue;
+    }
+    if (line.rfind("TITLE", 0) == 0 || line.rfind("DOMAIN_", 0) == 0) {
+      continue;
+    }
+    if (line.rfind("LUT_3D_SIZE", 0) == 0) {
+      std::istringstream sizeStream(line);
+      std::string label;
+      sizeStream >> label >> lut.size;
+      continue;
+    }
+    std::istringstream valueStream(line);
+    float r = 0;
+    float g = 0;
+    float b = 0;
+    if (!(valueStream >> r >> g >> b)) {
+      continue;
+    }
+    lut.rgb.push_back(r);
+    lut.rgb.push_back(g);
+    lut.rgb.push_back(b);
+  }
+  if (lut.size <= 1) {
+    return std::nullopt;
+  }
+  const size_t expected = static_cast<size_t>(lut.size) * static_cast<size_t>(lut.size) *
+                          static_cast<size_t>(lut.size) * 3U;
+  if (lut.rgb.size() < expected) {
+    return std::nullopt;
+  }
+  lut.rgb.resize(expected);
+  return lut;
+}
+
+/** Parse each .cube once — modal opens bake main + 3 chips and re-read ~7MB files otherwise. */
+std::optional<LookCubeLut> LoadCubeLut(const std::filesystem::path &path) {
+  static std::mutex mutex;
+  static std::unordered_map<std::wstring, LookCubeLut> cache;
+  const auto key = path.wstring();
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    const auto it = cache.find(key);
+    if (it != cache.end()) {
+      return it->second;
+    }
+  }
+  auto loaded = LoadCubeLutUncached(path);
+  if (!loaded.has_value()) {
+    return std::nullopt;
+  }
+  std::lock_guard<std::mutex> lock(mutex);
+  cache.emplace(key, *loaded);
+  return loaded;
+}
+
+void SmoothCubeLutLight(LookCubeLut &lut, int passes) {
+  const int n = lut.size;
+  if (n <= 2 || passes <= 0) {
+    return;
+  }
+  auto at = [&](int r, int g, int b, int c) -> float {
+    r = std::clamp(r, 0, n - 1);
+    g = std::clamp(g, 0, n - 1);
+    b = std::clamp(b, 0, n - 1);
+    const size_t index =
+        (static_cast<size_t>(r) + static_cast<size_t>(g) * static_cast<size_t>(n) +
+         static_cast<size_t>(b) * static_cast<size_t>(n) * static_cast<size_t>(n)) *
+            3U +
+        static_cast<size_t>(c);
+    return lut.rgb[index];
+  };
+  for (int pass = 0; pass < passes; ++pass) {
+    std::vector<float> next = lut.rgb;
+    for (int b = 0; b < n; ++b) {
+      for (int g = 0; g < n; ++g) {
+        for (int r = 0; r < n; ++r) {
+          for (int c = 0; c < 3; ++c) {
+            float sum = 0.0f;
+            float weight = 0.0f;
+            for (int db = -1; db <= 1; ++db) {
+              for (int dg = -1; dg <= 1; ++dg) {
+                for (int dr = -1; dr <= 1; ++dr) {
+                  const float w = (dr == 0 && dg == 0 && db == 0) ? 8.0f : 1.0f;
+                  sum += at(r + dr, g + dg, b + db, c) * w;
+                  weight += w;
+                }
+              }
+            }
+            const size_t index =
+                (static_cast<size_t>(r) + static_cast<size_t>(g) * static_cast<size_t>(n) +
+                 static_cast<size_t>(b) * static_cast<size_t>(n) * static_cast<size_t>(n)) *
+                    3U +
+                static_cast<size_t>(c);
+            next[index] = sum / weight;
+          }
+        }
+      }
+    }
+    lut.rgb.swap(next);
+  }
+}
+
+void SampleCubeLut(
+    const LookCubeLut &lut,
+    float r,
+    float g,
+    float b,
+    float intensityT,
+    float &outR,
+    float &outG,
+    float &outB) {
+  const int n = lut.size;
+  const float maxIndex = static_cast<float>(n - 1);
+  const float rf = std::clamp(r, 0.0f, 1.0f) * maxIndex;
+  const float gf = std::clamp(g, 0.0f, 1.0f) * maxIndex;
+  const float bf = std::clamp(b, 0.0f, 1.0f) * maxIndex;
+  const int r0 = static_cast<int>(rf);
+  const int g0 = static_cast<int>(gf);
+  const int b0 = static_cast<int>(bf);
+  const int r1 = std::min(r0 + 1, n - 1);
+  const int g1 = std::min(g0 + 1, n - 1);
+  const int b1 = std::min(b0 + 1, n - 1);
+  const float rT = rf - static_cast<float>(r0);
+  const float gT = gf - static_cast<float>(g0);
+  const float bT = bf - static_cast<float>(b0);
+
+  auto at = [&](int rr, int gg, int bb, int channel) -> float {
+    const size_t index =
+        (static_cast<size_t>(rr) + static_cast<size_t>(gg) * static_cast<size_t>(n) +
+         static_cast<size_t>(bb) * static_cast<size_t>(n) * static_cast<size_t>(n)) *
+            3U +
+        static_cast<size_t>(channel);
+    return lut.rgb[index];
+  };
+
+  auto lerp = [](float a, float c, float t) { return a * (1.0f - t) + c * t; };
+  auto sampleChannel = [&](int channel) {
+    const float c000 = at(r0, g0, b0, channel);
+    const float c100 = at(r1, g0, b0, channel);
+    const float c010 = at(r0, g1, b0, channel);
+    const float c110 = at(r1, g1, b0, channel);
+    const float c001 = at(r0, g0, b1, channel);
+    const float c101 = at(r1, g0, b1, channel);
+    const float c011 = at(r0, g1, b1, channel);
+    const float c111 = at(r1, g1, b1, channel);
+    const float c00 = lerp(c000, c100, rT);
+    const float c10 = lerp(c010, c110, rT);
+    const float c01 = lerp(c001, c101, rT);
+    const float c11 = lerp(c011, c111, rT);
+    const float c0 = lerp(c00, c10, gT);
+    const float c1 = lerp(c01, c11, gT);
+    return lerp(c0, c1, bT);
+  };
+
+  const float lutR = sampleChannel(0);
+  const float lutG = sampleChannel(1);
+  const float lutB = sampleChannel(2);
+  const float t = std::clamp(intensityT, 0.0f, 1.0f);
+  outR = lerp(r, lutR, t);
+  outG = lerp(g, lutG, t);
+  outB = lerp(b, lutB, t);
+}
+
+std::optional<std::filesystem::path> ApplyLookLutToPath(
+    const std::filesystem::path &sourcePath,
+    const std::filesystem::path &destPath,
+    const std::string &lookId,
+    float intensityPercent,
+    uint32_t maxPixelSize,
+    float jpegQuality) {
+  ThumbnailConcurrencyGuard concurrencyGuard;
+  const auto bitmap = DecodeOrientedScaledBitmapWithFallback(sourcePath, maxPixelSize);
+  if (!bitmap) {
+    throw std::runtime_error("Apply look could not decode the photo");
+  }
+  const auto pixels = ReadBitmapPixels(bitmap);
+
+  const bool applyLut = lookId != "original" && intensityPercent > 0.0f;
+  std::optional<LookCubeLut> lut;
+  if (applyLut) {
+    const auto cubePath = ResolveLookCubePath(lookId);
+    if (!cubePath.has_value()) {
+      throw std::runtime_error(
+          "Look LUT (.cube) is missing next to the app (Assets/Looks)");
+    }
+    lut = LoadCubeLut(*cubePath);
+    if (!lut.has_value()) {
+      throw std::runtime_error(
+          "Apply look could not parse Look LUT (.cube) file");
+    }
+    // Film Mood curve70+warm+pull20 cube is already smooth — skip lattice smooth.
+  }
+  const float intensityT = std::clamp(intensityPercent / 100.0f, 0.0f, 1.0f);
+  // Matched Film Mood cube — no highlight-soft wash.
+  const float highlightSoft = 0.0f;
+  const float cubeIntensityT = intensityT;
+
+  SoftwareBitmap output(
+      BitmapPixelFormat::Bgra8,
+      pixels.width,
+      pixels.height,
+      BitmapAlphaMode::Premultiplied);
+  // Scope the write lock so BitmapEncoder can read the bitmap afterward.
+  // Holding LockBuffer across WriteSoftwareBitmapJpeg fails JPEG encode on Windows.
+  {
+    BitmapBuffer destBuffer = output.LockBuffer(BitmapBufferAccessMode::Write);
+    const auto destPlane = destBuffer.GetPlaneDescription(0);
+    const auto destReference = destBuffer.CreateReference();
+    auto destAccess = destReference.as<::Windows::Foundation::IMemoryBufferByteAccess>();
+    uint8_t *destData = nullptr;
+    uint32_t capacity = 0;
+    winrt::check_hresult(destAccess->GetBuffer(&destData, &capacity));
+
+    for (int y = 0; y < pixels.height; ++y) {
+      const uint8_t *srcRow = pixels.bytes.data() + static_cast<size_t>(y) * pixels.stride;
+      uint8_t *destRow = destData + static_cast<size_t>(y) * destPlane.Stride;
+      for (int x = 0; x < pixels.width; ++x) {
+        const size_t offset = static_cast<size_t>(x) * 4U;
+        const float b = srcRow[offset + 0] / 255.0f;
+        const float g = srcRow[offset + 1] / 255.0f;
+        const float r = srcRow[offset + 2] / 255.0f;
+        const float a = srcRow[offset + 3] / 255.0f;
+
+        float rOut = r;
+        float gOut = g;
+        float bOut = b;
+        if (lut.has_value()) {
+          float localT = cubeIntensityT;
+          if (highlightSoft > 0.001f) {
+            const float luma = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+            float hi = (luma - 0.55f) / 0.40f;
+            hi = std::clamp(hi, 0.0f, 1.0f);
+            hi = hi * hi * (3.0f - 2.0f * hi);
+            localT = cubeIntensityT * (1.0f - highlightSoft * hi);
+          }
+          SampleCubeLut(*lut, r, g, b, localT, rOut, gOut, bOut);
+        }
+
+        // Ordered dither reduces 8-bit banding after aggressive LUT remap.
+        static constexpr float kBayer4[4][4] = {
+            {0 / 16.0f, 8 / 16.0f, 2 / 16.0f, 10 / 16.0f},
+            {12 / 16.0f, 4 / 16.0f, 14 / 16.0f, 6 / 16.0f},
+            {3 / 16.0f, 11 / 16.0f, 1 / 16.0f, 9 / 16.0f},
+            {15 / 16.0f, 7 / 16.0f, 13 / 16.0f, 5 / 16.0f},
+        };
+        const float dither = (kBayer4[y & 3][x & 3] - 0.5f) * 0.85f;
+        destRow[offset + 0] = ClampToByte(bOut * 255.0f + dither);
+        destRow[offset + 1] = ClampToByte(gOut * 255.0f + dither);
+        destRow[offset + 2] = ClampToByte(rOut * 255.0f + dither);
+        destRow[offset + 3] = ClampToByte(a * 255.0f);
+      }
+    }
+
+    if ((lookId == "warmRomantic" || lookId == "cleanNatural" || lookId == "filmMood") &&
+        intensityT > 0.0f) {
+      ApplyLookFinishingBgra(
+          lookId,
+          destData,
+          pixels.width,
+          pixels.height,
+          destPlane.Stride,
+          intensityT);
+    }
+  }
+
+  EnsureDirectory(destPath.parent_path());
+  std::error_code removeError;
+  std::filesystem::remove(destPath, removeError);
+  if (!WriteSoftwareBitmapJpeg(output, destPath, jpegQuality)) {
+    throw std::runtime_error(
+        "Apply look could not write the baked JPEG to export staging");
+  }
+  return destPath;
+}
+
+} // namespace
+
+void GumpLocalStorage::ApplyLook(
+    std::string sourceUri,
+    std::string destPath,
+    std::string lookId,
+    double intensity,
+    double maxPixelSize,
+    double jpegQuality,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [sourceUri = std::move(sourceUri),
+       destPath = std::move(destPath),
+       lookId = std::move(lookId),
+       intensity,
+       maxPixelSize,
+       jpegQuality]() {
+        const auto sourcePath = PathFromUri(sourceUri);
+        if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
+          throw std::runtime_error("Apply look source file not found");
+        }
+        if (destPath.empty()) {
+          throw std::runtime_error("Apply look destination path is empty");
+        }
+
+        const std::string resolvedLookId = lookId.empty() ? "original" : lookId;
+        const float intensityPercent = static_cast<float>(intensity);
+        if (resolvedLookId != "original" && intensityPercent > 0.0f &&
+            !ResolveLookCubePath(resolvedLookId).has_value()) {
+          throw std::runtime_error(
+              "Look LUT (.cube) is missing next to the app (Assets/Looks). "
+              "Rebuild or reinstall GUMP Desktop.");
+        }
+
+        const auto outPath = ApplyLookLutToPath(
+            sourcePath,
+            std::filesystem::path(ToWide(destPath)),
+            resolvedLookId,
+            intensityPercent,
+            maxPixelSize > 0 ? static_cast<uint32_t>(maxPixelSize) : kDetailMaxPixelSize,
+            jpegQuality > 0 ? static_cast<float>(jpegQuality) : kDetailJpegQuality);
+        if (!outPath.has_value()) {
+          throw std::runtime_error("Apply look bake failed");
+        }
+
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"uri", FileUri(*outPath)},
+            {"path", ToUtf8(outPath->wstring())},
+            {"size", static_cast<double>(std::filesystem::file_size(*outPath))},
+        });
       },
       std::move(promise));
 }

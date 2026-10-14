@@ -1,6 +1,6 @@
-import {colors} from '@lib/ui/colors';
-import {sansBoldStyle} from '@lib/ui/typography';
-import {ReactNode, useEffect, useRef, useState} from 'react';
+import { colors } from '@lib/ui/colors';
+import { sansBoldStyle } from '@lib/ui/typography';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -10,9 +10,9 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import {TouchableOpacity} from './TouchableOpacity';
 import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
 import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
+import { TouchableOpacity } from './TouchableOpacity';
 
 const ANIMATION_DURATION_MS = 300;
 
@@ -140,7 +140,7 @@ export function Accordion({
             styles.chevron,
             isChevronAnimating ? {transform: [{rotate: chevronRotation}]} : null,
           ]}>
-          <ChevronIcon width={24} height={24} color={colors.textGray} />
+          <ChevronIcon width={24} height={24} color={colors.white} />
         </Animated.View>
         <Text style={styles.title}>{title}</Text>
       </TouchableOpacity>

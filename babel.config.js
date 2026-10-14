@@ -8,6 +8,7 @@ module.exports = {
       {
         include: [
           'API_BASE_URL',
+          'WEB_APP_URL',
           'POSTHOG_API_KEY',
           'POSTHOG_HOST',
           'APP_VERSION',

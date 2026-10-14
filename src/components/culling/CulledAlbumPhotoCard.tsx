@@ -75,6 +75,7 @@ const StarRatingRow = memo(
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants">
         <Image
+          key={clamped}
           source={STAR_RATING_IMAGES[clamped]}
           style={styles.starRatingImage}
           resizeMode="contain"
@@ -306,6 +307,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
               accessibilityElementsHidden
               importantForAccessibility="no-hide-descendants">
               <Image
+                key={isSelected ? 'selected' : 'unselected'}
                 source={SelectionIcon}
                 style={styles.selectionIcon}
                 resizeMode="contain"
