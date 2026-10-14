@@ -1,3 +1,9 @@
+import {
+  DEFAULT_LOOK_INTENSITY,
+  isLookId,
+  normalizeLookIntensity,
+  type LookId,
+} from '@lib/look/types';
 import {FileAsset} from '../valueObjects/FileAsset';
 import {Face} from '../valueObjects/Face';
 import {AnalysisStatus, UploadStatus, ServerUploadStatus} from '../valueObjects/Status';
@@ -26,6 +32,8 @@ export class CulledPhoto {
 
   private _selected: boolean;
   private _starRating: number | null;
+  private _lookId: LookId;
+  private _lookIntensity: number;
   private _aiSelected: boolean;
   private _maybe: boolean;
   private _blurred: boolean;
@@ -53,6 +61,8 @@ export class CulledPhoto {
     serverUploadError?: string | null;
     selected?: boolean;
     starRating?: number | null;
+    lookId?: LookId;
+    lookIntensity?: number;
     aiSelected?: boolean;
     maybe?: boolean;
     blurred?: boolean;
@@ -83,6 +93,10 @@ export class CulledPhoto {
 
     this._selected = data.selected ?? false;
     this._starRating = data.starRating ?? null;
+    this._lookId = data.lookId ?? 'original';
+    this._lookIntensity = normalizeLookIntensity(
+      data.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
+    );
     this._aiSelected = data.aiSelected ?? false;
     this._maybe = data.maybe ?? false;
     this._blurred = data.blurred ?? false;
@@ -150,6 +164,14 @@ export class CulledPhoto {
 
   get starRating(): number | null {
     return this._starRating;
+  }
+
+  get lookId(): LookId {
+    return this._lookId;
+  }
+
+  get lookIntensity(): number {
+    return this._lookIntensity;
   }
 
   get aiSelected(): boolean {
@@ -241,6 +263,11 @@ export class CulledPhoto {
     this._starRating = rating;
   }
 
+  setLook(lookId: LookId, intensity: number): void {
+    this._lookId = lookId;
+    this._lookIntensity = normalizeLookIntensity(intensity);
+  }
+
   startServerUpload(): void {
     this._serverUploadStatus = 'uploading';
     this._serverUploadProgress = 0;
@@ -294,6 +321,8 @@ export class CulledPhoto {
       serverUploadError: this._serverUploadError,
       selected: this._selected,
       starRating: this._starRating,
+      lookId: this._lookId,
+      lookIntensity: this._lookIntensity,
       aiSelected: this._aiSelected,
       maybe: this._maybe,
       blurred: this._blurred,
@@ -324,6 +353,10 @@ export class CulledPhoto {
       serverUploadError: data.serverUploadError,
       selected: data.selected,
       starRating: data.starRating,
+      lookId: isLookId(data.lookId) ? data.lookId : 'original',
+      lookIntensity: normalizeLookIntensity(
+        data.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
+      ),
       aiSelected: data.aiSelected,
       maybe: data.maybe,
       blurred: data.blurred,

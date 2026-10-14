@@ -1,4 +1,4 @@
-import {ProfileMenuAvatar} from '@components/navigation/ProfileMenu';
+import {HeaderAccountCluster} from '@components/plan';
 import {TouchableOpacity} from '@components/ui';
 import {useProfileMenu} from '@hooks/useProfileMenu';
 import {colors} from '@lib/ui/colors';
@@ -40,7 +40,7 @@ export function CulledAlbumDetailHeader({
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
       </View>
-      <ProfileMenuAvatar menu={profileMenu} />
+      <HeaderAccountCluster profileMenu={profileMenu} />
     </View>
   );
 }

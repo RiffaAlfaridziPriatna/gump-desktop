@@ -34,11 +34,6 @@ export function useProfileMenu() {
     setIsOpen(false);
   }, []);
 
-  const handleUpgrade = useCallback(() => {
-    // TODO: upgrade plan
-    setIsOpen(false);
-  }, []);
-
   const handleLogout = useCallback(async () => {
     setIsOpen(false);
     await logout();
@@ -50,7 +45,6 @@ export function useProfileMenu() {
     userName,
     toggle,
     dismiss,
-    handleUpgrade,
     handleLogout,
   };
 }

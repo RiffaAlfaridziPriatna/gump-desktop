@@ -1,5 +1,6 @@
 import {CulledPhoto} from '@/domain/entities/CulledPhoto';
 import {Face} from '@/domain/valueObjects/Face';
+import {DEFAULT_LOOK_INTENSITY, isLookId} from '@lib/look/types';
 import {CulledAlbumPhoto} from './types';
 
 export function legacyPhotoToDomain(
@@ -30,6 +31,8 @@ export function legacyPhotoToDomain(
     serverUploadError: photo.serverUploadError,
     selected: photo.selected,
     starRating: photo.starRating,
+    lookId: photo.lookId,
+    lookIntensity: photo.lookIntensity,
     aiSelected: photo.aiSelected,
     maybe: photo.maybe,
     blurred: photo.blurred,
@@ -49,6 +52,8 @@ export function domainPhotoToLegacy(photo: CulledPhoto): CulledAlbumPhoto {
       thumbnailWidth: file.thumbnailWidth ?? undefined,
       thumbnailHeight: file.thumbnailHeight ?? undefined,
       detailUri: file.detailUri ?? undefined,
+      lookDetailUri: file.lookDetailUri ?? undefined,
+      lookDetailKey: file.lookDetailKey ?? undefined,
     },
     uploadedAt: photo.uploadedAt,
     capturedAt: photo.capturedAt,
@@ -66,6 +71,8 @@ export function domainPhotoToLegacy(photo: CulledPhoto): CulledAlbumPhoto {
     faces: photo.faces.map(face => face.toPlain()),
     selected: photo.selected,
     starRating: photo.starRating,
+    lookId: isLookId(photo.lookId) ? photo.lookId : 'original',
+    lookIntensity: photo.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
     aiSelected: photo.aiSelected,
     maybe: photo.maybe,
     blurred: photo.blurred,

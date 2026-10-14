@@ -6,14 +6,26 @@ import {
 import {CulledAlbumPhotoGrid} from '@components/culling/CulledAlbumPhotoGrid';
 import {CulledAlbumDetailHeader} from '@components/culling/CulledAlbumDetailHeader';
 import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
+import {ApplyLookModal} from '@components/modals/ApplyLookModal';
 import {DeletePhotoModal} from '@components/modals/DeletePhotoModal';
+import {ExportPhotosModal} from '@components/modals/ExportPhotosModal';
 import {UploadModal} from '@components/modals/UploadModal';
-import {UploadSelectedConfirmModal} from '@components/modals/UploadSelectedConfirmModal';
+import {
+  UploadSelectedModal,
+  type UploadSelectedPhase,
+} from '@components/modals/UploadSelectedModal';
+import {
+  exportQualityLabel,
+  estimateUploadSizeGb,
+} from '@application/plan/uploadStorageEstimate';
+import type {LookId} from '@lib/look/types';
+import {FileAsset} from '@services/upload/types';
 import {UploadToast} from '@components/upload/UploadToast';
 import {FaceStatusTooltip} from '@components/culling/FaceStatusTooltip';
 import {
   useCulledAlbumActions,
   useCulledAlbumPhotosState,
+  useCulledAlbumServerUploadBatch,
   useCulledAlbumStore,
 } from '@context/culledAlbum';
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
@@ -24,26 +36,54 @@ import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
 import {useProfileMenu} from '@hooks/useProfileMenu';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {cullingEngine} from '@lib/culling/cullingEngine';
+import {
+  computeServerUploadBatchByteProgress,
+  countServerUploadBatchItems,
+  isServerUploadBatchFinished,
+} from '@lib/culledAlbum/serverUploadProgress';
 import {getPhotoById, saveLastCullFilters} from '@lib/culledAlbum/store';
+import {captureAppEvent} from '@lib/observability/posthogClient';
 import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
+import {
+  getUploadLookBakeState,
+  subscribeUploadLookBake,
+} from '@lib/look/uploadLookBake';
 import {preloadImage, preloadImages} from '@lib/media/imagePreload';
 import {
   resolveDetailDisplayUri,
   resolveGridDisplayUri,
 } from '@lib/storage/localStorage';
 import {stabilizeGridPhotos} from '@lib/culledAlbum/stableGridPhotos';
-import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
-import {FileAsset} from '@services/upload/types';
+import {
+  toCullingPhoto,
+  isCulledPhotoDisabled,
+  hasInFlightServerUploads,
+} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
 import {useLayout} from '@hooks/useLayout';
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import {Linking, StyleSheet, Text, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useIsFocused} from '@react-navigation/native';
 import IconNoPhoto from '../assets/images/icon_no_photo.svg';
+
+function useUploadLookBake(albumId: string) {
+  return useSyncExternalStore(
+    onStoreChange => subscribeUploadLookBake(albumId, onStoreChange),
+    () => getUploadLookBakeState(albumId),
+    () => getUploadLookBakeState(albumId),
+  );
+}
 
 type Props = StackScreenProps<MainStackParamList, 'CulledAlbumDetail'>;
 
@@ -52,6 +92,7 @@ const CONTENT_COLUMN_GAP = 24;
 
 export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const {albumId} = route.params;
+  const openUploadProgress = route.params.openUploadProgress === true;
   const {shellProps, handleBack, handleBackPressIn} = useUploadAwareModalScreen(
     navigation,
     route.params.instant,
@@ -59,24 +100,19 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   );
   const isFocused = useIsFocused();
   const profileMenu = useProfileMenu();
-  const {resumeInFlightWork, startSelectedUpload, addPhotos} =
-    useCulledAlbumActions();
+  const {resumeInFlightWork, startSelectedUpload, addPhotos} = useCulledAlbumActions();
   const {isMobileLayout, screenPaddingHorizontal, screenWidth} = useLayout();
   const {loadError, loadingPhotos} = useCulledAlbumPhotos(albumId);
   const albumPhotos = useCulledAlbumPhotosState(albumId);
-  const cullingCompleted = useCulledAlbumStore(
-    state => state.albums[albumId]?.cullingCompleted ?? false,
-  );
-  const albumName = useCulledAlbumStore(
-    state =>
-      state.albums[albumId]?.title ?? state.albums[albumId]?.name ?? 'Album',
-  );
-  const albumLink = useCulledAlbumStore(
-    state => state.albums[albumId]?.link ?? '',
-  );
-  const lastCullFilters = useCulledAlbumStore(
-    state => state.albums[albumId]?.lastCullFilters,
-  );
+  const albumRecord = useCulledAlbumStore(state => state.albums[albumId]);
+  const cullingCompleted = albumRecord?.cullingCompleted ?? false;
+  const cullingHasUploads = albumRecord?.cullingHasUploads ?? false;
+  const albumName = albumRecord?.title ?? albumRecord?.name ?? 'Album';
+  const albumLink = albumRecord?.link ?? '';
+  const lastCullFilters = albumRecord?.lastCullFilters;
+  const {batchPhotoIds, photos: batchPhotos} =
+    useCulledAlbumServerUploadBatch(albumId);
+  const lookBake = useUploadLookBake(albumId);
 
   useEffect(() => {
     if (!isFocused) {
@@ -116,11 +152,22 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   } | null>(null);
   const [cullFiltersExpanded, setCullFiltersExpanded] = useState(true);
   const [keyFacesExpanded, setKeyFacesExpanded] = useState(true);
-  const [showUploadConfirm, setShowUploadConfirm] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadPhase, setUploadPhase] =
+    useState<UploadSelectedPhase>('confirm');
+  const [uploadSessionPhotoCount, setUploadSessionPhotoCount] = useState(0);
+  const [uploadSessionSizeGb, setUploadSessionSizeGb] = useState(0);
+  const uploadModalDismissedRef = useRef(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showApplyLookModal, setShowApplyLookModal] = useState(false);
   const [showAddPhotosModal, setShowAddPhotosModal] = useState(false);
   const [mainContentWidth, setMainContentWidth] = useState(0);
   const isBlockingModalOpen =
-    photoToDelete !== null || showUploadConfirm || showAddPhotosModal;
+    photoToDelete !== null ||
+    showUploadModal ||
+    showExportModal ||
+    showApplyLookModal ||
+    showAddPhotosModal;
 
   useEffect(() => {
     if (!isBlockingModalOpen) {
@@ -180,6 +227,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       )
       .map(photo => ({
         photoId: photo.photoId,
+        lookId: photo.lookId,
+        lookIntensity: photo.lookIntensity,
         disabled: isCulledPhotoDisabled(photo),
         analysis: toCullingPhoto(photo),
       }));
@@ -238,7 +287,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       }),
     [actionPhotos, albumId, albumPhotos],
   );
-  const pendingUploadCount = pendingUploadPhotos.length;
 
   const handleOpenPhotoDetail = useCallback(
     (photoId: string, faceIndex?: number) => {
@@ -276,24 +324,38 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     }
     const photoId = photoToDelete.photoId;
     setPhotoToDelete(null);
-    await deletePhoto(photoId);
-  }, [deletePhoto, photoToDelete]);
+    try {
+      await deletePhoto(photoId);
+      captureAppEvent('photo_deleted', {
+        albumId,
+        photoId,
+      });
+    } catch (error) {
+      console.error('[CulledAlbumDetailScreen] Failed to delete photo', error);
+      captureAppEvent('photo_deleted_failed', {
+        albumId,
+        photoId,
+      });
+    }
+  }, [albumId, deletePhoto, photoToDelete]);
 
   const handleStartUpload = useCallback(async () => {
     const photoIds = pendingUploadPhotos.map(photo => photo.photoId);
     if (photoIds.length === 0) {
       return;
     }
+    const selectedPhotos = albumPhotos.filter(photo =>
+      photoIds.includes(photo.photoId),
+    );
+    const sizeGb = estimateUploadSizeGb(selectedPhotos);
     try {
       saveLastCullFilters(albumId, activeFilters);
+      uploadModalDismissedRef.current = false;
+      setUploadSessionPhotoCount(photoIds.length);
+      setUploadSessionSizeGb(sizeGb);
       startSelectedUpload(albumId, photoIds);
-      setShowUploadConfirm(false);
-      navigation.replace('CulledAlbumUploadProgress', {
-        albumId,
-        photoCount: photoIds.length,
-        albumName,
-        albumLink,
-      });
+      setUploadPhase('uploading');
+      setShowUploadModal(true);
     } catch (error) {
       console.error(
         '[CulledAlbumDetailScreen] Failed to upload selected',
@@ -301,18 +363,149 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       );
       throw error;
     }
+  }, [actionPhotos, activeFilters, albumId, albumPhotos, startSelectedUpload]);
+
+  const handleCloseUploadModal = useCallback(() => {
+    if (uploadPhase === 'uploading') {
+      uploadModalDismissedRef.current = true;
+    }
+    setShowUploadModal(false);
+    setUploadPhase('confirm');
+  }, [uploadPhase]);
+
+  const handleOpenAlbum = useCallback(async () => {
+    if (albumLink) {
+      try {
+        await Linking.openURL(albumLink);
+      } catch (error) {
+        console.error(
+          '[CulledAlbumDetailScreen] Failed to open album',
+          error,
+        );
+      }
+    }
+    uploadModalDismissedRef.current = false;
+    handleCloseUploadModal();
+  }, [albumLink, handleCloseUploadModal]);
+
+  const confirmUploadSizeGb = useMemo(() => {
+    const photoIds = new Set(actionPhotos.map(photo => photo.photoId));
+    return estimateUploadSizeGb(
+      albumPhotos.filter(photo => photoIds.has(photo.photoId)),
+    );
+  }, [actionPhotos, albumPhotos]);
+  // Plan gating is disabled for now — always present original-quality upload label.
+  const exportLabel = exportQualityLabel('original');
+
+  const isApplyingLook = lookBake.status === 'baking';
+  const byteProgress = useMemo(
+    () => computeServerUploadBatchByteProgress(batchPhotos, batchPhotoIds),
+    [batchPhotos, batchPhotoIds],
+  );
+  const uploadFinished =
+    !isApplyingLook &&
+    batchPhotoIds.length > 0 &&
+    isServerUploadBatchFinished(batchPhotos, batchPhotoIds);
+  const batchCounts = useMemo(
+    () => countServerUploadBatchItems(batchPhotos, batchPhotoIds),
+    [batchPhotos, batchPhotoIds],
+  );
+  const uploadProgressValue = isApplyingLook
+    ? lookBake.percent / 100
+    : byteProgress.progress;
+  const modalPhotoCount =
+    uploadPhase === 'confirm' ? actionCount : uploadSessionPhotoCount;
+  const modalUploadSizeGb =
+    uploadPhase === 'confirm' ? confirmUploadSizeGb : uploadSessionSizeGb;
+  const sessionUploadBytes = modalUploadSizeGb * 1024 ** 3;
+  const totalUploadBytes =
+    byteProgress.totalBytes > 0 ? byteProgress.totalBytes : sessionUploadBytes;
+  const uploadedBytes = isApplyingLook
+    ? uploadProgressValue * totalUploadBytes
+    : byteProgress.uploadedBytes;
+
+  useEffect(() => {
+    if (!showUploadModal || uploadPhase !== 'uploading' || !uploadFinished) {
+      return;
+    }
+    setUploadSessionPhotoCount(current =>
+      current > 0 ? current : batchCounts.completed || batchPhotoIds.length,
+    );
+    setUploadPhase('complete');
   }, [
-    pendingUploadPhotos,
-    activeFilters,
-    albumId,
-    albumLink,
-    albumName,
-    navigation,
-    startSelectedUpload,
+    batchCounts.completed,
+    batchPhotoIds.length,
+    showUploadModal,
+    uploadFinished,
+    uploadPhase,
   ]);
 
-  const handleUploadSelectedPress = useCallback(() => {
-    setShowUploadConfirm(true);
+  useEffect(() => {
+    if (!isFocused) {
+      return;
+    }
+
+    if (openUploadProgress) {
+      uploadModalDismissedRef.current = false;
+    }
+
+    const inFlight = hasInFlightServerUploads(albumRecord, albumPhotos);
+    const shouldResume =
+      openUploadProgress || (inFlight && batchPhotoIds.length > 0);
+    if (!shouldResume || uploadModalDismissedRef.current) {
+      return;
+    }
+    if (showUploadModal && uploadPhase === 'uploading') {
+      if (openUploadProgress) {
+        navigation.setParams({openUploadProgress: false});
+      }
+      return;
+    }
+
+    setUploadSessionPhotoCount(current =>
+      current > 0 ? current : batchPhotoIds.length,
+    );
+    setUploadSessionSizeGb(current =>
+      current > 0 ? current : estimateUploadSizeGb(batchPhotos),
+    );
+    setUploadPhase('uploading');
+    setShowUploadModal(true);
+    if (openUploadProgress) {
+      navigation.setParams({openUploadProgress: false});
+    }
+  }, [
+    albumPhotos,
+    albumRecord,
+    batchPhotoIds.length,
+    batchPhotos,
+    isFocused,
+    navigation,
+    openUploadProgress,
+    showUploadModal,
+    uploadPhase,
+  ]);
+
+  useEffect(() => {
+    uploadModalDismissedRef.current = false;
+  }, [albumId]);
+
+  const actionAlbumPhotos = useMemo(() => {
+    const photosById = new Map(
+      albumPhotos.map(photo => [photo.photoId, photo] as const),
+    );
+    return actionPhotos.flatMap(photo => {
+      const albumPhoto = photosById.get(photo.photoId);
+      return albumPhoto && albumPhoto.status === 'uploaded' ? [albumPhoto] : [];
+    });
+  }, [actionPhotos, albumPhotos]);
+  const exportPhotoCount = actionAlbumPhotos.length;
+
+  const handleCullFiltersToggle = useCallback(() => {
+    setCullFiltersExpanded(current => !current);
+  }, []);
+
+  const handleKeyFacesToggle = useCallback(() => {
+    setKeyFacesExpanded(current => !current);
   }, []);
 
   const handleAddPhotosPress = useCallback(() => {
@@ -331,18 +524,79 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       addPhotos(albumId, files, {
         autoStartAnalysis: true,
         stabilizeDetailUiDuringImport: true,
+        source: 'culled_add_more',
       });
     },
     [addPhotos, albumId],
   );
 
-  const handleCullFiltersToggle = useCallback(() => {
-    setCullFiltersExpanded(current => !current);
-  }, []);
+  const handleOpenExport = useCallback(() => {
+    if (exportPhotoCount === 0) {
+      return;
+    }
+    setShowExportModal(true);
+  }, [exportPhotoCount]);
 
-  const handleKeyFacesToggle = useCallback(() => {
-    setKeyFacesExpanded(current => !current);
-  }, []);
+  const handleOpenApplyLook = useCallback(() => {
+    if (exportPhotoCount === 0) {
+      return;
+    }
+    setShowApplyLookModal(true);
+  }, [exportPhotoCount]);
+
+  const handleApplyLook = useCallback(
+    async (lookId: LookId, lookIntensity: number) => {
+      const photoIds = actionAlbumPhotos.map(photo => photo.photoId);
+      const photoCount = photoIds.length;
+      captureAppEvent('apply_look_started', {
+        albumId,
+        lookId,
+        lookIntensity,
+        photoCount,
+      });
+      try {
+        await cullingEngine.updateLook(albumId, photoIds, {
+          lookId,
+          lookIntensity,
+        });
+        captureAppEvent('apply_look_completed', {
+          albumId,
+          lookId,
+          lookIntensity,
+          photoCount,
+        });
+      } catch (error) {
+        console.error('[CulledAlbumDetailScreen] Failed to apply look', error);
+        captureAppEvent('apply_look_failed', {
+          albumId,
+          lookId,
+          lookIntensity,
+          photoCount,
+        });
+        throw error;
+      }
+    },
+    [albumId, actionAlbumPhotos],
+  );
+
+  const sidebarActionProps = {
+    onUploadSelected: () => {
+      if (actionCount === 0) {
+        return;
+      }
+      uploadModalDismissedRef.current = false;
+      setUploadPhase('confirm');
+      setShowUploadModal(true);
+    },
+    onAddPhotos: handleAddPhotosPress,
+    onExport: handleOpenExport,
+    onApplyLook: handleOpenApplyLook,
+    uploaded: cullingHasUploads,
+    uploadDisabled: actionCount === 0,
+    addPhotosDisabled: cullingBusy,
+    exportDisabled: exportPhotoCount === 0,
+    applyLookDisabled: exportPhotoCount === 0,
+  };
 
   useEffect(() => {
     syncScreenOrigin();
@@ -422,12 +676,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             starRatingFilter={starRatingFilter}
             onSelectionFilterChange={setSelectionFilter}
             onStarRatingFilterChange={setStarRatingFilter}
-            onUploadSelected={handleUploadSelectedPress}
-            onAddPhotos={handleAddPhotosPress}
-            selectedCount={pendingUploadCount}
-            uploadDisabled={pendingUploadCount === 0 || cullingBusy}
-            addPhotosDisabled={cullingBusy}
-            cullingInProgress={cullingBusy}
+
             isMobileLayout={isMobileLayout}
           />
         </View>
@@ -456,6 +705,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               onKeyFacesToggle={handleKeyFacesToggle}
               onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
               onKeyFacePress={handleKeyFacePress}
+              {...sidebarActionProps}
             />
           )}
           <View
@@ -513,6 +763,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               onKeyFacesToggle={handleKeyFacesToggle}
               onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
               onKeyFacePress={handleKeyFacePress}
+              {...sidebarActionProps}
             />
           )}
         </View>
@@ -529,12 +780,35 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           onDelete={handleDeletePhoto}
         />
 
-        <UploadSelectedConfirmModal
-          visible={showUploadConfirm}
-          photoCount={pendingUploadCount}
+        <UploadSelectedModal
+          visible={showUploadModal}
+          phase={uploadPhase}
+          photoCount={modalPhotoCount}
+          uploadSizeGb={modalUploadSizeGb}
+          uploadedBytes={uploadedBytes}
+          totalUploadBytes={totalUploadBytes}
+          uploadProgress={uploadProgressValue}
+          isApplyingLook={isApplyingLook}
+          exportQualityLabel={exportLabel}
+          onClose={handleCloseUploadModal}
+          onUploadNow={handleStartUpload}
+          onOpenAlbum={handleOpenAlbum}
+        />
+
+        <ExportPhotosModal
+          visible={showExportModal}
+          photoCount={exportPhotoCount}
+          albumId={albumId}
           albumName={albumName}
-          onClose={() => setShowUploadConfirm(false)}
-          onStartUpload={handleStartUpload}
+          selectedPhotos={actionAlbumPhotos}
+          onClose={() => setShowExportModal(false)}
+        />
+
+        <ApplyLookModal
+          visible={showApplyLookModal}
+          selectedPhotos={actionAlbumPhotos}
+          onClose={() => setShowApplyLookModal(false)}
+          onApply={handleApplyLook}
         />
 
         <UploadModal

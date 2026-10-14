@@ -176,9 +176,11 @@ export function useLocalCulledAlbumList() {
     void refresh();
   }, [refresh]);
 
+  // Exclude from Select Album using store IDs (sync), not the access-filtered
+  // list — access starts null and would flash already-culled site albums.
   const localAlbumIds = useMemo(
-    () => new Set(albums.map(album => album.albumId)),
-    [albums],
+    () => new Set(storedAlbums.map(album => album.albumId)),
+    [storedAlbums],
   );
 
   return {

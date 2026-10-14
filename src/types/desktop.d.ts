@@ -25,6 +25,7 @@ declare module 'react-native' {
       scrollToOffset: (
         reactTag: number,
         offsetY: number,
+        animated: boolean,
       ) => Promise<Record<string, unknown>>;
     };
     GumpFilePicker?: {

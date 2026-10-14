@@ -1,0 +1,998 @@
+import { Modal, Pressable, ProgressBar, TouchableOpacity } from '@components/ui';
+import type { CulledAlbumPhoto } from '@lib/culledAlbum/types';
+import { formatByteSize } from '@lib/export/formatByteSize';
+import {
+  openInFileManager,
+  pickExportDirectory,
+} from '@lib/export/nativeExport';
+import {
+  downloadPreparedExport,
+  prepareSelectedPhotosExport,
+  type PreparedExport,
+} from '@lib/export/prepareExport';
+import type {
+  ExportDirectoryInfo,
+  ExportFormat,
+  ExportPhotosModalStep,
+  ExportQuality,
+  ExportZipResult,
+} from '@lib/export/types';
+import { photoNeedsLookBake } from '@lib/look/bakeLook';
+import { captureAppEvent } from '@lib/observability/posthogClient';
+import { colors } from '@lib/ui/colors';
+import { fonts, sansBoldStyle } from '@lib/ui/typography';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
+import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
+import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
+import IconFolder from '../../assets/images/icon_folder.svg';
+import IconFolderZip from '../../assets/images/icon_folder_zip.svg';
+import IconLock from '../../assets/images/icon_lock.svg';
+import CircleBlue from '../../assets/images/upload/blue_circle.svg';
+import HalfCircle from '../../assets/images/upload/half_circle.svg';
+import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
+import QuarterCircleOrange from '../../assets/images/upload/orange_quarter_circle.svg';
+import QuarterCircleRed from '../../assets/images/upload/red_quarter_circle.svg';
+
+const EXPORT_FORMAT_OPTIONS: ReadonlyArray<{
+  id: ExportFormat;
+  label: string;
+}> = [{ id: 'zip', label: 'ZIP' }];
+
+type ExportPhotosModalProps = {
+  visible: boolean;
+  photoCount: number;
+  albumId: string;
+  albumName: string;
+  selectedPhotos: CulledAlbumPhoto[];
+  onClose: () => void;
+};
+
+type FormatExportDropdownProps = {
+  value: ExportFormat;
+  open: boolean;
+  onToggle: () => void;
+  onSelect: (format: ExportFormat) => void;
+};
+
+function FormatExportDropdown({
+  value,
+  open,
+  onToggle,
+  onSelect,
+}: FormatExportDropdownProps) {
+  const selectedLabel =
+    EXPORT_FORMAT_OPTIONS.find(option => option.id === value)?.label ?? 'ZIP';
+  // Swap icons instead of rotate — Windows misplaces transformed SVG views.
+  const ChevronIcon = open ? IconChevronUp : IconChevronDown;
+
+  return (
+    <View style={styles.formatSection}>
+      <View style={styles.formatRow}>
+        <Text style={styles.formatLabel}>Format</Text>
+        {/*
+          Border lives on a non-pressable shell. On Windows, pressable focus
+          chrome stacked on the same view as borderRadius draws a double outline.
+        */}
+        <View style={styles.formatValueShell}>
+          <TouchableOpacity
+            onPress={onToggle}
+            style={styles.formatValue}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityState={{expanded: open}}
+            accessibilityLabel={`Export format ${selectedLabel}`}>
+            <Text style={styles.formatValueText}>{selectedLabel}</Text>
+            <ChevronIcon width={20} height={20} color={colors.textDark} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/*
+        Menu is a sibling of the bordered row (not a child). Windows clips
+        absolute children of borderRadius views; macOS often does not.
+      */}
+      {open ? (
+        <View style={styles.formatMenu} accessibilityRole="menu">
+          {EXPORT_FORMAT_OPTIONS.map((option, index) => {
+            const isLast = index === EXPORT_FORMAT_OPTIONS.length - 1;
+            return (
+              <Pressable
+                key={option.id}
+                onPress={() => onSelect(option.id)}
+                style={[
+                  styles.formatMenuItem,
+                  !isLast && styles.formatMenuItemBorder,
+                ]}
+                accessibilityRole="menuitem"
+                accessibilityState={{selected: option.id === value}}>
+                <Text style={styles.formatMenuItemText}>{option.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+type QualityOptionProps = {
+  title: string;
+  description: string;
+  statusLabels: string[];
+  selected: boolean;
+  locked?: boolean;
+  onPress: () => void;
+};
+
+function QualityOption({
+  title,
+  description,
+  statusLabels,
+  selected,
+  locked = false,
+  onPress,
+}: QualityOptionProps) {
+  const muted = locked && !selected;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.qualityOption,
+        selected && styles.qualityOptionSelected,
+      ]}
+      accessibilityRole="button"
+      accessibilityState={{selected}}>
+      <View style={styles.qualityOptionContent}>
+        {selected ? (
+          <IconCheckCircle width={24} height={24} color={colors.accent} />
+        ) : (
+          <View style={styles.radioEmpty} />
+        )}
+
+        <View style={styles.qualityOptionMain}>
+          <View style={styles.qualityOptionTitleRow}>
+            {locked && (
+              <IconLock width={12} height={12} color={colors.iconLight} />
+            )}
+            <Text style={[styles.qualityTitle, muted && styles.qualityTitleMuted]}>
+              {title}
+            </Text>
+          </View>
+          <Text
+            style={[
+              styles.qualityDescription,
+              muted && styles.qualityDescriptionMuted,
+            ]}>
+            {description}
+          </Text>
+        </View>
+      </View>
+      <View>
+        {statusLabels.map((statusLabel, index) => (
+          <Text key={index} style={styles.qualityStatus}>
+            {statusLabel}
+          </Text>
+        ))}
+      </View>
+    </Pressable>
+  );
+}
+
+function ModalDecor() {
+  return (
+    <>
+      <HalfCircle style={styles.halfCircleDecor} width={72} />
+      <QuarterCircleOrange
+        style={styles.quarterOrangeDecor}
+        width={98}
+        height={98}
+      />
+      <QuarterCircleRed style={styles.quarterRedDecor} width={80} height={80} />
+      <CircleBlue style={styles.circleBlueDecor} width={32} height={32} />
+      <CircleLightBlue
+        style={styles.circleLightBlueDecor}
+        width={36}
+        height={36}
+      />
+    </>
+  );
+}
+
+export function ExportPhotosModal({
+  visible,
+  photoCount,
+  albumId,
+  albumName,
+  selectedPhotos,
+  onClose,
+}: ExportPhotosModalProps) {
+  const [step, setStep] = useState<ExportPhotosModalStep>('options');
+  const [quality, setQuality] = useState<ExportQuality>('compressed');
+  const [format, setFormat] = useState<ExportFormat>('zip');
+  const [formatMenuOpen, setFormatMenuOpen] = useState(false);
+  const [progressPercent, setProgressPercent] = useState(0);
+  const [preparedExport, setPreparedExport] = useState<PreparedExport | null>(
+    null,
+  );
+  const [downloadedExport, setDownloadedExport] =
+    useState<ExportZipResult | null>(null);
+  const [exportDirectory, setExportDirectory] =
+    useState<ExportDirectoryInfo | null>(null);
+  const [failureKind, setFailureKind] = useState<'prepare' | 'download' | null>(
+    null,
+  );
+  const prepareRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+    setStep('options');
+    setQuality('compressed');
+    setFormat('zip');
+    setFormatMenuOpen(false);
+    setProgressPercent(0);
+    setPreparedExport(null);
+    setDownloadedExport(null);
+    setExportDirectory(null);
+    setFailureKind(null);
+  }, [visible]);
+
+  const handleSelectCompressed = useCallback(() => {
+    setFormatMenuOpen(false);
+    setQuality('compressed');
+  }, []);
+
+  const handleSelectOriginal = useCallback(() => {
+    setFormatMenuOpen(false);
+    setQuality('original');
+  }, []);
+
+  const handleToggleFormatMenu = useCallback(() => {
+    setFormatMenuOpen(prev => !prev);
+  }, []);
+
+  const handleSelectFormat = useCallback((nextFormat: ExportFormat) => {
+    setFormat(nextFormat);
+    setFormatMenuOpen(false);
+  }, []);
+
+  const handleDismissFormatMenu = useCallback(() => {
+    setFormatMenuOpen(false);
+  }, []);
+
+  const looksNeedBake = useMemo(
+    () => selectedPhotos.some(photoNeedsLookBake),
+    [selectedPhotos],
+  );
+
+  const runPrepareExport = useCallback(async () => {
+    const requestId = prepareRequestIdRef.current + 1;
+    prepareRequestIdRef.current = requestId;
+    setStep(looksNeedBake ? 'applyingLook' : 'preparing');
+    setProgressPercent(0);
+    setPreparedExport(null);
+    setDownloadedExport(null);
+    setFailureKind(null);
+    const photoCount = selectedPhotos.length;
+    const startedAt = Date.now();
+    captureAppEvent('export_prepare_started', {
+      albumId,
+      photoCount,
+      quality,
+      looksNeedBake,
+    });
+
+    try {
+      const result = await prepareSelectedPhotosExport({
+        albumId,
+        albumName,
+        photos: selectedPhotos,
+        quality,
+        onProgress: progress => {
+          if (prepareRequestIdRef.current !== requestId) {
+            return;
+          }
+          if (progress.phase === 'applyingLook') {
+            setStep('applyingLook');
+          } else if (progress.phase === 'preparing') {
+            setStep('preparing');
+          }
+          setProgressPercent(progress.percent);
+        },
+      });
+
+      if (prepareRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setPreparedExport(result);
+      setProgressPercent(100);
+      setStep('ready');
+      captureAppEvent('export_prepare_completed', {
+        albumId,
+        photoCount,
+        quality,
+        looksNeedBake,
+        durationMs: Date.now() - startedAt,
+      });
+    } catch (error) {
+      if (prepareRequestIdRef.current !== requestId) {
+        return;
+      }
+      console.error('[ExportPhotosModal] Failed to prepare export', error);
+      setFailureKind('prepare');
+      setStep('failed');
+      captureAppEvent('export_prepare_failed', {
+        albumId,
+        photoCount,
+        quality,
+        looksNeedBake,
+        durationMs: Date.now() - startedAt,
+      });
+    }
+  }, [albumId, albumName, looksNeedBake, quality, selectedPhotos]);
+
+  const runDownload = useCallback(
+    async (directory?: ExportDirectoryInfo | null) => {
+      if (!preparedExport) {
+        setFailureKind('prepare');
+        setStep('failed');
+        return;
+      }
+
+      const photoCount = preparedExport.photoCount ?? selectedPhotos.length;
+      const startedAt = Date.now();
+      captureAppEvent('export_download_started', {
+        albumId,
+        photoCount,
+        quality,
+      });
+
+      try {
+        const downloaded = await downloadPreparedExport({
+          prepared: preparedExport,
+          directory: directory ?? exportDirectory,
+        });
+        setDownloadedExport(downloaded);
+        setExportDirectory({
+          path: downloaded.path.replace(/[/\\][^/\\]+$/, ''),
+          displayPath: downloaded.displayPath,
+        });
+        setFailureKind(null);
+        setStep('success');
+        captureAppEvent('export_download_completed', {
+          albumId,
+          photoCount,
+          quality,
+          durationMs: Date.now() - startedAt,
+        });
+      } catch (error) {
+        console.error('[ExportPhotosModal] Failed to download export', error);
+        setFailureKind('download');
+        setStep('failed');
+        captureAppEvent('export_download_failed', {
+          albumId,
+          photoCount,
+          quality,
+          durationMs: Date.now() - startedAt,
+        });
+      }
+    },
+    [albumId, exportDirectory, preparedExport, quality, selectedPhotos.length],
+  );
+
+  const handlePrepareExport = useCallback(() => {
+    setFormatMenuOpen(false);
+    runPrepareExport().catch(() => undefined);
+  }, [runPrepareExport]);
+
+  const handleDownloadToLaptop = useCallback(() => {
+    runDownload().catch(() => undefined);
+  }, [runDownload]);
+
+  const handleTryAgain = useCallback(() => {
+    if (preparedExport) {
+      runDownload(exportDirectory).catch(() => undefined);
+      return;
+    }
+    runPrepareExport().catch(() => undefined);
+  }, [exportDirectory, preparedExport, runDownload, runPrepareExport]);
+
+  const handleChangeSaveLocation = useCallback(() => {
+    pickExportDirectory()
+      .then(async picked => {
+        if (!picked) {
+          return;
+        }
+        setExportDirectory(picked);
+        await runDownload(picked);
+      })
+      .catch(error => {
+        console.error(
+          '[ExportPhotosModal] Failed to change save location',
+          error,
+        );
+        setStep('failed');
+      });
+  }, [runDownload]);
+
+  const handleOpenFolder = useCallback(() => {
+    if (!downloadedExport) {
+      onClose();
+      return;
+    }
+    openInFileManager(downloadedExport.path)
+      .catch(error => {
+        console.error('[ExportPhotosModal] Failed to open folder', error);
+      })
+      .finally(() => {
+        onClose();
+      });
+  }, [downloadedExport, onClose]);
+
+  const modalSize =
+    step === 'options'
+      ? { width: 720, height: 500 }
+      : { width: 720, height: 440 };
+     
+
+  return (
+    <Modal
+      visible={visible}
+      onClose={onClose}
+      width={modalSize.width}
+      height={modalSize.height}>
+      <ModalDecor />
+
+      {step === 'options' && (
+        <View style={styles.optionsContent}>
+          {formatMenuOpen ? (
+            <Pressable
+              style={styles.formatDismissOverlay}
+              onPress={handleDismissFormatMenu}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss format menu"
+            />
+          ) : null}
+
+          <View style={styles.titleBlock}>
+            <Text style={styles.title}>Export Photos ({photoCount})</Text>
+            <Text style={styles.subtitle}>
+              Saved to your laptop — doesn&apos;t use cloud storage or monthly
+              data
+            </Text>
+          </View>
+
+          <View style={styles.exportOptions}>
+            <View style={styles.qualityCard}>
+              <QualityOption
+                title="Compressed JPG"
+                description="Looks great for online viewing, smaller files."
+                statusLabels={['Smaller file size']}
+                selected={quality === 'compressed'}
+                onPress={handleSelectCompressed}
+              />
+              <View style={styles.qualityPaidWrapper}>
+                <QualityOption
+                  title="Original JPG"
+                  description="Full resolution, best for editing and large prints."
+                  statusLabels={['Full resolution']}
+                  selected={quality === 'original'}
+                  onPress={handleSelectOriginal}
+                />
+              </View>
+            </View>
+
+            <FormatExportDropdown
+              value={format}
+              open={formatMenuOpen}
+              onToggle={handleToggleFormatMenu}
+              onSelect={handleSelectFormat}
+            />
+          </View>
+
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handlePrepareExport}
+            activeOpacity={0.8}>
+            <Text style={styles.primaryButtonText}>Prepare Export</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {step === 'applyingLook' && (
+        <View style={styles.centeredContent}>
+          <View style={styles.titleBlock}>
+            <Text style={styles.title}>Applying look...</Text>
+            <Text style={styles.subtitle}>
+              Baking looks onto {photoCount} selected photos
+            </Text>
+          </View>
+          <View style={styles.progressBlock}>
+            <ProgressBar
+              progress={progressPercent / 100}
+              height={8}
+              style={styles.progressBar}
+            />
+            <Text style={styles.progressLabel}>{progressPercent}%</Text>
+          </View>
+        </View>
+      )}
+
+      {step === 'preparing' && (
+        <View style={styles.centeredContent}>
+          <View style={styles.titleBlock}>
+            <Text style={styles.title}>Preparing export</Text>
+            <Text style={styles.subtitle}>
+              Creating ZIP of {photoCount} photos
+            </Text>
+          </View>
+          <View style={styles.progressBlock}>
+            <ProgressBar
+              progress={progressPercent / 100}
+              height={8}
+              style={styles.progressBar}
+            />
+            <Text style={styles.progressLabel}>{progressPercent}%</Text>
+          </View>
+        </View>
+      )}
+
+      {step === 'ready' && preparedExport && (
+        <View style={styles.centeredContent}>
+          <View style={styles.titleBlock}>
+            <Text style={styles.title}>Your export is ready</Text>
+            <Text style={styles.subtitle}>Download it to your laptop</Text>
+          </View>
+          <View style={styles.fileCard}>
+            <View style={styles.fileIcon}>
+              <IconFolderZip width={24} height={24} color={colors.accent} />
+            </View>
+            <View>
+              <Text style={styles.fileName}>{preparedExport.fileName}</Text>
+              <Text style={styles.fileMeta}>
+                {preparedExport.photoCount} photos ·{' '}
+                {formatByteSize(preparedExport.byteSize)}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleDownloadToLaptop}
+            activeOpacity={0.8}>
+            <Text style={styles.primaryButtonText}>Download to Laptop</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      
+      {step === 'success' && downloadedExport && (
+        <View style={styles.centeredContent}>
+          <IconCheckCircle width={48} height={48} color={colors.iconGreen} />
+          <View style={styles.titleBlock}>
+            <Text style={styles.title}>Download complete</Text>
+            <Text style={styles.subtitle}>
+              {downloadedExport.fileName} ·{' '}
+              {formatByteSize(downloadedExport.byteSize)}
+            </Text>
+          </View>
+          <View style={styles.pathCardSuccess}>
+            <IconFolder width={24} height={24} color={colors.textMuted} />
+            <Text style={styles.pathCardTextBold}>
+              {downloadedExport.displayPath}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleOpenFolder}
+            activeOpacity={0.8}>
+            <Text style={styles.primaryButtonText}>Open Folder</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {step === 'failed' && (
+        <View style={styles.centeredContent}>
+          <View style={styles.errorBadge}>
+            <Text style={styles.errorBadgeText}>!</Text>
+          </View>
+          <View style={styles.titleBlock}>
+            <Text style={styles.title}>
+              {failureKind === 'prepare' ? 'Export failed' : 'Download failed'}
+            </Text>
+            <Text style={styles.subtitle}>
+              {failureKind === 'prepare'
+                ? 'Something went wrong while preparing your ZIP.'
+                : 'Your export is still ready — nothing was lost.'}
+            </Text>
+          </View>
+          <View style={styles.failedActions}>
+            <TouchableOpacity
+              style={[styles.primaryButton, styles.failedPrimary]}
+              onPress={handleTryAgain}
+              activeOpacity={0.8}>
+              <Text style={styles.primaryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+            {failureKind !== 'prepare' ? (
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={handleChangeSaveLocation}
+                activeOpacity={0.8}
+                disabled={!preparedExport}>
+                <Text style={styles.secondaryButtonText}>
+                  Change save location
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+      )}
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  optionsContent: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 20,
+    width: 480,
+    position: 'relative',
+    zIndex: 1,
+  },
+  formatDismissOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+  },
+  centeredContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 24,
+    width: 480,
+  },
+  titleBlock: {
+    gap: 12,
+    alignItems: 'center',
+  },
+  title: {
+    fontFamily: fonts.serif,
+    fontSize: 28,
+    lineHeight: 28 * 1.2,
+    color: colors.textDark,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  subtitle: {
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    lineHeight: 14 * 1.4,
+    color: colors.textMuted,
+    textAlign: 'center',
+    fontWeight: '400',
+  },
+  exportOptions: {
+    gap: 16,
+    zIndex: 2,
+  },
+  qualityCard: {
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: 8,
+    overflow: 'hidden',
+    padding: 16,
+    gap: 12,
+  },
+  qualityOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: 8,
+  },
+  qualityOptionSelected: {
+    backgroundColor: colors.accent + '14',
+    borderColor: colors.accent,
+  },
+  qualityOptionContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  qualityOptionMain: {
+    flex: 1,
+    gap: 2,
+  },
+  qualityOptionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  radioEmpty: {
+    width: 20,
+    height: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.radioEmpty,
+    marginRight: 4,
+  },
+  qualityTitle: {
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.textDark,
+    fontWeight: '500',
+  },
+  qualityTitleMuted: {
+    color: colors.textMuted + '80',
+  },
+  qualityDescription: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    lineHeight: 12 * 1.4,
+    color: colors.textMuted,
+    letterSpacing: 0,
+  },
+  qualityDescriptionMuted: {
+    color: colors.textMuted + '80',
+  },
+  qualityStatus: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.textMuted,
+    letterSpacing: 0,
+    textAlign: "right",
+  },
+  qualityPaidWrapper: {
+    gap: 8,
+  },
+  formatSection: {
+    position: 'relative',
+    zIndex: 3,
+  },
+  formatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  formatLabel: {
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.textDark,
+  },
+  formatValueShell: {
+    borderWidth: 1,
+    borderColor: colors.textDark,
+    borderRadius: 22,
+    backgroundColor: colors.white,
+    overflow: 'hidden',
+  },
+  formatValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    width: 100,
+  },
+  formatValueText: {
+    ...sansBoldStyle,
+    fontSize: 16,
+    color: colors.textDark,
+  },
+  // Pull up by formatRow's bottom padding (12) so the 4px gap is from the
+  // ZIP trigger, not from the outer row edge.
+  formatMenu: {
+    position: 'absolute',
+    top: '100%',
+    right: 16,
+    marginTop: -8,
+    minWidth: 100,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.textDark,
+    borderRadius: 8,
+    overflow: 'hidden',
+    zIndex: 4,
+  },
+  formatMenuItem: {
+    paddingTop: 8,
+    paddingRight: 16,
+    paddingBottom: 8,
+    paddingLeft: 16,
+  },
+  formatMenuItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.textDark,
+  },
+  formatMenuItemText: {
+    ...sansBoldStyle,
+    fontSize: 16,
+    color: colors.textDark,
+  },
+  primaryButton: {
+    alignSelf: 'center',
+    borderRadius: 24,
+    backgroundColor: colors.accent,
+    paddingVertical: 12,
+    paddingHorizontal: 40,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonText: {
+    ...sansBoldStyle,
+    fontSize: 16,
+    color: colors.white,
+  },
+  secondaryButton: {
+    flex: 1,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: colors.accent,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryButtonText: {
+    ...sansBoldStyle,
+    fontSize: 14,
+    color: colors.accent,
+  },
+  progressBlock: {
+    width: '100%',
+    maxWidth: 480,
+    gap: 12,
+  },
+  progressBar: {
+    borderRadius: 4,
+  },
+  progressLabel: {
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.textMuted,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  fileCard: {
+    alignSelf: 'center',
+    maxWidth: 480,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+  },
+  fileIcon: {
+    width: 40,
+    height: 40,
+    backgroundColor: colors.cardGrayLight,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fileName: {
+    ...sansBoldStyle,
+    fontSize: 16,
+    color: colors.textDark,
+  },
+  fileMeta: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  pathCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.progressTrack,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  pathCardSuccess: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    borderWidth: 1,
+    borderColor: colors.progressTrack,
+    borderRadius: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+  },
+  pathCardText: {
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.textMuted,
+  },
+  pathCardTextBold: {
+    fontFamily: fonts.sans,
+    fontWeight: '500',
+    fontSize: 16,
+    lineHeight: 16 * 1.2,
+    color: colors.textDark,
+    letterSpacing: 0,
+  },
+  successBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successBadgeText: {
+    ...sansBoldStyle,
+    fontSize: 20,
+    color: colors.white,
+  },
+  errorBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorBadgeText: {
+    ...sansBoldStyle,
+    fontSize: 22,
+    color: colors.white,
+  },
+  failedActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+    maxWidth: 420,
+    marginTop: 8,
+  },
+  failedPrimary: {
+    flex: 1,
+    alignSelf: 'stretch',
+    paddingHorizontal: 16,
+  },
+  halfCircleDecor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  quarterOrangeDecor: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+  },
+  quarterRedDecor: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+  },
+  circleBlueDecor: {
+    position: 'absolute',
+    bottom: 24,
+    left: 24,
+  },
+  circleLightBlueDecor: {
+    position: 'absolute',
+    top: 80,
+    right: 0,
+  },
+});

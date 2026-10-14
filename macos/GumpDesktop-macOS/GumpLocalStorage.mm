@@ -3,14 +3,18 @@
 #import "GumpSharedFaceDetection.h"
 
 #import <AppKit/AppKit.h>
+#import <CoreImage/CoreImage.h>
 #import <ImageIO/ImageIO.h>
 #import <Vision/Vision.h>
 
 #include "DifferenceHash.h"
 #include "ExifDateTime.h"
 #include "MediaDerivatives.h"
+#include "ZipStore.h"
 
+#include <filesystem>
 #include <string>
+#include <vector>
 #include <sys/clonefile.h>
 
 // Same-volume APFS clone is effectively instant. Other volumes / filesystems
@@ -3059,6 +3063,956 @@ RCT_EXPORT_METHOD(getImageDimensions:(NSString *)uri
       dispatch_async(dispatch_get_main_queue(), ^{
         reject(@"EUNKNOWN", exception.reason, nil);
       });
+    }
+  });
+}
+
+- (NSString *)downloadsGumpDirectoryPath
+{
+  NSURL *downloads =
+      [[NSFileManager defaultManager] URLsForDirectory:NSDownloadsDirectory
+                                             inDomains:NSUserDomainMask]
+          .firstObject;
+  NSURL *dir = [downloads URLByAppendingPathComponent:@"Gump" isDirectory:YES];
+  return dir.path;
+}
+
+- (NSString *)displayPathForDirectory:(NSString *)path
+{
+  if (path.length == 0) {
+    return @"";
+  }
+
+  NSString *downloadsRoot =
+      [[NSFileManager defaultManager] URLsForDirectory:NSDownloadsDirectory
+                                             inDomains:NSUserDomainMask]
+          .firstObject.path;
+  if (downloadsRoot.length > 0 &&
+      ([path isEqualToString:downloadsRoot] ||
+       [path hasPrefix:[downloadsRoot stringByAppendingString:@"/"]])) {
+    NSString *relative =
+        [path substringFromIndex:MIN(path.length, downloadsRoot.length + 1)];
+    if (relative.length == 0) {
+      return @"Downloads";
+    }
+    return [@"Downloads / " stringByAppendingString:[relative stringByReplacingOccurrencesOfString:@"/" withString:@" / "]];
+  }
+
+  NSArray<NSString *> *parts = path.pathComponents;
+  if (parts.count >= 2) {
+    return [NSString stringWithFormat:@"%@ / %@", parts[parts.count - 2], parts.lastObject];
+  }
+  return parts.lastObject ?: path;
+}
+
+- (BOOL)ensureDirectoryAtPath:(NSString *)path error:(NSError **)error
+{
+  BOOL isDirectory = NO;
+  if ([[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDirectory]) {
+    return isDirectory;
+  }
+  return [[NSFileManager defaultManager] createDirectoryAtPath:path
+                                   withIntermediateDirectories:YES
+                                                    attributes:nil
+                                                         error:error];
+}
+
+RCT_EXPORT_METHOD(ensureDefaultExportDirectory:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      NSString *path = [self downloadsGumpDirectoryPath];
+      NSError *error = nil;
+      if (![self ensureDirectoryAtPath:path error:&error]) {
+        reject(@"EEXPORTDIR", error.localizedDescription ?: @"Unable to create export directory", error);
+        return;
+      }
+      resolve(@{
+        @"path" : path,
+        @"displayPath" : [self displayPathForDirectory:path],
+      });
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(pickExportDirectory:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    panel.canChooseFiles = NO;
+    panel.canChooseDirectories = YES;
+    panel.allowsMultipleSelection = NO;
+    panel.canCreateDirectories = YES;
+    panel.prompt = @"Choose";
+    panel.message = @"Choose a folder to save your export";
+
+    [panel beginWithCompletionHandler:^(NSInteger result) {
+      if (result != NSModalResponseOK || panel.URL.path.length == 0) {
+        resolve([NSNull null]);
+        return;
+      }
+
+      NSString *path = panel.URL.path;
+      NSError *error = nil;
+      if (![self ensureDirectoryAtPath:path error:&error]) {
+        reject(@"EEXPORTDIR", error.localizedDescription ?: @"Unable to access folder", error);
+        return;
+      }
+
+      resolve(@{
+        @"path" : path,
+        @"displayPath" : [self displayPathForDirectory:path],
+      });
+    }];
+  });
+}
+
+RCT_EXPORT_METHOD(resolveUniqueZipPath:(NSString *)directory
+                  fileName:(NSString *)fileName
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      if (directory.length == 0 || fileName.length == 0) {
+        reject(@"EINVAL", @"Directory and file name are required", nil);
+        return;
+      }
+
+      NSString *baseName = fileName.stringByDeletingPathExtension;
+      NSString *extension = fileName.pathExtension.length > 0 ? fileName.pathExtension : @"zip";
+      NSString *candidate = [directory stringByAppendingPathComponent:fileName];
+      NSInteger suffix = 1;
+      while ([[NSFileManager defaultManager] fileExistsAtPath:candidate]) {
+        NSString *nextName =
+            [NSString stringWithFormat:@"%@ (%ld).%@", baseName, (long)suffix, extension];
+        candidate = [directory stringByAppendingPathComponent:nextName];
+        suffix += 1;
+      }
+      resolve(candidate);
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(createZipFromEntries:(NSArray *)entries
+                  zipPath:(NSString *)zipPath
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      if (zipPath.length == 0) {
+        reject(@"EINVAL", @"Zip path is required", nil);
+        return;
+      }
+      if (![entries isKindOfClass:[NSArray class]] || entries.count == 0) {
+        reject(@"EINVAL", @"At least one zip entry is required", nil);
+        return;
+      }
+
+      NSString *parent = zipPath.stringByDeletingLastPathComponent;
+      NSError *dirError = nil;
+      if (![self ensureDirectoryAtPath:parent error:&dirError]) {
+        reject(@"EEXPORTDIR", dirError.localizedDescription ?: @"Unable to create zip directory", dirError);
+        return;
+      }
+
+      std::vector<ZipStore::Entry> zipEntries;
+      zipEntries.reserve(entries.count);
+      for (id rawEntry in entries) {
+        if (![rawEntry isKindOfClass:[NSDictionary class]]) {
+          reject(@"EINVAL", @"Invalid zip entry", nil);
+          return;
+        }
+        NSDictionary *entry = (NSDictionary *)rawEntry;
+        NSString *uri = [entry[@"uri"] isKindOfClass:[NSString class]] ? entry[@"uri"] : nil;
+        NSString *name = [entry[@"name"] isKindOfClass:[NSString class]] ? entry[@"name"] : nil;
+        if (uri.length == 0 || name.length == 0) {
+          reject(@"EINVAL", @"Zip entry requires uri and name", nil);
+          return;
+        }
+        NSString *sourcePath = [self pathFromUri:uri];
+        if (sourcePath.length == 0 ||
+            ![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
+          reject(@"ENOENT", @"Zip source file not found", nil);
+          return;
+        }
+        zipEntries.push_back(ZipStore::Entry{
+            std::filesystem::path([sourcePath UTF8String]),
+            std::string([name UTF8String]),
+        });
+      }
+
+      if ([[NSFileManager defaultManager] fileExistsAtPath:zipPath]) {
+        [[NSFileManager defaultManager] removeItemAtPath:zipPath error:nil];
+      }
+
+      try {
+        const auto result =
+            ZipStore::CreateZip(std::filesystem::path([zipPath UTF8String]), zipEntries);
+        NSString *fileName = zipPath.lastPathComponent;
+        resolve(@{
+          @"path" : zipPath,
+          @"uri" : [NSString stringWithFormat:@"file://%@", zipPath],
+          @"fileName" : fileName,
+          @"byteSize" : @(result.byteSize),
+        });
+      } catch (const std::exception &ex) {
+        reject(@"EZIP", [NSString stringWithUTF8String:ex.what()], nil);
+      }
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(openInFileManager:(NSString *)path
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    @try {
+      if (path.length == 0) {
+        reject(@"EINVAL", @"Path is required", nil);
+        return;
+      }
+
+      BOOL isDirectory = NO;
+      if (![[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDirectory]) {
+        reject(@"ENOENT", @"Path not found", nil);
+        return;
+      }
+
+      NSURL *url = [NSURL fileURLWithPath:path isDirectory:isDirectory];
+      if (isDirectory) {
+        BOOL opened = [[NSWorkspace sharedWorkspace] openURL:url];
+        resolve(@(opened));
+        return;
+      }
+
+      [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ url ]];
+      resolve(@YES);
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
+- (NSString *)exportsStagingDirectoryPath
+{
+  NSURL *appSupport =
+      [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory
+                                             inDomains:NSUserDomainMask]
+          .firstObject;
+  NSURL *dir = [appSupport URLByAppendingPathComponent:@"Gump/exports" isDirectory:YES];
+  return dir.path;
+}
+
+RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      NSString *path = [self exportsStagingDirectoryPath];
+      NSError *error = nil;
+      if (![self ensureDirectoryAtPath:path error:&error]) {
+        reject(@"EEXPORTDIR", error.localizedDescription ?: @"Unable to create staging directory", error);
+        return;
+      }
+      resolve(@{
+        @"path" : path,
+        @"displayPath" : @"Gump / exports",
+      });
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
+- (NSString *)lookCubePathForId:(NSString *)lookId
+{
+  if (lookId.length == 0 || [lookId isEqualToString:@"original"]) {
+    return nil;
+  }
+  NSBundle *bundle = [NSBundle mainBundle];
+  NSString *path = [bundle pathForResource:lookId ofType:@"cube" inDirectory:@"Looks"];
+  if (path.length == 0) {
+    path = [bundle pathForResource:lookId ofType:@"cube"];
+  }
+  if (path.length == 0) {
+    path = [[bundle.resourcePath stringByAppendingPathComponent:@"Looks"]
+        stringByAppendingPathComponent:[lookId stringByAppendingPathExtension:@"cube"]];
+  }
+  if (path.length == 0 || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+    return nil;
+  }
+  return path;
+}
+
+- (NSData *)colorCubeDataFromCubePath:(NSString *)cubePath
+                            intensity:(CGFloat)intensityPercent
+                            dimension:(NSInteger *)outDimension
+                           smoothPasses:(NSInteger)smoothPasses
+                    highlightSoftAmount:(CGFloat)highlightSoftAmount
+{
+  NSString *contents = [NSString stringWithContentsOfFile:cubePath
+                                                 encoding:NSUTF8StringEncoding
+                                                    error:nil];
+  if (contents.length == 0) {
+    return nil;
+  }
+
+  NSInteger size = 0;
+  NSMutableArray<NSNumber *> *values = [NSMutableArray array];
+  for (NSString *rawLine in [contents componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+    NSString *line = [rawLine stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (line.length == 0 || [line hasPrefix:@"#"]) {
+      continue;
+    }
+    if ([line hasPrefix:@"TITLE"] || [line hasPrefix:@"DOMAIN_"]) {
+      continue;
+    }
+    if ([line hasPrefix:@"LUT_3D_SIZE"]) {
+      NSArray *parts = [line componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+      if (parts.count >= 2) {
+        size = [parts[1] integerValue];
+      }
+      continue;
+    }
+    NSArray *parts = [line componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    NSMutableArray *nums = [NSMutableArray array];
+    for (NSString *part in parts) {
+      if (part.length == 0) {
+        continue;
+      }
+      [nums addObject:part];
+    }
+    if (nums.count < 3) {
+      continue;
+    }
+    [values addObject:@([nums[0] doubleValue])];
+    [values addObject:@([nums[1] doubleValue])];
+    [values addObject:@([nums[2] doubleValue])];
+  }
+
+  const NSInteger expected = size * size * size * 3;
+  if (size <= 1 || values.count < (NSUInteger)expected) {
+    return nil;
+  }
+
+  std::vector<float> rgb((size_t)expected);
+  for (NSInteger i = 0; i < expected; i++) {
+    rgb[(size_t)i] = (float)[values[(NSUInteger)i] doubleValue];
+  }
+
+  // Film Mood cube is aggressive; one light lattice smooth cuts posterization without
+  // washing the look the way 2-pass did on Warm Romantic.
+  if (smoothPasses > 0 && size > 2) {
+    auto sample = [&](NSInteger r, NSInteger g, NSInteger b, NSInteger c) -> float {
+      r = MAX((NSInteger)0, MIN(size - 1, r));
+      g = MAX((NSInteger)0, MIN(size - 1, g));
+      b = MAX((NSInteger)0, MIN(size - 1, b));
+      return rgb[(size_t)((r + g * size + b * size * size) * 3 + c)];
+    };
+    for (NSInteger pass = 0; pass < smoothPasses; pass++) {
+      std::vector<float> next = rgb;
+      for (NSInteger b = 0; b < size; b++) {
+        for (NSInteger g = 0; g < size; g++) {
+          for (NSInteger r = 0; r < size; r++) {
+            for (NSInteger c = 0; c < 3; c++) {
+              float sum = 0.0f;
+              float weight = 0.0f;
+              for (NSInteger db = -1; db <= 1; db++) {
+                for (NSInteger dg = -1; dg <= 1; dg++) {
+                  for (NSInteger dr = -1; dr <= 1; dr++) {
+                    const float w = (dr == 0 && dg == 0 && db == 0) ? 8.0f : 1.0f;
+                    sum += sample(r + dr, g + dg, b + db, c) * w;
+                    weight += w;
+                  }
+                }
+              }
+              next[(size_t)((r + g * size + b * size * size) * 3 + c)] = sum / weight;
+            }
+          }
+        }
+      }
+      rgb.swap(next);
+    }
+  }
+
+  const CGFloat t = MAX(0.0, MIN(1.0, intensityPercent / 100.0));
+  const CGFloat softAmt = MAX(0.0, MIN(1.0, highlightSoftAmount));
+  const NSInteger count = size * size * size;
+  NSMutableData *data = [NSMutableData dataWithLength:(NSUInteger)count * 4 * sizeof(float)];
+  float *rgba = (float *)data.mutableBytes;
+  for (NSInteger b = 0; b < size; b++) {
+    for (NSInteger g = 0; g < size; g++) {
+      for (NSInteger r = 0; r < size; r++) {
+        const NSInteger idx = r + g * size + b * size * size;
+        const CGFloat inR = (CGFloat)r / (CGFloat)(size - 1);
+        const CGFloat inG = (CGFloat)g / (CGFloat)(size - 1);
+        const CGFloat inB = (CGFloat)b / (CGFloat)(size - 1);
+        const CGFloat lutR = rgb[(size_t)idx * 3 + 0];
+        const CGFloat lutG = rgb[(size_t)idx * 3 + 1];
+        const CGFloat lutB = rgb[(size_t)idx * 3 + 2];
+        // Soften only bright lattice cells so midtone color stays near full LUT.
+        CGFloat localT = t;
+        if (softAmt > 0.001) {
+          const CGFloat luma = 0.2126 * inR + 0.7152 * inG + 0.0722 * inB;
+          CGFloat hi = (luma - 0.55) / 0.40; // 0 at ~55%, 1 at ~95%
+          hi = MAX(0.0, MIN(1.0, hi));
+          hi = hi * hi * (3.0 - 2.0 * hi);
+          localT = t * (1.0 - softAmt * hi);
+        }
+        rgba[idx * 4 + 0] = (float)(inR * (1.0 - localT) + lutR * localT);
+        rgba[idx * 4 + 1] = (float)(inG * (1.0 - localT) + lutG * localT);
+        rgba[idx * 4 + 2] = (float)(inB * (1.0 - localT) + lutB * localT);
+        rgba[idx * 4 + 3] = 1.0f;
+      }
+    }
+  }
+
+  if (outDimension != NULL) {
+    *outDimension = size;
+  }
+  return data;
+}
+
+/// Presence/Effects that a 3D LUT cannot carry. Amounts mirror Lightroom Develop
+/// at preset Amount 100; scaled by look intensity.
+- (CIImage *)applyLookFinishingToImage:(CIImage *)image
+                                lookId:(NSString *)lookId
+                             intensity:(CGFloat)intensityPercent
+{
+  if (image == nil || lookId.length == 0) {
+    return image;
+  }
+  const CGFloat t = MAX(0.0, MIN(1.0, intensityPercent / 100.0));
+  if (t <= 0.0) {
+    return image;
+  }
+
+  // LR Presence / Effects (spatial). Tone/WB/HSL live in the cube.
+  CGFloat texture = 0, clarity = 0, dehaze = 0;
+  CGFloat vigAmount = 0, vigMidpoint = 50, vigFeather = 0.75;
+  CGFloat grainAmount = 0, grainSize = 25, grainRough = 45;
+  CGFloat warmNudge = 0, settleNudge = 0;
+  CGFloat darken = 0, blueCrush = 0;
+  BOOL vigFrameEllipse = NO;
+  BOOL known = NO;
+  if ([lookId isEqualToString:@"warmRomantic"]) {
+    known = YES;
+    texture = -5;
+    clarity = -8;
+    dehaze = -3;
+    vigAmount = -8;
+    vigMidpoint = 45;
+    grainAmount = 10;
+    grainSize = 25;
+    grainRough = 45;
+    warmNudge = 0.045;
+    settleNudge = 0.035;
+  } else if ([lookId isEqualToString:@"cleanNatural"]) {
+    known = YES;
+    texture = -5;
+    clarity = -5;
+    dehaze = 0;
+    vigAmount = 0;
+    grainAmount = 0;
+  } else if ([lookId isEqualToString:@"filmMood"]) {
+    known = YES;
+    // Cube = curve70 + warm + pull20. Pair with frame-ellipse vig −30 (FM_latest_03b).
+    texture = -3;
+    clarity = 0;
+    dehaze = 0;
+    vigAmount = -30;
+    vigMidpoint = 40;
+    vigFeather = 0.75;
+    vigFrameEllipse = YES;
+    grainAmount = 0;
+    warmNudge = 0;
+    settleNudge = 0;
+    blueCrush = 0;
+    darken = 0;
+  }
+  if (!known) {
+    return image;
+  }
+
+  CIImage *current = image;
+  const CGRect bounds = image.extent;
+  if (CGRectIsInfinite(bounds) || bounds.size.width < 1.0 || bounds.size.height < 1.0) {
+    return image;
+  }
+
+  auto blurBlend = ^CIImage *(CIImage *src, CGFloat radius, CGFloat amount) {
+    if (amount <= 0.001 || radius < 0.5) {
+      return src;
+    }
+    CIFilter *blur = [CIFilter filterWithName:@"CIGaussianBlur"];
+    [blur setValue:src forKey:kCIInputImageKey];
+    [blur setValue:@(radius) forKey:kCIInputRadiusKey];
+    CIImage *blurred = [blur.outputImage imageByCroppingToRect:bounds];
+    if (blurred == nil) {
+      return src;
+    }
+    CIFilter *mix = [CIFilter filterWithName:@"CIMix"];
+    if (mix == nil) {
+      CIFilter *dissolve = [CIFilter filterWithName:@"CIDissolveTransition"];
+      [dissolve setValue:src forKey:kCIInputImageKey];
+      [dissolve setValue:blurred forKey:kCIInputTargetImageKey];
+      [dissolve setValue:@(amount) forKey:kCIInputTimeKey];
+      CIImage *out = [dissolve.outputImage imageByCroppingToRect:bounds];
+      return out ?: src;
+    }
+    // CIMix: amount 0 = background, 1 = inputImage.
+    [mix setValue:src forKey:kCIInputImageKey];
+    [mix setValue:blurred forKey:@"inputBackgroundImage"];
+    [mix setValue:@(1.0 - amount) forKey:kCIInputAmountKey];
+    CIImage *out = [mix.outputImage imageByCroppingToRect:bounds];
+    return out ?: src;
+  };
+
+  const CGFloat minSide = MIN(bounds.size.width, bounds.size.height);
+
+  // Texture: negative softens fine detail.
+  if (texture < 0) {
+    const CGFloat texAmt = (ABS(texture) / 100.0) * 0.55 * t;
+    const CGFloat texRadius = MAX(1.2, minSide * 0.0018);
+    current = blurBlend(current, texRadius, texAmt);
+  }
+
+  // Clarity: negative softens mids; positive uses unsharp.
+  if (clarity < 0) {
+    const CGFloat clarAmt = (ABS(clarity) / 100.0) * 0.95 * t;
+    const CGFloat clarRadius = MAX(8.0, minSide * 0.018);
+    current = blurBlend(current, clarRadius, clarAmt);
+  } else if (clarity > 0) {
+    CIFilter *unsharp = [CIFilter filterWithName:@"CIUnsharpMask"];
+    if (unsharp != nil) {
+      [unsharp setValue:current forKey:kCIInputImageKey];
+      [unsharp setValue:@(MAX(2.0, minSide * 0.008)) forKey:kCIInputRadiusKey];
+      [unsharp setValue:@((clarity / 100.0) * 1.1 * t) forKey:kCIInputIntensityKey];
+      CIImage *sharp = [unsharp.outputImage imageByCroppingToRect:bounds];
+      if (sharp != nil) {
+        current = sharp;
+      }
+    }
+  }
+
+  // Dehaze: negative = haze; positive = clearer contrast.
+  if (ABS(dehaze) > 0.01) {
+    const CGFloat d = (dehaze / 100.0) * t;
+    CIFilter *controls = [CIFilter filterWithName:@"CIColorControls"];
+    [controls setValue:current forKey:kCIInputImageKey];
+    [controls setValue:@(1.0 + d * 0.35) forKey:kCIInputContrastKey];
+    [controls setValue:@(d < 0 ? (-d * 0.02) : (-d * 0.01)) forKey:kCIInputBrightnessKey];
+    [controls setValue:@(1.0 + d * 0.08) forKey:kCIInputSaturationKey];
+    CIImage *adjusted = controls.outputImage;
+    if (adjusted != nil) {
+      current = adjusted;
+    }
+  }
+
+  if (warmNudge > 0.0 || settleNudge > 0.0 || darken > 0.0 || blueCrush > 0.0) {
+    const CGFloat warm = warmNudge * t;
+    const CGFloat settle = settleNudge * t;
+    const CGFloat dark = darken * t;
+    const CGFloat crushB = blueCrush * t;
+    const CGFloat keep = 1.0 - dark;
+    CIFilter *matrix = [CIFilter filterWithName:@"CIColorMatrix"];
+    if (matrix != nil) {
+      [matrix setValue:current forKey:kCIInputImageKey];
+      [matrix setValue:[CIVector vectorWithX:(keep * (1.0 + warm * 0.55)) Y:0 Z:0 W:0]
+                  forKey:@"inputRVector"];
+      [matrix setValue:[CIVector vectorWithX:0 Y:(keep * (1.0 + warm * 0.05)) Z:0 W:0]
+                  forKey:@"inputGVector"];
+      [matrix setValue:[CIVector vectorWithX:0
+                                           Y:0
+                                           Z:(keep * (1.0 - warm * 0.70 - crushB))
+                                           W:0]
+                  forKey:@"inputBVector"];
+      [matrix setValue:[CIVector vectorWithX:0 Y:0 Z:0 W:1] forKey:@"inputAVector"];
+      [matrix setValue:[CIVector vectorWithX:(-settle * 0.55)
+                                           Y:(-settle * 0.75)
+                                           Z:(-settle * 0.35)
+                                           W:0]
+                  forKey:@"inputBiasVector"];
+      CIImage *warmed = matrix.outputImage;
+      if (warmed != nil) {
+        current = warmed;
+      }
+    }
+  }
+
+  if (vigAmount < 0) {
+    const CGFloat vigAmt = (ABS(vigAmount) / 100.0) * t;
+    if (vigAmt > 0.0005) {
+      const CGFloat cx = CGRectGetMidX(bounds);
+      const CGFloat cy = CGRectGetMidY(bounds);
+      if (vigFrameEllipse) {
+        // Low-res frame-ellipse keep-mask (smooth falloff), scaled to image — L/R + T/B.
+        const CGFloat imgW = MAX(bounds.size.width, 1.0);
+        const CGFloat imgH = MAX(bounds.size.height, 1.0);
+        const CGFloat longSide = MAX(imgW, imgH);
+        const CGFloat maskScale = longSide > 1024.0 ? (1024.0 / longSide) : 1.0;
+        const NSInteger pw = MAX((NSInteger)lround(imgW * maskScale), 1);
+        const NSInteger ph = MAX((NSInteger)lround(imgH * maskScale), 1);
+        const CGFloat halfW = MAX((CGFloat)pw * 0.5, 1.0);
+        const CGFloat halfH = MAX((CGFloat)ph * 0.5, 1.0);
+        const CGFloat inner = MIN(MAX((vigMidpoint / 100.0) * 0.95, 0.0), 0.9);
+        const CGFloat width = 0.18 + vigFeather * 0.50;
+        const CGFloat invWidth = 1.0 / MAX(width, 1e-6);
+        NSBitmapImageRep *maskRep =
+            [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                    pixelsWide:pw
+                                                    pixelsHigh:ph
+                                                 bitsPerSample:8
+                                               samplesPerPixel:4
+                                                      hasAlpha:YES
+                                                      isPlanar:NO
+                                                colorSpaceName:NSDeviceRGBColorSpace
+                                                   bytesPerRow:pw * 4
+                                                  bitsPerPixel:32];
+        unsigned char *maskPx = maskRep.bitmapData;
+        if (maskPx != NULL) {
+          for (NSInteger y = 0; y < ph; ++y) {
+            unsigned char *row = maskPx + y * pw * 4;
+            const CGFloat ny = ((CGFloat)y + 0.5 - halfH) / halfH;
+            for (NSInteger x = 0; x < pw; ++x) {
+              const CGFloat nx = ((CGFloat)x + 0.5 - halfW) / halfW;
+              const CGFloat rr = sqrt(nx * nx + ny * ny) * 0.70710678118;
+              CGFloat fall = MIN(MAX((rr - inner) * invWidth, 0.0), 1.0);
+              fall = fall * fall * (3.0 - 2.0 * fall);
+              const CGFloat keep = 1.0 - vigAmt * fall;
+              const unsigned char k = (unsigned char)MAX(0, MIN(255, (int)lround(keep * 255.0)));
+              const size_t o = (size_t)x * 4U;
+              row[o + 0] = k;
+              row[o + 1] = k;
+              row[o + 2] = k;
+              row[o + 3] = 255;
+            }
+          }
+          CIImage *mask = [[CIImage alloc] initWithBitmapImageRep:maskRep];
+          if (mask != nil) {
+            const CGFloat sx = imgW / (CGFloat)pw;
+            const CGFloat sy = imgH / (CGFloat)ph;
+            mask = [mask imageByApplyingTransform:CGAffineTransformScale(
+                        CGAffineTransformMakeTranslation(bounds.origin.x, bounds.origin.y),
+                        sx,
+                        sy)];
+            CIFilter *mult = [CIFilter filterWithName:@"CIMultiplyCompositing"];
+            if (mult != nil) {
+              [mult setValue:current forKey:kCIInputImageKey];
+              [mult setValue:mask forKey:kCIInputBackgroundImageKey];
+              CIImage *vigOut = [mult.outputImage imageByCroppingToRect:bounds];
+              if (vigOut != nil) {
+                current = vigOut;
+              }
+            }
+          }
+        }
+      } else {
+        CIFilter *vig = [CIFilter filterWithName:@"CIVignetteEffect"];
+        if (vig != nil) {
+          const CGFloat radius = minSide * (0.62 + (vigMidpoint / 100.0) * 0.28);
+          [vig setValue:current forKey:kCIInputImageKey];
+          [vig setValue:[CIVector vectorWithX:cx Y:cy] forKey:kCIInputCenterKey];
+          [vig setValue:@(radius) forKey:kCIInputRadiusKey];
+          [vig setValue:@(vigAmt * 0.85) forKey:kCIInputIntensityKey];
+          CIImage *vigOut = [vig.outputImage imageByCroppingToRect:bounds];
+          if (vigOut != nil) {
+            current = vigOut;
+          }
+        }
+      }
+    }
+  }
+
+  if (grainAmount > 0) {
+    const CGFloat grainAmt = (grainAmount / 100.0) * t;
+    CIFilter *random = [CIFilter filterWithName:@"CIRandomGenerator"];
+    CIImage *noise = random.outputImage;
+    if (noise != nil && grainAmt > 0.0005) {
+      const CGFloat noiseScale = 1.0 / MAX(0.35, grainSize / 40.0);
+      CIImage *scaledNoise =
+          [[noise imageByApplyingTransform:CGAffineTransformMakeScale(noiseScale, noiseScale)]
+              imageByCroppingToRect:bounds];
+      CIFilter *mono = [CIFilter filterWithName:@"CIColorMatrix"];
+      [mono setValue:scaledNoise forKey:kCIInputImageKey];
+      [mono setValue:[CIVector vectorWithX:0.333 Y:0.333 Z:0.333 W:0] forKey:@"inputRVector"];
+      [mono setValue:[CIVector vectorWithX:0.333 Y:0.333 Z:0.333 W:0] forKey:@"inputGVector"];
+      [mono setValue:[CIVector vectorWithX:0.333 Y:0.333 Z:0.333 W:0] forKey:@"inputBVector"];
+      [mono setValue:[CIVector vectorWithX:0 Y:0 Z:0 W:grainAmt * 0.55] forKey:@"inputAVector"];
+      const CGFloat rough = grainRough / 100.0;
+      [mono setValue:[CIVector vectorWithX:rough * 0.02 Y:rough * 0.02 Z:rough * 0.02 W:0]
+                forKey:@"inputBiasVector"];
+      CIImage *grainLayer = mono.outputImage;
+      if (grainLayer != nil) {
+        CIFilter *overlay = [CIFilter filterWithName:@"CIOverlayBlendMode"];
+        if (overlay == nil) {
+          overlay = [CIFilter filterWithName:@"CISoftLightBlendMode"];
+        }
+        if (overlay != nil) {
+          [overlay setValue:current forKey:kCIInputBackgroundImageKey];
+          [overlay setValue:grainLayer forKey:kCIInputImageKey];
+          CIImage *grained = [overlay.outputImage imageByCroppingToRect:bounds];
+          if (grained != nil) {
+            CIFilter *mix = [CIFilter filterWithName:@"CIMix"];
+            if (mix != nil) {
+              [mix setValue:current forKey:kCIInputImageKey];
+              [mix setValue:grained forKey:@"inputBackgroundImage"];
+              [mix setValue:@(1.0 - grainAmt * 0.85) forKey:kCIInputAmountKey];
+              CIImage *mixed = [mix.outputImage imageByCroppingToRect:bounds];
+              current = mixed ?: grained;
+            } else {
+              current = grained;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return current;
+}
+
+- (NSString *)applyLookLutFromPath:(NSString *)sourcePath
+                            toPath:(NSString *)destPath
+                            lookId:(NSString *)lookId
+                         intensity:(CGFloat)intensityPercent
+                      maxPixelSize:(NSUInteger)maxPixelSize
+                       jpegQuality:(CGFloat)jpegQuality
+{
+  if (sourcePath.length == 0 || destPath.length == 0) {
+    return nil;
+  }
+
+  NSError *dirError = nil;
+  [[NSFileManager defaultManager] createDirectoryAtPath:[destPath stringByDeletingLastPathComponent]
+                            withIntermediateDirectories:YES
+                                             attributes:nil
+                                                  error:&dirError];
+  if (dirError != nil) {
+    return nil;
+  }
+
+  NSURL *sourceURL = [NSURL fileURLWithPath:sourcePath isDirectory:NO];
+  CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)sourceURL, NULL);
+  if (source == NULL) {
+    return nil;
+  }
+
+  NSDictionary *options = @{
+    (NSString *)kCGImageSourceCreateThumbnailFromImageAlways : @YES,
+    (NSString *)kCGImageSourceCreateThumbnailFromImageIfAbsent : @YES,
+    (NSString *)kCGImageSourceThumbnailMaxPixelSize : @(maxPixelSize),
+    (NSString *)kCGImageSourceCreateThumbnailWithTransform : @YES,
+    (NSString *)kCGImageSourceShouldCacheImmediately : @YES,
+  };
+  CGImageRef oriented =
+      CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)options);
+  CFRelease(source);
+  if (oriented == NULL) {
+    return nil;
+  }
+
+  CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+  // Keep the source CGImage color space (often Display P3). Forcing sRGB via
+  // kCIImageColorSpace re-tags without converting and skews LUT midtones.
+  // CIColorCubeWithColorSpace below converts into sRGB, applies the cube, then out.
+  CIImage *input = [[CIImage alloc] initWithCGImage:oriented options:nil];
+  CGImageRelease(oriented);
+  CIImage *output = input;
+  const CGRect renderRect = input.extent;
+
+  if (![lookId isEqualToString:@"original"] && intensityPercent > 0.0) {
+    NSString *cubePath = [self lookCubePathForId:lookId];
+    NSInteger dimension = 0;
+    // Film Mood curve70+warm+pull20 cube is already smooth — skip lattice smooth.
+    const NSInteger smoothPasses = 0;
+    const CGFloat highlightSoft = 0.0;
+    NSData *cubeData = [self colorCubeDataFromCubePath:cubePath
+                                             intensity:intensityPercent
+                                             dimension:&dimension
+                                          smoothPasses:smoothPasses
+                                    highlightSoftAmount:highlightSoft];
+    if (cubeData == nil || dimension <= 1) {
+      CGColorSpaceRelease(srgb);
+      return nil;
+    }
+    CIFilter *filter = [CIFilter filterWithName:@"CIColorCubeWithColorSpace"];
+    if (filter == nil) {
+      filter = [CIFilter filterWithName:@"CIColorCube"];
+    }
+    if (filter == nil) {
+      CGColorSpaceRelease(srgb);
+      return nil;
+    }
+    [filter setValue:input forKey:kCIInputImageKey];
+    [filter setValue:@(dimension) forKey:@"inputCubeDimension"];
+    [filter setValue:cubeData forKey:@"inputCubeData"];
+    if ([[filter inputKeys] containsObject:@"inputColorSpace"]) {
+      [filter setValue:(__bridge id)srgb forKey:@"inputColorSpace"];
+    }
+    output = filter.outputImage;
+    if (output == nil) {
+      CGColorSpaceRelease(srgb);
+      return nil;
+    }
+  }
+
+  if (intensityPercent > 0.0 &&
+      ([lookId isEqualToString:@"warmRomantic"] || [lookId isEqualToString:@"cleanNatural"] ||
+       [lookId isEqualToString:@"filmMood"])) {
+    CIImage *finished = [self applyLookFinishingToImage:output
+                                                 lookId:lookId
+                                              intensity:intensityPercent];
+    if (finished != nil) {
+      output = finished;
+    }
+  }
+
+  output = [output imageByCroppingToRect:renderRect];
+
+  CIContext *context = [CIContext contextWithOptions:@{
+    kCIContextWorkingColorSpace : (__bridge id)srgb,
+    kCIContextOutputColorSpace : (__bridge id)srgb,
+  }];
+  CGImageRef outputImage = [context createCGImage:output
+                                         fromRect:renderRect
+                                           format:kCIFormatRGBA8
+                                       colorSpace:srgb];
+  CGColorSpaceRelease(srgb);
+  if (outputImage == NULL) {
+    return nil;
+  }
+
+  if ([[NSFileManager defaultManager] fileExistsAtPath:destPath]) {
+    [[NSFileManager defaultManager] removeItemAtPath:destPath error:nil];
+  }
+
+  // NSBitmapImageRep embeds the sRGB ICC profile (ImageIO public ICC keys were removed).
+  CGFloat quality = MAX(0.85, MIN(1.0, jpegQuality));
+  NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithCGImage:outputImage];
+  CGImageRelease(outputImage);
+  if (rep == nil) {
+    return nil;
+  }
+  NSData *jpegData = [rep representationUsingType:NSBitmapImageFileTypeJPEG
+                                       properties:@{
+                                         NSImageCompressionFactor : @(quality),
+                                       }];
+  if (jpegData.length == 0 || ![jpegData writeToFile:destPath atomically:YES]) {
+    return nil;
+  }
+
+  return destPath;
+}
+
+RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
+                  destPath:(NSString *)destPath
+                  lookId:(NSString *)lookId
+                  intensity:(nonnull NSNumber *)intensity
+                  maxPixelSize:(nonnull NSNumber *)maxPixelSize
+                  jpegQuality:(nonnull NSNumber *)jpegQuality
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      NSString *sourcePath = [self pathFromUri:sourceUri];
+      if (sourcePath.length == 0 ||
+          ![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          resolve(@{@"uri" : [NSNull null]});
+        });
+        return;
+      }
+
+      NSString *generatedPath =
+          [self applyLookLutFromPath:sourcePath
+                              toPath:destPath
+                              lookId:lookId ?: @"original"
+                           intensity:intensity.doubleValue
+                        maxPixelSize:maxPixelSize.unsignedIntegerValue
+                         jpegQuality:jpegQuality.doubleValue];
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (generatedPath.length > 0) {
+          NSDictionary *attributes =
+              [[NSFileManager defaultManager] attributesOfItemAtPath:generatedPath
+                                                               error:nil];
+          NSNumber *fileSize = attributes[NSFileSize] ?: @(0);
+          resolve(@{
+            @"uri" : [NSString stringWithFormat:@"file://%@", generatedPath],
+            @"path" : generatedPath,
+            @"size" : fileSize,
+          });
+        } else {
+          resolve(@{@"uri" : [NSNull null]});
+        }
+      });
+    } @catch (NSException *exception) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        reject(@"ELOOK", exception.reason ?: @"Apply look failed", nil);
+      });
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(copyFile:(NSString *)sourcePath
+                  destinationPath:(NSString *)destinationPath
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      if (sourcePath.length == 0 || destinationPath.length == 0) {
+        reject(@"EINVAL", @"Source and destination paths are required", nil);
+        return;
+      }
+      if (![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
+        reject(@"ENOENT", @"Source file not found", nil);
+        return;
+      }
+
+      NSString *parent = destinationPath.stringByDeletingLastPathComponent;
+      NSError *dirError = nil;
+      if (![self ensureDirectoryAtPath:parent error:&dirError]) {
+        reject(@"EEXPORTDIR", dirError.localizedDescription ?: @"Unable to create destination directory", dirError);
+        return;
+      }
+
+      if ([[NSFileManager defaultManager] fileExistsAtPath:destinationPath]) {
+        [[NSFileManager defaultManager] removeItemAtPath:destinationPath error:nil];
+      }
+
+      NSError *copyError = nil;
+      BOOL copied = [[NSFileManager defaultManager] copyItemAtPath:sourcePath
+                                                            toPath:destinationPath
+                                                             error:&copyError];
+      if (!copied) {
+        reject(@"ECOPY", copyError.localizedDescription ?: @"Unable to copy export file", copyError);
+        return;
+      }
+
+      NSDictionary *attributes =
+          [[NSFileManager defaultManager] attributesOfItemAtPath:destinationPath error:nil];
+      NSNumber *fileSize = attributes[NSFileSize] ?: @(0);
+      resolve(@{
+        @"path" : destinationPath,
+        @"uri" : [NSString stringWithFormat:@"file://%@", destinationPath],
+        @"fileName" : destinationPath.lastPathComponent,
+        @"byteSize" : fileSize,
+      });
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
     }
   });
 }
