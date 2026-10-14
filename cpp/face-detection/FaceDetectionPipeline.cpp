@@ -1471,7 +1471,9 @@ namespace {
 
 int ResolvePipelinePoolSize(int configured) {
   constexpr int kMinPool = 1;
-  constexpr int kMaxPool = 2;
+  // Cap at 3 so Mac can match analysis concurrency (pool == workers).
+  // Higher pools mean more live SCRFD/OCEC ORT sessions (heat cost).
+  constexpr int kMaxPool = 3;
   if (configured > 0) {
     return std::clamp(configured, kMinPool, kMaxPool);
   }
