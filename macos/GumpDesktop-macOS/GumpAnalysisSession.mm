@@ -275,12 +275,26 @@ public:
       }
 
       const std::string pathUtf8 = path.UTF8String ? path.UTF8String : "";
-      // JPEG: shared stb decode (Mac/Win pixel parity for SCRFD/OCEC).
+      // JPEG: cache at measurement max so detect + eye crops share one IDCT.
       if (Analysis::IsJpegPath(pathUtf8)) {
-        FaceDetection::OwnedBgra decoded;
+        const int cacheCap = std::max(
+            maxPixelSize, FaceDetection::kMeasurementMaxPixelSize);
+        std::shared_ptr<FaceDetection::OwnedBgra> cached;
         std::string err;
-        if (Analysis::DecodeJpegFileToBgra(pathUtf8, maxPixelSize, decoded, &err)) {
-          auto owned = std::make_shared<FaceDetection::OwnedBgra>(std::move(decoded));
+        if (jpegCache_.GetOriented(pathUtf8, cacheCap, cached, &err) && cached) {
+          std::shared_ptr<FaceDetection::OwnedBgra> owned = cached;
+          if (std::max(cached->width, cached->height) > maxPixelSize) {
+            auto resized = std::make_shared<FaceDetection::OwnedBgra>();
+            if (FaceDetection::resizeBgraLongEdge(
+                    cached->bytes.data(),
+                    cached->width,
+                    cached->height,
+                    cached->stride,
+                    maxPixelSize,
+                    *resized)) {
+              owned = resized;
+            }
+          }
           result.width = owned->width;
           result.height = owned->height;
           result.stride = owned->stride;
@@ -338,11 +352,12 @@ public:
       const std::string pathUtf8 = path.UTF8String ? path.UTF8String : "";
       const int outputCap = FaceDetection::kMeasurementCropOutputMaxPixelSize;
 
-      // JPEG: one shared decode, then bilinear sourceMax + crop (matches Win).
+      // JPEG: reuse session cache (scaled IDCT), then bilinear sourceMax + crop.
       if (Analysis::IsJpegPath(pathUtf8)) {
-        FaceDetection::OwnedBgra oriented;
+        std::shared_ptr<FaceDetection::OwnedBgra> oriented;
         std::string err;
-        if (!Analysis::DecodeJpegFileToOrientedBgra(pathUtf8, oriented, &err)) {
+        if (!jpegCache_.GetOriented(pathUtf8, sourceMaxPixelSize, oriented, &err) ||
+            !oriented) {
           for (auto &result : results) {
             result.error = err.empty() ? "Shared JPEG decode failed" : err;
           }
@@ -359,10 +374,10 @@ public:
           } else {
             auto fresh = std::make_shared<FaceDetection::OwnedBgra>();
             if (!FaceDetection::resizeBgraLongEdge(
-                    oriented.bytes.data(),
-                    oriented.width,
-                    oriented.height,
-                    oriented.stride,
+                    oriented->bytes.data(),
+                    oriented->width,
+                    oriented->height,
+                    oriented->stride,
                     sourceMax,
                     *fresh)) {
               results[index].error = "Region source resize failed";
@@ -471,6 +486,7 @@ public:
 
 private:
   std::string dbPathUtf8_;
+  Analysis::JpegDecodeCache jpegCache_;
 
   NSString *pathFromUri(NSString *uri) {
     if (uri.length == 0) {
