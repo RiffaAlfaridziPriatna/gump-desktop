@@ -24,6 +24,8 @@ type StatsPhoto = Pick<
   | 'starRating'
   | 'photoId'
   | 'faces'
+  | 'capturedAt'
+  | 'file'
 >;
 
 function matchesStatKey(photo: StatsPhoto, key: CullFilterKey): boolean {
@@ -202,7 +204,16 @@ export function patchDuplicateGroupsAfterDelete(
       continue;
     }
 
-    const bestPhoto = pickDuplicateGroupBestPhoto(keepers);
+    const bestPhoto = pickDuplicateGroupBestPhoto(
+      keepers.map(photo => ({
+        photoId: photo.photoId,
+        fileName: photo.file.name,
+        blurred: photo.blurred,
+        closedEyes: photo.closedEyes,
+        starRating: photo.starRating,
+        capturedAt: photo.capturedAt,
+      })),
+    );
     for (const photo of remainingPhotos) {
       const nextDuplicated = photo.photoId !== bestPhoto.photoId;
       if (photo.duplicated === nextDuplicated) {

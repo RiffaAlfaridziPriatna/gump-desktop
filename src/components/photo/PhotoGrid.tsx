@@ -66,10 +66,9 @@ const GRAY_FILL_BATCH_PERIOD_MS = 50;
 const SCROLL_SETTLE_MS = Platform.OS === 'macos' ? 180 : 120;
 const SCROLL_TO_TOP_NUDGE_PX = 1;
 const NATIVE_TOP_THRESHOLD_PX = 80;
-const PROGRAMMATIC_SCROLL_GRACE_MS = 120;
-// Phase budgets. The native call is a UIManager round trip and should return in
-// well under 50ms, but the JS thread can be saturated on a 3K album.
-const NATIVE_PHASE_TIMEOUT_MS = 400;
+const PROGRAMMATIC_SCROLL_GRACE_MS = 500;
+// Native animated climb can take up to ~420ms plus a UIManager hop.
+const NATIVE_PHASE_TIMEOUT_MS = 1200;
 const CONVERGENCE_BASE_MS = 600;
 const CONVERGENCE_PER_ITEM_MS = 0.15;
 const CONVERGENCE_MIN_MS = 800;
@@ -928,14 +927,14 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
       }, convergenceBudgetMs(itemsRef.current.length));
     };
 
-    // The native jump is the single owner. No competing scrollToOffset /
-    // scrollToIndex / nudge runs alongside it.
+    // The native animated climb is the single owner. No competing
+    // scrollToOffset / scrollToIndex / nudge runs alongside it.
     const nativeTimeout = new Promise<NativeScrollResult | null>(resolve => {
       setTimeout(() => resolve(null), NATIVE_PHASE_TIMEOUT_MS);
     });
 
     Promise.race([
-      nativeScrollToOffset(currentList(), 0),
+      nativeScrollToOffset(currentList(), 0, {animated: Platform.OS === 'macos'}),
       nativeTimeout,
     ])
       .then(native => {
@@ -948,6 +947,8 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
           platform: Platform.OS,
           nativeResolved: native?.resolved === true,
           nativeReason: native?.reason ?? 'native_timeout',
+          nativeAnimated: native?.animated === true,
+          nativeCancelled: native?.cancelled === true,
         });
         if (native == null) {
           runJsFallback('native_timeout');
@@ -967,10 +968,16 @@ export const PhotoGrid = forwardRef<PhotoGridHandle, PhotoGridProps>(
           clipFlipped: native.clipFlipped,
           moved: native.moved,
           atTarget: native.atTarget,
+          animated: native.animated,
+          cancelled: native.cancelled,
           nativeElapsedMs: native.elapsedMs,
         });
         if (!native.resolved) {
           runJsFallback(native.reason);
+          return;
+        }
+        if (native.cancelled && !native.atTarget) {
+          runJsFallback('native_cancelled');
           return;
         }
         startConvergencePhase(native);

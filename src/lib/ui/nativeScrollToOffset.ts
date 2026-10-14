@@ -2,6 +2,7 @@ import {findNodeHandle, NativeModules, Platform} from 'react-native';
 
 export type NativeScrollReason =
   | 'ok'
+  | 'cancelled'
   | 'not_macos'
   | 'native_module_missing'
   | 'native_tag_null'
@@ -23,7 +24,14 @@ export type NativeScrollResult = {
   clipFlipped: boolean | null;
   moved: boolean;
   atTarget: boolean;
+  animated: boolean;
+  cancelled: boolean;
   elapsedMs: number;
+};
+
+export type NativeScrollOptions = {
+  /** macOS only. Default true — throttled native clip-view animation. */
+  animated?: boolean;
 };
 
 type NativeScrollPayload = Partial<Omit<NativeScrollResult, 'elapsedMs'>>;
@@ -32,6 +40,7 @@ type NativeScrollModule = {
   scrollToOffset: (
     reactTag: number,
     offsetY: number,
+    animated: boolean,
   ) => Promise<NativeScrollPayload>;
 };
 
@@ -53,6 +62,8 @@ function emptyResult(
     clipFlipped: null,
     moved: false,
     atTarget: false,
+    animated: false,
+    cancelled: false,
     elapsedMs,
   };
 }
@@ -87,7 +98,9 @@ function toNumber(value: unknown): number | null {
 export async function nativeScrollToOffset(
   component: unknown,
   offsetY: number,
+  options: NativeScrollOptions = {},
 ): Promise<NativeScrollResult> {
+  const animated = options.animated !== false;
   const startedAt = Date.now();
   if (Platform.OS !== 'macos') {
     return emptyResult('not_macos', 0);
@@ -101,7 +114,7 @@ export async function nativeScrollToOffset(
     return emptyResult('native_tag_null', Date.now() - startedAt);
   }
   try {
-    const raw = await native.scrollToOffset(tag, offsetY);
+    const raw = await native.scrollToOffset(tag, offsetY, animated);
     const elapsedMs = Date.now() - startedAt;
     if (!raw?.resolved) {
       return {
@@ -110,11 +123,12 @@ export async function nativeScrollToOffset(
           elapsedMs,
         ),
         viewClass: typeof raw?.viewClass === 'string' ? raw.viewClass : null,
+        animated,
       };
     }
     return {
       resolved: true,
-      reason: 'ok',
+      reason: (raw.reason as NativeScrollReason) ?? 'ok',
       viewClass: typeof raw.viewClass === 'string' ? raw.viewClass : null,
       beforeVisibleY: toNumber(raw.beforeVisibleY),
       afterVisibleY: toNumber(raw.afterVisibleY),
@@ -127,6 +141,8 @@ export async function nativeScrollToOffset(
       clipFlipped: typeof raw.clipFlipped === 'boolean' ? raw.clipFlipped : null,
       moved: raw.moved === true,
       atTarget: raw.atTarget === true,
+      animated: raw.animated === true || animated,
+      cancelled: raw.cancelled === true,
       elapsedMs,
     };
   } catch {
