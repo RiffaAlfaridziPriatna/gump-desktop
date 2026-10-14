@@ -459,7 +459,9 @@ struct AnalysisSession::Impl {
 
       bool photometricsDone = false;
       if (result.faces.empty() && detectionLongEdge < measurementMax) {
-        // GRACEFUL: If retry fails, just continue with empty faces
+        // Low-res detect found nothing — retry once at measurement size.
+        // Keep tiling off: enableTiling on retry was a large time/heat spike
+        // when maxDecode < measurement (e.g. low-power 2048).
         try {
           auto retry = config.decoder->DecodeImageToBgra(
               job.input.uri, measurementMax);
@@ -469,8 +471,11 @@ struct AnalysisSession::Impl {
                 retry.width,
                 retry.height,
                 retry.stride,
-                true);
-            photometricsDone = true;
+                false);
+            if (!result.faces.empty()) {
+              MeasureFacesOnBuffer(pipeline, retry, result.faces);
+              photometricsDone = true;
+            }
           }
         } catch (...) {
           // Retry failed, but we already have the low-res decode
@@ -507,19 +512,29 @@ struct AnalysisSession::Impl {
         }
       }
 
-      // GRACEFUL: Wrap face measurement in try-catch
+      // GRACEFUL: Wrap face measurement in try-catch.
+      // When detect runs below measurementMax (e.g. Mac Phase 1: 2048 detect /
+      // 4096 eyes), reuse the cached measurement-sized full frame via
+      // MeasureFacesOnBuffer. Per-face DecodeImageRegionsToBgra is much slower
+      // and was the ~30s→50s regression for that tuning.
       if (!result.faces.empty() && !photometricsDone) {
         try {
           if (detectionLongEdge < measurementMax) {
-            decoded.bgraPixels = nullptr;
-            decoded.platformHandle.reset();
-            decoded.success = false;
-            MeasureFacesFromHiResCrops(
-                pipeline,
-                *config.decoder,
-                job.input.uri,
-                measurementMax,
-                result.faces);
+            auto measureBuf = config.decoder->DecodeImageToBgra(
+                job.input.uri, measurementMax);
+            if (measureBuf.success) {
+              decoded.bgraPixels = nullptr;
+              decoded.platformHandle.reset();
+              decoded.success = false;
+              MeasureFacesOnBuffer(pipeline, measureBuf, result.faces);
+            } else {
+              MeasureFacesFromHiResCrops(
+                  pipeline,
+                  *config.decoder,
+                  job.input.uri,
+                  measurementMax,
+                  result.faces);
+            }
           } else {
             MeasureFacesOnBuffer(pipeline, decoded, result.faces);
           }
@@ -855,9 +870,12 @@ struct AnalysisSession::Impl {
                              .count();
 
       if (config.adaptiveConcurrency) {
+        // Cap adaptive backoff (Phase 3): breathe under load without climbing
+        // to the old 200ms ceiling that erased concurrency gains.
+        constexpr int kAdaptiveDelayCapMs = 100;
         int delayMs = dynamicDelayMs.load();
         if (jobMs > 400) {
-          delayMs = std::min(delayMs + 25, 200);
+          delayMs = std::min(delayMs + 25, kAdaptiveDelayCapMs);
         } else if (jobMs < 200) {
           delayMs = std::max(delayMs - 10, config.interJobDelayMs);
         }

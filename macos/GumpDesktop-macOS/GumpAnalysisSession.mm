@@ -606,7 +606,6 @@ RCT_EXPORT_METHOD(startAnalysis:(NSString *)albumId
       pipelineConfig.enableTiling = YES;
       pipelineConfig.requireLandmarkPlausibility = YES;
       pipelineConfig.enableNativeFpFilter = YES;
-      pipelineConfig.pipelinePoolSize = 2;
 
       // Parse photos
       std::vector<Analysis::PhotoInput> photos;
@@ -620,13 +619,15 @@ RCT_EXPORT_METHOD(startAnalysis:(NSString *)albumId
         photos.push_back(input);
       }
 
-      // Configure session
+      // Configure session — keep ORT pipeline pool size == worker concurrency.
       Analysis::SessionConfig sessionConfig;
-      sessionConfig.maxConcurrency = [configDict[@"maxConcurrency"] intValue] ?: 2;
-      sessionConfig.pipelinePoolSize = 2;
+      const int concurrency = [configDict[@"maxConcurrency"] intValue] ?: 3;
+      sessionConfig.maxConcurrency = concurrency;
+      sessionConfig.pipelinePoolSize = concurrency;
+      pipelineConfig.pipelinePoolSize = concurrency;
       sessionConfig.persistBatchSize = 50;
       sessionConfig.progressIntervalMs = 500;
-      sessionConfig.interJobDelayMs = [configDict[@"interJobDelayMs"] intValue] ?: 50;
+      sessionConfig.interJobDelayMs = [configDict[@"interJobDelayMs"] intValue] ?: 25;
       sessionConfig.maxDecodePixelSize = [configDict[@"maxDecodePixelSize"] intValue] ?: 4096;
       sessionConfig.progressiveBatchSize = [configDict[@"progressiveBatchSize"] intValue] ?: 20;
       // 0 is a valid "disable timeout" value — cannot use ?: default.
