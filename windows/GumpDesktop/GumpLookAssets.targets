@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  C++ vcxproj CopyToOutputDirectory on <None> is unreliable for Win32/Composition apps.
+  Explicitly copy Apply Look .cube LUTs next to GumpDesktop.exe and fail the build
+  if sources or outputs are missing — same guarantee macOS gets from Copy Bundle Resources.
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <GumpLookCube Include="$(MSBuildThisFileDirectory)Looks\cleanNatural.cube" />
+    <GumpLookCube Include="$(MSBuildThisFileDirectory)Looks\warmRomantic.cube" />
+    <GumpLookCube Include="$(MSBuildThisFileDirectory)Looks\filmMood.cube" />
+  </ItemGroup>
+
+  <Target Name="CopyGumpLookCubes" AfterTargets="Build">
+    <Error
+      Condition="'@(GumpLookCube)' == ''"
+      Text="No GumpLookCube items defined. Apply Look .cube LUT list is empty." />
+    <Error
+      Condition="!Exists('%(GumpLookCube.Identity)')"
+      Text="Missing Look LUT source (required for Apply Look): %(GumpLookCube.Identity)" />
+
+    <PropertyGroup>
+      <_GumpLooksOutDir>$([System.IO.Path]::Combine('$(OutDir)', 'Assets', 'Looks'))</_GumpLooksOutDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(_GumpLooksOutDir)" />
+
+    <Copy
+      SourceFiles="@(GumpLookCube)"
+      DestinationFiles="@(GumpLookCube->'$(_GumpLooksOutDir)\%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true"
+      Retries="3"
+      RetryDelayMilliseconds="200" />
+
+    <Error
+      Condition="!Exists('$(_GumpLooksOutDir)\%(GumpLookCube.Filename)%(GumpLookCube.Extension)')"
+      Text="Failed to copy Look LUT to app output (Apply Look will fail at runtime): $(_GumpLooksOutDir)\%(GumpLookCube.Filename)%(GumpLookCube.Extension)" />
+
+    <Message
+      Importance="high"
+      Text="Copied Apply Look LUTs → $(_GumpLooksOutDir)" />
+  </Target>
+</Project>

@@ -56,6 +56,14 @@ type NativeLocalStorageModule = {
       };
     }>,
   ) => Promise<{cropUris: Array<string | null>}>;
+  applyLook?: (
+    sourceUri: string,
+    destPath: string,
+    lookId: string,
+    intensity: number,
+    maxPixelSize: number,
+    jpegQuality: number,
+  ) => Promise<{uri: string | null; path?: string | null; size?: number | null}>;
 };
 
 const NativeLocalStorage = NativeModules.GumpLocalStorage as
@@ -354,5 +362,92 @@ export async function ensureFaceCrops(
   );
 
   return result.cropUris.map(uri => uri ?? null);
+}
+
+export type ApplyLookNativeResult = {
+  uri: string | null;
+  path?: string | null;
+  /** Byte length of the baked JPEG when the native module reports it. */
+  size?: number | null;
+};
+
+/** Strip cache-busters and decode file URIs before native PathFromUri (esp. Windows). */
+export function normalizeNativeFileUri(uri: string): string {
+  let value = uri.trim();
+  if (!value) {
+    return value;
+  }
+  const queryIndex = value.indexOf('?');
+  if (queryIndex >= 0) {
+    value = value.slice(0, queryIndex);
+  }
+  const hashIndex = value.indexOf('#');
+  if (hashIndex >= 0) {
+    value = value.slice(0, hashIndex);
+  }
+  if (!value.toLowerCase().startsWith('file://')) {
+    return value;
+  }
+  let pathPart = value.slice('file://'.length);
+  if (/^\/[a-zA-Z]:/.test(pathPart)) {
+    pathPart = pathPart.slice(1);
+  }
+  try {
+    pathPart = decodeURIComponent(pathPart);
+  } catch {
+    // Keep literal path when URI encoding is malformed.
+  }
+  const slashPath = pathPart.replace(/\\/g, '/');
+  return slashPath.match(/^[a-zA-Z]:/)
+    ? `file:///${slashPath}`
+    : `file://${slashPath.startsWith('/') ? '' : '/'}${slashPath}`;
+}
+
+export async function applyLookToJpeg(options: {
+  sourceUri: string;
+  destPath: string;
+  lookId: string;
+  intensity: number;
+  maxPixelSize: number;
+  jpegQuality: number;
+}): Promise<ApplyLookNativeResult> {
+  if (!hasNativeLocalStorage() || !NativeLocalStorage?.applyLook) {
+    throw new Error(
+      'Apply Look bake is not available. Build the app with GumpLocalStorage applyLook.',
+    );
+  }
+
+  const result = await NativeLocalStorage.applyLook(
+    normalizeNativeFileUri(options.sourceUri),
+    options.destPath,
+    options.lookId,
+    options.intensity,
+    options.maxPixelSize,
+    options.jpegQuality,
+  );
+
+  const size =
+    typeof result.size === 'number' && Number.isFinite(result.size) && result.size > 0
+      ? Math.round(result.size)
+      : null;
+
+  return {
+    uri: result.uri ?? null,
+    path: result.path ?? null,
+    size,
+  };
+}
+
+/** Byte length of a local file URI (used when native bake omits size). */
+export async function getLocalFileByteSize(uri: string): Promise<number> {
+  const response = await fetch(normalizeNativeFileUri(uri));
+  if (!response.ok) {
+    throw new Error(`Failed to read baked file size (${response.status})`);
+  }
+  const blob = await response.blob();
+  if (blob.size <= 0) {
+    throw new Error('Baked look file is empty');
+  }
+  return blob.size;
 }
 

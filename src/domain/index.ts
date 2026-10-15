@@ -5,3 +5,4 @@ export * from './valueObjects/Face';
 export * from './valueObjects/Status';
 export * from './repositories/IAlbumRepository';
 export * from './repositories/IPhotoRepository';
+export * from './plan';

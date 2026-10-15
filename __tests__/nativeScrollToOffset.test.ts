@@ -28,13 +28,28 @@ describe('nativeScrollToOffset', () => {
       afterVisibleY: 0,
       moved: true,
       atTarget: true,
+      animated: true,
     });
     const result = await nativeScrollToOffset({}, 0);
-    expect(scrollToOffset).toHaveBeenCalledWith(42, 0);
+    expect(scrollToOffset).toHaveBeenCalledWith(42, 0, true);
     expect(result.resolved).toBe(true);
     expect(result.moved).toBe(true);
     expect(result.atTarget).toBe(true);
+    expect(result.animated).toBe(true);
     expect(result.beforeVisibleY).toBe(362049.5);
+  });
+
+  it('passes animated:false through to the native module', async () => {
+    scrollToOffset.mockResolvedValue({
+      resolved: true,
+      reason: 'ok',
+      afterVisibleY: 0,
+      atTarget: true,
+      animated: false,
+    });
+    const result = await nativeScrollToOffset({}, 0, {animated: false});
+    expect(scrollToOffset).toHaveBeenCalledWith(42, 0, false);
+    expect(result.animated).toBe(false);
   });
 
   it('surfaces the native reason code when the scroll view is not found', async () => {

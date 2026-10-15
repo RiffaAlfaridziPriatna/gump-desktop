@@ -36,7 +36,6 @@ export function ProfileMenuPopup({
     <ProfilePopup
       userName={menu.userName}
       pictureUrl={menu.pictureUrl}
-      onUpgrade={menu.handleUpgrade}
       onLogout={menu.handleLogout}
       onDismiss={menu.dismiss}
       topOffset={topOffset}

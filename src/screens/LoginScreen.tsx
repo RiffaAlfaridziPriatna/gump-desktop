@@ -3,6 +3,7 @@ import { useAuthActions } from '@context/auth';
 import { colors } from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import { APIException, flattenValidationErrors } from '@services/api';
+import { captureAppEvent } from '@lib/observability/posthogClient';
 import { reportError } from '@lib/observability/reportError';
 import { useState } from 'react';
 import {Pressable} from '@components/ui';
@@ -46,8 +47,13 @@ export default function LoginScreen() {
 
     try {
       await login(email.trim(), password.trim());
+      captureAppEvent('login_completed', {platform: Platform.OS});
     } catch (err) {
       reportError(err, {source: 'login', operation: 'login'});
+      captureAppEvent('login_failed', {
+        platform: Platform.OS,
+        isApiException: err instanceof APIException,
+      });
       if (err instanceof APIException) {
         const validationErrors = flattenValidationErrors(err.details);
         setError(

@@ -15,6 +15,7 @@ import {
   SCROLL_GRID_VISIBLE_PADDING,
 } from '@lib/media/scrollImagePreload';
 import {isUsableThumbnailUri} from '@lib/storage/localStorage';
+import type {LookId} from '@lib/look/types';
 import {APIResponse} from '@services/api';
 import {
   CulledAlbumPhotoCard,
@@ -46,6 +47,8 @@ import {
 export type CulledAlbumGridPhoto = {
   photoId: string;
   analysis?: APIResponse.CullingPhoto;
+  lookId?: LookId | null;
+  lookIntensity?: number | null;
   disabled: boolean;
 };
 

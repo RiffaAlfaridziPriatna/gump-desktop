@@ -1,5 +1,6 @@
 import {FaceStatusIconBadge} from '@components/culling/FaceStatusIconBadge';
 import type {KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
+import {LookPreviewImage} from '@components/look/LookPreviewImage';
 import {
   boundingBoxToDisplayRect,
   DisplayRect,
@@ -11,6 +12,7 @@ import {
   getFocusStatusMeta,
 } from '@lib/culling/faceStatus';
 import {useMeasuredTooltipHover} from '@hooks/useMeasuredTooltipHover';
+import type {LookId} from '@lib/look/types';
 import {getCachedImageDimensions, ImageDimensions, putCachedImageDimensions} from '@lib/media/imageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
 import {colors} from '@lib/ui/colors';
@@ -30,6 +32,8 @@ type PhotoDetailImageViewerProps = {
   photoId: string;
   faces: APIResponse.CullingFace[];
   zoomFaceIndex: number | null;
+  lookId?: LookId | null;
+  lookIntensity?: number | null;
   imageSize?: ImageDimensions | null;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
   onImageReady?: () => void;
@@ -128,6 +132,8 @@ export function PhotoDetailImageViewer({
   photoId,
   faces,
   zoomFaceIndex,
+  lookId,
+  lookIntensity,
   imageSize: imageSizeProp,
   onTooltipAnchorChange,
   onImageReady,
@@ -155,7 +161,19 @@ export function PhotoDetailImageViewer({
   const imageSize = imageSizeProp ?? loadedImageSize;
   const isZoomed = zoomFaceIndex !== null;
 
+  // Empty uri = holding gray while look detail bakes (anti-flash).
   useEffect(() => {
+    if (!uri) {
+      setImageDecoded(false);
+      setLoadFailed(false);
+      imageReadyNotifiedRef.current = false;
+    }
+  }, [uri]);
+
+  useEffect(() => {
+    if (!uri) {
+      return;
+    }
     const cached = getCachedImageDimensions(uri);
     if (cached) {
       setLoadedImageSize(cached);
@@ -169,7 +187,7 @@ export function PhotoDetailImageViewer({
   }, [zoomFaceIndex, onTooltipAnchorChange]);
 
   useEffect(() => {
-    if (imageSizeProp) {
+    if (!uri || imageSizeProp) {
       return;
     }
 
@@ -202,6 +220,9 @@ export function PhotoDetailImageViewer({
   }, [imageSizeProp, onImageReady, uri]);
 
   useEffect(() => {
+    if (!uri) {
+      return;
+    }
     preloadImage(uri).catch(() => undefined);
   }, [uri]);
 
@@ -289,12 +310,12 @@ export function PhotoDetailImageViewer({
     }));
   }, [imageLayout, visibleFaces]);
 
-  const canRenderOverlays = imageDecoded && !loadFailed && imageLayout !== null;
-  const showLoadingOverlay = !imageDecoded && !loadFailed;
+  const canRenderOverlays = Boolean(uri) && imageDecoded && !loadFailed && imageLayout !== null;
+  const showLoadingOverlay = !uri || (!imageDecoded && !loadFailed);
 
   // key forces a remount when the photo changes. Windows Image often keeps
   // the previous bitmap if only source.uri updates on the same native view.
-  const fallbackImage = (
+  const fallbackImage = uri ? (
     <Image
       key={photoId}
       source={{uri}}
@@ -303,7 +324,7 @@ export function PhotoDetailImageViewer({
       onLoad={handleImageLoad}
       onError={handleImageError}
     />
-  );
+  ) : null;
 
   return (
     <View
@@ -314,20 +335,23 @@ export function PhotoDetailImageViewer({
       }}
     >
       <View style={styles.imageFrame}>
-        {imageLayout ? (
-          <Image
+        {uri && imageLayout ? (
+          <LookPreviewImage
             key={photoId}
-            source={{uri}}
-            resizeMode="contain"
-            style={{
-              position: 'absolute',
-              width: imageLayout.width,
-              height: imageLayout.height,
-              left: imageLayout.left,
-              top: imageLayout.top,
-            }}
+            uri={uri}
+            lookId={lookId}
+            lookIntensity={lookIntensity}
             onLoad={handleImageLoad}
             onError={handleImageError}
+            style={[
+              styles.photoBounds,
+              {
+                width: imageLayout.width,
+                height: imageLayout.height,
+                left: imageLayout.left,
+                top: imageLayout.top,
+              },
+            ]}
           />
         ) : (
           fallbackImage
@@ -385,6 +409,11 @@ const styles = StyleSheet.create({
     flex: 1,
     overflow: 'hidden',
     backgroundColor: colors.cardBackgroundSecondary,
+    position: 'relative',
+  },
+  photoBounds: {
+    position: 'absolute',
+    overflow: 'hidden',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,

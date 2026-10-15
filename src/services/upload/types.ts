@@ -12,6 +12,13 @@ export type FileAsset = {
   thumbnailHeight?: number;
   /** Oriented 4096px detail derivative for the photo detail viewer. */
   detailUri?: string;
+  /**
+   * Look-baked 4096px derivative for detail (and reuse). Cleared when look
+   * or intensity changes. Pair with lookDetailKey for invalidation.
+   */
+  lookDetailUri?: string;
+  /** `${lookId}|${intensity}|4096` matching lookDetailUri. */
+  lookDetailKey?: string;
 };
 
 type NativeLocalStorageReader = {
