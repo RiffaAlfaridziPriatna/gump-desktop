@@ -27,6 +27,12 @@ import {
   updatePhoto,
 } from '@lib/culledAlbum/store';
 import { CulledAlbumPhoto, isCulledPhotoDisabled, NativeDetectedFace, toCullingPhoto, type CullingDuplicateGroup } from '@lib/culledAlbum/types';
+import {
+  DEFAULT_LOOK_INTENSITY,
+  isLookId,
+  normalizeLookIntensity,
+  type LookId,
+} from '@lib/look/types';
 import { readImageCaptureTime } from '@lib/media/imageCaptureTime';
 import { computeImagePerceptualHash } from '@lib/media/perceptualHash';
 import {
@@ -919,6 +925,52 @@ export const cullingEngine = {
     starRating: number,
   ): Promise<APIResponse.CullingPhoto> {
     return this.updateSelection(albumId, photoId, {starRating});
+  },
+
+  /**
+   * Batch-apply a look to photos. Looks stay editable after server upload so
+   * Export can still restyle local files; selection/delete remain locked.
+   *
+   * Updates are coalesced into one store flush + one UI snapshot bump. Calling
+   * updatePhoto({immediate:true}) per photo re-renders the whole grid N times
+   * and freezes the Apply Look modal before "Applying..." can paint.
+   */
+  async updateLook(
+    albumId: string,
+    photoIds: string[],
+    data: {lookId: LookId; lookIntensity?: number},
+  ): Promise<void> {
+    await ensureAlbumLoaded(albumId);
+    if (!isLookId(data.lookId)) {
+      throw new Error('Invalid look id');
+    }
+    const lookIntensity = normalizeLookIntensity(
+      data.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
+    );
+    const uniquePhotoIds = Array.from(new Set(photoIds));
+    const syncedPhotoIds: string[] = [];
+    for (const photoId of uniquePhotoIds) {
+      const existing = getPhotoById(albumId, photoId);
+      if (!existing) {
+        continue;
+      }
+      updatePhoto(albumId, photoId, photo => {
+        photo.lookId = data.lookId;
+        photo.lookIntensity = lookIntensity;
+        // Invalidate look-baked detail so UI holds gray until rebuilt.
+        if (photo.file.lookDetailUri || photo.file.lookDetailKey) {
+          const {lookDetailUri: _u, lookDetailKey: _k, ...rest} = photo.file;
+          photo.file = rest;
+        }
+      });
+      syncedPhotoIds.push(photoId);
+    }
+    flushAllPendingPhotoUpdates();
+    if (syncedPhotoIds.length > 0) {
+      syncPhotosFromStore(albumId, syncedPhotoIds);
+    }
+    await persistAlbum(albumId);
+    flushRenderSync();
   },
 
   async deletePhoto(albumId: string, photoId: string): Promise<void> {

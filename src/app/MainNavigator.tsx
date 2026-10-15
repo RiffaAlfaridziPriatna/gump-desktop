@@ -11,8 +11,6 @@ import {Platform} from 'react-native';
 import AlbumDetailScreen from '@screens/AlbumDetailScreen';
 import CulledAlbumDetailScreen from '@screens/CulledAlbumDetailScreen';
 import CulledAlbumPhotoDetailScreen from '@screens/CulledAlbumPhotoDetailScreen';
-import CulledAlbumUploadProgressScreen from '@screens/CulledAlbumUploadProgressScreen';
-import CulledAlbumUploadSuccessScreen from '@screens/CulledAlbumUploadSuccessScreen';
 import HomeScreen from '@screens/HomeScreen';
 import SelectAlbumScreen from '@screens/SelectAlbumScreen';
 
@@ -28,6 +26,7 @@ export type MainStackParamList = {
   }>;
   CulledAlbumDetail: WithInstantNav<{
     albumId: string;
+    openUploadProgress?: boolean;
   }>;
   CulledAlbumPhotoDetail: WithInstantNav<{
     albumId: string;
@@ -35,17 +34,6 @@ export type MainStackParamList = {
     faceIndex?: number;
     /** Grid order at open time (respects active cull filters). */
     photoIds?: string[];
-  }>;
-  CulledAlbumUploadProgress: WithInstantNav<{
-    albumId: string;
-    photoCount: number;
-    albumName: string;
-    albumLink: string;
-  }>;
-  CulledAlbumUploadSuccess: WithInstantNav<{
-    albumId: string;
-    albumName: string;
-    albumLink: string;
   }>;
 };
 
@@ -82,16 +70,6 @@ export function MainNavigator() {
       <Stack.Screen
         name="CulledAlbumPhotoDetail"
         component={CulledAlbumPhotoDetailScreen}
-        options={uploadAwareModalScreenOptions}
-      />
-      <Stack.Screen
-        name="CulledAlbumUploadProgress"
-        component={CulledAlbumUploadProgressScreen}
-        options={uploadAwareModalScreenOptions}
-      />
-      <Stack.Screen
-        name="CulledAlbumUploadSuccess"
-        component={CulledAlbumUploadSuccessScreen}
         options={uploadAwareModalScreenOptions}
       />
     </Stack.Navigator>

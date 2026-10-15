@@ -1,9 +1,7 @@
 import {AlbumCard, AlbumGrid} from '@components/album';
 import {DeleteAlbumModal} from '@components/modals/DeleteAlbumModal';
-import {
-  ProfileMenuAvatar,
-  ProfileMenuPopup,
-} from '@components/navigation/ProfileMenu';
+import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
+import {HeaderAccountCluster} from '@components/plan';
 import {useAuthState} from '@context/auth';
 import {useLocalCulledAlbumList} from '@hooks/useLocalCulledAlbumList';
 import {useDeleteCulledAlbum} from '@hooks/useDeleteCulledAlbum';
@@ -183,7 +181,7 @@ export default function HomeScreen({navigation}: Props) {
             </View>
           )}
         </View>
-        <ProfileMenuAvatar menu={profileMenu} />
+        <HeaderAccountCluster profileMenu={profileMenu} />
       </View>
 
       {loadingAlbums && !hasAlbums ? (
@@ -240,6 +238,7 @@ export default function HomeScreen({navigation}: Props) {
             styles.emptyScrollContent,
             {paddingHorizontal: screenPaddingHorizontal},
           ]}
+          scrollEnabled
           refreshControl={
             <RefreshControl
               refreshing={loadingAlbums}

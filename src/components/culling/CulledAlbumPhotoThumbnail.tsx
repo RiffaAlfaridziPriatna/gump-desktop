@@ -1,4 +1,6 @@
+import {LookPreviewImage} from '@components/look/LookPreviewImage';
 import {useShouldLoadCulledAlbumImage} from '@components/culling/culledAlbumImageLoad';
+import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {persistThumbnailDimensions} from '@lib/culledAlbum/persistThumbnailDimensions';
 import {
   getCachedImageDimensions,
@@ -12,7 +14,6 @@ import {isImagePrefetched} from '@lib/media/imagePreload';
 import {colors} from '@lib/ui/colors';
 import {memo, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
-  Image,
   type ImageLoadEventData,
   StyleSheet,
   View,
@@ -58,6 +59,9 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
   thumbnailHeight,
   deferHeavyMediaWork = false,
 }: CulledAlbumPhotoThumbnailProps) {
+  const photo = useCulledAlbumPhoto(albumId, photoId);
+  const lookId = photo?.lookId;
+  const lookIntensity = photo?.lookIntensity;
   const fileDims = {thumbnailWidth, thumbnailHeight};
   const shouldLoadImage = useShouldLoadCulledAlbumImage(photoId);
   const height = width / THUMBNAIL_ASPECT_RATIO;
@@ -66,6 +70,7 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
   );
   const [isLoaded, setIsLoaded] = useState(() => hasWarmThumbnail(uri));
   const displayedUriRef = useRef(uri);
+  const lookRef = useRef({lookId, lookIntensity});
 
   useEffect(() => {
     if (displayedUriRef.current === uri) {
@@ -75,6 +80,16 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
     setImageSize(resolveThumbnailSize(fileDims, uri));
     setIsLoaded(hasWarmThumbnail(uri));
   }, [fileDims.thumbnailHeight, fileDims.thumbnailWidth, uri]);
+
+  // Look change: clear loaded so we hold gray until LookPreviewImage bakes.
+  useEffect(() => {
+    const prev = lookRef.current;
+    if (prev.lookId === lookId && prev.lookIntensity === lookIntensity) {
+      return;
+    }
+    lookRef.current = {lookId, lookIntensity};
+    setIsLoaded(false);
+  }, [lookId, lookIntensity]);
 
   const imageLayout = useMemo(() => {
     if (!imageSize) {
@@ -177,8 +192,10 @@ export const CulledAlbumPhotoThumbnail = memo(function CulledAlbumPhotoThumbnail
     <View style={[styles.container, {width, height}]} pointerEvents="box-none">
       {showImage ? (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <Image
-            source={{uri}}
+          <LookPreviewImage
+            uri={uri}
+            lookId={lookId}
+            lookIntensity={lookIntensity}
             onLoad={handleLoad}
             onError={handleError}
             style={[
@@ -214,5 +231,6 @@ const styles = StyleSheet.create({
   },
   containedImage: {
     position: 'absolute',
+    overflow: 'hidden',
   },
 });

@@ -55,13 +55,19 @@ function photoUploadProgress(photo: CulledAlbumPhoto): number {
   return 0;
 }
 
-export function computeServerUploadBatchProgress(
+export type ServerUploadBatchByteProgress = {
+  uploadedBytes: number;
+  totalBytes: number;
+  progress: number;
+};
+
+export function computeServerUploadBatchByteProgress(
   photos: CulledAlbumPhoto[],
   batchPhotoIds: string[],
-): number {
+): ServerUploadBatchByteProgress {
   const batchPhotos = getServerUploadBatchPhotos(photos, batchPhotoIds);
   if (batchPhotos.length === 0) {
-    return 0;
+    return {uploadedBytes: 0, totalBytes: 0, progress: 0};
   }
 
   let totalBytes = 0;
@@ -79,7 +85,18 @@ export function computeServerUploadBatchProgress(
     uploadedBytes += photoUploadProgress(photo);
   }
 
-  return totalBytes === 0 ? 0 : uploadedBytes / totalBytes;
+  return {
+    uploadedBytes,
+    totalBytes,
+    progress: totalBytes === 0 ? 0 : uploadedBytes / totalBytes,
+  };
+}
+
+export function computeServerUploadBatchProgress(
+  photos: CulledAlbumPhoto[],
+  batchPhotoIds: string[],
+): number {
+  return computeServerUploadBatchByteProgress(photos, batchPhotoIds).progress;
 }
 
 export function isServerUploadBatchFinished(

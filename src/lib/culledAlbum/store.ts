@@ -5,6 +5,12 @@ import {IPhotoRepository} from '@/domain/repositories/IPhotoRepository';
 import {syncPhotosFromStoreAwait} from '@/application/syncPhotoRepository';
 import {needsReanalysisForEngine} from '@lib/culling/analysisEngine';
 import {createCullingPhotoId} from '@lib/culling/cullingPhotoId';
+import {
+  endTimedFlow,
+  localImportFlowKey,
+  serverUploadFlowKey,
+} from '@lib/observability/flowTiming';
+import {captureAppEvent} from '@lib/observability/posthogClient';
 import {reportError} from '@lib/observability/reportError';
 import {createStateStore} from '@lib/react/state';
 import {FileAsset} from '@services/upload/types';
@@ -34,6 +40,7 @@ import {
 } from './photoLoader';
 import {finishLocalImportQueue, getAlbumQueueState, hasActiveQueueWork, setQueueOperationStatus} from './uploadQueueStore';
 import {
+  countServerUploadBatchItems,
   getServerUploadBatchPhotos,
   isServerUploadBatchFinished,
 } from './serverUploadProgress';
@@ -652,10 +659,28 @@ export async function checkServerUploadBatchComplete(
   }
 
   const batchPhotos = getServerUploadBatchPhotos(photos, album.uploadBatchPhotoIds);
+  const batchCounts = countServerUploadBatchItems(
+    photos,
+    album.uploadBatchPhotoIds,
+  );
   if (batchPhotos.some(photo => photo.serverUploadStatus === 'uploaded')) {
     await markCullingHasUploads(albumId);
   }
   setQueueOperationStatus(albumId, 'serverUpload', 'completed');
+  const {durationMs, properties} = endTimedFlow(serverUploadFlowKey(albumId));
+  captureAppEvent(
+    batchCounts.completed > 0
+      ? 'server_upload_completed'
+      : 'server_upload_failed',
+    {
+      ...getAlbumTraceContext(albumId),
+      ...properties,
+      selectedCount: album.uploadBatchPhotoIds.length,
+      uploadedCount: batchCounts.completed,
+      failedCount: batchCounts.failed,
+      durationMs,
+    },
+  );
   await persistAlbum(albumId);
 }
 
@@ -747,6 +772,19 @@ export async function checkLocalImportBatchComplete(
     uploadedCount: finalCounts.uploaded,
     failedCount: finalCounts.failed,
   });
+
+  const {durationMs, properties} = endTimedFlow(localImportFlowKey(albumId));
+  captureAppEvent(
+    hasUploaded ? 'local_import_completed' : 'local_import_failed',
+    {
+      ...getAlbumTraceContext(albumId),
+      ...properties,
+      uploadedCount: finalCounts.uploaded,
+      failedCount: finalCounts.failed,
+      batchTotal,
+      durationMs,
+    },
+  );
 
   await syncPhotosFromStoreAwait(albumId, [...batchPhotoIds]);
   await persistAlbum(albumId);
