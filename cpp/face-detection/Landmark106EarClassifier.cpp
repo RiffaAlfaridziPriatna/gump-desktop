@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <vector>
 
@@ -14,8 +15,10 @@ namespace {
 constexpr int kInputSize = 192;
 constexpr int kLeftEye[10] = {33, 34, 35, 36, 37, 38, 39, 40, 41, 42};
 constexpr int kRightEye[10] = {87, 88, 89, 90, 91, 92, 93, 94, 95, 96};
-constexpr float kOpenEar = 0.22f;
-constexpr float kClosedEar = 0.16f;
+// Contour EAR (lid gap / eye width). Tuned for Key Face three-way labels:
+// shut/glare → closed, smile-squint → partial, wide open → open.
+constexpr float kOpenEar = 0.24f;
+constexpr float kClosedEar = 0.175f;
 
 float Clamp(float value, float minimum, float maximum) {
   return std::max(minimum, std::min(maximum, value));
@@ -262,23 +265,42 @@ EyeStateResult Landmark106EarClassifier::classifyBgraBox(
 
     const float leftEar = ContourEar(xy.data(), kLeftEye, 10);
     const float rightEar = ContourEar(xy.data(), kRightEye, 10);
-    const float ear = 0.5f * (leftEar + rightEar);
-    const float openProb = Clamp(
-        (ear - kClosedEar) / std::max(1e-3f, kOpenEar - kClosedEar),
-        0.0f,
-        1.0f);
-    result.leftOpenProbability = openProb;
-    result.rightOpenProbability = openProb;
-
-    if (ear >= kOpenEar) {
-      result.state = EyeState::Open;
-      result.confidence = Clamp(55.0f + openProb * 40.0f, 55.0f, 95.0f);
-    } else if (ear <= kClosedEar) {
+    const float minEar = std::min(leftEar, rightEar);
+    const float avgEar = 0.5f * (leftEar + rightEar);
+#if defined(GUMP_EAR_DEBUG)
+    std::fprintf(
+        stderr,
+        "[ear106] L=%.4f R=%.4f min=%.4f avg=%.4f\n",
+        leftEar,
+        rightEar,
+        minEar,
+        avgEar);
+#endif
+    const auto earToProb = [](float ear) {
+      return Clamp(
+          (ear - kClosedEar) / std::max(1e-3f, kOpenEar - kClosedEar),
+          0.0f,
+          1.0f);
+    };
+    // Shut if either lid gap is closed (glasses glare often opens one side).
+    // Open only when both lids clear the open bar; mid → partial (squint-smile).
+    if (minEar <= kClosedEar) {
       result.state = EyeState::Closed;
-      result.confidence = Clamp(55.0f + (1.0f - openProb) * 40.0f, 55.0f, 95.0f);
+      result.leftOpenProbability = 0.05f;
+      result.rightOpenProbability = 0.05f;
+      result.confidence = Clamp(70.0f + (kClosedEar - minEar) * 200.0f, 70.0f, 95.0f);
+    } else if (avgEar >= kOpenEar && minEar >= kOpenEar * 0.92f) {
+      result.state = EyeState::Open;
+      result.leftOpenProbability = 0.95f;
+      result.rightOpenProbability = 0.95f;
+      result.confidence = Clamp(70.0f + (avgEar - kOpenEar) * 200.0f, 70.0f, 95.0f);
     } else {
-      result.state = openProb >= 0.45f ? EyeState::Open : EyeState::Closed;
-      result.confidence = 48.0f + std::abs(openProb - 0.5f) * 20.0f;
+      result.state = EyeState::Partial;
+      // Mid-band probs so FaceLabeling large-frontal maps to "partial".
+      result.leftOpenProbability = Clamp(0.25f + earToProb(leftEar) * 0.25f, 0.25f, 0.50f);
+      result.rightOpenProbability =
+          Clamp(0.25f + earToProb(rightEar) * 0.25f, 0.25f, 0.50f);
+      result.confidence = 72.0f;
     }
     return result;
   } catch (...) {

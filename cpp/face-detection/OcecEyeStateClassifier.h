@@ -16,6 +16,7 @@ enum class EyeState {
   Unknown,
   Open,
   Closed,
+  Partial,
 };
 
 struct EyeStateResult {

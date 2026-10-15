@@ -17,7 +17,7 @@ target 'GumpDesktop-macOS' do
   use_native_modules!
 
   # ONNX Runtime C API for shared SCRFD + OCEC face detection pipeline
-  pod 'onnxruntime-c', '~> 1.20'
+  pod 'onnxruntime-c', '1.30.0'
 
   # Silent auto-update (sandboxed apps need Sparkle 2.x + InstallerLauncher XPC)
   pod 'Sparkle', '~> 2.6'

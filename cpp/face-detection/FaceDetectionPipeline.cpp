@@ -54,6 +54,31 @@ constexpr float kFocusGoodThreshold = 65.0f;
 constexpr float kFocusSoftThreshold = 40.0f;
 constexpr float kEyeOpenConfidenceThreshold = 70.0f;
 constexpr float kEyeClosedConfidenceThreshold = 88.0f;
+// Large frontal faces (Key Face sized): three-way OCEC bars. Micros keep open-bias.
+// Open ~0.92 keeps true opens green without sweeping every Key Face to partial.
+// Soft-closed is asymmetry-gated (shut+glasses glare), not a wide mid-band dump.
+constexpr float kLargeFrontalFaceArea = 0.008f;
+constexpr float kLargeFrontalOpenMin = 0.92f;
+constexpr float kLargeFrontalOpenAvg = 0.92f;
+constexpr float kLargeFrontalClosedMax = 0.18f;
+constexpr float kLargeFrontalClosedMin = 0.12f;
+// Soft-closed = shut+glare only (one lid mid-open from reflection, peer shut).
+// Floor avoids side-gaze / speaking asymmetry (e.g. 0.40/0.79 or 0.78/0.01).
+constexpr float kLargeFrontalSoftClosedMin = 0.55f;
+constexpr float kLargeFrontalSoftClosedMinFloor = 0.45f;
+constexpr float kLargeFrontalSoftClosedAvg = 0.70f;
+constexpr float kLargeFrontalSoftClosedMax = 0.88f;
+constexpr float kLargeFrontalSoftClosedAsym = 0.28f;
+// Deep vs mid glare (see FaceLabeling.h). Gap excludes TR5 speaker ~0.145/0.86.
+constexpr float kLargeFrontalGlareDeepMinMax = 0.10f;
+constexpr float kLargeFrontalGlareDeepMaxMin = 0.78f;
+constexpr float kLargeFrontalGlareDeepAvg = 0.55f;
+constexpr float kLargeFrontalGlareDeepAsym = 0.55f;
+constexpr float kLargeFrontalGlareMidMinFloor = 0.20f;
+constexpr float kLargeFrontalGlareMidMin = 0.50f;
+constexpr float kLargeFrontalGlareMidMaxMin = 0.88f;
+constexpr float kLargeFrontalGlareMidAvg = 0.72f;
+constexpr float kLargeFrontalGlareMidAsym = 0.35f;
 
 // Brightness is hard-coded on macOS; keep the same contract for TS.
 constexpr float kMacOsBrightnessPlaceholder = 60.0f;
@@ -874,47 +899,98 @@ void FillPhotometrics(
       SharpnessFromDetection(bgraPixels, imageWidth, imageHeight, stride, detection);
 
   EyesOpenResult eyesOpen;
-  eyesOpen.value = eyeState.state == EyeState::Open;
+  eyesOpen.value =
+      eyeState.state == EyeState::Open || eyeState.state == EyeState::Partial;
   eyesOpen.confidence = eyeState.confidence;
   eyesOpen.leftProbability = eyeState.leftOpenProbability;
   eyesOpen.rightProbability = eyeState.rightOpenProbability;
-  if (eyeState.state == EyeState::Closed) {
+  // Bad SCRFD 5-kps (cheek/mouth crops) must not become hard closed.
+  const bool frontalKps = HasPlausibleFrontalLayout(detection);
+  const bool kpsPlausible = frontalKps || HasPlausibleProfileLayout(detection);
+  const float maxOpen =
+      std::max(eyesOpen.leftProbability, eyesOpen.rightProbability);
+  const float minOpen =
+      std::min(eyesOpen.leftProbability, eyesOpen.rightProbability);
+  const float avgOpen = (eyesOpen.leftProbability + eyesOpen.rightProbability) * 0.5f;
+  const bool largeFrontal =
+      eyeEngine != "ear106" && frontalKps &&
+      heuristicFaceArea >= kLargeFrontalFaceArea;
+
+  if (eyeEngine == "ear106") {
+    // Landmark106 already decided open / closed / partial — keep probs+conf.
+    if (eyeState.state == EyeState::Closed) {
+      eyesOpen.value = false;
+    } else if (eyeState.state == EyeState::Partial) {
+      eyesOpen.value = true;
+      eyesOpen.confidence = 72.0f;
+    } else if (eyeState.state == EyeState::Open) {
+      eyesOpen.value = true;
+    }
+  } else if (largeFrontal &&
+             (std::isfinite(eyesOpen.leftProbability) &&
+              std::isfinite(eyesOpen.rightProbability))) {
+    // Size-aware OCEC three-way (EAR off / below gate).
+    const bool hardClosed =
+        maxOpen <= kLargeFrontalClosedMax && minOpen <= kLargeFrontalClosedMin;
+    const float asymOpen = maxOpen - minOpen;
+    const bool softClosed = minOpen >= kLargeFrontalSoftClosedMinFloor &&
+                            minOpen <= kLargeFrontalSoftClosedMin &&
+                            avgOpen <= kLargeFrontalSoftClosedAvg &&
+                            maxOpen <= kLargeFrontalSoftClosedMax &&
+                            asymOpen >= kLargeFrontalSoftClosedAsym;
+    const bool glareDeepClosed = minOpen <= kLargeFrontalGlareDeepMinMax &&
+                                 avgOpen <= kLargeFrontalGlareDeepAvg &&
+                                 maxOpen >= kLargeFrontalGlareDeepMaxMin &&
+                                 asymOpen >= kLargeFrontalGlareDeepAsym;
+    const bool glareMidClosed = minOpen >= kLargeFrontalGlareMidMinFloor &&
+                                minOpen <= kLargeFrontalGlareMidMin &&
+                                avgOpen <= kLargeFrontalGlareMidAvg &&
+                                maxOpen >= kLargeFrontalGlareMidMaxMin &&
+                                asymOpen >= kLargeFrontalGlareMidAsym;
+    const bool glareClosed = glareDeepClosed || glareMidClosed;
+    if (minOpen >= kLargeFrontalOpenMin && avgOpen >= kLargeFrontalOpenAvg) {
+      eyesOpen.value = true;
+      eyesOpen.confidence = 90.0f;
+    } else if (hardClosed || softClosed || glareClosed) {
+      eyesOpen.value = false;
+      eyesOpen.confidence = 92.0f;
+    } else {
+      // Mild squint / mid-band → partial (not green open).
+      eyesOpen.value = true;
+      eyesOpen.confidence = 72.0f;
+    }
+  } else if (eyeState.state == EyeState::Closed) {
     eyesOpen.value = false;
-    const float maxOpen =
-        std::max(eyesOpen.leftProbability, eyesOpen.rightProbability);
-    const float minOpen =
-        std::min(eyesOpen.leftProbability, eyesOpen.rightProbability);
     const bool clearlyClosed = maxOpen <= 0.12f && minOpen <= 0.10f;
-    if (heuristicFaceArea < 0.00085f) {
+    if (!kpsPlausible) {
+      eyesOpen.value = true;
+      eyesOpen.confidence = 72.0f;
+    } else if (heuristicFaceArea < 0.00085f) {
       eyesOpen.value = true;
       eyesOpen.confidence = 72.0f;
     } else if (heuristicFaceArea < 0.0018f && !clearlyClosed && maxOpen >= 0.20f) {
       eyesOpen.value = true;
       eyesOpen.confidence = 72.0f;
     }
+  } else if (eyeState.state == EyeState::Partial) {
+    eyesOpen.value = true;
+    eyesOpen.confidence = 72.0f;
   } else if (eyeState.state == EyeState::Unknown) {
     eyesOpen.value = true;
     eyesOpen.confidence = 70.0f;
   }
 
-  if (eyeEngine != "ear106" && eyesOpen.value && heuristicFaceArea >= 0.015f &&
-      eyesOpen.confidence <= 76.0f) {
-    const float maxOpen =
-        std::max(eyesOpen.leftProbability, eyesOpen.rightProbability);
-    const float minOpen =
-        std::min(eyesOpen.leftProbability, eyesOpen.rightProbability);
+  if (!largeFrontal && kpsPlausible && eyeEngine != "ear106" && eyesOpen.value &&
+      heuristicFaceArea >= 0.015f && eyesOpen.confidence <= 76.0f) {
     if (maxOpen <= 0.12f && minOpen <= 0.10f) {
       eyesOpen.value = false;
       eyesOpen.confidence = 95.0f;
     }
   }
 
-  if (eyeEngine != "ear106" && eyesOpen.value && heuristicFaceArea >= 0.0018f &&
-      heuristicFaceArea < 0.0040f && eyesOpen.confidence <= 76.0f) {
-    const float maxOpen =
-        std::max(eyesOpen.leftProbability, eyesOpen.rightProbability);
-    const float minOpen =
-        std::min(eyesOpen.leftProbability, eyesOpen.rightProbability);
+  if (!largeFrontal && kpsPlausible && eyeEngine != "ear106" && eyesOpen.value &&
+      heuristicFaceArea >= 0.0018f && heuristicFaceArea < 0.0040f &&
+      eyesOpen.confidence <= 76.0f) {
     if (maxOpen > 0.12f && maxOpen <= 0.19f && minOpen <= 0.05f) {
       eyesOpen.value = false;
       eyesOpen.confidence = 90.0f;
@@ -1395,7 +1471,9 @@ namespace {
 
 int ResolvePipelinePoolSize(int configured) {
   constexpr int kMinPool = 1;
-  constexpr int kMaxPool = 2;
+  // Cap at 3 so Mac can match analysis concurrency (pool == workers).
+  // Higher pools mean more live SCRFD/OCEC ORT sessions (heat cost).
+  constexpr int kMaxPool = 3;
   if (configured > 0) {
     return std::clamp(configured, kMinPool, kMaxPool);
   }

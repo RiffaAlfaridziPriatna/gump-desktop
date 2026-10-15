@@ -79,10 +79,10 @@ describe('CulledPhoto', () => {
       maybe: false,
       blurred: false,
       closedEyes: false,
-    }, 'scrfd-ocec-15');
+    }, 'scrfd-ocec-22');
     expect(photo.analysisStatus).toBe('analyzed');
     expect(photo.aiSelected).toBe(true);
-    expect(photo.analysisEngineVersion).toBe('scrfd-ocec-15');
+    expect(photo.analysisEngineVersion).toBe('scrfd-ocec-22');
 
     photo.toggleSelection();
     photo.setStarRating(5);

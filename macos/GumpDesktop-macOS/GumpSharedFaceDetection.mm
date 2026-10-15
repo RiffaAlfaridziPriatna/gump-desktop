@@ -34,6 +34,7 @@ FaceDetection::FaceDetectionPipeline &SharedPipeline() {
 
     config.scrfdModelPath = resolveModel(@"face_detection_scrfd_2.5g_bnkps");
     config.ocecModelPath = resolveModel(@"eye_state_ocec_s");
+    // Contour EAR106 does not separate smile-squint vs shut on this album; keep off.
     // config.landmark106ModelPath = resolveModel(@"face_landmarks_2d106det");
     config.scoreThreshold = 0.50f;
     config.acceptScoreThreshold = 0.65f;
