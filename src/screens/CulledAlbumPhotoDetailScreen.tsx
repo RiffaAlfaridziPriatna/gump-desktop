@@ -1,8 +1,9 @@
 import {FaceStatusTooltip, type KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
 import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
 import {PhotoDetailImageViewer} from '@components/culling/PhotoDetailImageViewer';
+import {PhotoDetailNavigationFrame} from '@components/culling/PhotoDetailNavigationFrame';
 import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
-import {useCulledAlbumPhotosState, useCulledAlbumStore} from '@context/culledAlbum';
+import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
@@ -29,7 +30,7 @@ import {
   isUsableDetailUri,
   resolveDetailDisplayUri,
 } from '@lib/storage/localStorage';
-import {updatePhoto} from '@lib/culledAlbum/store';
+import {getPhotoById, updatePhoto} from '@lib/culledAlbum/store';
 import {syncPhotoFromStore} from '@/application/syncPhotoRepository';
 import {Pressable, TouchableOpacity} from '@components/ui';
 import {
@@ -157,28 +158,24 @@ export default function CulledAlbumPhotoDetailScreen({
   navigation,
   route,
 }: Props) {
-  const {albumId, photoId, faceIndex: initialFaceIndex} = route.params;
+  const {
+    albumId,
+    photoId,
+    faceIndex: initialFaceIndex,
+    photoIds: navigationPhotoIds = [],
+  } = route.params;
   const {shellProps, handleBack} = useUploadAwareModalScreen(
     navigation,
     route.params.instant,
     {albumId},
   );
-  const {isMobileLayout, screenPaddingHorizontal} = useLayout();
-  const albumPhotos = useCulledAlbumPhotosState(albumId);
-  const photo = useMemo(
-    () => albumPhotos.find(entry => entry.photoId === photoId),
-    [albumPhotos, photoId],
-  );
-
-  const [analysis, setAnalysis] = useState(() =>
-    photo ? toCullingPhoto(photo) : null,
-  );
-
-  useEffect(() => {
-    if (photo) {
-      setAnalysis(toCullingPhoto(photo));
-    }
-  }, [photo]);
+  const {isMobileLayout, isDesktopPlatform, screenPaddingHorizontal} =
+    useLayout();
+  // Live per-photo subscription (same path as CulledAlbumPhotoCard) so star /
+  // selection edits from the album grid stay in sync after in-place store updates.
+  const photo = useCulledAlbumPhoto(albumId, photoId);
+  const analysis =
+    photo?.analysisStatus === 'analyzed' ? toCullingPhoto(photo) : null;
   const [zoomFaceIndex, setZoomFaceIndex] = useState<number | null>(() =>
     typeof initialFaceIndex === 'number' ? initialFaceIndex : null,
   );
@@ -189,6 +186,7 @@ export default function CulledAlbumPhotoDetailScreen({
   const [screenOrigin, setScreenOrigin] = useState({x: 0, y: 0});
 
   const screenRootRef = useRef<View>(null);
+  const appliedInitialFaceIndexRef = useRef(false);
 
   const syncScreenOrigin = useCallback(() => {
     screenRootRef.current?.measureInWindow((x, y) => {
@@ -223,6 +221,10 @@ export default function CulledAlbumPhotoDetailScreen({
   const fileName = photo?.file.name ?? 'Photo';
 
   useEffect(() => {
+    if (appliedInitialFaceIndexRef.current) {
+      return;
+    }
+    appliedInitialFaceIndexRef.current = true;
     if (typeof initialFaceIndex !== 'number') {
       return;
     }
@@ -231,7 +233,7 @@ export default function CulledAlbumPhotoDetailScreen({
       return;
     }
     setZoomFaceIndex(initialFaceIndex);
-  }, [faces.length, initialFaceIndex, photoId]);
+  }, [faces.length, initialFaceIndex]);
 
   const [uri, setUri] = useState(() => {
     if (!photo) {
@@ -265,7 +267,10 @@ export default function CulledAlbumPhotoDetailScreen({
       photoLookIntensity ?? 0,
     );
 
-  useEffect(() => {
+  // Layout phase so uri and photoId stay in sync before paint. A deferred
+  // useEffect left Windows Image one frame on the previous uri, and its
+  // native Image often never swapped after that.
+  useLayoutEffect(() => {
     if (!photoFileUri) {
       setUri('');
       return;
@@ -411,10 +416,9 @@ export default function CulledAlbumPhotoDetailScreen({
       return;
     }
 
-    const updated = await cullingEngine.updateSelection(albumId, photoId, {
+    await cullingEngine.updateSelection(albumId, photoId, {
       selected: !analysis.selected,
     });
-    setAnalysis(current => (current ? {...current, ...updated} : current));
   }
 
   async function updateStarRating(starIndex: number) {
@@ -424,13 +428,52 @@ export default function CulledAlbumPhotoDetailScreen({
 
     const targetRating = starIndex + 1;
     const nextRating = starRating === targetRating ? 0 : targetRating;
-    const updated = await cullingEngine.updateStarRating(
-      albumId,
-      photoId,
-      nextRating,
-    );
-    setAnalysis(current => (current ? {...current, ...updated} : current));
+    await cullingEngine.updateStarRating(albumId, photoId, nextRating);
   }
+
+  const currentPhotoIndex = useMemo(
+    () => navigationPhotoIds.indexOf(photoId),
+    [navigationPhotoIds, photoId],
+  );
+  const canGoPrev = currentPhotoIndex > 0;
+  const canGoNext =
+    currentPhotoIndex >= 0 &&
+    currentPhotoIndex < navigationPhotoIds.length - 1;
+
+  const goToPhotoAtIndex = useCallback(
+    (targetIndex: number) => {
+      const targetPhotoId = navigationPhotoIds[targetIndex];
+      if (!targetPhotoId || targetPhotoId === photoId) {
+        return;
+      }
+
+      const file = getPhotoById(albumId, targetPhotoId)?.file;
+      if (file) {
+        preloadImage(resolveDetailDisplayUri(file)).catch(() => undefined);
+      }
+
+      setZoomFaceIndex(null);
+      navigation.setParams({
+        photoId: targetPhotoId,
+        faceIndex: undefined,
+      });
+    },
+    [albumId, navigation, navigationPhotoIds, photoId],
+  );
+
+  const goToPreviousPhoto = useCallback(() => {
+    if (!canGoPrev) {
+      return;
+    }
+    goToPhotoAtIndex(currentPhotoIndex - 1);
+  }, [canGoPrev, currentPhotoIndex, goToPhotoAtIndex]);
+
+  const goToNextPhoto = useCallback(() => {
+    if (!canGoNext) {
+      return;
+    }
+    goToPhotoAtIndex(currentPhotoIndex + 1);
+  }, [canGoNext, currentPhotoIndex, goToPhotoAtIndex]);
 
   const handleKeyFacePress = useCallback((index: number) => {
     setZoomFaceIndex(current => (current === index ? null : index));
@@ -606,17 +649,25 @@ export default function CulledAlbumPhotoDetailScreen({
                   styles.mainColumn,
                   isMobileLayout && styles.mainColumnMobile,
                 ]}>
-                <PhotoDetailImageViewer
-                  uri={uri}
-                  photoId={photoId}
-                  faces={faces}
-                  zoomFaceIndex={zoomFaceIndex}
-                  lookId={lookDetailReady ? 'original' : photo?.lookId}
-                  lookIntensity={photo?.lookIntensity}
-                  imageSize={imageSize}
-                  onImageReady={handleMainImageReady}
-                  onTooltipAnchorChange={handleTooltipChange}
-                />
+                <PhotoDetailNavigationFrame
+                  canGoPrev={canGoPrev}
+                  canGoNext={canGoNext}
+                  onPrev={goToPreviousPhoto}
+                  onNext={goToNextPhoto}
+                  showHoverChevrons={isDesktopPlatform && !isMobileLayout}
+                >
+                  <PhotoDetailImageViewer
+                    uri={uri}
+                    photoId={photoId}
+                    faces={faces}
+                    zoomFaceIndex={zoomFaceIndex}
+                    lookId={lookDetailReady ? 'original' : photo?.lookId}
+                    lookIntensity={photo?.lookIntensity}
+                    imageSize={imageSize}
+                    onImageReady={handleMainImageReady}
+                    onTooltipAnchorChange={handleTooltipChange}
+                  />
+                </PhotoDetailNavigationFrame>
               </View>
 
               <View

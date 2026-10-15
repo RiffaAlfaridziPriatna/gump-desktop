@@ -1,20 +1,226 @@
 #include "AnalysisSession.h"
 
+#include "DifferenceHash.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <future>
 #include <iostream>
 #include <memory>
 #include <queue>
 #include <system_error>
+#include <vector>
 
 namespace Analysis {
 namespace {
 
 ImageRegion ImageRegionFromFace(const FaceDetection::NormalizedRect &rect) {
   return {rect.left, rect.top, rect.width, rect.height};
+}
+
+std::string JsonEscape(const std::string &value) {
+  std::string out;
+  out.reserve(value.size() + 8);
+  for (char ch : value) {
+    switch (ch) {
+    case '\\':
+      out += "\\\\";
+      break;
+    case '"':
+      out += "\\\"";
+      break;
+    case '\n':
+      out += "\\n";
+      break;
+    default:
+      out.push_back(ch);
+      break;
+    }
+  }
+  return out;
+}
+
+std::string ReadEnvVar(const char *name) {
+  if (name == nullptr || name[0] == '\0') {
+    return {};
+  }
+#if defined(_WIN32)
+  char *buffer = nullptr;
+  size_t length = 0;
+  if (_dupenv_s(&buffer, &length, name) != 0 || buffer == nullptr) {
+    return {};
+  }
+  std::string value(buffer);
+  free(buffer);
+  return value;
+#else
+  const char *value = std::getenv(name);
+  return value == nullptr ? std::string{} : std::string(value);
+#endif
+}
+
+std::filesystem::path UserDocumentsDirectory() {
+#if defined(_WIN32)
+  const std::string profile = ReadEnvVar("USERPROFILE");
+  if (!profile.empty()) {
+    return std::filesystem::path(profile) / "Documents";
+  }
+  const std::string homeDrive = ReadEnvVar("HOMEDRIVE");
+  const std::string homePath = ReadEnvVar("HOMEPATH");
+  if (!homeDrive.empty() && !homePath.empty()) {
+    return std::filesystem::path(homeDrive + homePath) / "Documents";
+  }
+  return {};
+#else
+  const std::string home = ReadEnvVar("HOME");
+  if (home.empty()) {
+    return {};
+  }
+  return std::filesystem::path(home) / "Documents";
+#endif
+}
+
+std::filesystem::path GumpDataDirectory() {
+#if defined(_WIN32)
+  const std::string localAppData = ReadEnvVar("LOCALAPPDATA");
+  if (localAppData.empty()) {
+    return {};
+  }
+  return std::filesystem::path(localAppData) / "Gump";
+#else
+  const std::string home = ReadEnvVar("HOME");
+  if (home.empty()) {
+    return {};
+  }
+  return std::filesystem::path(home) / "Library" / "Application Support" / "Gump";
+#endif
+}
+
+bool PathExists(const std::filesystem::path &path) {
+  if (path.empty()) {
+    return false;
+  }
+  std::error_code ec;
+  return std::filesystem::exists(path, ec);
+}
+
+bool AppendTextFile(const std::filesystem::path &path, const std::string &text) {
+  if (path.empty()) {
+    return false;
+  }
+  try {
+    const auto parent = path.parent_path();
+    if (!parent.empty()) {
+      std::error_code ec;
+      std::filesystem::create_directories(parent, ec);
+    }
+#if defined(_WIN32)
+    // Prefer wchar open — more reliable than narrow ofstream on Win paths.
+    std::ofstream out(path.wstring(), std::ios::app | std::ios::binary);
+#else
+    std::ofstream out(path, std::ios::app | std::ios::binary);
+#endif
+    if (!out) {
+      return false;
+    }
+    out << text;
+    return static_cast<bool>(out);
+  } catch (...) {
+    return false;
+  }
+}
+
+// RN Windows often drops CMD env. Enable via marker file in Documents (easy)
+// or %LOCALAPPDATA%\Gump. Always write jsonl to Documents when enabled.
+bool EyeProbDumpEnabled(std::vector<std::filesystem::path> *outPaths) {
+  const std::filesystem::path docs = UserDocumentsDirectory();
+  const std::filesystem::path dataDir = GumpDataDirectory();
+  const std::filesystem::path docsMarker = docs / "ENABLE_EYE_PROB_DUMP";
+  const std::filesystem::path appMarker =
+      dataDir.empty() ? std::filesystem::path{} : dataDir / "ENABLE_EYE_PROB_DUMP";
+
+  const std::string dumpSpec = ReadEnvVar("GUMP_DUMP_EYE_PROBS");
+  const bool markerOn = PathExists(docsMarker) || PathExists(appMarker);
+  if (dumpSpec.empty() && !markerOn) {
+    return false;
+  }
+
+  if (outPaths != nullptr) {
+    outPaths->clear();
+    if (!dumpSpec.empty() && dumpSpec != "1" && dumpSpec != "true" &&
+        dumpSpec != "stderr") {
+      outPaths->push_back(std::filesystem::path(dumpSpec));
+    }
+    if (!docs.empty()) {
+      outPaths->push_back(docs / "gump_eye_probs.jsonl");
+    }
+    if (!dataDir.empty()) {
+      outPaths->push_back(dataDir / "eye_probs.jsonl");
+    }
+  }
+  return true;
+}
+
+void ArmEyeProbDumpIfEnabled() {
+  std::vector<std::filesystem::path> paths;
+  if (!EyeProbDumpEnabled(&paths)) {
+    return;
+  }
+  const std::string line =
+      std::string("{\"armed\":true,\"note\":\"eye dump enabled; cull to append probs\"}\n");
+  for (const auto &path : paths) {
+    AppendTextFile(path, line);
+  }
+  const std::filesystem::path docs = UserDocumentsDirectory();
+  if (!docs.empty()) {
+    AppendTextFile(
+        docs / "gump_eye_dump_READY.txt",
+        "Eye prob dump is ON.\nOpen gump_eye_probs.jsonl in this same Documents folder after cull.\n");
+  }
+}
+
+void MaybeDumpEyeProbs(
+    const std::string &photoId,
+    const std::string &fileName,
+    const std::vector<FaceDetection::FaceResult> &faces) {
+  std::vector<std::filesystem::path> outPaths;
+  if (!EyeProbDumpEnabled(&outPaths) || outPaths.empty()) {
+    return;
+  }
+
+  std::string payload = "{\"photoId\":\"" + JsonEscape(photoId) +
+                        "\",\"fileName\":\"" + JsonEscape(fileName) +
+                        "\",\"faces\":[";
+  for (size_t i = 0; i < faces.size(); ++i) {
+    const auto &face = faces[i];
+    const float area = face.width * face.height;
+    if (i > 0) {
+      payload += ',';
+    }
+    payload += "{\"i\":" + std::to_string(i) +
+               ",\"area\":" + std::to_string(area) +
+               ",\"left\":" + std::to_string(face.left) +
+               ",\"top\":" + std::to_string(face.top) +
+               ",\"eyeStatus\":\"" + JsonEscape(face.eyeStatus) + "\"" +
+               ",\"L\":" + std::to_string(face.eyesOpen.leftProbability) +
+               ",\"R\":" + std::to_string(face.eyesOpen.rightProbability) +
+               ",\"conf\":" + std::to_string(face.eyesOpen.confidence) + "}";
+  }
+  payload += "]}\n";
+
+  const std::string dumpSpec = ReadEnvVar("GUMP_DUMP_EYE_PROBS");
+  if (dumpSpec == "stderr") {
+    std::cerr << "[GUMP_DUMP_EYE_PROBS] " << payload;
+  }
+
+  for (const auto &path : outPaths) {
+    AppendTextFile(path, payload);
+  }
 }
 
 void MeasureFacesOnBuffer(
@@ -57,17 +263,36 @@ void MeasureFacesFromHiResCrops(
       uri, regions, measurementMaxPixelSize);
   bool measuredAny = false;
   const size_t count = std::min(faces.size(), crops.size());
+  const int outputCap = FaceDetection::kMeasurementCropOutputMaxPixelSize;
   for (size_t index = 0; index < count; ++index) {
     const auto &crop = crops[index];
     if (!crop.success || crop.bgraPixels == nullptr) {
       continue;
     }
+    const uint8_t *pixels = crop.bgraPixels;
+    int width = crop.width;
+    int height = crop.height;
+    int stride = crop.stride;
+    FaceDetection::OwnedBgra resized;
+    if (std::max(width, height) > outputCap &&
+        FaceDetection::resizeBgraLongEdge(
+            crop.bgraPixels,
+            crop.width,
+            crop.height,
+            crop.stride,
+            outputCap,
+            resized)) {
+      pixels = resized.bytes.data();
+      width = resized.width;
+      height = resized.height;
+      stride = resized.stride;
+    }
     pipeline.refineFacePhotometrics(
         faces[index],
-        crop.bgraPixels,
-        crop.width,
-        crop.height,
-        crop.stride,
+        pixels,
+        width,
+        height,
+        stride,
         {regions[index].left,
          regions[index].top,
          regions[index].width,
@@ -234,7 +459,9 @@ struct AnalysisSession::Impl {
 
       bool photometricsDone = false;
       if (result.faces.empty() && detectionLongEdge < measurementMax) {
-        // GRACEFUL: If retry fails, just continue with empty faces
+        // Low-res detect found nothing — retry once at measurement size.
+        // Keep tiling off: enableTiling on retry was a large time/heat spike
+        // when maxDecode < measurement (e.g. low-power 2048).
         try {
           auto retry = config.decoder->DecodeImageToBgra(
               job.input.uri, measurementMax);
@@ -244,8 +471,11 @@ struct AnalysisSession::Impl {
                 retry.width,
                 retry.height,
                 retry.stride,
-                true);
-            photometricsDone = true;
+                false);
+            if (!result.faces.empty()) {
+              MeasureFacesOnBuffer(pipeline, retry, result.faces);
+              photometricsDone = true;
+            }
           }
         } catch (...) {
           // Retry failed, but we already have the low-res decode
@@ -282,19 +512,29 @@ struct AnalysisSession::Impl {
         }
       }
 
-      // GRACEFUL: Wrap face measurement in try-catch
+      // GRACEFUL: Wrap face measurement in try-catch.
+      // When detect runs below measurementMax (e.g. Mac Phase 1: 2048 detect /
+      // 4096 eyes), reuse the cached measurement-sized full frame via
+      // MeasureFacesOnBuffer. Per-face DecodeImageRegionsToBgra is much slower
+      // and was the ~30s→50s regression for that tuning.
       if (!result.faces.empty() && !photometricsDone) {
         try {
           if (detectionLongEdge < measurementMax) {
-            decoded.bgraPixels = nullptr;
-            decoded.platformHandle.reset();
-            decoded.success = false;
-            MeasureFacesFromHiResCrops(
-                pipeline,
-                *config.decoder,
-                job.input.uri,
-                measurementMax,
-                result.faces);
+            auto measureBuf = config.decoder->DecodeImageToBgra(
+                job.input.uri, measurementMax);
+            if (measureBuf.success) {
+              decoded.bgraPixels = nullptr;
+              decoded.platformHandle.reset();
+              decoded.success = false;
+              MeasureFacesOnBuffer(pipeline, measureBuf, result.faces);
+            } else {
+              MeasureFacesFromHiResCrops(
+                  pipeline,
+                  *config.decoder,
+                  job.input.uri,
+                  measurementMax,
+                  result.faces);
+            }
           } else {
             MeasureFacesOnBuffer(pipeline, decoded, result.faces);
           }
@@ -311,6 +551,7 @@ struct AnalysisSession::Impl {
       result.flags = DerivePhotoFlags(result.faces);
       result.starRating = DeriveStarRating(result.faces);
       result.success = true;
+      MaybeDumpEyeProbs(result.photoId, job.input.fileName, result.faces);
 
     } catch (const std::exception &e) {
       auto fallback = EmptyFallbackResult(
@@ -629,9 +870,12 @@ struct AnalysisSession::Impl {
                              .count();
 
       if (config.adaptiveConcurrency) {
+        // Cap adaptive backoff (Phase 3): breathe under load without climbing
+        // to the old 200ms ceiling that erased concurrency gains.
+        constexpr int kAdaptiveDelayCapMs = 100;
         int delayMs = dynamicDelayMs.load();
         if (jobMs > 400) {
-          delayMs = std::min(delayMs + 25, 200);
+          delayMs = std::min(delayMs + 25, kAdaptiveDelayCapMs);
         } else if (jobMs < 200) {
           delayMs = std::max(delayMs - 10, config.interJobDelayMs);
         }
@@ -778,6 +1022,9 @@ bool AnalysisSession::Start(const SessionConfig &config) {
   if (!impl_->Initialize()) {
     return false;
   }
+
+  // If dump is armed, write READY + seed jsonl immediately (proves rebuild/marker).
+  ArmEyeProbDumpIfEnabled();
 
   impl_->running.store(true);
   impl_->cancelled.store(false);

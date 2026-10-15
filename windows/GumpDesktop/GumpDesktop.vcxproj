@@ -78,6 +78,9 @@
       <AdditionalIncludeDirectories>
         $(MSBuildThisFileDirectory)..\..\cpp\face-detection;
         $(MSBuildThisFileDirectory)..\..\cpp\analysis;
+        $(MSBuildThisFileDirectory)..\..\cpp\third_party\stb;
+        $(MSBuildThisFileDirectory)..\..\cpp\third_party\libjpeg-turbo\gump_config;
+        $(MSBuildThisFileDirectory)..\..\cpp\third_party\libjpeg-turbo;
         $(MSBuildThisFileDirectory)vendor\WinSparkle\include;
         $(MSBuildThisFileDirectory);
         %(AdditionalIncludeDirectories)
@@ -118,12 +121,13 @@
   </ItemDefinitionGroup>
   <PropertyGroup Label="UserMacros" />
   <ItemGroup>
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GumpFilePicker.h" />
     <ClInclude Include="GumpLocalStorage.h" />
     <ClInclude Include="GumpUpdater.h" />
+    <ClInclude Include="GumpKeyboard.h" />
     <ClInclude Include="GumpUpdateMenu.h" />
     <ClInclude Include="GumpVersion.h" />
     <ClInclude Include="..\..\cpp\face-detection\ScrfdFaceDetector.h" />
@@ -133,6 +137,7 @@
     <ClInclude Include="..\..\cpp\face-detection\FaceLabeling.h" />
     <ClInclude Include="..\..\cpp\face-detection\DifferenceHash.h" />
     <ClInclude Include="..\..\cpp\face-detection\ExifDateTime.h" />
+    <ClInclude Include="..\..\cpp\analysis\SharedJpegDecode.h" />
     <ClInclude Include="GumpDesktop.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="AutolinkedNativeModules.g.h" />
@@ -144,6 +149,7 @@
     <ClCompile Include="GumpFilePicker.cpp" />
     <ClCompile Include="GumpLocalStorage.cpp" />
     <ClCompile Include="GumpUpdater.cpp" />
+    <ClCompile Include="GumpKeyboard.cpp" />
     <ClCompile Include="GumpUpdateMenu.cpp" />
     <ClCompile Include="..\..\cpp\face-detection\ScrfdFaceDetector.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -171,6 +177,413 @@
     </ClCompile>
     <ClCompile Include="..\..\cpp\analysis\AnalysisSession.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\analysis\SharedJpegDecode.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcapistd.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jccolor.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcdiffct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jclossls.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcmainct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcprepct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcsample.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdapistd.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdcolor.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jddiffct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdlossls.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdmainct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdpostct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdsample.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jutils.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jccoefct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcdctmgr.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdcoefct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jddctmgr.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdmerge.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jfdctfst.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jfdctint.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jidctflt.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jidctfst.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jidctint.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jidctred.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jquant1.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jquant2.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcapimin.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jchuff.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcicc.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcinit.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jclhuff.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcmarker.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcmaster.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcomapi.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcparam.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcphuff.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jctrans.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdapimin.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdatadst.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdatasrc.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdhuff.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdicc.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdinput.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdlhuff.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdmarker.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdmaster.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdphuff.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdtrans.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jerror.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jfdctflt.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jmemmgr.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jmemnobs.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jpeg_nbits.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jaricom.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jcarith.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\jdarith.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jcapistd.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jccolor.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jcdiffct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jclossls.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jcmainct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jcprepct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jcsample.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jdapistd.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jdcolor.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jddiffct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jdlossls.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jdmainct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jdpostct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jdsample.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jutils.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jccoefct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jcdctmgr.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jdcoefct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jddctmgr.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jdmerge.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jfdctfst.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jfdctint.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jidctflt.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jidctfst.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jidctint.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jidctred.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jquant1.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j12_jquant2.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jcapistd.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jccolor.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jcdiffct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jclossls.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jcmainct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jcprepct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jcsample.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jdapistd.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jdcolor.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jddiffct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jdlossls.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jdmainct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jdpostct.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jdsample.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\third_party\libjpeg-turbo\gump_wrappers\j16_jutils.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAs>CompileAsC</CompileAs>
     </ClCompile>
     <ClCompile Include="..\..\cpp\analysis\PhotoFlags.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>

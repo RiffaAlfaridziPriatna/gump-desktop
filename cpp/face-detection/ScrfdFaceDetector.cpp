@@ -81,29 +81,83 @@ std::vector<Candidate> ApplyNms(
   return kept;
 }
 
-float SampleBgraChannel(
+/// Letterbox BGRA → planar RGB float (NCHW 1×3×640×640), InsightFace norm.
+/// Same bilinear math as the old per-channel SampleBgraChannel path, but:
+/// - one corner fetch per destination pixel (R/G/B share weights)
+/// - row pointers + plane base offsets (no per-pixel stride/index rebuild)
+/// Pad stays 0.0f (vector fill); content is (pixel - 127.5) / 128.
+void LetterboxBgraToScrfdInput(
     const uint8_t *bgra,
     int width,
     int height,
     int stride,
-    float sourceX,
-    float sourceY,
-    int channelOffset) {
-  const float x = Clamp(sourceX, 0.0f, static_cast<float>(width - 1));
-  const float y = Clamp(sourceY, 0.0f, static_cast<float>(height - 1));
-  const int x0 = static_cast<int>(std::floor(x));
-  const int y0 = static_cast<int>(std::floor(y));
-  const int x1 = std::min(width - 1, x0 + 1);
-  const int y1 = std::min(height - 1, y0 + 1);
-  const float fx = x - static_cast<float>(x0);
-  const float fy = y - static_cast<float>(y0);
-  const auto sample = [&](int px, int py) {
-    return static_cast<float>(bgra[py * stride + px * 4 + channelOffset]);
-  };
-  return sample(x0, y0) * (1.0f - fx) * (1.0f - fy) +
-         sample(x1, y0) * fx * (1.0f - fy) +
-         sample(x0, y1) * (1.0f - fx) * fy +
-         sample(x1, y1) * fx * fy;
+    int newW,
+    int newH,
+    int dw,
+    int dh,
+    float ratio,
+    float *input) {
+  const float invRatio = 1.0f / ratio;
+  constexpr float kNormScale = 1.0f / 128.0f;
+  constexpr float kNormBias = -127.5f / 128.0f;
+  constexpr int kPlane = kInputSize * kInputSize;
+  float *planeR = input;
+  float *planeG = input + kPlane;
+  float *planeB = input + 2 * kPlane;
+  const int maxX = width - 1;
+  const int maxY = height - 1;
+
+  for (int y = 0; y < newH; ++y) {
+    const float sourceY =
+        (static_cast<float>(y) + 0.5f) * invRatio - 0.5f;
+    const float sy = Clamp(sourceY, 0.0f, static_cast<float>(maxY));
+    const int y0 = static_cast<int>(sy);
+    const int y1 = std::min(maxY, y0 + 1);
+    const float fy = sy - static_cast<float>(y0);
+    const float wy0 = 1.0f - fy;
+    const float wy1 = fy;
+    const uint8_t *row0 = bgra + static_cast<size_t>(y0) * static_cast<size_t>(stride);
+    const uint8_t *row1 = bgra + static_cast<size_t>(y1) * static_cast<size_t>(stride);
+    const int destY = y + dh;
+    float *outR = planeR + destY * kInputSize + dw;
+    float *outG = planeG + destY * kInputSize + dw;
+    float *outB = planeB + destY * kInputSize + dw;
+
+    for (int x = 0; x < newW; ++x) {
+      const float sourceX =
+          (static_cast<float>(x) + 0.5f) * invRatio - 0.5f;
+      const float sx = Clamp(sourceX, 0.0f, static_cast<float>(maxX));
+      const int x0 = static_cast<int>(sx);
+      const int x1 = std::min(maxX, x0 + 1);
+      const float fx = sx - static_cast<float>(x0);
+      const float w00 = (1.0f - fx) * wy0;
+      const float w10 = fx * wy0;
+      const float w01 = (1.0f - fx) * wy1;
+      const float w11 = fx * wy1;
+
+      const uint8_t *p00 = row0 + x0 * 4;
+      const uint8_t *p10 = row0 + x1 * 4;
+      const uint8_t *p01 = row1 + x0 * 4;
+      const uint8_t *p11 = row1 + x1 * 4;
+
+      const float b = static_cast<float>(p00[0]) * w00 +
+                      static_cast<float>(p10[0]) * w10 +
+                      static_cast<float>(p01[0]) * w01 +
+                      static_cast<float>(p11[0]) * w11;
+      const float g = static_cast<float>(p00[1]) * w00 +
+                      static_cast<float>(p10[1]) * w10 +
+                      static_cast<float>(p01[1]) * w01 +
+                      static_cast<float>(p11[1]) * w11;
+      const float r = static_cast<float>(p00[2]) * w00 +
+                      static_cast<float>(p10[2]) * w10 +
+                      static_cast<float>(p01[2]) * w01 +
+                      static_cast<float>(p11[2]) * w11;
+
+      outR[x] = r * kNormScale + kNormBias;
+      outG[x] = g * kNormScale + kNormBias;
+      outB[x] = b * kNormScale + kNormBias;
+    }
+  }
 }
 
 #if FACE_DETECTION_HAS_ONNXRUNTIME
@@ -401,33 +455,8 @@ std::vector<ScrfdDetection> ScrfdFaceDetector::detectBgra(
     std::vector<float> input(
         static_cast<size_t>(1 * 3 * kInputSize * kInputSize),
         0.0f);
-    auto writeChannel = [&](int channel, int x, int y, float value) {
-      input[static_cast<size_t>(channel * kInputSize * kInputSize + y * kInputSize + x)] =
-          value;
-    };
-
-    for (int y = 0; y < newH; ++y) {
-      const float sourceY =
-          (static_cast<float>(y) + 0.5f) / ratio - 0.5f;
-      for (int x = 0; x < newW; ++x) {
-        const float sourceX =
-            (static_cast<float>(x) + 0.5f) / ratio - 0.5f;
-
-        // BGRA -> RGB, then normalize: (pixel - 127.5) / 128.0
-        const float r =
-            SampleBgraChannel(bgra, width, height, stride, sourceX, sourceY, 2);
-        const float g =
-            SampleBgraChannel(bgra, width, height, stride, sourceX, sourceY, 1);
-        const float b =
-            SampleBgraChannel(bgra, width, height, stride, sourceX, sourceY, 0);
-
-        const int destX = x + dw;
-        const int destY = y + dh;
-        writeChannel(0, destX, destY, (r - 127.5f) / 128.0f);
-        writeChannel(1, destX, destY, (g - 127.5f) / 128.0f);
-        writeChannel(2, destX, destY, (b - 127.5f) / 128.0f);
-      }
-    }
+    LetterboxBgraToScrfdInput(
+        bgra, width, height, stride, newW, newH, dw, dh, ratio, input.data());
 
     std::lock_guard<std::mutex> ortLock(impl_->ort.mutex);
     if (!impl_->ort.session) {

@@ -27,6 +27,9 @@
     <ClInclude Include="GumpUpdater.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="GumpKeyboard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="GumpUpdateMenu.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -69,6 +72,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GumpUpdater.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GumpKeyboard.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GumpUpdateMenu.cpp">

@@ -42,6 +42,8 @@ import {
   isServerUploadBatchFinished,
 } from '@lib/culledAlbum/serverUploadProgress';
 import {getPhotoById, saveLastCullFilters} from '@lib/culledAlbum/store';
+import {photoKey} from '@lib/culledAlbum/photoStateStore';
+import {bumpPhotoVersion} from '@lib/culledAlbum/photoVersionStore';
 import {captureAppEvent} from '@lib/observability/posthogClient';
 import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
 import {
@@ -114,11 +116,20 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     useCulledAlbumServerUploadBatch(albumId);
   const lookBake = useUploadLookBake(albumId);
 
+  // Photo detail may edit star/selection while this screen is freezeOnBlur'd;
+  // re-bump that card's version on return so memo'd cells pick up store changes.
+  const photoDetailReturnIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!isFocused) {
       return;
     }
     resumeInFlightWork(albumId);
+    const returnedPhotoId = photoDetailReturnIdRef.current;
+    if (returnedPhotoId) {
+      photoDetailReturnIdRef.current = null;
+      bumpPhotoVersion(photoKey(albumId, returnedPhotoId));
+    }
   }, [albumId, isFocused, resumeInFlightWork]);
   const {
     stats,
@@ -294,13 +305,15 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       if (file) {
         preloadImage(resolveDetailDisplayUri(file)).catch(() => undefined);
       }
+      photoDetailReturnIdRef.current = photoId;
       navigation.navigate('CulledAlbumPhotoDetail', {
         albumId,
         photoId,
+        photoIds: filteredPhotos.map(photo => photo.photoId),
         ...(typeof faceIndex === 'number' ? {faceIndex} : {}),
       });
     },
-    [albumId, navigation],
+    [albumId, filteredPhotos, navigation],
   );
 
   const handleKeyFacePress = useCallback(

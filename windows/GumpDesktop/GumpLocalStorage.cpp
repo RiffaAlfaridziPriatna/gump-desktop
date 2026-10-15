@@ -11,6 +11,7 @@
 #include "../../cpp/analysis/PhotoFlags.h"
 #include "../../cpp/analysis/FaceCluster.h"
 #include "../../cpp/analysis/DuplicateDetection.h"
+#include "../../cpp/analysis/SharedJpegDecode.h"
 
 #include <ShlObj.h>
 #include <combaseapi.h>
@@ -814,7 +815,7 @@ FaceDetection::FaceDetectionPipeline &SharedFacePipeline() {
     for (const auto &base : {moduleDir / L"Assets" / L"Models", moduleDir / L"Models"}) {
       const auto scrfd = base / L"face_detection_scrfd_2.5g_bnkps.onnx";
       const auto ocec = base / L"eye_state_ocec_s.onnx";
-      // Landmark106 EAR is available but OFF by default (see phase23 eval).
+      // Landmark106 EAR stays OFF — Contour EAR does not beat OCEC size-aware bars.
       if (std::filesystem::exists(scrfd) && std::filesystem::exists(ocec)) {
         config.scrfdModelPath = scrfd.string();
         config.ocecModelPath = ocec.string();
@@ -865,7 +866,9 @@ SoftwareBitmap LoadSoftwareBitmapScaled(
       targetSize.height != decoder.PixelHeight()) {
     transform.ScaledWidth(targetSize.width);
     transform.ScaledHeight(targetSize.height);
-    transform.InterpolationMode(BitmapInterpolationMode::Linear);
+    // Fant matches ImageIO thumbnail quality more closely than Linear and
+    // only runs once per analysis buffer (concurrency 1 on Windows).
+    transform.InterpolationMode(BitmapInterpolationMode::Fant);
   }
 
   return decoder
@@ -969,7 +972,8 @@ SoftwareBitmap LoadSoftwareBitmapRegion(
   if (scaled.width != bounds.Width || scaled.height != bounds.Height) {
     transform.ScaledWidth(scaled.width);
     transform.ScaledHeight(scaled.height);
-    transform.InterpolationMode(BitmapInterpolationMode::Linear);
+    // Same Fant path as analysis decode for hi-res eye/focus crops.
+    transform.InterpolationMode(BitmapInterpolationMode::Fant);
   }
 
   return decoder
@@ -2679,6 +2683,36 @@ public:
     Analysis::DecodedImage result;
     try {
       const auto path = PathFromUri(uri);
+      const std::string pathUtf8 = path.string();
+      // JPEG: cache at measurement max so detect + eye crops share one IDCT.
+      if (Analysis::IsJpegPath(pathUtf8)) {
+        const int cacheCap = (std::max)(
+            maxPixelSize, FaceDetection::kMeasurementMaxPixelSize);
+        std::shared_ptr<FaceDetection::OwnedBgra> cached;
+        std::string err;
+        if (m_jpegCache.GetOriented(pathUtf8, cacheCap, cached, &err) && cached) {
+          std::shared_ptr<FaceDetection::OwnedBgra> owned = cached;
+          if ((std::max)(cached->width, cached->height) > maxPixelSize) {
+            auto resized = std::make_shared<FaceDetection::OwnedBgra>();
+            if (FaceDetection::resizeBgraLongEdge(
+                    cached->bytes.data(),
+                    cached->width,
+                    cached->height,
+                    cached->stride,
+                    maxPixelSize,
+                    *resized)) {
+              owned = resized;
+            }
+          }
+          result.width = owned->width;
+          result.height = owned->height;
+          result.stride = owned->stride;
+          result.bgraPixels = owned->bytes.data();
+          result.platformHandle = std::move(owned);
+          result.success = true;
+          return result;
+        }
+      }
       const auto bitmap = LoadSoftwareBitmapScaled(path, static_cast<uint32_t>(maxPixelSize));
       auto pixels = std::make_shared<BitmapPixels>(ReadBitmapPixels(bitmap));
       result.width = pixels->width;
@@ -2702,44 +2736,127 @@ public:
       return results;
     }
 
-    (void)sourceMaxPixelSize;
-
     try {
       const auto path = PathFromUri(uri);
-      const auto file = GetStorageFileFromPath(path);
-      const auto stream = file.OpenAsync(FileAccessMode::Read).get();
-      const auto decoder = BitmapDecoder::CreateAsync(stream).get();
-      const int encodedWidth = static_cast<int>(decoder.PixelWidth());
-      const int encodedHeight = static_cast<int>(decoder.PixelHeight());
-      int orientedWidth = static_cast<int>(decoder.OrientedPixelWidth());
-      int orientedHeight = static_cast<int>(decoder.OrientedPixelHeight());
-      if (orientedWidth <= 0 || orientedHeight <= 0) {
-        orientedWidth = encodedWidth;
-        orientedHeight = encodedHeight;
-      }
-      const uint16_t orientation = ReadExifOrientation(decoder);
-      const uint32_t outputCap = static_cast<uint32_t>(
-          FaceDetection::kMeasurementCropOutputMaxPixelSize);
+      const std::string pathUtf8 = path.string();
+      const int outputCap = FaceDetection::kMeasurementCropOutputMaxPixelSize;
 
-      for (size_t index = 0; index < regions.size(); ++index) {
-        const auto orientedRect = Analysis::PixelRectFromNormalized(
-            regions[index], orientedWidth, orientedHeight);
-        const auto encodedRect = Analysis::MapOrientedPixelRectToEncoded(
-            orientedRect,
-            orientedWidth,
-            orientedHeight,
-            encodedWidth,
-            encodedHeight,
-            orientation);
-        if (encodedRect.width <= 0 || encodedRect.height <= 0) {
-          results[index].error = "Empty crop region";
-          continue;
+      // JPEG: reuse session cache (scaled IDCT), then bilinear sourceMax + crop.
+      if (Analysis::IsJpegPath(pathUtf8)) {
+        std::shared_ptr<FaceDetection::OwnedBgra> oriented;
+        std::string err;
+        if (!m_jpegCache.GetOriented(pathUtf8, sourceMaxPixelSize, oriented, &err) ||
+            !oriented) {
+          for (auto &result : results) {
+            result.error = err.empty() ? "Shared JPEG decode failed" : err;
+          }
+          return results;
         }
+        std::unordered_map<int, std::shared_ptr<FaceDetection::OwnedBgra>> scaledBySourceMax;
+        for (size_t index = 0; index < regions.size(); ++index) {
+          try {
+            const int sourceMax = Analysis::MeasurementSourcePixelSize(
+                regions[index], sourceMaxPixelSize, outputCap);
+            std::shared_ptr<FaceDetection::OwnedBgra> scaled;
+            const auto cached = scaledBySourceMax.find(sourceMax);
+            if (cached != scaledBySourceMax.end()) {
+              scaled = cached->second;
+            } else {
+              auto fresh = std::make_shared<FaceDetection::OwnedBgra>();
+              if (!FaceDetection::resizeBgraLongEdge(
+                      oriented->bytes.data(),
+                      oriented->width,
+                      oriented->height,
+                      oriented->stride,
+                      sourceMax,
+                      *fresh)) {
+                results[index].error = "Region source resize failed";
+                continue;
+              }
+              scaled = fresh;
+              scaledBySourceMax.emplace(sourceMax, scaled);
+            }
+            const auto rect = Analysis::PixelRectFromNormalized(
+                regions[index], scaled->width, scaled->height);
+            FaceDetection::OwnedBgra cropped;
+            if (rect.width <= 0 || rect.height <= 0 ||
+                !FaceDetection::cropBgra(
+                    scaled->bytes.data(),
+                    scaled->width,
+                    scaled->height,
+                    scaled->stride,
+                    rect.x,
+                    rect.y,
+                    rect.width,
+                    rect.height,
+                    cropped)) {
+              results[index].error = "Crop failed";
+              continue;
+            }
+            auto owned = std::make_shared<FaceDetection::OwnedBgra>(std::move(cropped));
+            results[index].width = owned->width;
+            results[index].height = owned->height;
+            results[index].stride = owned->stride;
+            results[index].bgraPixels = owned->bytes.data();
+            results[index].platformHandle = std::move(owned);
+            results[index].success = true;
+          } catch (const std::exception &error) {
+            results[index].error = error.what();
+          } catch (...) {
+            results[index].error = "Regional decode failed";
+          }
+        }
+        return results;
+      }
 
+      // Non-JPEG: WIC Fant scale → crop (HEIC/PNG fallback).
+      std::unordered_map<int, std::shared_ptr<BitmapPixels>> scaledBySourceMax;
+      for (size_t index = 0; index < regions.size(); ++index) {
         try {
-          const auto bitmap =
-              LoadSoftwareBitmapRegion(decoder, encodedRect, outputCap);
-          auto pixels = std::make_shared<BitmapPixels>(ReadBitmapPixels(bitmap));
+          const int sourceMax = Analysis::MeasurementSourcePixelSize(
+              regions[index], sourceMaxPixelSize, outputCap);
+          std::shared_ptr<BitmapPixels> scaled;
+          const auto cached = scaledBySourceMax.find(sourceMax);
+          if (cached != scaledBySourceMax.end()) {
+            scaled = cached->second;
+          } else {
+            const auto bitmap = LoadSoftwareBitmapScaled(
+                path, static_cast<uint32_t>(sourceMax));
+            scaled = std::make_shared<BitmapPixels>(ReadBitmapPixels(bitmap));
+            scaledBySourceMax.emplace(sourceMax, scaled);
+          }
+          if (!scaled || scaled->width <= 0 || scaled->height <= 0) {
+            results[index].error = "Scaled source decode failed";
+            continue;
+          }
+
+          const auto rect = Analysis::PixelRectFromNormalized(
+              regions[index], scaled->width, scaled->height);
+          if (rect.width <= 0 || rect.height <= 0) {
+            results[index].error = "Empty crop region";
+            continue;
+          }
+
+          FaceDetection::OwnedBgra cropped;
+          if (!FaceDetection::cropBgra(
+                  scaled->bytes.data(),
+                  scaled->width,
+                  scaled->height,
+                  scaled->stride,
+                  rect.x,
+                  rect.y,
+                  rect.width,
+                  rect.height,
+                  cropped)) {
+            results[index].error = "Crop failed";
+            continue;
+          }
+
+          auto pixels = std::make_shared<BitmapPixels>();
+          pixels->width = cropped.width;
+          pixels->height = cropped.height;
+          pixels->stride = cropped.stride;
+          pixels->bytes = std::move(cropped.bytes);
           results[index].width = pixels->width;
           results[index].height = pixels->height;
           results[index].stride = pixels->stride;
@@ -2784,6 +2901,7 @@ public:
 
 private:
   winrtRN::ReactContext m_reactContext;
+  Analysis::JpegDecodeCache m_jpegCache;
 };
 
 // ============================================================================

@@ -31,6 +31,30 @@ bool IsCrowdMicroPartialCandidate(bool value, float area, float confidence,
          maxOpen <= 0.06f && minOpen <= 0.05f;
 }
 
+float Smoothstep01(float edge0, float edge1, float x) {
+  if (edge1 <= edge0) {
+    return x >= edge1 ? 1.0f : 0.0f;
+  }
+  const float t = std::clamp((x - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+  return t * t * (3.0f - 2.0f * t);
+}
+
+float Lerp(float a, float b, float t) { return a + (b - a) * t; }
+
+// Maps faceArea → [0,1] between tiny crowd and large-frontal gate.
+float SmallFaceSizeT(float faceArea) {
+  if (!std::isfinite(faceArea) || faceArea < 0.0f) {
+    return 0.0f; // unknown → strictest
+  }
+  return Smoothstep01(kSmallFaceAreaFloor, kLargeFrontalFaceArea, faceArea);
+}
+
+void SmallFaceSureClosedBars(float faceArea, float &outMax, float &outMin) {
+  const float t = SmallFaceSizeT(faceArea);
+  outMax = Lerp(kSmallFaceSureClosedMaxAtFloor, kSmallFaceSureClosedMaxAtLarge, t);
+  outMin = Lerp(kSmallFaceSureClosedMinAtFloor, kSmallFaceSureClosedMinAtLarge, t);
+}
+
 } // namespace
 
 std::string ClassifyFocusLevel(float sharpness) {
@@ -44,7 +68,7 @@ std::string ClassifyFocusLevel(float sharpness) {
   return "blurred";
 }
 
-std::string ClassifyEyeStatus(const EyesOpenResult &eyesOpen) {
+std::string ClassifyEyeStatus(const EyesOpenResult &eyesOpen, float faceArea) {
   if (!IsFiniteNumber(eyesOpen.confidence)) {
     return "partial";
   }
@@ -53,20 +77,62 @@ std::string ClassifyEyeStatus(const EyesOpenResult &eyesOpen) {
   const float left = eyesOpen.leftProbability;
   const float right = eyesOpen.rightProbability;
   const bool hasProbs = IsFiniteNumber(left) && IsFiniteNumber(right);
+  const bool largeFrontal =
+      faceArea >= kLargeFrontalFaceArea && hasProbs;
+
+  if (largeFrontal) {
+    const float maxOpen = std::max(left, right);
+    const float minOpen = std::min(left, right);
+    const float avgOpen = (left + right) * 0.5f;
+    if (minOpen >= kLargeFrontalOpenMin && avgOpen >= kLargeFrontalOpenAvg) {
+      return "open";
+    }
+    const bool hardClosed =
+        maxOpen <= kLargeFrontalClosedMax && minOpen <= kLargeFrontalClosedMin;
+    const float asymOpen = maxOpen - minOpen;
+    const bool softClosed = minOpen >= kLargeFrontalSoftClosedMinFloor &&
+                            minOpen <= kLargeFrontalSoftClosedMin &&
+                            avgOpen <= kLargeFrontalSoftClosedAvg &&
+                            maxOpen <= kLargeFrontalSoftClosedMax &&
+                            asymOpen >= kLargeFrontalSoftClosedAsym;
+    const bool glareDeepClosed = minOpen <= kLargeFrontalGlareDeepMinMax &&
+                                 avgOpen <= kLargeFrontalGlareDeepAvg &&
+                                 maxOpen >= kLargeFrontalGlareDeepMaxMin &&
+                                 asymOpen >= kLargeFrontalGlareDeepAsym;
+    const bool glareMidClosed = minOpen >= kLargeFrontalGlareMidMinFloor &&
+                                minOpen <= kLargeFrontalGlareMidMin &&
+                                avgOpen <= kLargeFrontalGlareMidAvg &&
+                                maxOpen >= kLargeFrontalGlareMidMaxMin &&
+                                asymOpen >= kLargeFrontalGlareMidAsym;
+    const bool glareClosed = glareDeepClosed || glareMidClosed;
+    if (hardClosed || softClosed || glareClosed) {
+      if (!eyesOpen.value || confidence >= kEyeClosedConfidenceThreshold ||
+          softClosed || glareClosed) {
+        return "closed";
+      }
+      return "partial";
+    }
+    // Mild squint / mid-band → partial.
+    (void)confidence;
+    return "partial";
+  }
 
   if (hasProbs) {
     const float maxOpen = std::max(left, right);
     const float minOpen = std::min(left, right);
 
+    // Crowd / small faces: size-scaled near-zero bar for closed.
+    float sureMax = 0.0f;
+    float sureMin = 0.0f;
+    SmallFaceSureClosedBars(faceArea, sureMax, sureMin);
+    if (maxOpen <= sureMax && minOpen <= sureMin &&
+        confidence >= kEyeClosedConfidenceThreshold) {
+      return "closed";
+    }
+
     if (maxOpen <= 0.22f && minOpen <= 0.18f) {
-      if (!eyesOpen.value && confidence >= kEyeClosedConfidenceThreshold) {
-        return "closed";
-      }
       if (eyesOpen.value && confidence >= kEyeOpenConfidenceThreshold) {
         return "open";
-      }
-      if (confidence >= kEyeClosedConfidenceThreshold) {
-        return "closed";
       }
       return "partial";
     }
@@ -90,9 +156,8 @@ std::string ClassifyEyeStatus(const EyesOpenResult &eyesOpen) {
     return "partial";
   }
 
-  if (confidence >= kEyeClosedConfidenceThreshold) {
-    return "closed";
-  }
+  // Without clear bilateral near-zero probs, don't confidence-only close
+  // small faces (false closed on crowd).
   return "partial";
 }
 
@@ -174,7 +239,9 @@ void ApplyCrowdPartialEyeBudget(std::vector<FaceResult> &faces, int target) {
 void ApplyProductEyeAndFocusLabels(std::vector<FaceResult> &faces) {
   ApplyCrowdPartialEyeBudget(faces, kCrowdPartialTarget);
   for (auto &face : faces) {
-    face.eyeStatus = ClassifyEyeStatus(face.eyesOpen);
+    const float faceArea =
+        std::max(0.0f, face.width) * std::max(0.0f, face.height);
+    face.eyeStatus = ClassifyEyeStatus(face.eyesOpen, faceArea);
     face.focusLevel = ClassifyFocusLevel(face.sharpness);
   }
 }
