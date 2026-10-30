@@ -3,6 +3,11 @@ name: Daily release tag
 # Batches main into at most one date tag per Asia/Jakarta day.
 # Pushes the date tag with GITHUB_TOKEN (no cascade), then workflow_dispatch-es
 # Release once. Do not PAT-push the tag — that + dispatch = two Release runs.
+#
+# Schedule note: GitHub cron often runs hours late. The script closes the most
+# recent WIB day whose 23:59 has passed (not wall-clock "today"), and falls
+# back one day if that window is empty — otherwise delayed runs after midnight
+# WIB skip the day that actually had merges.
 
 on:
   schedule:
@@ -11,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       date:
-        description: 'Tag date YYYY-MM-DD (default: today WIB)'
+        description: 'Tag date YYYY-MM-DD (default: today WIB; schedule uses end-of-day closeout)'
         required: false
         default: ''
       force:
@@ -48,6 +53,8 @@ jobs:
           FORCE: ${{ github.event.inputs.force || 'false' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          # Used so schedule defaults to end-of-day closeout (not wall-clock today).
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
           chmod +x scripts/create-daily-release-tag.sh scripts/generate-release-notes.sh
           bash scripts/create-daily-release-tag.sh

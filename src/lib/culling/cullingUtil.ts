@@ -58,8 +58,65 @@ export function orderCulledAlbumPhotosForCulling(
 
 const EYE_OPEN_CONFIDENCE_THRESHOLD = 70;
 const EYE_CLOSED_CONFIDENCE_THRESHOLD = 88;
+const SMALL_FACE_AREA_FLOOR = 0.001;
+const SMALL_FACE_SURE_CLOSED_MAX_AT_FLOOR = 0.02;
+const SMALL_FACE_SURE_CLOSED_MIN_AT_FLOOR = 0.015;
+const SMALL_FACE_SURE_CLOSED_MAX_AT_LARGE = 0.045;
+const SMALL_FACE_SURE_CLOSED_MIN_AT_LARGE = 0.03;
 const FOCUS_GOOD_THRESHOLD = 65;
 const FOCUS_SOFT_THRESHOLD = 40;
+/** Match native large-frontal OCEC three-way remap (normalized face area). */
+const LARGE_FRONTAL_FACE_AREA = 0.008;
+
+function smoothstep01(edge0: number, edge1: number, x: number): number {
+  if (edge1 <= edge0) {
+    return x >= edge1 ? 1 : 0;
+  }
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+function smallFaceSureClosedBars(faceArea?: number): {
+  sureMax: number;
+  sureMin: number;
+} {
+  const area =
+    typeof faceArea === 'number' && Number.isFinite(faceArea) && faceArea >= 0
+      ? faceArea
+      : 0;
+  const t = smoothstep01(SMALL_FACE_AREA_FLOOR, LARGE_FRONTAL_FACE_AREA, area);
+  return {
+    sureMax:
+      SMALL_FACE_SURE_CLOSED_MAX_AT_FLOOR +
+      (SMALL_FACE_SURE_CLOSED_MAX_AT_LARGE -
+        SMALL_FACE_SURE_CLOSED_MAX_AT_FLOOR) *
+        t,
+    sureMin:
+      SMALL_FACE_SURE_CLOSED_MIN_AT_FLOOR +
+      (SMALL_FACE_SURE_CLOSED_MIN_AT_LARGE -
+        SMALL_FACE_SURE_CLOSED_MIN_AT_FLOOR) *
+        t,
+  };
+}
+const LARGE_FRONTAL_OPEN_MIN = 0.92;
+const LARGE_FRONTAL_OPEN_AVG = 0.92;
+const LARGE_FRONTAL_CLOSED_MAX = 0.18;
+const LARGE_FRONTAL_CLOSED_MIN = 0.12;
+const LARGE_FRONTAL_SOFT_CLOSED_MIN = 0.55;
+const LARGE_FRONTAL_SOFT_CLOSED_MIN_FLOOR = 0.45;
+const LARGE_FRONTAL_SOFT_CLOSED_AVG = 0.7;
+const LARGE_FRONTAL_SOFT_CLOSED_MAX = 0.88;
+const LARGE_FRONTAL_SOFT_CLOSED_ASYM = 0.28;
+/** Deep glare (stb ~0.045/0.81) + mid glare; gap keeps TR5 ~0.145/0.86 partial. */
+const LARGE_FRONTAL_GLARE_DEEP_MIN_MAX = 0.1;
+const LARGE_FRONTAL_GLARE_DEEP_MAX_MIN = 0.78;
+const LARGE_FRONTAL_GLARE_DEEP_AVG = 0.55;
+const LARGE_FRONTAL_GLARE_DEEP_ASYM = 0.55;
+const LARGE_FRONTAL_GLARE_MID_MIN_FLOOR = 0.2;
+const LARGE_FRONTAL_GLARE_MID_MIN = 0.5;
+const LARGE_FRONTAL_GLARE_MID_MAX_MIN = 0.88;
+const LARGE_FRONTAL_GLARE_MID_AVG = 0.72;
+const LARGE_FRONTAL_GLARE_MID_ASYM = 0.35;
 
 export {
   faceBoxesAreSpatiallyRedundant,
@@ -79,6 +136,7 @@ export type EyesOpenSignal = {
 export function classifyEyeStatus(
   eyesOpen?: EyesOpenSignal,
   _pose?: {pitch?: number},
+  faceArea?: number,
 ): APIResponse.CullingEyeStatus {
   if (!eyesOpen || eyesOpen.confidence === undefined) {
     return 'partial';
@@ -92,20 +150,76 @@ export function classifyEyeStatus(
     Number.isFinite(left) &&
     typeof right === 'number' &&
     Number.isFinite(right);
+  const largeFrontal =
+    typeof faceArea === 'number' &&
+    Number.isFinite(faceArea) &&
+    faceArea >= LARGE_FRONTAL_FACE_AREA &&
+    hasProbs;
+
+  if (largeFrontal) {
+    const maxOpen = Math.max(left!, right!);
+    const minOpen = Math.min(left!, right!);
+    const avgOpen = (left! + right!) * 0.5;
+    if (
+      minOpen >= LARGE_FRONTAL_OPEN_MIN &&
+      avgOpen >= LARGE_FRONTAL_OPEN_AVG
+    ) {
+      return 'open';
+    }
+    const hardClosed =
+      maxOpen <= LARGE_FRONTAL_CLOSED_MAX &&
+      minOpen <= LARGE_FRONTAL_CLOSED_MIN;
+    const asymOpen = maxOpen - minOpen;
+    const softClosed =
+      minOpen >= LARGE_FRONTAL_SOFT_CLOSED_MIN_FLOOR &&
+      minOpen <= LARGE_FRONTAL_SOFT_CLOSED_MIN &&
+      avgOpen <= LARGE_FRONTAL_SOFT_CLOSED_AVG &&
+      maxOpen <= LARGE_FRONTAL_SOFT_CLOSED_MAX &&
+      asymOpen >= LARGE_FRONTAL_SOFT_CLOSED_ASYM;
+    const glareDeepClosed =
+      minOpen <= LARGE_FRONTAL_GLARE_DEEP_MIN_MAX &&
+      avgOpen <= LARGE_FRONTAL_GLARE_DEEP_AVG &&
+      maxOpen >= LARGE_FRONTAL_GLARE_DEEP_MAX_MIN &&
+      asymOpen >= LARGE_FRONTAL_GLARE_DEEP_ASYM;
+    const glareMidClosed =
+      minOpen >= LARGE_FRONTAL_GLARE_MID_MIN_FLOOR &&
+      minOpen <= LARGE_FRONTAL_GLARE_MID_MIN &&
+      avgOpen <= LARGE_FRONTAL_GLARE_MID_AVG &&
+      maxOpen >= LARGE_FRONTAL_GLARE_MID_MAX_MIN &&
+      asymOpen >= LARGE_FRONTAL_GLARE_MID_ASYM;
+    const glareClosed = glareDeepClosed || glareMidClosed;
+    if (hardClosed || softClosed || glareClosed) {
+      if (
+        !eyesOpen.value ||
+        confidence >= EYE_CLOSED_CONFIDENCE_THRESHOLD ||
+        softClosed ||
+        glareClosed
+      ) {
+        return 'closed';
+      }
+      return 'partial';
+    }
+    // Mild squint / mid-band → partial.
+    return 'partial';
+  }
 
   if (hasProbs) {
     const maxOpen = Math.max(left!, right!);
     const minOpen = Math.min(left!, right!);
 
+    // Crowd / small faces: size-scaled near-zero bar for closed.
+    const {sureMax, sureMin} = smallFaceSureClosedBars(faceArea);
+    if (
+      maxOpen <= sureMax &&
+      minOpen <= sureMin &&
+      confidence >= EYE_CLOSED_CONFIDENCE_THRESHOLD
+    ) {
+      return 'closed';
+    }
+
     if (maxOpen <= 0.22 && minOpen <= 0.18) {
-      if (!eyesOpen.value && confidence >= EYE_CLOSED_CONFIDENCE_THRESHOLD) {
-        return 'closed';
-      }
       if (eyesOpen.value && confidence >= EYE_OPEN_CONFIDENCE_THRESHOLD) {
         return 'open';
-      }
-      if (confidence >= EYE_CLOSED_CONFIDENCE_THRESHOLD) {
-        return 'closed';
       }
       return 'partial';
     }
@@ -133,9 +247,6 @@ export function classifyEyeStatus(
     return 'partial';
   }
 
-  if (confidence >= EYE_CLOSED_CONFIDENCE_THRESHOLD) {
-    return 'closed';
-  }
   return 'partial';
 }
 

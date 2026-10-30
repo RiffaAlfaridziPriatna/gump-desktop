@@ -116,10 +116,21 @@ function mapNativeFace(
     face.focusLevel === 'blurred'
       ? face.focusLevel
       : null;
+  const faceArea = face.boundingBox.width * face.boundingBox.height;
+  const hasEyeProbs =
+    typeof face.eyesOpen?.leftProbability === 'number' &&
+    typeof face.eyesOpen?.rightProbability === 'number';
+  // Native SCRFD/OCEC labeling is authoritative after C++ rebuilds. Do NOT let
+  // a stale Metro JS bundle overwrite native "closed" with "partial".
+  const classifiedEye = hasEyeProbs
+    ? classifyEyeStatus(face.eyesOpen, face.pose, faceArea)
+    : null;
+  const eyeStatus =
+    nativeEye ?? classifiedEye ?? classifyEyeStatus(face.eyesOpen, face.pose);
 
   return {
     boundingBox: face.boundingBox,
-    eyeStatus: nativeEye ?? classifyEyeStatus(face.eyesOpen, face.pose),
+    eyeStatus,
     eyeConfidence: face.eyesOpen?.confidence ?? 0,
     focusLevel: nativeFocus ?? classifyFocus(sharpness),
     sharpness,
@@ -712,7 +723,11 @@ function ingestNativeSessionResults(
       continue;
     }
 
-    if (existing?.analysisStatus === 'analyzed') {
+    const alreadyAnalyzed = existing?.analysisStatus === 'analyzed';
+    const mappedFaces = mapDetectedFaces(result.faces ?? [], result.photoId);
+    // Refresh faces/labels when the session returns new detections (engine bump
+    // re-cull). Skip empty stubs so post-process batches cannot wipe faces.
+    if (alreadyAnalyzed && mappedFaces.length === 0) {
       analyzed += 1;
       continue;
     }
@@ -721,12 +736,12 @@ function ingestNativeSessionResults(
       albumId,
       result.photoId,
       {
-        faces: mapDetectedFaces(result.faces ?? [], result.photoId),
+        faces: mappedFaces,
         perceptualHash: normalizePerceptualHash(result.perceptualHash),
         capturedAt: normalizeCapturedAt(result.capturedAt),
         duplicated: result.duplicated,
       },
-      shiftAnalysisCounts,
+      alreadyAnalyzed ? false : shiftAnalysisCounts,
     );
     analyzed += 1;
   }
@@ -894,6 +909,9 @@ export const cullingEngine = {
       });
     }
     await persistAlbum(albumId);
+    // Persist the photo row (star/selection) — persistAlbum defaults to
+    // includePhotos: false, so without this the DB keeps the previous rating.
+    syncPhotoFromStore(albumId, photoId);
     const photo = getPhotoById(albumId, photoId);
     if (!photo) {
       throw new Error('Photo analysis not found');

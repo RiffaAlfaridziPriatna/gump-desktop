@@ -175,8 +175,9 @@ public:
   // Platform adapter downscales at decode time (ImageIO / WIC).
   virtual DecodedImage DecodeImageToBgra(const std::string &uri, int maxPixelSize = 4096) = 0;
 
-  // Regional decode: load only each crop into BGRA (longest edge ~768).
-  // Never materialize a full-frame 4096 BGRA in our heaps.
+  // Regional decode: scale source to MeasurementSourcePixelSize, crop region in
+  // oriented display space, return BGRA. AnalysisSession may then bilinear-cap
+  // to kMeasurementCropOutputMaxPixelSize (shared Mac/Win filter).
   virtual std::vector<DecodedImage> DecodeImageRegionsToBgra(
       const std::string &uri,
       const std::vector<ImageRegion> &regions,
