@@ -1,5 +1,6 @@
 import {useCulledAlbumPhotosState, useCulledAlbumStore} from '@context/culledAlbum';
 import {cullingEngine} from '@lib/culling/cullingEngine';
+import {reportError} from '@lib/observability/reportError';
 import {orderPhotosForCulling} from '@lib/culling/cullingUtil';
 import {toCullingPhoto} from '@lib/culledAlbum/types';
 import {APIResponse} from '@services/api';
@@ -68,7 +69,14 @@ export function useCulledAlbumDetailData(
 
   const toggleSelection = useCallback(
     async (photoId: string, selected: boolean) => {
-      await cullingEngine.updateSelection(albumId, photoId, {selected});
+      await cullingEngine
+        .updateSelection(albumId, photoId, {selected})
+        .catch(err =>
+          reportError(err, {
+            source: 'culled_album_grid',
+            operation: 'toggle_pick',
+          }),
+        );
     },
     [albumId],
   );

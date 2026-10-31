@@ -8,6 +8,7 @@ import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {usePhotoNavigation} from '@hooks/usePhotoNavigation';
 import {cullingEngine} from '@lib/culling/cullingEngine';
+import {reportError} from '@lib/observability/reportError';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
@@ -418,9 +419,9 @@ export default function CulledAlbumPhotoDetailScreen({
       return;
     }
 
-    await cullingEngine.updateSelection(albumId, photoId, {
-      selected: !analysis.selected,
-    });
+    await toggleMemberSelection(photoId, !analysis.selected).catch(err =>
+      reportError(err, {source: 'photo_detail', operation: 'toggle_pick'}),
+    );
   }
 
   const toggleMemberSelection = useCallback(
