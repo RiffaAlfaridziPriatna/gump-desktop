@@ -27,6 +27,15 @@ import {
   type CulledAlbumImageLoadStore,
 } from '@components/culling/culledAlbumImageLoad';
 import {
+  buildRows,
+  createGetItemLayout,
+  GRID_COLUMNS,
+  type CulledAlbumGridSection,
+  type GridRow,
+  type PhotoGridRow,
+} from '@components/culling/culledAlbumGridRows';
+import {SimilarShotGroupHeader} from '@components/culling/SimilarShotGroupHeader';
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -54,6 +63,8 @@ export type CulledAlbumGridPhoto = {
 
 type CulledAlbumPhotoGridProps = {
   photos: CulledAlbumGridPhoto[];
+  /** Optional; `photos` must be in section order. Memoize to keep rows stable. */
+  sections?: CulledAlbumGridSection[];
   albumId: string;
   containerWidth: number;
   isMobileLayout: boolean;
@@ -72,7 +83,7 @@ type CulledAlbumPhotoGridProps = {
   onScrollInteractionStart?: () => void;
 };
 
-const COLUMNS = 3;
+const COLUMNS = GRID_COLUMNS;
 const THUMBNAIL_ASPECT_RATIO = 3 / 2;
 const GRID_GAP = 16;
 const CARD_INTERNAL_GAP = 8;
@@ -91,19 +102,8 @@ const BUSY_IMAGE_LOAD_PAD_ROWS = 1;
 /** Above this, shrink idle FlatList window (heavy interactive cards). */
 const LARGE_ALBUM_PHOTO_THRESHOLD = 120;
 
-type GridListItem = {
-  photoId: string;
-  index: number;
-};
-
-type GridRow = {
-  key: string;
-  rowIndex: number;
-  cells: GridListItem[];
-};
-
 type CulledAlbumPhotoRowViewProps = {
-  row: GridRow;
+  row: PhotoGridRow;
   albumId: string;
   cardWidth: number;
   canDeletePhoto: boolean;
@@ -164,25 +164,6 @@ const CulledAlbumPhotoRowView = memo(
     prev.deferHeavyMediaWork === next.deferHeavyMediaWork,
 );
 
-function buildRows(photoIds: string[]): GridRow[] {
-  const rows: GridRow[] = [];
-
-  for (let index = 0; index < photoIds.length; index += COLUMNS) {
-    const rowPhotoIds = photoIds.slice(index, index + COLUMNS);
-    const rowIndex = index / COLUMNS;
-    rows.push({
-      key: `row-${rowIndex}:${rowPhotoIds.join(',')}`,
-      rowIndex,
-      cells: rowPhotoIds.map((photoId, columnIndex) => ({
-        photoId,
-        index: index + columnIndex,
-      })),
-    });
-  }
-
-  return rows;
-}
-
 function photoIdsNeedingThumbnail(
   albumId: string,
   photoIds: string[],
@@ -195,6 +176,7 @@ function photoIdsNeedingThumbnail(
 
 export function CulledAlbumPhotoGrid({
   photos,
+  sections,
   albumId,
   containerWidth,
   isMobileLayout,
@@ -269,7 +251,10 @@ export function CulledAlbumPhotoGrid({
     thumbnailHeight + CARD_INTERNAL_GAP + CARD_INFO_ROW_HEIGHT;
   const rowHeight = itemHeight + GRID_GAP;
 
-  const rows = useMemo(() => buildRows(photoIds), [photoIds]);
+  const rows = useMemo(
+    () => buildRows(photoIds, sections),
+    [photoIds, sections],
+  );
 
   const prevPhotoIdsKeyRef = useRef(photoIdsKey);
   useEffect(() => {
@@ -291,13 +276,9 @@ export function CulledAlbumPhotoGrid({
     }
   }, [imageLoadStore, photoIds, photoIdsKey]);
 
-  const getItemLayout = useCallback(
-    (_data: ArrayLike<GridRow> | null | undefined, index: number) => ({
-      length: rowHeight,
-      offset: rowHeight * index,
-      index,
-    }),
-    [rowHeight],
+  const getItemLayout = useMemo(
+    () => createGetItemLayout(rows, rowHeight),
+    [rows, rowHeight],
   );
 
   const clearScrollEndTimer = useCallback(() => {
@@ -448,7 +429,9 @@ export function CulledAlbumPhotoGrid({
   const handleViewableItemsChanged = useCallback(
     ({viewableItems}: {viewableItems: ViewToken<GridRow>[]}) => {
       const indices = viewableItems.flatMap(
-        token => token.item?.cells.map(cell => cell.index) ?? [],
+        token => token.item?.kind === 'photos'
+          ? token.item.cells.map(cell => cell.index)
+          : [],
       );
 
       if (indices.length === 0) {
@@ -502,20 +485,27 @@ export function CulledAlbumPhotoGrid({
   ]).current;
 
   const renderRow = useCallback(
-    ({item: row}: ListRenderItemInfo<GridRow>) => (
-      <CulledAlbumPhotoRowView
-        row={row}
-        albumId={albumId}
-        cardWidth={renderCardWidth}
-        canDeletePhoto={canDeletePhoto}
-        isMobileLayout={isMobileLayout}
-        deferHeavyMediaWork={deferHeavyMediaWork}
-        onOpenDetail={onOpenDetail}
-        onToggleSelection={onToggleSelection}
-        onDeletePress={onDeletePress}
-        onStarPress={onStarPress}
-      />
-    ),
+    ({item: row}: ListRenderItemInfo<GridRow>) =>
+      row.kind === 'header' ? (
+        <SimilarShotGroupHeader
+          title={row.title}
+          subtitle={row.subtitle}
+          isGroup={row.isGroup}
+        />
+      ) : (
+        <CulledAlbumPhotoRowView
+          row={row}
+          albumId={albumId}
+          cardWidth={renderCardWidth}
+          canDeletePhoto={canDeletePhoto}
+          isMobileLayout={isMobileLayout}
+          deferHeavyMediaWork={deferHeavyMediaWork}
+          onOpenDetail={onOpenDetail}
+          onToggleSelection={onToggleSelection}
+          onDeletePress={onDeletePress}
+          onStarPress={onStarPress}
+        />
+      ),
     [
       albumId,
       canDeletePhoto,
