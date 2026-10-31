@@ -1,4 +1,19 @@
 import {act} from 'react-test-renderer';
+import {createStateStore} from '../src/lib/react/state';
+import type {CulledAlbumStoreState} from '../src/lib/culledAlbum/store';
+import type {CulledAlbumPhoto} from '../src/lib/culledAlbum/types';
+
+const mockStore = createStateStore<CulledAlbumStoreState>({
+  albums: {},
+  error: null,
+});
+const mockPhotos: CulledAlbumPhoto[] = [];
+jest.mock('@context/culledAlbum', () => ({
+  useCulledAlbumStore: (selector: (state: CulledAlbumStoreState) => unknown) =>
+    require('../src/lib/react/state').useStateStore(mockStore, selector),
+  useCulledAlbumPhotosState: () => mockPhotos,
+}));
+
 import {useCulledAlbumFilters} from '../src/hooks/useCulledAlbumFilters';
 import {useThrottledValue} from '../src/hooks/useThrottledValue';
 import {CulledAlbumGridPhoto} from '../src/components/culling/CulledAlbumPhotoGrid';
@@ -32,6 +47,7 @@ describe('useThrottledValue', () => {
 });
 
 describe('useCulledAlbumFilters', () => {
+  const ALBUM_ID = 'album-1';
   const photos: CulledAlbumGridPhoto[] = [
     {
       photoId: 'keep',
@@ -68,7 +84,7 @@ describe('useCulledAlbumFilters', () => {
         blurred: 1,
         closedEyes: 0,
         duplicated: 0,
-      }),
+      }, undefined, ALBUM_ID),
     );
 
     expect(hook.result.current.filteredPhotos.map(photo => photo.photoId)).toEqual([
@@ -80,7 +96,7 @@ describe('useCulledAlbumFilters', () => {
   });
 
   it('can show blurred photos after toggling that filter on', () => {
-    const hook = renderHook(() => useCulledAlbumFilters(photos, null));
+    const hook = renderHook(() => useCulledAlbumFilters(photos, null, undefined, ALBUM_ID));
 
     act(() => {
       hook.result.current.toggleFilter('blurred');
@@ -94,7 +110,7 @@ describe('useCulledAlbumFilters', () => {
   });
 
   it('applies star rating and selection grid filters', () => {
-    const hook = renderHook(() => useCulledAlbumFilters(photos, null));
+    const hook = renderHook(() => useCulledAlbumFilters(photos, null, undefined, ALBUM_ID));
 
     act(() => {
       hook.result.current.setStarRatingFilter([1]);
