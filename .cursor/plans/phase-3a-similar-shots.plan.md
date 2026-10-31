@@ -114,6 +114,7 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
   - [ ] CulledAlbumPhotoGrid.tsx line count does not grow
   - [ ] Headers are announced as headers to screen readers
 - **Out of scope:** deciding when sections are used (s3e).
+- **TODO (decided by user 2026-10-31):** `src/assets/images/icon_stack.svg` is hand-drawn; replace it with the Figma export (frame 12975:48189) before release.
 - **Gate:** A
 
 ### s3e. Similar Shots filter renders grouped view [W2, sequential]
@@ -149,7 +150,7 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
 - **Parallel:** no, touches the grid and screen wiring changed in s3e
 - **Scope:** badge "N similar shots ›" on every card that belongs to a group, in the flat grid (frame 48189). Tap opens the photo viewer for that photo (existing `onOpenDetail`); the s3g strip shows the group. Card (384 lines) gets one prop; badge is a new small component in components/culling.
 - **Rules (decided by user 2026-10-31):** badge on all group members; tap opens the viewer and does not change active filters.
-- **Open:** how the badge sits next to the existing status chips ("Check eyes", "+1") on the same card (inferred: same chip row, confirm on review).
+- **Placement (decided by user 2026-10-31):** the badge goes in the same chip row as the existing status chips ("Check eyes", "+1"), after them.
 - **Acceptance:**
   - [ ] Every member of a live group shows the badge; count = live group size from s3b
   - [ ] Tap opens the viewer for that photo; active filters unchanged
