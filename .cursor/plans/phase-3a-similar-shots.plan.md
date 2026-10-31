@@ -21,6 +21,9 @@ todos:
   - id: s3g
     content: Viewer similar-shots strip
     status: completed
+  - id: s3h
+    content: Upload Picked per Figma (upload, export, Edit Photos act on picked)
+    status: pending
 isProject: false
 ---
 
@@ -59,6 +62,7 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
 | UI | W1 | s3d, s3g | yes | Data Gate R | s3d, then s3g |
 | UI | W2 | s3e | no | W1 merged | - |
 | UI | W3 | s3f | no | W2 merged | - |
+| UI | W4 | s3h | no | W3 merged | - |
 
 ## Data group (brief: "Do first" items 1-3)
 
@@ -131,7 +135,7 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
   - Album without stored groups (analysed before 2026-07-24): no grouped view, no backfill. Similar Shots falls back to today's flat `duplicated` list and today's `stats.duplicated` count.
   - Selection filter (picked / not picked) and star filter still apply per photo; a group with no remaining photo is hidden.
   - "Upload Picked (N)" is unchanged; it counts all picked photos ("Upload includes picked photos outside this view").
-  - Decided by user 2026-10-31 (s3e review): the sidebar button is "Upload Selected (N)" and acts on the shown photos (`actionPhotos`), not picked. With Similar Shots on, upload, export and the confirm count use exactly the photos shown in the grouped grid, best photos included. Covered in __tests__/useCulledAlbumFilters.test.ts.
+  - SUPERSEDED by s3h (user, 2026-10-31: follow Figma, act on picked). Was: the sidebar button is "Upload Selected (N)" and acts on the shown photos (`actionPhotos`), not picked. With Similar Shots on, upload, export and the confirm count use exactly the photos shown in the grouped grid, best photos included. Covered in __tests__/useCulledAlbumFilters.test.ts.
   - Group header "x shots · y picked" always counts the full live group, even when only some members are shown; same numbers as the viewer strip. The "Showing: … · M photos" line counts the shown photos.
 - **Mirror:** `matchesCulledAlbumGridFilters` + `useCulledAlbumFilters` filtering.
 - **Acceptance:**
@@ -173,6 +177,30 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
   - [ ] CulledAlbumPhotoDetailScreen.tsx line count does not grow
 - **Out of scope:** Faces panel, AI markers.
 - **Gate:** A
+
+### s3h. Upload Picked per Figma [W4, sequential]
+
+- **Risk:** high (changes which photos upload, export and Edit Photos act on, in every filter)
+- **Role:** ui-frontend-developer (Build)
+- **Depends on:** s3f
+- **Parallel:** no, alone in its wave
+- **Source:** Figma 12975:50306 / 12975:48189: sidebar button "Upload Picked (148)" with the note "Upload includes picked photos outside this view." under it while the grid shows a filtered view.
+- **Scope:** one derived "picked set" = album photos with `photo.selected`, independent of active filters, derived from the store (no copy). `useCulledAlbumFilters` or a new small hook returns it; CulledAlbumDetailScreen uses it for upload (`pendingUploadPhotos`, `handleStartUpload`, confirm count, upload size, disabled state), Export (`actionAlbumPhotos`, `exportPhotoCount`) and Edit Photos (`ApplyLookModal selectedPhotos`). CulledAlbumDetailSidebar: label "Upload Selected (N)" → "Upload Picked (N)", plus the note line from Figma.
+- **Rules (decided by user 2026-10-31):**
+  - UI follows Figma 100%.
+  - Upload, Export and Edit Photos all act on every picked photo in the album, not on the photos shown. Supersedes the s3e "acts on the shown photos" decision.
+  - N in "Upload Picked (N)" = count of picked photos, same number as the sidebar "Picked for Upload" count.
+  - The note "Upload includes picked photos outside this view." follows Figma frame 50306 (shown under the button).
+  - Existing per-photo upload eligibility (whatever `pendingUploadPhotos` filters out today, e.g. already uploaded) stays.
+- **Mirror:** the sidebar "Picked for Upload" count and its selector.
+- **Acceptance:**
+  - [ ] With any filter active (incl. Similar Shots), upload/export/Edit Photos sets equal the picked photos of the whole album; tests in __tests__/useCulledAlbumFilters.test.ts (or the new hook's test)
+  - [ ] Button reads "Upload Picked (N)" with N = picked count; disabled when N = 0
+  - [ ] Note text shown under the button as in Figma 50306
+  - [ ] Picking or unpicking updates N without changing the active filters
+  - [ ] CulledAlbumDetailScreen.tsx and CulledAlbumDetailSidebar.tsx line counts do not grow
+- **Out of scope:** pick/unpick-all controls (Figma has no Select all / Deselect all design; checked 2026-10-31), upload pipeline internals.
+- **Gate:** S (upload set), A, R
 
 ## Follow-ups (Gate R Lows, recorded 2026-10-31)
 
