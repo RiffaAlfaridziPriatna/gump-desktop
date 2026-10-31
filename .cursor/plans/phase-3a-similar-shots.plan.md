@@ -14,7 +14,7 @@ todos:
     status: completed
   - id: s3e
     content: Similar Shots filter renders grouped view
-    status: pending
+    status: completed
   - id: s3f
     content: Main grid "N similar shots" card badge
     status: pending
@@ -130,6 +130,7 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
   - Album without stored groups (analysed before 2026-07-24): no grouped view, no backfill. Similar Shots falls back to today's flat `duplicated` list and today's `stats.duplicated` count.
   - Selection filter (picked / not picked) and star filter still apply per photo; a group with no remaining photo is hidden.
   - "Upload Picked (N)" is unchanged; it counts all picked photos ("Upload includes picked photos outside this view").
+  - Decided by user 2026-10-31 (s3e review): the sidebar button is "Upload Selected (N)" and acts on the shown photos (`actionPhotos`), not picked. With Similar Shots on, upload, export and the confirm count use exactly the photos shown in the grouped grid, best photos included. Covered in __tests__/useCulledAlbumFilters.test.ts.
   - Group header "x shots · y picked" always counts the full live group, even when only some members are shown; same numbers as the viewer strip. The "Showing: … · M photos" line counts the shown photos.
 - **Mirror:** `matchesCulledAlbumGridFilters` + `useCulledAlbumFilters` filtering.
 - **Acceptance:**
