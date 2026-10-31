@@ -87,33 +87,47 @@ describe('SimilarShotsStrip', () => {
     const text = allText(view);
     expect(text).toContain('Similar shots · 2 photos · 1 picked');
     expect(text).toContain('AI recommended');
+    const header = view.renderer.root.findByProps({accessibilityRole: 'header'});
+    expect(header.props.accessibilityLabel).toBe(
+      'Similar shots, 2 photos, 1 picked',
+    );
+  });
+
+  it('exposes picked state as checked on the pick checkbox', () => {
+    const {view} = renderStrip();
+    expect(
+      getByLabel(view.renderer, 'Pick IMG_1.jpg').props.accessibilityState,
+    ).toEqual({checked: true, disabled: false});
+    expect(
+      getByLabel(view.renderer, 'Pick IMG_2.jpg').props.accessibilityRole,
+    ).toBe('checkbox');
   });
 
   it('marks only the current photo', () => {
     const {view} = renderStrip('a');
     expect(
-      getByLabel(view.renderer, 'Open IMG_1.jpg, current photo').props
+      getByLabel(view.renderer, 'Open IMG_1.jpg, picked, AI recommended, current photo').props
         .accessibilityState.selected,
     ).toBe(true);
     expect(
-      getByLabel(view.renderer, 'Open IMG_2.jpg').props.accessibilityState
-        .selected,
+      getByLabel(view.renderer, 'Open IMG_2.jpg, not picked').props
+        .accessibilityState.selected,
     ).toBe(false);
   });
 
   it('opens the tapped photo', () => {
     const {view, onOpenPhoto} = renderStrip();
-    press(getByLabel(view.renderer, 'Open IMG_2.jpg'));
+    press(getByLabel(view.renderer, 'Open IMG_2.jpg, not picked'));
     expect(onOpenPhoto).toHaveBeenCalledWith('b');
   });
 
   it('toggles pick through the selection action', () => {
     const {view} = renderStrip();
-    press(getByLabel(view.renderer, 'Pick IMG_2.jpg, not picked'));
+    press(getByLabel(view.renderer, 'Pick IMG_2.jpg'));
     expect(mockUpdateSelection).toHaveBeenCalledWith('album', 'b', {
       selected: true,
     });
-    press(getByLabel(view.renderer, 'Unpick IMG_1.jpg, picked'));
+    press(getByLabel(view.renderer, 'Pick IMG_1.jpg'));
     expect(mockUpdateSelection).toHaveBeenCalledWith('album', 'a', {
       selected: false,
     });

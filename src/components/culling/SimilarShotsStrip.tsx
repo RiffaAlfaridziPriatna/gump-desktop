@@ -41,7 +41,8 @@ function SimilarShotMember({
       <Pressable
         onPress={() => onOpenPhoto(memberId)}
         accessibilityRole="button"
-        accessibilityLabel={`Open ${name}${isCurrent ? ', current photo' : ''}`}
+        focusable
+        accessibilityLabel={`Open ${name}, ${picked ? 'picked' : 'not picked'}${member.aiSelected ? ', AI recommended' : ''}${isCurrent ? ', current photo' : ''}`}
         accessibilityState={{selected: isCurrent}}
       >
         <CulledAlbumPhotoThumbnail
@@ -59,9 +60,11 @@ function SimilarShotMember({
         }
         disabled={disabled}
         style={styles.pickButton}
-        accessibilityRole="button"
-        accessibilityLabel={`${picked ? 'Unpick' : 'Pick'} ${name}, ${picked ? 'picked' : 'not picked'}`}
-        accessibilityState={{selected: picked, disabled}}
+        hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+        focusable
+        accessibilityRole="checkbox"
+        accessibilityLabel={`Pick ${name}`}
+        accessibilityState={{checked: picked, disabled}}
       >
         {picked ? (
           <IconCheckCircle width={20} height={20} color={colors.text} />
@@ -70,7 +73,11 @@ function SimilarShotMember({
         )}
       </Pressable>
       {member.aiSelected ? (
-        <View style={styles.aiBadge}>
+        <View
+          style={styles.aiBadge}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
           <Text style={styles.aiBadgeText}>AI recommended</Text>
         </View>
       ) : null}
@@ -95,7 +102,11 @@ export function SimilarShotsStrip({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>
+      <Text
+        style={styles.title}
+        accessibilityRole="header"
+        accessibilityLabel={`Similar shots, ${summary.shotCount} photos, ${summary.pickedCount} picked`}
+      >
         {`Similar shots · ${summary.shotCount} photos · ${summary.pickedCount} picked`}
       </Text>
       <ScrollView horizontal contentContainerStyle={styles.row}>
