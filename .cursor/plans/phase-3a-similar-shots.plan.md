@@ -17,7 +17,7 @@ todos:
     status: completed
   - id: s3f
     content: Main grid "N similar shots" card badge
-    status: pending
+    status: completed
   - id: s3g
     content: Viewer similar-shots strip
     status: completed
@@ -150,7 +150,7 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
 - **Parallel:** no, touches the grid and screen wiring changed in s3e
 - **Scope:** badge "N similar shots ›" on every card that belongs to a group, in the flat grid (frame 48189). Tap opens the photo viewer for that photo (existing `onOpenDetail`); the s3g strip shows the group. Card (384 lines) gets one prop; badge is a new small component in components/culling.
 - **Rules (decided by user 2026-10-31):** badge on all group members; tap opens the viewer and does not change active filters.
-- **Placement (decided by user 2026-10-31):** the badge goes in the same chip row as the existing status chips ("Check eyes", "+1"), after them.
+- **Placement (decided by user 2026-10-31):** the badge goes in the same chip row as the existing status chips ("Check eyes", "+1"), after them. The card has no such chips yet; user confirmed 2026-10-31 a chip row overlaid bottom-left on the thumbnail (SimilarShotsBadge.tsx), which later chips can join.
 - **Acceptance:**
   - [ ] Every member of a live group shows the badge; count = live group size from s3b
   - [ ] Tap opens the viewer for that photo; active filters unchanged
