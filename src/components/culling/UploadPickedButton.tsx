@@ -1,10 +1,13 @@
 import React from 'react';
-import {Pressable, StyleSheet, Text, View} from 'react-native';
+import {StyleSheet, Text, View} from 'react-native';
+import {Pressable} from '@components/ui';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 import IconInfo from '../../assets/images/icon_info.svg';
 import IconUpload from '../../assets/images/icon_upload.svg';
+
+const NOTE_HINT = 'Includes picked photos outside this view.';
 
 type UploadPickedButtonProps = {
   pickedCount: number;
@@ -27,6 +30,13 @@ export function UploadPickedButton({
       ? `Upload Picked (${pickedCount})`
       : 'Upload Picked';
 
+  const a11yLabel = uploaded
+    ? 'Uploaded'
+    : pickedCount > 0
+      ? `Upload ${pickedCount} picked photos`
+      : 'Upload picked photos';
+  const showNote = includesHidden && !uploaded;
+
   return (
     <>
       <Pressable
@@ -38,7 +48,8 @@ export function UploadPickedButton({
           disabled && styles.buttonDisabled,
         ]}
         accessibilityRole="button"
-        accessibilityLabel="Upload picked photos"
+        accessibilityLabel={a11yLabel}
+        accessibilityHint={showNote ? NOTE_HINT : undefined}
         accessibilityState={{disabled: uploaded || disabled}}>
         {uploaded ? (
           <IconCheckCircle width={24} height={24} color={colors.accent} />
@@ -49,9 +60,13 @@ export function UploadPickedButton({
           {label}
         </Text>
       </Pressable>
-      {includesHidden && !uploaded && (
+      {showNote && (
         <View style={styles.note}>
-          <IconInfo width={16} height={16} color={colors.textMuted} />
+          <View
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants">
+            <IconInfo width={16} height={16} color={colors.textMuted} />
+          </View>
           <Text style={styles.noteText}>
             Upload includes picked photos outside this view.
           </Text>

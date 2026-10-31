@@ -230,7 +230,7 @@ describe('useCulledAlbumFilters Similar Shots', () => {
     };
     const hook = renderHook(() => ({
       filters: useCulledAlbumFilters(grid, stats, filters, ALBUM_ID),
-      picked: usePickedPhotos(mockPhotos),
+      picked: usePickedPhotos(mockPhotos).picked,
     }));
     const { filters: f, picked } = hook.result.current;
     expect(picked.map(p => p.photoId)).toEqual(['a', 'c', 'd']);

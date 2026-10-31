@@ -94,10 +94,10 @@ function ConfirmPhase({
         <TouchableOpacity
           style={[
             styles.primaryButton,
-            starting && styles.primaryButtonDisabled,
+            (starting || photoCount === 0) && styles.primaryButtonDisabled,
           ]}
           onPress={onUploadNow}
-          disabled={starting}
+          disabled={starting || photoCount === 0}
           activeOpacity={0.8}>
           <Text style={styles.primaryButtonText}>
             {starting ? 'Starting...' : 'Upload Now'}

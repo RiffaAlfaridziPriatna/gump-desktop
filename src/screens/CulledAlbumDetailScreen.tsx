@@ -283,19 +283,15 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     starRatingFilter,
     gridView,
     filterCounts,
-    selectedCount,
     hasActiveFilter,
     toggleFilter,
     setSelectionFilter,
     setStarRatingFilter,
   } = useCulledAlbumFilters(gridPhotos, stats, lastCullFilters, albumId);
 
-  const pickedPhotos = usePickedPhotos(albumPhotos);
+  const {picked: pickedPhotos, pending: pendingUploadPhotos} =
+    usePickedPhotos(albumPhotos);
   const actionCount = pickedPhotos.length;
-  const pendingUploadPhotos = useMemo(
-    () => pickedPhotos.filter(photo => photo.serverUploadStatus !== 'uploaded'),
-    [pickedPhotos],
-  );
 
   const handleOpenPhotoDetail = useCallback(
     (photoId: string, faceIndex?: number) => {
@@ -397,8 +393,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   }, [albumLink, handleCloseUploadModal]);
 
   const confirmUploadSizeGb = useMemo(
-    () => estimateUploadSizeGb(pickedPhotos),
-    [pickedPhotos],
+    () => estimateUploadSizeGb(pendingUploadPhotos),
+    [pendingUploadPhotos],
   );
   // Plan gating is disabled for now — always present original-quality upload label.
   const exportLabel = exportQualityLabel('original');
@@ -420,7 +416,9 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     ? lookBake.percent / 100
     : byteProgress.progress;
   const modalPhotoCount =
-    uploadPhase === 'confirm' ? actionCount : uploadSessionPhotoCount;
+    uploadPhase === 'confirm'
+      ? pendingUploadPhotos.length
+      : uploadSessionPhotoCount;
   const modalUploadSizeGb =
     uploadPhase === 'confirm' ? confirmUploadSizeGb : uploadSessionSizeGb;
   const sessionUploadBytes = modalUploadSizeGb * 1024 ** 3;
@@ -495,10 +493,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     uploadModalDismissedRef.current = false;
   }, [albumId]);
 
-  const actionAlbumPhotos = useMemo(
-    () => pickedPhotos.filter(photo => photo.status === 'uploaded'),
-    [pickedPhotos],
-  );
+  const actionAlbumPhotos = pickedPhotos;
   const exportPhotoCount = actionAlbumPhotos.length;
 
   const handleCullFiltersToggle = useCallback(() => {
@@ -593,7 +588,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     onExport: handleOpenExport,
     onApplyLook: handleOpenApplyLook,
     uploaded: cullingHasUploads,
-    uploadDisabled: actionCount === 0,
+    uploadDisabled: actionCount === 0 || cullingBusy,
     uploadIncludesHidden: hasActiveFilter,
     addPhotosDisabled: cullingBusy,
     exportDisabled: exportPhotoCount === 0,
@@ -693,7 +688,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             <CulledAlbumDetailSidebar
               isMobileLayout={isMobileLayout}
               totalPhotos={totalPhotos}
-              mySelectionsCount={selectedCount}
+              mySelectionsCount={actionCount}
               actionCount={actionCount}
               selectionFilter={selectionFilter}
               onSelectionFilterChange={setSelectionFilter}
@@ -751,7 +746,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             <CulledAlbumDetailSidebar
               isMobileLayout={isMobileLayout}
               totalPhotos={totalPhotos}
-              mySelectionsCount={selectedCount}
+              mySelectionsCount={actionCount}
               actionCount={actionCount}
               selectionFilter={selectionFilter}
               onSelectionFilterChange={setSelectionFilter}

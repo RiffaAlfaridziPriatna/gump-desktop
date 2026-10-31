@@ -43,4 +43,28 @@ describe('UploadPickedButton', () => {
     getAllByRole(renderer, 'button')[0]?.props.onPress();
     expect(onPress).toHaveBeenCalledTimes(1);
   });
+
+  it('derives accessible name and hint from state', () => {
+    const {renderer} = render(<UploadPickedButton {...base} includesHidden />);
+    const [button] = getAllByRole(renderer, 'button');
+    expect(button?.props.accessibilityLabel).toBe('Upload 148 picked photos');
+    expect(button?.props.accessibilityHint).toBe(
+      'Includes picked photos outside this view.',
+    );
+    const plain = render(<UploadPickedButton {...base} pickedCount={0} disabled />);
+    const [zero] = getAllByRole(plain.renderer, 'button');
+    expect(zero?.props.accessibilityLabel).toBe('Upload picked photos');
+    expect(zero?.props.accessibilityHint).toBeUndefined();
+    const done = render(<UploadPickedButton {...base} uploaded includesHidden />);
+    expect(getAllByRole(done.renderer, 'button')[0]?.props.accessibilityLabel).toBe(
+      'Uploaded',
+    );
+  });
+
+  it('shows the disabled state while culling is busy', () => {
+    const {renderer} = render(<UploadPickedButton {...base} disabled />);
+    expect(getAllByRole(renderer, 'button')[0]?.props.accessibilityState).toEqual({
+      disabled: true,
+    });
+  });
 });
