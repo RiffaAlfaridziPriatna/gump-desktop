@@ -78,6 +78,8 @@ type CulledAlbumPhotoGridProps = {
    */
   deferHeavyMediaWork?: boolean;
   contentContainerStyle?: StyleProp<ViewStyle>;
+  /** Flat-grid badge count; leave undefined where the view already shows it. */
+  getSimilarShotCount?: (photoId: string) => number | undefined;
   onOpenDetail: CulledAlbumPhotoCardProps['onOpenDetail'];
   onToggleSelection: CulledAlbumPhotoCardProps['onToggleSelection'];
   onDeletePress: CulledAlbumPhotoCardProps['onDeletePress'];
@@ -104,18 +106,8 @@ const BUSY_IMAGE_LOAD_PAD_ROWS = 1;
 /** Above this, shrink idle FlatList window (heavy interactive cards). */
 const LARGE_ALBUM_PHOTO_THRESHOLD = 120;
 
-type CulledAlbumPhotoRowViewProps = {
-  row: PhotoGridRow;
-  albumId: string;
-  cardWidth: number;
-  canDeletePhoto: boolean;
-  isMobileLayout: boolean;
-  deferHeavyMediaWork: boolean;
-  onOpenDetail: CulledAlbumPhotoCardProps['onOpenDetail'];
-  onToggleSelection: CulledAlbumPhotoCardProps['onToggleSelection'];
-  onDeletePress: CulledAlbumPhotoCardProps['onDeletePress'];
-  onStarPress: CulledAlbumPhotoCardProps['onStarPress'];
-};
+type CulledAlbumPhotoRowViewProps = Omit<CulledAlbumPhotoCardProps, 'photoId' | 'similarShotCount'> &
+  Pick<CulledAlbumPhotoGridProps, 'getSimilarShotCount'> & {row: PhotoGridRow};
 
 const CulledAlbumPhotoRowView = memo(
   function CulledAlbumPhotoRowView({
@@ -125,6 +117,7 @@ const CulledAlbumPhotoRowView = memo(
     canDeletePhoto,
     isMobileLayout,
     deferHeavyMediaWork,
+    getSimilarShotCount,
     onOpenDetail,
     onToggleSelection,
     onDeletePress,
@@ -141,6 +134,7 @@ const CulledAlbumPhotoRowView = memo(
             canDeletePhoto={canDeletePhoto}
             isMobileLayout={isMobileLayout}
             deferHeavyMediaWork={deferHeavyMediaWork}
+            similarShotCount={getSimilarShotCount?.(cell.photoId)}
             onOpenDetail={onOpenDetail}
             onToggleSelection={onToggleSelection}
             onDeletePress={onDeletePress}
@@ -163,7 +157,8 @@ const CulledAlbumPhotoRowView = memo(
     prev.cardWidth === next.cardWidth &&
     prev.canDeletePhoto === next.canDeletePhoto &&
     prev.isMobileLayout === next.isMobileLayout &&
-    prev.deferHeavyMediaWork === next.deferHeavyMediaWork,
+    prev.deferHeavyMediaWork === next.deferHeavyMediaWork &&
+    prev.getSimilarShotCount === next.getSimilarShotCount,
 );
 
 function photoIdsNeedingThumbnail(
@@ -186,6 +181,7 @@ export function CulledAlbumPhotoGrid({
   hoverEnabled = true,
   deferHeavyMediaWork = false,
   contentContainerStyle,
+  getSimilarShotCount,
   onOpenDetail,
   onToggleSelection,
   onDeletePress,
@@ -509,6 +505,7 @@ export function CulledAlbumPhotoGrid({
           canDeletePhoto={canDeletePhoto}
           isMobileLayout={isMobileLayout}
           deferHeavyMediaWork={deferHeavyMediaWork}
+          getSimilarShotCount={getSimilarShotCount}
           onOpenDetail={onOpenDetail}
           onToggleSelection={onToggleSelection}
           onDeletePress={onDeletePress}
@@ -519,6 +516,7 @@ export function CulledAlbumPhotoGrid({
       albumId,
       canDeletePhoto,
       deferHeavyMediaWork,
+      getSimilarShotCount,
       renderCardWidth,
       isMobileLayout,
       onDeletePress,

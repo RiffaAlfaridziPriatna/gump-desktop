@@ -5,9 +5,19 @@ import type {CulledAlbumGridSection} from '../../src/components/culling/culledAl
 import {render} from '../helpers/render';
 
 jest.mock('../../src/components/culling/CulledAlbumPhotoCard', () => ({
-  CulledAlbumPhotoCard: ({photoId}: {photoId: string}) => {
+  CulledAlbumPhotoCard: ({
+    photoId,
+    similarShotCount,
+  }: {
+    photoId: string;
+    similarShotCount?: number;
+  }) => {
     const {Text: T} = require('react-native');
-    return <T testID="card">{photoId}</T>;
+    return (
+      <T testID="card" similarShotCount={similarShotCount}>
+        {photoId}
+      </T>
+    );
   },
 }));
 
@@ -79,5 +89,44 @@ describe('CulledAlbumPhotoGrid sections', () => {
     const before = view.renderer.root.findByType(FlatList).props.data;
     view.rerender(grid(sections.map(s => ({...s, title: `${s.title}!`}))));
     expect(view.renderer.root.findByType(FlatList).props.data).toBe(before);
+  });
+});
+
+describe('CulledAlbumPhotoGrid similar shot counts', () => {
+  const flat = (getSimilarShotCount?: (photoId: string) => number | undefined) => (
+    <CulledAlbumPhotoGrid
+      photos={photos}
+      albumId="album"
+      containerWidth={600}
+      isMobileLayout
+      canDeletePhoto={false}
+      getSimilarShotCount={getSimilarShotCount}
+      onOpenDetail={noop}
+      onToggleSelection={noop}
+      onDeletePress={noop}
+      onStarPress={noop}
+    />
+  );
+  const countsByCard = (view: ReturnType<typeof render>) =>
+    Object.fromEntries(
+      view.renderer.root
+        .findAll(n => n.props.testID === 'card' && typeof n.type === 'string')
+        .map(n => [n.props.children, n.props.similarShotCount]),
+    );
+
+  it('hands each card its own count as a primitive', () => {
+    const view = render(flat(id => (id.startsWith('a') ? 4 : undefined)));
+    expect(countsByCard(view)).toEqual({
+      a0: 4,
+      a1: 4,
+      a2: 4,
+      a3: 4,
+      b0: undefined,
+    });
+  });
+
+  it('passes no counts when the getter is absent', () => {
+    const view = render(flat());
+    expect(Object.values(countsByCard(view)).every(c => c === undefined)).toBe(true);
   });
 });

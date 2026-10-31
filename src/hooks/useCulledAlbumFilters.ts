@@ -34,7 +34,8 @@ export function useCulledAlbumFilters(
   savedFilters: Partial<Record<FilterKey, boolean>> | null | undefined,
   albumId: string,
 ) {
-  const {orderedGroups, summaryFor} = useSimilarShotGroups(albumId);
+  const {orderedGroups, groupIndexByPhotoId, summaryFor} =
+    useSimilarShotGroups(albumId);
   const [activeFilters, setActiveFilters] = useState<
     Record<FilterKey, boolean>
   >(() => normalizeCullFilters(savedFilters));
@@ -103,9 +104,23 @@ export function useCulledAlbumFilters(
     () => (layout ? toSimilarShotsSections(layout, summaryFor) : undefined),
     [layout, summaryFor],
   );
+  // Badge only in the flat grid; the grouped view shows the count in its header.
+  // orderedGroups is already live-filtered, so its length equals summaryFor's
+  // shotCount, but stays stable across pick toggles (summaryFor does not).
+  const getSimilarShotCount = useMemo(() => {
+    if (layout) {
+      return undefined;
+    }
+    return (photoId: string) => {
+      const groupIndex = groupIndexByPhotoId.get(photoId);
+      return groupIndex === undefined
+        ? undefined
+        : orderedGroups[groupIndex]?.photoIds.length;
+    };
+  }, [groupIndexByPhotoId, layout, orderedGroups]);
   const gridView = useMemo(
-    () => ({photos: filteredPhotos, sections}),
-    [filteredPhotos, sections],
+    () => ({photos: filteredPhotos, sections, getSimilarShotCount}),
+    [filteredPhotos, sections, getSimilarShotCount],
   );
 
   const selectedCount = useMemo(

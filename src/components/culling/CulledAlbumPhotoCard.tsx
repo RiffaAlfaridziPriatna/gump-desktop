@@ -1,4 +1,5 @@
 import {CulledAlbumPhotoThumbnail} from '@components/culling/CulledAlbumPhotoThumbnail';
+import {SimilarShotsBadge} from '@components/culling/SimilarShotsBadge';
 import {Pressable} from '@components/ui';
 import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {
@@ -43,14 +44,11 @@ export type CulledAlbumPhotoCardProps = {
   canDeletePhoto: boolean;
   isMobileLayout: boolean;
   deferHeavyMediaWork?: boolean;
+  similarShotCount?: number;
   onOpenDetail: (photoId: string) => void;
   onToggleSelection: (photoId: string, selected: boolean) => void;
   onDeletePress: (photoId: string, fileName: string) => void;
-  onStarPress: (
-    photoId: string,
-    starIndex: number,
-    currentRating: number,
-  ) => void;
+  onStarPress: (photoId: string, starIndex: number, currentRating: number) => void;
 };
 
 type StarRatingRowProps = {
@@ -108,6 +106,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
   canDeletePhoto,
   isMobileLayout,
   deferHeavyMediaWork = false,
+  similarShotCount,
   onOpenDetail,
   onToggleSelection,
   onDeletePress,
@@ -183,14 +182,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
       }
       return false;
     },
-    [
-      analysis,
-      disabled,
-      handleToggleSelection,
-      onStarPress,
-      photoId,
-      starRating,
-    ],
+    [analysis, disabled, handleToggleSelection, onStarPress, photoId, starRating],
   );
 
   const handleCardPress = useCallback(
@@ -269,6 +261,9 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
             thumbnailHeight={file.thumbnailHeight}
             deferHeavyMediaWork={deferHeavyMediaWork}
           />
+          {similarShotCount != null && (
+            <SimilarShotsBadge count={similarShotCount} onPress={handleOpenDetail} />
+          )}
           {showDeleteButton && (
             <Pressable
               style={styles.deletePhotoButton}

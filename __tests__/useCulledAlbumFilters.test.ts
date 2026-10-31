@@ -271,3 +271,46 @@ describe('useCulledAlbumFilters Similar Shots', () => {
     hook.unmount();
   });
 });
+
+describe('useCulledAlbumFilters similar shot badge counts', () => {
+  const counts = (h: ReturnType<typeof setup>, photoIds: string[]) =>
+    photoIds.map(id => h.result.current.gridView.getSimilarShotCount?.(id));
+
+  it('gives every live member the group size in the flat grid, others none', () => {
+    const hook = setup(GROUPS, {});
+    expect(counts(hook, ['a', 'b', 'c', 'd', 'missing'])).toEqual([
+      3,
+      3,
+      3,
+      undefined,
+      undefined,
+    ]);
+    hook.unmount();
+  });
+
+  it('uses the live size when a stored member is gone', () => {
+    const hook = setup(GROUPS, {}, SPECS.filter(spec => spec.id !== 'c'));
+    expect(counts(hook, ['a', 'b'])).toEqual([2, 2]);
+    hook.unmount();
+  });
+
+  it('offers no counts in the grouped view or without stored groups', () => {
+    const grouped = setup(GROUPS, { duplicated: true });
+    expect(grouped.result.current.gridView.getSimilarShotCount).toBeUndefined();
+    grouped.unmount();
+    const none = setup(undefined, {});
+    expect(counts(none, ['a', 'b'])).toEqual([undefined, undefined]);
+    none.unmount();
+  });
+
+  it('keeps the same getter across a pick toggle', () => {
+    const hook = setup(GROUPS, {});
+    const before = hook.result.current.gridView.getSimilarShotCount;
+    mockPhotos = mockPhotos.map(photo =>
+      photo.photoId === 'a' ? { ...photo, selected: true } : photo,
+    );
+    act(() => hook.rerender());
+    expect(hook.result.current.gridView.getSimilarShotCount).toBe(before);
+    hook.unmount();
+  });
+});
