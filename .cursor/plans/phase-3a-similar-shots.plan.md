@@ -5,7 +5,7 @@ approved: true
 todos:
   - id: s3a
     content: Similar-shot group derivations (pure lib + tests)
-    status: pending
+    status: completed
   - id: s3b
     content: useSimilarShotGroups read seam
     status: pending
