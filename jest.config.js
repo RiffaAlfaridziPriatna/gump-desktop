@@ -13,6 +13,7 @@ module.exports = {
     '/android/',
     '/windows/',
     '/cpp/',
+    '/.claude/',
   ],
   transformIgnorePatterns: [
     'node_modules/(?!((jest-)?react-native|@react-native(-community)?|react-native-svg|zustand|immer|tsyringe)/)',
