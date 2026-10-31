@@ -2,6 +2,7 @@ import {FaceStatusTooltip, type KeyFaceTooltipAnchor} from '@components/culling/
 import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
 import {PhotoDetailImageViewer} from '@components/culling/PhotoDetailImageViewer';
 import {PhotoDetailNavigationFrame} from '@components/culling/PhotoDetailNavigationFrame';
+import {SimilarShotsStrip} from '@components/culling/SimilarShotsStrip';
 import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
@@ -440,9 +441,8 @@ export default function CulledAlbumPhotoDetailScreen({
     currentPhotoIndex >= 0 &&
     currentPhotoIndex < navigationPhotoIds.length - 1;
 
-  const goToPhotoAtIndex = useCallback(
-    (targetIndex: number) => {
-      const targetPhotoId = navigationPhotoIds[targetIndex];
+  const goToPhoto = useCallback(
+    (targetPhotoId: string | undefined) => {
       if (!targetPhotoId || targetPhotoId === photoId) {
         return;
       }
@@ -453,27 +453,24 @@ export default function CulledAlbumPhotoDetailScreen({
       }
 
       setZoomFaceIndex(null);
-      navigation.setParams({
-        photoId: targetPhotoId,
-        faceIndex: undefined,
-      });
+      navigation.setParams({photoId: targetPhotoId, faceIndex: undefined});
     },
-    [albumId, navigation, navigationPhotoIds, photoId],
+    [albumId, navigation, photoId],
   );
 
   const goToPreviousPhoto = useCallback(() => {
     if (!canGoPrev) {
       return;
     }
-    goToPhotoAtIndex(currentPhotoIndex - 1);
-  }, [canGoPrev, currentPhotoIndex, goToPhotoAtIndex]);
+    goToPhoto(navigationPhotoIds[currentPhotoIndex - 1]);
+  }, [canGoPrev, currentPhotoIndex, goToPhoto, navigationPhotoIds]);
 
   const goToNextPhoto = useCallback(() => {
     if (!canGoNext) {
       return;
     }
-    goToPhotoAtIndex(currentPhotoIndex + 1);
-  }, [canGoNext, currentPhotoIndex, goToPhotoAtIndex]);
+    goToPhoto(navigationPhotoIds[currentPhotoIndex + 1]);
+  }, [canGoNext, currentPhotoIndex, goToPhoto, navigationPhotoIds]);
 
   const handleKeyFacePress = useCallback((index: number) => {
     setZoomFaceIndex(current => (current === index ? null : index));
@@ -668,6 +665,7 @@ export default function CulledAlbumPhotoDetailScreen({
                     onTooltipAnchorChange={handleTooltipChange}
                   />
                 </PhotoDetailNavigationFrame>
+                <SimilarShotsStrip albumId={albumId} photoId={photoId} onOpenPhoto={goToPhoto} />
               </View>
 
               <View
