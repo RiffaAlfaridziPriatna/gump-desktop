@@ -15,6 +15,7 @@ jest.mock('@context/culledAlbum', () => ({
 }));
 
 import { useCulledAlbumFilters } from '../src/hooks/useCulledAlbumFilters';
+import { usePickedPhotos } from '../src/hooks/usePickedPhotos';
 import {
   createCulledAlbumFromSelection,
   type CulledAlbumSource,
@@ -210,19 +211,68 @@ describe('useCulledAlbumFilters Similar Shots', () => {
     hook.unmount();
   });
 
-  it.each([[{ duplicated: true }], [{ duplicated: true, closedEyes: true }]])(
-    'acts on exactly the shown photos: %j',
-    on => {
-      const hook = setup(GROUPS, on);
-      expect(hook.result.current.actionPhotos).toBe(
-        hook.result.current.gridView.photos,
+  it.each([
+    [{ duplicated: true }],
+    [{ duplicated: true, closedEyes: true }],
+    [{ closedEyes: true }],
+    [{}],
+  ])('picked set is every picked album photo whatever the view: %j', on => {
+    const specs = SPECS.map(s => ({ ...s, selected: s.id !== 'b' }));
+    const grid = seed(GROUPS, specs);
+    const stats = { duplicated: 2 } as never;
+    const filters = {
+      aiSelected: false,
+      maybe: false,
+      blurred: false,
+      closedEyes: false,
+      duplicated: false,
+      ...on,
+    };
+    const hook = renderHook(() => ({
+      filters: useCulledAlbumFilters(grid, stats, filters, ALBUM_ID),
+      picked: usePickedPhotos(mockPhotos),
+    }));
+    const { filters: f, picked } = hook.result.current;
+    expect(picked.map(p => p.photoId)).toEqual(['a', 'c', 'd']);
+    // N equals the sidebar "Picked for Upload" count.
+    expect(picked.length).toBe(f.selectedCount);
+    expect(f.hasActiveFilter).toBe(Object.keys(on).length > 0);
+    if (on.closedEyes) {
+      expect(f.gridView.photos.map(p => p.photoId)).not.toEqual(
+        picked.map(p => p.photoId),
       );
-      expect(hook.result.current.actionCount).toBe(
-        hook.result.current.gridView.photos.length,
-      );
-      hook.unmount();
-    },
-  );
+    }
+
+    // Unpick c: N drops, filters untouched.
+    mockPhotos = mockPhotos.map(p =>
+      p.photoId === 'c' ? { ...p, selected: false } : p,
+    );
+    hook.rerender();
+    expect(hook.result.current.picked.map(p => p.photoId)).toEqual(['a', 'd']);
+    expect(hook.result.current.filters.activeFilters).toBe(f.activeFilters);
+    hook.unmount();
+  });
+
+  it('flags a selection or star filter as an active filter', () => {
+    const grid = seed(GROUPS);
+    const filters = {
+      aiSelected: false,
+      maybe: false,
+      blurred: false,
+      closedEyes: false,
+      duplicated: false,
+    };
+    const hook = renderHook(() =>
+      useCulledAlbumFilters(grid, null, filters, ALBUM_ID),
+    );
+    expect(hook.result.current.hasActiveFilter).toBe(false);
+    act(() => hook.result.current.setStarRatingFilter([5]));
+    expect(hook.result.current.hasActiveFilter).toBe(true);
+    act(() => hook.result.current.setStarRatingFilter([]));
+    act(() => hook.result.current.setSelectionFilter('selected'));
+    expect(hook.result.current.hasActiveFilter).toBe(true);
+    hook.unmount();
+  });
 
   it('combines selection, star and another category', () => {
     const grid = seed(GROUPS);

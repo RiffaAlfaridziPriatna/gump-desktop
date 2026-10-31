@@ -31,6 +31,7 @@ import {
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
 import {useCulledAlbumDetailData} from '@hooks/useCulledAlbumDetailData';
 import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
+import {usePickedPhotos} from '@hooks/usePickedPhotos';
 import {usePreloadGridImages} from '@hooks/usePreloadGridImages';
 import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
 import {useProfileMenu} from '@hooks/useProfileMenu';
@@ -281,22 +282,19 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     selectionFilter,
     starRatingFilter,
     gridView,
-    actionPhotos,
     filterCounts,
     selectedCount,
-    actionCount,
+    hasActiveFilter,
     toggleFilter,
     setSelectionFilter,
     setStarRatingFilter,
   } = useCulledAlbumFilters(gridPhotos, stats, lastCullFilters, albumId);
 
+  const pickedPhotos = usePickedPhotos(albumPhotos);
+  const actionCount = pickedPhotos.length;
   const pendingUploadPhotos = useMemo(
-    () =>
-      actionPhotos.filter(photo => {
-        const source = getPhotoById(albumId, photo.photoId);
-        return source?.serverUploadStatus !== 'uploaded';
-      }),
-    [actionPhotos, albumId, albumPhotos],
+    () => pickedPhotos.filter(photo => photo.serverUploadStatus !== 'uploaded'),
+    [pickedPhotos],
   );
 
   const handleOpenPhotoDetail = useCallback(
@@ -357,10 +355,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     if (photoIds.length === 0) {
       return;
     }
-    const selectedPhotos = albumPhotos.filter(photo =>
-      photoIds.includes(photo.photoId),
-    );
-    const sizeGb = estimateUploadSizeGb(selectedPhotos);
+    const sizeGb = estimateUploadSizeGb(pendingUploadPhotos);
     try {
       saveLastCullFilters(albumId, activeFilters);
       uploadModalDismissedRef.current = false;
@@ -376,7 +371,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       );
       throw error;
     }
-  }, [actionPhotos, activeFilters, albumId, albumPhotos, startSelectedUpload]);
+  }, [activeFilters, albumId, pendingUploadPhotos, startSelectedUpload]);
 
   const handleCloseUploadModal = useCallback(() => {
     if (uploadPhase === 'uploading') {
@@ -401,12 +396,10 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     handleCloseUploadModal();
   }, [albumLink, handleCloseUploadModal]);
 
-  const confirmUploadSizeGb = useMemo(() => {
-    const photoIds = new Set(actionPhotos.map(photo => photo.photoId));
-    return estimateUploadSizeGb(
-      albumPhotos.filter(photo => photoIds.has(photo.photoId)),
-    );
-  }, [actionPhotos, albumPhotos]);
+  const confirmUploadSizeGb = useMemo(
+    () => estimateUploadSizeGb(pickedPhotos),
+    [pickedPhotos],
+  );
   // Plan gating is disabled for now — always present original-quality upload label.
   const exportLabel = exportQualityLabel('original');
 
@@ -502,15 +495,10 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     uploadModalDismissedRef.current = false;
   }, [albumId]);
 
-  const actionAlbumPhotos = useMemo(() => {
-    const photosById = new Map(
-      albumPhotos.map(photo => [photo.photoId, photo] as const),
-    );
-    return actionPhotos.flatMap(photo => {
-      const albumPhoto = photosById.get(photo.photoId);
-      return albumPhoto && albumPhoto.status === 'uploaded' ? [albumPhoto] : [];
-    });
-  }, [actionPhotos, albumPhotos]);
+  const actionAlbumPhotos = useMemo(
+    () => pickedPhotos.filter(photo => photo.status === 'uploaded'),
+    [pickedPhotos],
+  );
   const exportPhotoCount = actionAlbumPhotos.length;
 
   const handleCullFiltersToggle = useCallback(() => {
@@ -606,6 +594,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     onApplyLook: handleOpenApplyLook,
     uploaded: cullingHasUploads,
     uploadDisabled: actionCount === 0,
+    uploadIncludesHidden: hasActiveFilter,
     addPhotosDisabled: cullingBusy,
     exportDisabled: exportPhotoCount === 0,
     applyLookDisabled: exportPhotoCount === 0,

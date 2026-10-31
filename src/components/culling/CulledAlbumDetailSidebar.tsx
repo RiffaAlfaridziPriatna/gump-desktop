@@ -1,5 +1,6 @@
 import { KeyFaceTooltipAnchor } from '@components/culling/FaceStatusTooltip';
 import { KeyFaceSidebarItem } from '@components/culling/KeyFaceSidebarItem';
+import { UploadPickedButton } from './UploadPickedButton';
 import { Checkbox, Pressable } from '@components/ui';
 import { Accordion } from '@components/ui/Accordion';
 import { SelectionFilter } from '@lib/culling/culledAlbumPhotoFilters';
@@ -29,7 +30,6 @@ import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
 import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
 import IconExport from '../../assets/images/icon_export.svg';
 import IconPlus from '../../assets/images/icon_plus.svg';
-import IconUpload from '../../assets/images/icon_upload.svg';
 import IconWand from '../../assets/images/icon_wand.svg';
 
 const FILTER_LABELS: Record<CullFilterKey, string> = {
@@ -72,6 +72,7 @@ export type CulledAlbumDetailSidebarProps = {
   onApplyLook: () => void;
   uploaded?: boolean;
   uploadDisabled?: boolean;
+  uploadIncludesHidden?: boolean;
   addPhotosDisabled?: boolean;
   exportDisabled?: boolean;
   applyLookDisabled?: boolean;
@@ -208,6 +209,7 @@ function CulledAlbumDetailSidebarComponent({
   onApplyLook,
   uploaded = false,
   uploadDisabled = false,
+  uploadIncludesHidden = false,
   addPhotosDisabled = false,
   exportDisabled = false,
   applyLookDisabled = false,
@@ -481,33 +483,13 @@ function CulledAlbumDetailSidebarComponent({
   return (
     <View style={[styles.sidebar, isMobileLayout && styles.sidebarMobile]}>
       <View style={styles.actionStack}>
-        <Pressable
+        <UploadPickedButton
+          pickedCount={actionCount}
+          uploaded={uploaded}
+          disabled={uploadDisabled}
+          includesHidden={uploadIncludesHidden}
           onPress={onUploadSelected}
-          disabled={uploaded || uploadDisabled}
-          style={[
-            styles.uploadButton,
-            uploaded && styles.uploadButtonUploaded,
-            uploadDisabled && styles.actionButtonDisabled,
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Upload selected photos">
-          {uploaded ? (
-            <IconCheckCircle width={24} height={24} color={colors.accent} />
-          ) : (
-            <IconUpload width={24} height={24} color={colors.white} />
-          )}
-          <Text
-            style={[
-              styles.uploadButtonText,
-              uploaded && styles.uploadButtonTextUploaded,
-            ]}>
-            {uploaded
-              ? 'Uploaded'
-              : actionCount > 0
-                ? `Upload Selected (${actionCount})`
-                : 'Upload Selected'}
-          </Text>
-        </Pressable>
+        />
 
         {onAddPhotos && (
           <Pressable
@@ -686,28 +668,6 @@ const styles = StyleSheet.create({
     ...sansBoldStyle,
     fontSize: 16,
     color: colors.text,
-  },
-  uploadButton: {
-    minHeight: 48,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  uploadButtonUploaded: {
-    backgroundColor: colors.accent + '14',
-  },
-  uploadButtonText: {
-    ...sansBoldStyle,
-    fontSize: 16,
-    color: colors.white,
-  },
-  uploadButtonTextUploaded: {
-    color: colors.accent,
   },
   exportButton: {
     minHeight: 48,

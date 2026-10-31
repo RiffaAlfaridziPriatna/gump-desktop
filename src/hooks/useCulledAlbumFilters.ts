@@ -140,7 +140,10 @@ export function useCulledAlbumFilters(
     [gridPhotos, stats],
   );
 
-  const actionCount = filteredPhotos.length;
+  const hasActiveFilter =
+    selectionFilter !== null ||
+    starRatingFilter.length > 0 ||
+    Object.values(activeFilters).some(Boolean);
 
   const groupedCount = useMemo(
     () => countGroupedPhotos(orderedGroups),
@@ -189,10 +192,9 @@ export function useCulledAlbumFilters(
     starRatingFilter,
     filteredPhotos,
     gridView,
-    actionPhotos: filteredPhotos,
     filterCounts,
     selectedCount,
-    actionCount,
+    hasActiveFilter,
     toggleFilter,
     setSelectionFilter,
     setStarRatingFilter,
