@@ -8,7 +8,7 @@ todos:
     status: completed
   - id: s3b
     content: useSimilarShotGroups read seam
-    status: pending
+    status: completed
   - id: s3d
     content: Grid section rows (group header row support)
     status: pending
