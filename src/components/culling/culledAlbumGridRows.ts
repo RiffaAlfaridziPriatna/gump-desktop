@@ -27,9 +27,8 @@ export type HeaderGridRow = {
   kind: 'header';
   key: string;
   rowIndex: number;
-  title: string;
-  subtitle?: string;
-  isGroup?: boolean;
+  /** Header text lives on the section, so text edits never change rows. */
+  sectionKey: string;
 };
 
 export type GridRow = PhotoGridRow | HeaderGridRow;
@@ -54,10 +53,30 @@ function pushPhotoRows(
   }
 }
 
+/** Drops ids that have no photo in `photosKey` (the photos' ids joined by \0). */
+export function keepKnownPhotos(
+  sections: CulledAlbumGridSection[],
+  photosKey: string,
+): CulledAlbumGridSection[] {
+  const known = new Set(photosKey.split('\0'));
+  return sections.map(section => ({
+    ...section,
+    photoIds: section.photoIds.filter(id => known.has(id)),
+  }));
+}
+
+/** Identity of the row structure: equal when only header text changes. */
+export function sectionsLayoutKey(sections?: CulledAlbumGridSection[]): string {
+  return sections
+    ? sections.map(s => `${s.key}:${s.photoIds.length}`).join('|')
+    : '';
+}
+
 /**
  * Without sections: one flat run of photo rows. With sections: a header row
  * then that section's own photo rows; sections never share a row. Cell
  * indexes are global, so `photoIds` must be the sections' ids concatenated.
+ * Only section keys and photoIds are read, never header text.
  */
 export function buildRows(
   photoIds: string[],
@@ -78,9 +97,7 @@ export function buildRows(
       kind: 'header',
       key: `header-${section.key}`,
       rowIndex: rows.length,
-      title: section.title,
-      subtitle: section.subtitle,
-      isGroup: section.isGroup,
+      sectionKey: section.key,
     });
     pushPhotoRows(rows, section.photoIds, firstIndex);
     firstIndex += section.photoIds.length;

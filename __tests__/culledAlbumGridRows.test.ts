@@ -2,6 +2,8 @@ import {
   buildRows,
   createGetItemLayout,
   HEADER_ROW_HEIGHT,
+  keepKnownPhotos,
+  sectionsLayoutKey,
   type CulledAlbumGridSection,
 } from '../src/components/culling/culledAlbumGridRows';
 
@@ -57,6 +59,21 @@ describe('buildRows sections', () => {
     expect(headers.every(h => !('cells' in h))).toBe(true);
   });
 
+  it('rows and layout key ignore header text (structural equality)', () => {
+    const retitled = sections.map(s => ({...s, title: 'X', subtitle: 'Y'}));
+    expect(buildRows([...a, ...b], retitled)).toEqual(rows);
+    expect(sectionsLayoutKey(retitled)).toBe(sectionsLayoutKey(sections));
+  });
+
+  it('skips section ids with no photo', () => {
+    const kept = keepKnownPhotos(sections, ['a0', 'a1', 'b1'].join('\0'));
+    expect(kept.map(s => s.photoIds)).toEqual([['a0', 'a1'], [], ['b1']]);
+    const cells = buildRows(['a0', 'a1', 'b1'], kept).flatMap(r =>
+      r.kind === 'photos' ? r.cells.map(c => [c.photoId, c.index]) : [],
+    );
+    expect(cells).toEqual([['a0', 0], ['a1', 1], ['b1', 2]]);
+  });
+
   it('never shares a row between groups and keeps global indexes', () => {
     expect(rows.map(r => r.kind)).toEqual([
       'header',
@@ -84,6 +101,17 @@ describe('buildRows sections', () => {
       length: HEADER_ROW_HEIGHT,
       offset: HEADER_ROW_HEIGHT + 200,
       index: 3,
+    });
+    // row 2 is the partial last row of group 1; row 4 follows the second header
+    expect(layout(null, 2)).toEqual({
+      length: 100,
+      offset: HEADER_ROW_HEIGHT + 100,
+      index: 2,
+    });
+    expect(layout(null, 4)).toEqual({
+      length: 100,
+      offset: HEADER_ROW_HEIGHT * 2 + 200,
+      index: 4,
     });
   });
 });

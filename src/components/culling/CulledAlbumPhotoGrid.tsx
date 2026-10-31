@@ -30,6 +30,8 @@ import {
   buildRows,
   createGetItemLayout,
   GRID_COLUMNS,
+  keepKnownPhotos,
+  sectionsLayoutKey,
   type CulledAlbumGridSection,
   type GridRow,
   type PhotoGridRow,
@@ -63,7 +65,7 @@ export type CulledAlbumGridPhoto = {
 
 type CulledAlbumPhotoGridProps = {
   photos: CulledAlbumGridPhoto[];
-  /** Optional; `photos` must be in section order. Memoize to keep rows stable. */
+  /** Optional; order comes from the sections, photos not in `photos` are skipped. */
   sections?: CulledAlbumGridSection[];
   albumId: string;
   containerWidth: number;
@@ -206,7 +208,14 @@ export function CulledAlbumPhotoGrid({
   const deferHeavyMediaWorkRef = useRef(deferHeavyMediaWork);
   deferHeavyMediaWorkRef.current = deferHeavyMediaWork;
 
-  const photoIdsKey = photos.map(photo => photo.photoId).join('\0');
+  const photosKey = photos.map(photo => photo.photoId).join('\0');
+  const visibleSections = useMemo(
+    () => sections && keepKnownPhotos(sections, photosKey),
+    [sections, photosKey],
+  );
+  const photoIdsKey = visibleSections
+    ? visibleSections.flatMap(section => section.photoIds).join('\0')
+    : photosKey;
   const photoIds = useMemo(
     () => (photoIdsKey ? photoIdsKey.split('\0') : []),
     [photoIdsKey],
@@ -250,12 +259,14 @@ export function CulledAlbumPhotoGrid({
   const itemHeight =
     thumbnailHeight + CARD_INTERNAL_GAP + CARD_INFO_ROW_HEIGHT;
   const rowHeight = itemHeight + GRID_GAP;
-
+  const sectionsRef = useRef(visibleSections);
+  sectionsRef.current = visibleSections;
+  const layoutKey = sectionsLayoutKey(visibleSections);
   const rows = useMemo(
-    () => buildRows(photoIds, sections),
-    [photoIds, sections],
+    () => buildRows(photoIds, sectionsRef.current),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- layoutKey: rebuild on structure, not header text
+    [photoIds, layoutKey],
   );
-
   const prevPhotoIdsKeyRef = useRef(photoIdsKey);
   useEffect(() => {
     if (prevPhotoIdsKeyRef.current === photoIdsKey) {
@@ -488,9 +499,7 @@ export function CulledAlbumPhotoGrid({
     ({item: row}: ListRenderItemInfo<GridRow>) =>
       row.kind === 'header' ? (
         <SimilarShotGroupHeader
-          title={row.title}
-          subtitle={row.subtitle}
-          isGroup={row.isGroup}
+          section={visibleSections?.find(s => s.key === row.sectionKey)}
         />
       ) : (
         <CulledAlbumPhotoRowView
@@ -516,6 +525,7 @@ export function CulledAlbumPhotoGrid({
       onOpenDetail,
       onStarPress,
       onToggleSelection,
+      visibleSections,
     ],
   );
 
