@@ -23,7 +23,7 @@ todos:
     status: completed
   - id: s3h
     content: Upload Picked per Figma (upload, export, Edit Photos act on picked)
-    status: pending
+    status: completed
 isProject: false
 ---
 
@@ -199,6 +199,7 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
   - [ ] Note text shown under the button as in Figma 50306
   - [ ] Picking or unpicking updates N without changing the active filters
   - [ ] CulledAlbumDetailScreen.tsx and CulledAlbumDetailSidebar.tsx line counts do not grow
+- **Decided during checks (user, 2026-10-31):** note color stays `colors.textMuted` as in Figma (contrast ~3.9:1, below WCAG 4.5:1; raise with the designer); Upload Picked is disabled while culling runs. Picked set requires `selected`, `status === "uploaded"` (import done) and `analysisStatus === "analyzed"`. Confirm modal count and size use the photos that will actually upload (picked minus already on server). Upload order is album order (was grid order).
 - **Out of scope:** pick/unpick-all controls (Figma has no Select all / Deselect all design; checked 2026-10-31), upload pipeline internals.
 - **Gate:** S (upload set), A, R
 
