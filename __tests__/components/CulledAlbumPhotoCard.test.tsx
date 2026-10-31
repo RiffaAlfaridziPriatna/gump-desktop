@@ -1,5 +1,6 @@
 import React from 'react';
 import {CulledAlbumPhotoCard} from '../../src/components/culling/CulledAlbumPhotoCard';
+import {Pressable} from '../../src/components/ui';
 import {getByLabel, render} from '../helpers/render';
 
 jest.mock('@context/culledAlbum', () => ({
@@ -62,5 +63,16 @@ describe('CulledAlbumPhotoCard similar shots badge', () => {
     expect(onOpenDetail).toHaveBeenCalledWith('p1');
     expect(onToggleSelection).not.toHaveBeenCalled();
     expect(onStarPress).not.toHaveBeenCalled();
+  });
+
+  it('frees the badge as its own accessible button; plain cards stay one element', () => {
+    const grouped = renderCard(3).view.renderer.root;
+    expect(grouped.findAllByType(Pressable)[0]?.props.accessible).toBe(false);
+    expect(
+      getByLabel(renderCard(3).view.renderer, '3 similar shots, open viewer').props
+        .accessibilityRole,
+    ).toBe('button');
+    const plain = renderCard().view.renderer.root;
+    expect(plain.findAllByType(Pressable)[0]?.props.accessible).toBe(true);
   });
 });

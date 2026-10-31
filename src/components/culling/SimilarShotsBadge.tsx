@@ -19,6 +19,7 @@ export function SimilarShotsBadge({count, onPress}: SimilarShotsBadgeProps) {
           onPress();
         }}
         accessibilityRole="button"
+        focusable
         accessibilityLabel={`${count} similar shots, open viewer`}>
         <Text style={styles.label}>{`${count} similar shots ›`}</Text>
       </Pressable>

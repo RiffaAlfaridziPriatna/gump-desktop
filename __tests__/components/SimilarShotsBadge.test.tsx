@@ -7,6 +7,7 @@ describe('SimilarShotsBadge', () => {
   it('is a labelled button showing the count', () => {
     const {renderer} = render(<SimilarShotsBadge count={3} onPress={jest.fn()} />);
     const [button] = getAllByRole(renderer, 'button');
+    expect(button?.props.focusable).toBe(true);
     expect(button?.props.accessibilityLabel).toBe('3 similar shots, open viewer');
     expect(renderer.root.findByType(Text).props.children).toBe('3 similar shots ›');
   });

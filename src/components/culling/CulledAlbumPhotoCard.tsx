@@ -249,6 +249,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
       style={[styles.photoCard, {width: cardWidth}]}
       onHoverIn={isMobileLayout ? undefined : handleHoverIn}
       onHoverOut={isMobileLayout ? undefined : handleHoverOut}
+      accessible={similarShotCount == null}
       onPress={handleCardPress}>
       <View ref={cardRootRef} collapsable={false} style={styles.photoCardRoot}>
         <View style={styles.thumbnailWrapper}>
@@ -261,9 +262,6 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
             thumbnailHeight={file.thumbnailHeight}
             deferHeavyMediaWork={deferHeavyMediaWork}
           />
-          {similarShotCount != null && (
-            <SimilarShotsBadge count={similarShotCount} onPress={handleOpenDetail} />
-          )}
           {showDeleteButton && (
             <Pressable
               style={styles.deletePhotoButton}
@@ -275,6 +273,9 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
               accessibilityLabel={`Delete ${fileName}`}>
               <IconTrash width={24} height={24} color={colors.text} />
             </Pressable>
+          )}
+          {similarShotCount != null && (
+            <SimilarShotsBadge count={similarShotCount} onPress={handleOpenDetail} />
           )}
         </View>
         <View style={styles.photoInfoContainer}>
