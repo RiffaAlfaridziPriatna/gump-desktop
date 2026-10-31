@@ -1,0 +1,137 @@
+---
+description: Project map. Binding source of truth for stack, layers, folders, naming, imports, state ownership, overrides and verify commands.
+alwaysApply: true
+---
+
+# Project map
+
+All paths are relative to the repo root.
+
+stack: react-native        # desktop: react-native-macos 0.81 + react-native-windows 0.81, React 19.1, not Expo
+packs: [react-core]        # ts-core linked but its only skill (zod-validation) is removed: zod not installed. No react-native pack exists in ~/.ai-kit.
+
+## Skill guard
+Apply only the global laws and the skills of the packs above. Ignore any skill whose description names another stack, even if a path glob matches.
+Linked skills: atomic-design, ddd-clean-architecture, react-hooks, react-performance, tanstack-query, zustand.
+
+## Roles
+system-architect, integration-engineer, ui-frontend-developer, fixture-mock-engineer
+
+## Verify commands
+typecheck: npm run typecheck        # tsc --noEmit
+lint: npm run lint                  # eslint . (@react-native config)
+test: npm test                      # jest --forceExit, macOS preset
+test-windows: npm run test:windows  # jest.config.windows.js
+e2e: none
+l10n-check: none                    # no i18n library; react-native-localize is only shimmed
+
+## Layers
+Outermost to innermost. Source: docs/PROJECT.md "Arsitektur > Layered".
+| Layer | Path | May import |
+|---|---|---|
+| App shell | src/app | screens, components, hooks, context, lib, services |
+| Presentation | src/screens, src/components, src/hooks, src/context | application, domain, lib, services/api types, di (`make`) |
+| Composition root | src/di | application, domain, infrastructure |
+| Application | src/application | domain, lib, services, di |
+| Feature logic | src/lib/<feature> | lib, services, di, domain |
+| Infrastructure | src/infrastructure | domain, lib |
+| Remote | src/services/api, src/services/upload | lib, di |
+| Domain | src/domain | nothing outside src/domain |
+| Native | macos/, windows/, cpp/ | n/a (C++/ObjC; JS reaches it through src/lib/storage bridge) |
+
+Analysis ownership: production culling runs in C++ (cpp/analysis, cpp/face-detection). JS recomputes only as a fallback when native does not send the result. Source: docs/PROJECT.md "Ownership analisis".
+Data-access seam: hooks in src/hooks and providers in src/context (TanStack Query for remote reads, culledAlbum store for local). Screens and components call hooks, not APIService.
+Features: auth, album (site albums), culledAlbum (local culling: import, analysis, review, upload), plan (usage, top-up), look, export.
+
+## Reference projects
+None.
+Precedence: this map wins over any reference project.
+
+## Allowed folders
+Closed set. Forbidden: new top-level folders under src/, generic helpers/ or utils/ folders. New feature code goes in an existing bucket below.
+| Bucket | Path | Holds |
+|---|---|---|
+| App shell | src/app | App.tsx, AuthNavigator, MainNavigator |
+| Screens | src/screens | one `<Name>Screen.tsx` per route |
+| Components | src/components/<area> | album, culling, error, look, modals, navigation, photo, plan, ui, ui/frosted, upload |
+| Hooks | src/hooks | `use<Name>.ts`, one hook per file |
+| Context | src/context | React providers wrapping stores (auth, culledAlbum, error) |
+| DI | src/di | container.ts registration, tokens.ts, tsyringe.ts facade |
+| Domain | src/domain/{entities,valueObjects,repositories,plan} | entities, value objects, repository interfaces |
+| Application | src/application/{useCases,plan} | `<Verb><Noun>UseCase.ts`, plan mappers |
+| Infrastructure | src/infrastructure/{repositories,storage} | SQLite repositories and adapters |
+| Remote | src/services/api/{resources}, src/services/upload | APIAgent, resources, wire types, multipart |
+| Feature logic | src/lib/<feature> | async, auth, config, culledAlbum, culling, export, look, media, navigation, observability, plan, react, storage, system, ui |
+| Platform shims | src/shims | `*.windows.ts(x)` stand-ins for macOS-only packages |
+| Types | src/types | global .d.ts |
+| Assets | src/assets/{fonts,images} | static assets |
+
+## Naming
+| Kind | Pattern | Example |
+|---|---|---|
+| Component | PascalCase.tsx | src/components/album/AlbumCard.tsx |
+| Screen | `<Name>Screen.tsx` | src/screens/HomeScreen.tsx |
+| Hook | `use<Name>.ts` | src/hooks/useSiteAlbumList.ts |
+| Lib module | camelCase.ts | src/lib/culledAlbum/photoMapper.ts |
+| Store | `<name>Store.ts` | src/lib/culledAlbum/photoRenderStore.ts |
+| Use case | `<Verb><Noun>UseCase.ts` | src/application/useCases/ImportPhotosUseCase.ts |
+| Repository interface | `I<Name>Repository.ts` | src/domain/repositories/IPhotoRepository.ts |
+| Repository impl | `SQLite<Name>Repository.ts` | src/infrastructure/repositories/SQLitePhotoRepository.ts |
+| Platform variant | `<name>.macos.ts(x)` / `<name>.windows.ts(x)` | src/infrastructure/storage/index.windows.ts |
+| Test | `__tests__/<camelCase>.test.ts`, components in `__tests__/components/<Name>.test.tsx` | __tests__/photoRenderStore.test.ts |
+
+## Import convention
+- Cross-folder: path aliases from tsconfig.json and babel.config.js (`@/`, `@lib/`, `@services/`, `@context/`, `@components/`, `@hooks/`, `@screens/`, `@domain/`, `@infrastructure/`, `@application/`, `@di/`). Keep both files in sync when adding one.
+- Same folder or child folder: relative `./`.
+- Barrels exist for src/components/ui, src/domain, src/application, src/infrastructure, src/di, src/services/api. Import through them where they exist.
+- `import type` for type-only imports.
+- Formatting: prettier (singleQuote, trailingComma all, arrowParens avoid). No import-order lint rule.
+
+## State ownership
+| State | Owner | Notes |
+|---|---|---|
+| Server data (user, site albums) | TanStack Query | query key factories next to the hook, e.g. `siteAlbumListQueryKey` in src/hooks/useSiteAlbumList.ts |
+| Auth session | src/context/auth.tsx (Zustand+Immer store in context) | token in AsyncStorage via src/lib/auth |
+| Local culled albums and photos (hot) | culledAlbumStore, src/lib/culledAlbum/store.ts | Zustand+Immer via `createStateStore` in src/lib/react/state.ts |
+| Persisted culled data (cold) | SQLite via src/infrastructure | debounced persist from store; recovery on restart. Store owns, SQLite is the durable copy |
+| Grid render snapshot | src/lib/culledAlbum/photoRenderStore.ts | throttled ~500 ms derivation of the store; grid subscribes here, not to every Immer write |
+| Upload queue | src/lib/culledAlbum/uploadQueueStore.ts | |
+| Errors / toasts | src/context/error.tsx | |
+Source: docs/PROJECT.md "Dual state".
+
+## Boundary translation points
+- Wire types: src/services/api/generated-schema.d.ts (generated by `npm run generate-schema`, never hand-edit) wrapped by `APIResponse` / `APIRequest` namespaces in src/services/api/types.ts.
+- Errors: `APIException` in src/services/api/exception.ts; app errors via src/lib/observability (`AppError`, `reportError`).
+- Wire to app model: mappers such as src/application/plan/mapUserPlan.ts and src/lib/culledAlbum/photoMapper.ts.
+- Native analysis results enter JS through src/lib/culledAlbum/analysisQueue.ts (chunked ingest).
+
+## Stack wiring
+- New Architecture (Fabric) disabled on macOS. react-native-screens excluded from macOS autolinking; JS stack navigator only. Source: README.md.
+- DI: tsyringe + reflect-metadata through the src/di/tsyringe.ts facade. Repositories and use cases registered by hand in src/di/container.ts with tokens in src/di/tokens.ts. HTTP services use `@Injectable()` and `make()`.
+- Stores: always create through src/lib/react/state.ts (`createStateStore` with Immer, `createVanillaStateStore` without).
+- Platform split: Metro resolves `.macos` / `.windows` suffixes; Windows-only shims live in src/shims.
+- Env: babel inlines only the vars listed in babel.config.js; channel from `GUMP_ENV` (local / staging / prod).
+- Observability: PostHog via src/lib/observability.
+
+## Project-specific hard rules
+- Do not move culling work from C++ into JS; JS paths are fallbacks only. Source: docs/PROJECT.md.
+- Grid and card components subscribe to photoRenderStore, never to culledAlbumStore directly. Source: docs/PROJECT.md "Dual state".
+- Every new native dependency needs a macOS podspec and a Windows story (module or shim). Source: README.md "Dependency macOS Support".
+- App versions are per platform: VERSION.macos, VERSION.windows. Source: README.md.
+
+## Test layout
+- Jest, `testMatch: **/__tests__/**/*.test.[jt]s?(x)`; all tests in root __tests__/.
+- Helpers: __tests__/helpers (fixtures.ts, inMemoryRepos.ts, render.tsx); golden data in __tests__/fixtures; svg mock in __tests__/mocks.
+- Repositories are faked with in-memory implementations, not SQLite.
+- tests/ (gitignored) holds the native face/culling harness, not Jest.
+
+## Overrides
+- File ceiling: 300 lines for new files. 41 existing files exceed it (e.g. src/lib/culledAlbum/store.ts 1458); do not split them as a drive-by.
+- src/services/api/generated-schema.d.ts is exempt (generated).
+
+## Known violations
+Existing layer leaks. Do not copy these patterns; fix only inside a task that owns the file.
+- src/domain/entities/CulledPhoto.ts:6 imports `@lib/look/types`. Target: move those types into src/domain/valueObjects.
+- src/lib/culledAlbum/stableGridPhotos.ts:1, src/hooks/useCulledAlbumFilters.ts:11, src/hooks/useKeyFaceTooltip.ts:1, src/hooks/useMeasuredTooltipHover.ts:1, src/hooks/useUploadAwareModalScreen.ts:1-2 import from `@components`. Target: move `CulledAlbumGridPhoto` and `KeyFaceTooltipAnchor` into src/lib.
+- `APIResponse` wire types used in UI (src/components/album/AlbumCard.tsx:11, src/components/culling/KeyFaceSidebarItem.tsx:15, others). Target: map at the hook.
+- src/components/modals/ForgotPasswordModal.tsx calls `make()` directly instead of a hook.

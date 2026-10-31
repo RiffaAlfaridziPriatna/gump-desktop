@@ -93,3 +93,8 @@ yarn-error.log
 
 # libjpeg-turbo local cmake build (sources + gump_config are committed)
 cpp/third_party/libjpeg-turbo/build/
+
+# AI workflow (linked skills, worktrees)
+.claude/skills/
+.cursor/skills/
+.claude/worktrees/

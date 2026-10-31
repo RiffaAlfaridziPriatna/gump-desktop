@@ -104,16 +104,7 @@ Release artifacts go to `dist/<env>/<platform>/` (e.g. `dist/prod/macos/`, `dist
 
 ## Project Structure
 
-```
-src/
-├── app/               Root shell, navigators, auth gate
-├── screens/           LoginScreen, HomeScreen
-├── components/ui/     Button, TextInput
-├── context/           Auth Zustand store + React context
-├── hooks/             useAuth re-export
-├── lib/               DI, token storage, state helpers
-└── services/api/      APIService, resources, types
-```
+See `.cursor/rules/project-map.mdc` (folders, layers, naming, state ownership).
 
 ## Known Limitations
 
