@@ -4,7 +4,8 @@ import {SimilarShotsStrip} from '../../src/components/culling/SimilarShotsStrip'
 import {getByLabel, press, render} from '../helpers/render';
 
 const mockPhotos: Record<string, unknown> = {};
-const mockUpdateSelection = jest.fn();
+const mockToggle = jest.fn();
+const mockReportError = jest.fn();
 const mockGroupsHook = jest.fn();
 
 jest.mock('@hooks/useSimilarShotGroups', () => ({
@@ -14,10 +15,8 @@ jest.mock('@context/culledAlbum', () => ({
   useCulledAlbumPhoto: (_albumId: string, photoId: string) =>
     mockPhotos[photoId],
 }));
-jest.mock('@lib/culling/cullingEngine', () => ({
-  cullingEngine: {
-    updateSelection: (...args: unknown[]) => mockUpdateSelection(...args),
-  },
+jest.mock('@lib/observability/reportError', () => ({
+  reportError: (...args: unknown[]) => mockReportError(...args),
 }));
 jest.mock('@components/culling/CulledAlbumPhotoThumbnail', () => ({
   CulledAlbumPhotoThumbnail: () => null,
@@ -51,6 +50,7 @@ function renderStrip(photoId = 'a') {
       albumId="album"
       photoId={photoId}
       onOpenPhoto={onOpenPhoto}
+      onToggleSelection={mockToggle}
     />,
   );
   return {view, onOpenPhoto};
@@ -67,6 +67,7 @@ function allText(view: ReturnType<typeof render>) {
 describe('SimilarShotsStrip', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockToggle.mockResolvedValue(undefined);
     mockPhotos.a = photo('IMG_1.jpg', {selected: true, aiSelected: true});
     mockPhotos.b = photo('IMG_2.jpg');
     setGroup(['a', 'b']);
@@ -121,15 +122,24 @@ describe('SimilarShotsStrip', () => {
     expect(onOpenPhoto).toHaveBeenCalledWith('b');
   });
 
-  it('toggles pick through the selection action', () => {
+  it('toggles pick through the screen handler', () => {
     const {view} = renderStrip();
     press(getByLabel(view.renderer, 'Pick IMG_2.jpg'));
-    expect(mockUpdateSelection).toHaveBeenCalledWith('album', 'b', {
-      selected: true,
-    });
+    expect(mockToggle).toHaveBeenCalledWith('b', true);
     press(getByLabel(view.renderer, 'Pick IMG_1.jpg'));
-    expect(mockUpdateSelection).toHaveBeenCalledWith('album', 'a', {
-      selected: false,
+    expect(mockToggle).toHaveBeenCalledWith('a', false);
+  });
+
+  it('reports a rejected pick toggle instead of swallowing it', async () => {
+    const failure = new Error('Cannot modify photos after upload');
+    mockToggle.mockRejectedValue(failure);
+    const {view} = renderStrip();
+    press(getByLabel(view.renderer, 'Pick IMG_2.jpg'));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockReportError).toHaveBeenCalledWith(failure, {
+      source: 'similar_shots_strip',
+      operation: 'toggle_pick',
     });
   });
 });

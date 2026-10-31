@@ -3,7 +3,7 @@ import {Pressable} from '@components/ui';
 import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {useSimilarShotGroups} from '@hooks/useSimilarShotGroups';
 import {isCulledPhotoDisabled} from '@lib/culledAlbum/types';
-import {cullingEngine} from '@lib/culling/cullingEngine';
+import {reportError} from '@lib/observability/reportError';
 import {resolveGridDisplayUri} from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
@@ -17,6 +17,7 @@ type SimilarShotsStripProps = {
   albumId: string;
   photoId: string;
   onOpenPhoto: (photoId: string) => void;
+  onToggleSelection: (photoId: string, selected: boolean) => Promise<unknown>;
 };
 
 type MemberProps = SimilarShotsStripProps & {memberId: string};
@@ -26,6 +27,7 @@ function SimilarShotMember({
   photoId,
   memberId,
   onOpenPhoto,
+  onToggleSelection,
 }: MemberProps) {
   const member = useCulledAlbumPhoto(albumId, memberId);
   if (!member) {
@@ -55,9 +57,14 @@ function SimilarShotMember({
         />
       </Pressable>
       <Pressable
-        onPress={() =>
-          cullingEngine.updateSelection(albumId, memberId, {selected: !picked})
-        }
+        onPress={() => {
+          onToggleSelection(memberId, !picked).catch(err =>
+            reportError(err, {
+              source: 'similar_shots_strip',
+              operation: 'toggle_pick',
+            }),
+          );
+        }}
         disabled={disabled}
         style={styles.pickButton}
         hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
@@ -89,6 +96,7 @@ export function SimilarShotsStrip({
   albumId,
   photoId,
   onOpenPhoto,
+  onToggleSelection,
 }: SimilarShotsStripProps) {
   const {orderedGroups, groupIndexByPhotoId, summaryFor} =
     useSimilarShotGroups(albumId);
@@ -117,6 +125,7 @@ export function SimilarShotsStrip({
             photoId={photoId}
             memberId={memberId}
             onOpenPhoto={onOpenPhoto}
+            onToggleSelection={onToggleSelection}
           />
         ))}
       </ScrollView>

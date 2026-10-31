@@ -422,6 +422,12 @@ export default function CulledAlbumPhotoDetailScreen({
     });
   }
 
+  const toggleMemberSelection = useCallback(
+    (memberId: string, selected: boolean) =>
+      cullingEngine.updateSelection(albumId, memberId, {selected}),
+    [albumId],
+  );
+
   async function updateStarRating(starIndex: number) {
     if (!analysis || disabled) {
       return;
@@ -665,7 +671,12 @@ export default function CulledAlbumPhotoDetailScreen({
                     onTooltipAnchorChange={handleTooltipChange}
                   />
                 </PhotoDetailNavigationFrame>
-                <SimilarShotsStrip albumId={albumId} photoId={photoId} onOpenPhoto={goToPhoto} />
+                <SimilarShotsStrip
+                  albumId={albumId}
+                  photoId={photoId}
+                  onOpenPhoto={goToPhoto}
+                  onToggleSelection={toggleMemberSelection}
+                />
               </View>
 
               <View
