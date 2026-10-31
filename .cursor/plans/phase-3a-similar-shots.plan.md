@@ -174,6 +174,14 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
 - **Out of scope:** Faces panel, AI markers.
 - **Gate:** A
 
+## Follow-ups (Gate R Lows, recorded 2026-10-31)
+
+- Count wording checked against Figma 2026-10-31: header "x shots", viewer strip "x photos", badge "N similar shots" match frames 50306, 54491, 48189. No change.
+- `SimilarShotsViewSection` (src/lib/culling/similarShotsView.ts) and `CulledAlbumGridSection` (src/components/culling/culledAlbumGridRows.ts) are duplicate types; alias the grid type to the lib one.
+- `CulledAlbumPhotoCard` sets `accessible={similarShotCount == null}`, so the a11y tree differs between cards with and without the badge; consider card role/label + `accessibilityActions`.
+- `filteredPhotos` from `useCulledAlbumFilters` has no src consumer; remove or document.
+- In the grouped view the viewer prev/next follows group order (matches the grid; behaviour note only).
+
 ## Do not start
 
 - AI Selection levels, Faces panel/markers, presets, upload/export, subscription, sorting (out of scope per brief).
