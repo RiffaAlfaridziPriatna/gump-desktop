@@ -15,7 +15,6 @@ jest.mock('@context/culledAlbum', () => ({
 }));
 
 import { useCulledAlbumFilters } from '../src/hooks/useCulledAlbumFilters';
-import * as duplicateDetection from '../src/lib/culling/duplicateDetection';
 import {
   createCulledAlbumFromSelection,
   type CulledAlbumSource,
@@ -26,7 +25,12 @@ import { renderHook } from './helpers/render';
 
 const ALBUM_ID = 'album-1';
 
-type Spec = { id: string; at: number; selected?: boolean; closedEyes?: boolean };
+type Spec = {
+  id: string;
+  at: number;
+  selected?: boolean;
+  closedEyes?: boolean;
+};
 
 // a,b,c form a group (a is best, not flagged duplicated); d is ungrouped and
 // closed-eyed; b is a closed-eyed duplicate.
@@ -168,28 +172,102 @@ describe('useCulledAlbumFilters Similar Shots', () => {
     hook.unmount();
   });
 
-  it('updates the picked count when only a pick changes, without detection', () => {
-    const detect = Object.keys(duplicateDetection)
-      .filter(k => typeof (duplicateDetection as never)[k] === 'function')
-      .map(k => jest.spyOn(duplicateDetection as never, k));
+  it('updates the picked count on a pick toggle and keeps structure and keys', () => {
     const hook = setup(GROUPS, { duplicated: true });
-    const groupsBefore = mockStore.getState().albums[ALBUM_ID]!
-      .cullingDuplicateGroups;
-    expect(hook.result.current.gridView.sections?.[0]?.subtitle).toBe(
-      '3 shots · 1 picked',
-    );
+    const before = hook.result.current;
+    const groupsBefore =
+      mockStore.getState().albums[ALBUM_ID]!.cullingDuplicateGroups;
     mockPhotos = mockPhotos.map(p =>
       p.photoId === 'a' ? { ...p, selected: true } : p,
     );
     hook.rerender();
-    expect(hook.result.current.gridView.sections?.[0]?.subtitle).toBe(
-      '3 shots · 2 picked',
+    const after = hook.result.current;
+    expect(after.gridView.sections?.[0]?.subtitle).toBe('3 shots · 2 picked');
+    expect(after.gridView.sections?.map(x => x.key)).toEqual(
+      before.gridView.sections?.map(x => x.key),
     );
+    expect(after.gridView.photos).toBe(before.gridView.photos);
     expect(mockStore.getState().albums[ALBUM_ID]!.cullingDuplicateGroups).toBe(
       groupsBefore,
     );
-    detect.forEach(spy => expect(spy).not.toHaveBeenCalled());
-    jest.restoreAllMocks();
+    hook.unmount();
+  });
+
+  it.each([[{ duplicated: true }], [{ duplicated: true, closedEyes: true }]])(
+    'acts on exactly the shown photos: %j',
+    on => {
+      const hook = setup(GROUPS, on);
+      expect(hook.result.current.actionPhotos).toBe(
+        hook.result.current.gridView.photos,
+      );
+      expect(hook.result.current.actionCount).toBe(
+        hook.result.current.gridView.photos.length,
+      );
+      hook.unmount();
+    },
+  );
+
+  it('combines selection, star and another category', () => {
+    const grid = seed(GROUPS);
+    grid.find(p => p.photoId === 'b')!.analysis.starRating = 5;
+    grid.find(p => p.photoId === 'b')!.analysis.selected = true;
+    const filters = {
+      aiSelected: false,
+      maybe: false,
+      blurred: false,
+      closedEyes: true,
+      duplicated: true,
+    };
+    const hook = renderHook(() =>
+      useCulledAlbumFilters(grid, null, filters, ALBUM_ID),
+    );
+    act(() => {
+      hook.result.current.setSelectionFilter('selected');
+      hook.result.current.setStarRatingFilter([5]);
+    });
+    expect(
+      hook.result.current.gridView.sections?.map(x => [x.key, x.photoIds]),
+    ).toEqual([['group-1', ['b']]]);
+    hook.unmount();
+  });
+
+  it('is empty for an empty album with Similar Shots on', () => {
+    const hook = setup(GROUPS, { duplicated: true }, []);
+    expect(hook.result.current.gridView.photos).toEqual([]);
+    expect(hook.result.current.filterCounts.duplicated).toBe(2);
+    hook.unmount();
+  });
+
+  it('skips members missing from the grid or lacking analysis; count stays derived from groups', () => {
+    const grid = seed(GROUPS);
+    const partial = grid
+      .filter(p => p.photoId !== 'c')
+      .map(p => (p.photoId === 'b' ? { ...p, analysis: undefined } : p));
+    const filters = {
+      aiSelected: false,
+      maybe: false,
+      blurred: false,
+      closedEyes: false,
+      duplicated: true,
+    };
+    const hook = renderHook(() =>
+      useCulledAlbumFilters(partial, null, filters, ALBUM_ID),
+    );
+    expect(ids(hook)).toEqual(['a']);
+    expect(hook.result.current.filterCounts.duplicated).toBe(3);
+    hook.unmount();
+  });
+
+  it('shows a photo stored in two groups once', () => {
+    const groups: CullingDuplicateGroup[] = [
+      { groupId: 'g1', photoIds: ['a', 'b'], bestPhotoId: 'a' },
+      { groupId: 'g2', photoIds: ['b', 'c'], bestPhotoId: 'c' },
+    ];
+    const hook = setup(groups, { duplicated: true });
+    expect(hook.result.current.gridView.sections?.map(x => x.photoIds)).toEqual(
+      [['a', 'b'], ['c']],
+    );
+    expect(ids(hook)).toEqual(['a', 'b', 'c']);
     hook.unmount();
   });
 });

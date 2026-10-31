@@ -9,7 +9,8 @@ import {
   normalizeCullFilters,
 } from '@lib/culling/cullingUtil';
 import {
-  buildSimilarShotsView,
+  buildSimilarShotsLayout,
+  toSimilarShotsSections,
   countGroupedPhotos,
 } from '@lib/culling/similarShotsView';
 import {useSimilarShotGroups} from '@hooks/useSimilarShotGroups';
@@ -50,19 +51,21 @@ export function useCulledAlbumFilters(
     [selectionFilter, starRatingFilter],
   );
 
-  const similarView = useMemo(
+  const layout = useMemo(
     () =>
-      buildSimilarShotsView({
+      buildSimilarShotsLayout({
         photos: gridPhotos,
         orderedGroups,
         activeFilters,
         gridFilters,
-        summaryFor,
       }),
-    [activeFilters, gridFilters, gridPhotos, orderedGroups, summaryFor],
+    [activeFilters, gridFilters, gridPhotos, orderedGroups],
   );
 
   const flatPhotos = useMemo(() => {
+    if (layout) {
+      return [];
+    }
     const enabledCullFilters = Object.entries(activeFilters).filter(
       ([, enabled]) => enabled,
     ) as Array<[FilterKey, boolean]>;
@@ -90,18 +93,16 @@ export function useCulledAlbumFilters(
     activeFilters,
     gridFilters,
     gridPhotos,
+    layout,
     selectionFilter,
     starRatingFilter,
   ]);
 
-  const filteredPhotos = useMemo(() => {
-    if (!similarView) {
-      return flatPhotos;
-    }
-    const byId = new Map(gridPhotos.map(photo => [photo.photoId, photo]));
-    return similarView.photoIds.flatMap(id => byId.get(id) ?? []);
-  }, [flatPhotos, gridPhotos, similarView]);
-  const sections = similarView?.sections;
+  const filteredPhotos = layout ? layout.photos : flatPhotos;
+  const sections = useMemo(
+    () => (layout ? toSimilarShotsSections(layout, summaryFor) : undefined),
+    [layout, summaryFor],
+  );
   const gridView = useMemo(
     () => ({photos: filteredPhotos, sections}),
     [filteredPhotos, sections],

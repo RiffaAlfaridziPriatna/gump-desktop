@@ -22,22 +22,23 @@ export type SimilarShotsViewSection = {
   photoIds: string[];
 };
 
-export type SimilarShotsView = {
-  sections: SimilarShotsViewSection[];
-  /** Shown photo ids in grid order. */
-  photoIds: string[];
-  groupCount: number;
-};
-
 type ViewPhoto = {photoId: string; analysis?: APIResponse.CullingPhoto};
 
-export type SimilarShotsViewInput = {
-  photos: readonly ViewPhoto[];
+/** Section structure and shown photos; no header text, so picks do not touch it. */
+export type SimilarShotsLayout<T extends ViewPhoto> = {
+  groups: {groupNumber: number; photoIds: string[]}[];
+  otherIds: string[];
+  /** Shown photos in grid order. */
+  photos: T[];
+};
+
+type RawFlagKey = Exclude<CullFilterKey, 'duplicated'>;
+
+export type SimilarShotsLayoutInput<T extends ViewPhoto> = {
+  photos: readonly T[];
   orderedGroups: readonly CullingDuplicateGroup[];
   activeFilters: Record<CullFilterKey, boolean>;
   gridFilters: CulledAlbumGridFilters;
-  /** Live header counts for the group at this ordered index. */
-  summaryFor: (groupIndex: number) => SimilarShotGroupSummary | undefined;
 };
 
 /** Sidebar count: every member of every group, derived from the groups. */
@@ -48,17 +49,17 @@ export function countGroupedPhotos(
 }
 
 /**
- * Grouped Similar Shots view, or null when the flat list applies (filter off
- * or no stored groups). Members match another category by their raw flag;
- * ungrouped photos keep the flat-list category semantics.
+ * Grouped Similar Shots layout, or null when the flat list applies (filter
+ * off or no stored groups). Members match another category by their raw flag;
+ * ungrouped photos keep the flat-list category semantics. A photo stored in
+ * two groups is shown once, in the first.
  */
-export function buildSimilarShotsView({
+export function buildSimilarShotsLayout<T extends ViewPhoto>({
   photos,
   orderedGroups,
   activeFilters,
   gridFilters,
-  summaryFor,
-}: SimilarShotsViewInput): SimilarShotsView | null {
+}: SimilarShotsLayoutInput<T>): SimilarShotsLayout<T> | null {
   if (!activeFilters.duplicated || orderedGroups.length === 0) {
     return null;
   }
@@ -66,63 +67,81 @@ export function buildSimilarShotsView({
     key => key !== 'duplicated' && activeFilters[key],
   );
   const byId = new Map(photos.map(photo => [photo.photoId, photo]));
-  const passesGrid = (photo: ViewPhoto) =>
-    matchesCulledAlbumGridFilters(photo.analysis, gridFilters);
+  const shown: T[] = [];
+  const emitted = new Set<string>();
 
   const memberMatches = (photoId: string) => {
     const photo = byId.get(photoId);
-    if (!photo || !passesGrid(photo)) {
+    if (
+      !photo ||
+      emitted.has(photoId) ||
+      !matchesCulledAlbumGridFilters(photo.analysis, gridFilters)
+    ) {
       return false;
     }
     const analysis = photo.analysis;
-    return (
-      otherKeys.length === 0 ||
-      otherKeys.some(key => key !== 'duplicated' && Boolean(analysis?.[key]))
-    );
+    if (
+      otherKeys.length > 0 &&
+      !otherKeys.some(key => Boolean(analysis?.[key as RawFlagKey]))
+    ) {
+      return false;
+    }
+    emitted.add(photoId);
+    shown.push(photo);
+    return true;
   };
 
-  const sections: SimilarShotsViewSection[] = buildSimilarShotSections(
-    orderedGroups,
-    memberMatches,
-  ).flatMap(section => {
-    if (section.kind !== 'group') {
-      return [];
+  const groups = buildSimilarShotSections(orderedGroups, memberMatches).flatMap(
+    section =>
+      section.kind === 'group'
+        ? [{groupNumber: section.groupNumber, photoIds: section.photoIds}]
+        : [],
+  );
+
+  const otherIds: string[] = [];
+  if (otherKeys.length > 0) {
+    const grouped = indexGroupsByPhotoId(orderedGroups);
+    for (const photo of photos) {
+      const {photoId, analysis} = photo;
+      if (
+        analysis !== undefined &&
+        !grouped.has(photoId) &&
+        matchesCulledAlbumGridFilters(analysis, gridFilters) &&
+        otherKeys.some(key => matchesCullFilterKey(analysis, key))
+      ) {
+        otherIds.push(photoId);
+        shown.push(photo);
+      }
     }
-    const summary = summaryFor(section.groupNumber - 1);
-    return [
-      {
-        key: `group-${section.groupNumber}`,
-        title: `Group ${section.groupNumber}`,
+  }
+  return {groups, otherIds, photos: shown};
+}
+
+/** Header text comes from live summaries; keys depend only on the layout. */
+export function toSimilarShotsSections(
+  layout: Pick<SimilarShotsLayout<ViewPhoto>, 'groups' | 'otherIds'>,
+  summaryFor: (groupIndex: number) => SimilarShotGroupSummary | undefined,
+): SimilarShotsViewSection[] {
+  const sections: SimilarShotsViewSection[] = layout.groups.map(
+    ({groupNumber, photoIds}) => {
+      const summary = summaryFor(groupNumber - 1);
+      return {
+        key: `group-${groupNumber}`,
+        title: `Group ${groupNumber}`,
         subtitle: summary
           ? `${summary.shotCount} shots · ${summary.pickedCount} picked`
           : undefined,
         isGroup: true,
-        photoIds: section.photoIds,
-      },
-    ];
-  });
-  const groupCount = sections.length;
-
-  if (otherKeys.length > 0) {
-    const grouped = indexGroupsByPhotoId(orderedGroups);
-    const photoIds = photos
-      .filter(({photoId, analysis}) => {
-        return (
-          analysis !== undefined &&
-          !grouped.has(photoId) &&
-          matchesCulledAlbumGridFilters(analysis, gridFilters) &&
-          otherKeys.some(key => matchesCullFilterKey(analysis, key))
-        );
-      })
-      .map(photo => photo.photoId);
-    if (photoIds.length > 0) {
-      sections.push({key: 'other', title: 'Other matching photos', photoIds});
-    }
+        photoIds,
+      };
+    },
+  );
+  if (layout.otherIds.length > 0) {
+    sections.push({
+      key: 'other',
+      title: 'Other matching photos',
+      photoIds: layout.otherIds,
+    });
   }
-
-  return {
-    sections,
-    photoIds: sections.flatMap(section => section.photoIds),
-    groupCount,
-  };
+  return sections;
 }
