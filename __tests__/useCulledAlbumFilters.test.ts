@@ -234,8 +234,6 @@ describe('useCulledAlbumFilters Similar Shots', () => {
     }));
     const { filters: f, picked } = hook.result.current;
     expect(picked.map(p => p.photoId)).toEqual(['a', 'c', 'd']);
-    // N equals the sidebar "Picked for Upload" count.
-    expect(picked.length).toBe(f.selectedCount);
     expect(f.hasActiveFilter).toBe(Object.keys(on).length > 0);
     if (on.closedEyes) {
       expect(f.gridView.photos.map(p => p.photoId)).not.toEqual(
@@ -250,6 +248,25 @@ describe('useCulledAlbumFilters Similar Shots', () => {
     hook.rerender();
     expect(hook.result.current.picked.map(p => p.photoId)).toEqual(['a', 'd']);
     expect(hook.result.current.filters.activeFilters).toBe(f.activeFilters);
+    hook.unmount();
+  });
+
+  it('keeps gridView.sections identity when a pick leaves header text unchanged', () => {
+    const hook = setup(GROUPS, { duplicated: true });
+    const before = hook.result.current.gridView.sections;
+    expect(before).toBeDefined();
+    // d is outside every group: no header text changes.
+    mockPhotos = mockPhotos.map(p =>
+      p.photoId === 'd' ? { ...p, selected: true } : p,
+    );
+    hook.rerender();
+    expect(hook.result.current.gridView.sections).toBe(before);
+    // a is in the group: its "N picked" subtitle changes.
+    mockPhotos = mockPhotos.map(p =>
+      p.photoId === 'a' ? { ...p, selected: true } : p,
+    );
+    hook.rerender();
+    expect(hook.result.current.gridView.sections).not.toBe(before);
     hook.unmount();
   });
 

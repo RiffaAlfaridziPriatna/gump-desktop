@@ -27,4 +27,12 @@ describe('derivePickedSets', () => {
     expect(picked.map(p => p.photoId)).toEqual(['a', 'b', 'c']);
     expect(pending.map(p => p.photoId)).toEqual(['a', 'c']);
   });
+
+  it('pending is empty when every picked photo is already uploaded', () => {
+    const {picked, pending} = derivePickedSets([
+      photo('a', {serverUploadStatus: 'uploaded'}),
+    ]);
+    expect(picked).toHaveLength(1);
+    expect(pending).toHaveLength(0);
+  });
 });

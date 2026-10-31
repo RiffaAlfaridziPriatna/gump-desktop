@@ -577,7 +577,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
   const sidebarActionProps = {
     onUploadSelected: () => {
-      if (actionCount === 0) {
+      if (pendingUploadPhotos.length === 0 || cullingBusy) {
         return;
       }
       uploadModalDismissedRef.current = false;
@@ -588,7 +588,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     onExport: handleOpenExport,
     onApplyLook: handleOpenApplyLook,
     uploaded: cullingHasUploads,
-    uploadDisabled: actionCount === 0 || cullingBusy,
+    uploadDisabled: pendingUploadPhotos.length === 0 || cullingBusy,
     uploadIncludesHidden: hasActiveFilter,
     addPhotosDisabled: cullingBusy,
     exportDisabled: exportPhotoCount === 0,

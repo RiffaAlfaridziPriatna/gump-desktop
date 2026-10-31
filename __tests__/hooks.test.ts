@@ -90,7 +90,6 @@ describe('useCulledAlbumFilters', () => {
     expect(hook.result.current.filteredPhotos.map(photo => photo.photoId)).toEqual([
       'keep',
     ]);
-    expect(hook.result.current.selectedCount).toBe(1);
     expect(hook.result.current.filterCounts.blurred).toBe(1);
     hook.unmount();
   });

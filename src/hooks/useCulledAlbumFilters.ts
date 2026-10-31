@@ -133,13 +133,6 @@ export function useCulledAlbumFilters(
     [filteredPhotos, sections, getSimilarShotCount],
   );
 
-  const selectedCount = useMemo(
-    () =>
-      stats?.mySelections ??
-      gridPhotos.filter(photo => photo.analysis?.selected).length,
-    [gridPhotos, stats],
-  );
-
   const hasActiveFilter =
     selectionFilter !== null ||
     starRatingFilter.length > 0 ||
@@ -193,7 +186,6 @@ export function useCulledAlbumFilters(
     filteredPhotos,
     gridView,
     filterCounts,
-    selectedCount,
     hasActiveFilter,
     toggleFilter,
     setSelectionFilter,
