@@ -11,7 +11,7 @@ todos:
     status: completed
   - id: s3d
     content: Grid section rows (group header row support)
-    status: pending
+    status: completed
   - id: s3e
     content: Similar Shots filter renders grouped view
     status: pending
@@ -20,7 +20,7 @@ todos:
     status: pending
   - id: s3g
     content: Viewer similar-shots strip
-    status: pending
+    status: completed
 isProject: false
 ---
 
