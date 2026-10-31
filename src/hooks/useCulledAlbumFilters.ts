@@ -12,11 +12,13 @@ import {
   buildSimilarShotsLayout,
   toSimilarShotsSections,
   countGroupedPhotos,
+  reuseSections,
+  type SimilarShotsViewSection,
 } from '@lib/culling/similarShotsView';
 import {useSimilarShotGroups} from '@hooks/useSimilarShotGroups';
 import {CulledAlbumGridPhoto} from '@components/culling/CulledAlbumPhotoGrid';
 import {APIResponse} from '@services/api';
-import {useCallback, useMemo, useState} from 'react';
+import {useCallback, useMemo, useRef, useState} from 'react';
 
 type FilterKey = CullFilterKey;
 
@@ -100,10 +102,18 @@ export function useCulledAlbumFilters(
   ]);
 
   const filteredPhotos = layout ? layout.photos : flatPhotos;
+  // summaryFor changes on every photo write; keep sections (and the grid's
+  // renderRow) stable unless the header text or structure really changed.
+  const sectionsRef = useRef<SimilarShotsViewSection[] | undefined>(undefined);
   const sections = useMemo(
-    () => (layout ? toSimilarShotsSections(layout, summaryFor) : undefined),
+    () =>
+      reuseSections(
+        sectionsRef.current,
+        layout ? toSimilarShotsSections(layout, summaryFor) : undefined,
+      ),
     [layout, summaryFor],
   );
+  sectionsRef.current = sections;
   // Badge only in the flat grid; the grouped view shows the count in its header.
   // orderedGroups is already live-filtered, so its length equals summaryFor's
   // shotCount, but stays stable across pick toggles (summaryFor does not).

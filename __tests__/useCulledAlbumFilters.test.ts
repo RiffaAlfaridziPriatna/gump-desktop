@@ -133,6 +133,23 @@ describe('useCulledAlbumFilters Similar Shots', () => {
     hook.unmount();
   });
 
+  it('keeps sections identity across a photo write that changes no pick or membership', () => {
+    const hook = setup(GROUPS, { duplicated: true });
+    const before = hook.result.current.gridView.sections;
+    mockPhotos = mockPhotos.map(photo => ({ ...photo }));
+    act(() => hook.rerender());
+    expect(hook.result.current.gridView.sections).toBe(before);
+    mockPhotos = mockPhotos.map(photo =>
+      photo.photoId === 'a' ? { ...photo, selected: true } : { ...photo },
+    );
+    act(() => hook.rerender());
+    expect(hook.result.current.gridView.sections).not.toBe(before);
+    expect(hook.result.current.gridView.sections?.[0].subtitle).toBe(
+      '3 shots · 2 picked',
+    );
+    hook.unmount();
+  });
+
   it('hides a group with no matching member', () => {
     const hook = setup(GROUPS, { duplicated: true, maybe: true });
     expect(hook.result.current.gridView.sections).toEqual([]);

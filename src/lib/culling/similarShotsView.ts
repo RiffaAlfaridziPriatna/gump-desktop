@@ -145,3 +145,27 @@ export function toSimilarShotsSections(
   }
   return sections;
 }
+
+/** Previous array when nothing visible changed, so memoized consumers keep identity. */
+export function reuseSections(
+  prev: SimilarShotsViewSection[] | undefined,
+  next: SimilarShotsViewSection[] | undefined,
+): SimilarShotsViewSection[] | undefined {
+  if (!prev || !next) {
+    return next;
+  }
+  const same =
+    prev.length === next.length &&
+    prev.every((section, i) => {
+      const other = next[i];
+      return (
+        section.key === other.key &&
+        section.title === other.title &&
+        section.subtitle === other.subtitle &&
+        section.isGroup === other.isGroup &&
+        section.photoIds.length === other.photoIds.length &&
+        section.photoIds.every((id, j) => id === other.photoIds[j])
+      );
+    });
+  return same ? prev : next;
+}
