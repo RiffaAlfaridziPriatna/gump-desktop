@@ -6,6 +6,7 @@ import {SimilarShotsStrip} from '@components/culling/SimilarShotsStrip';
 import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
 import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
+import {usePhotoNavigation} from '@hooks/usePhotoNavigation';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
@@ -438,14 +439,9 @@ export default function CulledAlbumPhotoDetailScreen({
     await cullingEngine.updateStarRating(albumId, photoId, nextRating);
   }
 
-  const currentPhotoIndex = useMemo(
-    () => navigationPhotoIds.indexOf(photoId),
-    [navigationPhotoIds, photoId],
-  );
-  const canGoPrev = currentPhotoIndex > 0;
-  const canGoNext =
-    currentPhotoIndex >= 0 &&
-    currentPhotoIndex < navigationPhotoIds.length - 1;
+  const {prevId, nextId} = usePhotoNavigation(navigationPhotoIds, photoId);
+  const canGoPrev = prevId !== undefined;
+  const canGoNext = nextId !== undefined;
 
   const goToPhoto = useCallback(
     (targetPhotoId: string | undefined) => {
@@ -465,18 +461,12 @@ export default function CulledAlbumPhotoDetailScreen({
   );
 
   const goToPreviousPhoto = useCallback(() => {
-    if (!canGoPrev) {
-      return;
-    }
-    goToPhoto(navigationPhotoIds[currentPhotoIndex - 1]);
-  }, [canGoPrev, currentPhotoIndex, goToPhoto, navigationPhotoIds]);
+    goToPhoto(prevId);
+  }, [goToPhoto, prevId]);
 
   const goToNextPhoto = useCallback(() => {
-    if (!canGoNext) {
-      return;
-    }
-    goToPhoto(navigationPhotoIds[currentPhotoIndex + 1]);
-  }, [canGoNext, currentPhotoIndex, goToPhoto, navigationPhotoIds]);
+    goToPhoto(nextId);
+  }, [goToPhoto, nextId]);
 
   const handleKeyFacePress = useCallback((index: number) => {
     setZoomFaceIndex(current => (current === index ? null : index));
