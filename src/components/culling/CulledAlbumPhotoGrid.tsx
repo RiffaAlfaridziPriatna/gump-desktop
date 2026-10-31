@@ -17,10 +17,7 @@ import {
 import {isUsableThumbnailUri} from '@lib/storage/localStorage';
 import type {LookId} from '@lib/look/types';
 import {APIResponse} from '@services/api';
-import {
-  CulledAlbumPhotoCard,
-  CulledAlbumPhotoCardProps,
-} from '@components/culling/CulledAlbumPhotoCard';
+import type {CulledAlbumPhotoCardProps} from '@components/culling/CulledAlbumPhotoCard';
 import {
   CulledAlbumImageLoadContext,
   createCulledAlbumImageLoadStore,
@@ -34,15 +31,14 @@ import {
   sectionsLayoutKey,
   type CulledAlbumGridSection,
   type GridRow,
-  type PhotoGridRow,
 } from '@components/culling/culledAlbumGridRows';
+import {CulledAlbumPhotoRowView, GRID_GAP} from '@components/culling/CulledAlbumPhotoRowView';
 import {SimilarShotGroupHeader} from '@components/culling/SimilarShotGroupHeader';
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
-  memo,
 } from 'react';
 import {
   FlatList,
@@ -89,7 +85,6 @@ type CulledAlbumPhotoGridProps = {
 
 const COLUMNS = GRID_COLUMNS;
 const THUMBNAIL_ASPECT_RATIO = 3 / 2;
-const GRID_GAP = 16;
 const CARD_INTERNAL_GAP = 8;
 const CARD_INFO_ROW_HEIGHT = 28;
 const VISIBLE_PADDING = SCROLL_GRID_VISIBLE_PADDING;
@@ -105,61 +100,6 @@ const IDLE_IMAGE_LOAD_PAD_ROWS = 2;
 const BUSY_IMAGE_LOAD_PAD_ROWS = 1;
 /** Above this, shrink idle FlatList window (heavy interactive cards). */
 const LARGE_ALBUM_PHOTO_THRESHOLD = 120;
-
-type CulledAlbumPhotoRowViewProps = Omit<CulledAlbumPhotoCardProps, 'photoId' | 'similarShotCount'> &
-  Pick<CulledAlbumPhotoGridProps, 'getSimilarShotCount'> & {row: PhotoGridRow};
-
-const CulledAlbumPhotoRowView = memo(
-  function CulledAlbumPhotoRowView({
-    row,
-    albumId,
-    cardWidth,
-    canDeletePhoto,
-    isMobileLayout,
-    deferHeavyMediaWork,
-    getSimilarShotCount,
-    onOpenDetail,
-    onToggleSelection,
-    onDeletePress,
-    onStarPress,
-  }: CulledAlbumPhotoRowViewProps) {
-    return (
-      <View style={[styles.row, {marginBottom: GRID_GAP, gap: GRID_GAP}]}>
-        {row.cells.map(cell => (
-          <CulledAlbumPhotoCard
-            key={cell.photoId}
-            albumId={albumId}
-            photoId={cell.photoId}
-            cardWidth={cardWidth}
-            canDeletePhoto={canDeletePhoto}
-            isMobileLayout={isMobileLayout}
-            deferHeavyMediaWork={deferHeavyMediaWork}
-            similarShotCount={getSimilarShotCount?.(cell.photoId)}
-            onOpenDetail={onOpenDetail}
-            onToggleSelection={onToggleSelection}
-            onDeletePress={onDeletePress}
-            onStarPress={onStarPress}
-          />
-        ))}
-        {row.cells.length < COLUMNS &&
-          Array.from({length: COLUMNS - row.cells.length}).map((_, fillerIndex) => (
-            <View
-              key={`filler-${row.rowIndex}-${fillerIndex}`}
-              style={{width: cardWidth}}
-            />
-          ))}
-      </View>
-    );
-  },
-  (prev, next) =>
-    prev.row === next.row &&
-    prev.albumId === next.albumId &&
-    prev.cardWidth === next.cardWidth &&
-    prev.canDeletePhoto === next.canDeletePhoto &&
-    prev.isMobileLayout === next.isMobileLayout &&
-    prev.deferHeavyMediaWork === next.deferHeavyMediaWork &&
-    prev.getSimilarShotCount === next.getSimilarShotCount,
-);
 
 function photoIdsNeedingThumbnail(
   albumId: string,
@@ -579,8 +519,5 @@ export function CulledAlbumPhotoGrid({
 const styles = StyleSheet.create({
   list: {
     flex: 1,
-  },
-  row: {
-    flexDirection: 'row',
   },
 });

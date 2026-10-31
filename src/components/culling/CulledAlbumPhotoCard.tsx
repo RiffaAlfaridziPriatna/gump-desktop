@@ -1,5 +1,5 @@
 import {CulledAlbumPhotoThumbnail} from '@components/culling/CulledAlbumPhotoThumbnail';
-import {SimilarShotsBadge} from '@components/culling/SimilarShotsBadge';
+import {CulledAlbumPhotoCardOverlay} from '@components/culling/CulledAlbumPhotoCardOverlay';
 import {Pressable} from '@components/ui';
 import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {
@@ -12,7 +12,6 @@ import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
 import {forwardRef, memo, useCallback, useRef, type MutableRefObject} from 'react';
 import {Image, StyleSheet, Text, View} from 'react-native';
-import IconTrash from '../../assets/images/icon_trash.svg';
 
 const STAR_INDICES = [0, 1, 2, 3, 4] as const;
 const STAR_SIZE = 16;
@@ -48,7 +47,11 @@ export type CulledAlbumPhotoCardProps = {
   onOpenDetail: (photoId: string) => void;
   onToggleSelection: (photoId: string, selected: boolean) => void;
   onDeletePress: (photoId: string, fileName: string) => void;
-  onStarPress: (photoId: string, starIndex: number, currentRating: number) => void;
+  onStarPress: (
+    photoId: string,
+    starIndex: number,
+    currentRating: number,
+  ) => void;
 };
 
 type StarRatingRowProps = {
@@ -182,7 +185,14 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
       }
       return false;
     },
-    [analysis, disabled, handleToggleSelection, onStarPress, photoId, starRating],
+    [
+      analysis,
+      disabled,
+      handleToggleSelection,
+      onStarPress,
+      photoId,
+      starRating,
+    ],
   );
 
   const handleCardPress = useCallback(
@@ -262,21 +272,14 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
             thumbnailHeight={file.thumbnailHeight}
             deferHeavyMediaWork={deferHeavyMediaWork}
           />
-          {showDeleteButton && (
-            <Pressable
-              style={styles.deletePhotoButton}
-              onPress={event => {
-                event.stopPropagation();
-                onDeletePress(photoId, fileName);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`Delete ${fileName}`}>
-              <IconTrash width={24} height={24} color={colors.text} />
-            </Pressable>
-          )}
-          {similarShotCount != null && (
-            <SimilarShotsBadge count={similarShotCount} onPress={handleOpenDetail} />
-          )}
+          <CulledAlbumPhotoCardOverlay
+            photoId={photoId}
+            fileName={fileName}
+            showDeleteButton={showDeleteButton}
+            similarShotCount={similarShotCount}
+            onDeletePress={onDeletePress}
+            onOpenDetail={handleOpenDetail}
+          />
         </View>
         <View style={styles.photoInfoContainer}>
           <Text style={styles.fileName} numberOfLines={1}>
@@ -325,17 +328,6 @@ const styles = StyleSheet.create({
   },
   thumbnailWrapper: {
     position: 'relative',
-  },
-  deletePhotoButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 36,
-    height: 36,
-    borderRadius: 36,
-    backgroundColor: colors.background + '66',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   photoInfoContainer: {
     flexDirection: 'row',
