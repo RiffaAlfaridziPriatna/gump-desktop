@@ -6,9 +6,9 @@ function setup(ids: string[], photoId: string) {
   const hook = renderHook(() => usePhotoNavigation(props.ids, props.photoId));
   return {
     hook,
-    go(photoId: string, ids = props.ids) {
-      props.photoId = photoId;
-      props.ids = ids;
+    go(nextPhotoId: string, nextIds = props.ids) {
+      props.photoId = nextPhotoId;
+      props.ids = nextIds;
       hook.rerender();
     },
   };
