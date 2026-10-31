@@ -3,7 +3,7 @@ import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShel
 import {
   CulledAlbumDetailSidebar,
 } from '@components/culling/CulledAlbumDetailSidebar';
-import {CulledAlbumPhotoGrid} from '@components/culling/CulledAlbumPhotoGrid';
+import {CulledAlbumGridWithSummary} from '@components/culling/CulledAlbumGridWithSummary';
 import {CulledAlbumDetailHeader} from '@components/culling/CulledAlbumDetailHeader';
 import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
 import {ApplyLookModal} from '@components/modals/ApplyLookModal';
@@ -280,7 +280,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     activeFilters,
     selectionFilter,
     starRatingFilter,
-    filteredPhotos,
+    gridView,
     actionPhotos,
     filterCounts,
     selectedCount,
@@ -288,7 +288,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     toggleFilter,
     setSelectionFilter,
     setStarRatingFilter,
-  } = useCulledAlbumFilters(gridPhotos, stats, lastCullFilters);
+  } = useCulledAlbumFilters(gridPhotos, stats, lastCullFilters, albumId);
 
   const pendingUploadPhotos = useMemo(
     () =>
@@ -309,11 +309,11 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       navigation.navigate('CulledAlbumPhotoDetail', {
         albumId,
         photoId,
-        photoIds: filteredPhotos.map(photo => photo.photoId),
+        photoIds: gridView.photos.map(photo => photo.photoId),
         ...(typeof faceIndex === 'number' ? {faceIndex} : {}),
       });
     },
-    [albumId, filteredPhotos, navigation],
+    [albumId, gridView.photos, navigation],
   );
 
   const handleKeyFacePress = useCallback(
@@ -732,14 +732,14 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               }
               setMainContentWidth(width);
             }}>
-            {filteredPhotos.length === 0 ? (
+            {gridView.photos.length === 0 ? (
               <View style={styles.emptyState}>
                 <IconNoPhoto width={40} height={40} />
                 <Text style={styles.emptyStateText}>No photos to show.</Text>
               </View>
             ) : (
-              <CulledAlbumPhotoGrid
-                photos={filteredPhotos}
+              <CulledAlbumGridWithSummary
+                {...gridView}
                 albumId={albumId}
                 containerWidth={layoutWidth}
                 isMobileLayout={isMobileLayout}

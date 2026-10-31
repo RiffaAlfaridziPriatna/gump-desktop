@@ -37,7 +37,7 @@ const FILTER_LABELS: Record<CullFilterKey, string> = {
   maybe: 'Maybe',
   blurred: 'Blurred',
   closedEyes: 'Closed Eyes',
-  duplicated: 'Duplicated',
+  duplicated: 'Similar Shots',
 };
 
 const KEY_FACE_SIZE = 64;

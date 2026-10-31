@@ -8,6 +8,11 @@ import {
   matchesCullFilterKey,
   normalizeCullFilters,
 } from '@lib/culling/cullingUtil';
+import {
+  buildSimilarShotsView,
+  countGroupedPhotos,
+} from '@lib/culling/similarShotsView';
+import {useSimilarShotGroups} from '@hooks/useSimilarShotGroups';
 import {CulledAlbumGridPhoto} from '@components/culling/CulledAlbumPhotoGrid';
 import {APIResponse} from '@services/api';
 import {useCallback, useMemo, useState} from 'react';
@@ -25,8 +30,10 @@ const FILTER_KEYS = Object.keys({
 export function useCulledAlbumFilters(
   gridPhotos: CulledAlbumGridPhoto[],
   stats: APIResponse.CullingStats | null,
-  savedFilters?: Partial<Record<FilterKey, boolean>> | null,
+  savedFilters: Partial<Record<FilterKey, boolean>> | null | undefined,
+  albumId: string,
 ) {
+  const {orderedGroups, summaryFor} = useSimilarShotGroups(albumId);
   const [activeFilters, setActiveFilters] = useState<
     Record<FilterKey, boolean>
   >(() => normalizeCullFilters(savedFilters));
@@ -43,7 +50,19 @@ export function useCulledAlbumFilters(
     [selectionFilter, starRatingFilter],
   );
 
-  const filteredPhotos = useMemo(() => {
+  const similarView = useMemo(
+    () =>
+      buildSimilarShotsView({
+        photos: gridPhotos,
+        orderedGroups,
+        activeFilters,
+        gridFilters,
+        summaryFor,
+      }),
+    [activeFilters, gridFilters, gridPhotos, orderedGroups, summaryFor],
+  );
+
+  const flatPhotos = useMemo(() => {
     const enabledCullFilters = Object.entries(activeFilters).filter(
       ([, enabled]) => enabled,
     ) as Array<[FilterKey, boolean]>;
@@ -75,6 +94,19 @@ export function useCulledAlbumFilters(
     starRatingFilter,
   ]);
 
+  const filteredPhotos = useMemo(() => {
+    if (!similarView) {
+      return flatPhotos;
+    }
+    const byId = new Map(gridPhotos.map(photo => [photo.photoId, photo]));
+    return similarView.photoIds.flatMap(id => byId.get(id) ?? []);
+  }, [flatPhotos, gridPhotos, similarView]);
+  const sections = similarView?.sections;
+  const gridView = useMemo(
+    () => ({photos: filteredPhotos, sections}),
+    [filteredPhotos, sections],
+  );
+
   const selectedCount = useMemo(
     () =>
       stats?.mySelections ??
@@ -84,6 +116,11 @@ export function useCulledAlbumFilters(
 
   const actionCount = filteredPhotos.length;
 
+  const groupedCount = useMemo(
+    () => countGroupedPhotos(orderedGroups),
+    [orderedGroups],
+  );
+
   const filterCounts = useMemo(() => {
     if (stats) {
       return {
@@ -91,7 +128,7 @@ export function useCulledAlbumFilters(
         maybe: stats.maybe,
         blurred: stats.blurred,
         closedEyes: stats.closedEyes,
-        duplicated: stats.duplicated,
+        duplicated: groupedCount || stats.duplicated,
       } as Record<FilterKey, number>;
     }
 
@@ -110,8 +147,11 @@ export function useCulledAlbumFilters(
       }
     }
 
+    if (groupedCount > 0) {
+      counts.duplicated = groupedCount;
+    }
     return counts;
-  }, [gridPhotos, stats]);
+  }, [gridPhotos, groupedCount, stats]);
 
   const toggleFilter = useCallback((key: FilterKey) => {
     setActiveFilters(current => ({...current, [key]: !current[key]}));
@@ -122,6 +162,7 @@ export function useCulledAlbumFilters(
     selectionFilter,
     starRatingFilter,
     filteredPhotos,
+    gridView,
     actionPhotos: filteredPhotos,
     filterCounts,
     selectedCount,
