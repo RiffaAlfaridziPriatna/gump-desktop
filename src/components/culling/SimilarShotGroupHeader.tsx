@@ -1,11 +1,12 @@
 import {colors} from '@lib/ui/colors';
 import {sansBoldStyle} from '@lib/ui/typography';
-import {StyleSheet, Text, View} from 'react-native';
-import IconStack from '../../assets/images/icon_stack.svg';
+import {Image, StyleSheet, Text, View} from 'react-native';
 import {
   HEADER_ROW_HEIGHT,
   type CulledAlbumGridSection,
 } from './culledAlbumGridRows';
+
+const ICON_LAYERS = require('../../assets/images/icon_layers.png');
 
 type SimilarShotGroupHeaderProps = {
   section?: Pick<CulledAlbumGridSection, 'title' | 'subtitle' | 'isGroup'>;
@@ -23,7 +24,7 @@ export function SimilarShotGroupHeader({section}: SimilarShotGroupHeaderProps) {
           accessible={false}
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants">
-          <IconStack width={20} height={20} color={colors.white} />
+          <Image source={ICON_LAYERS} style={styles.icon} />
         </View>
       )}
       <Text
@@ -46,6 +47,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingBottom: 8,
+  },
+  icon: {
+    width: 20,
+    height: 20,
   },
   title: {
     ...sansBoldStyle,

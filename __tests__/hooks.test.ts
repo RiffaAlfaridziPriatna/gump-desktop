@@ -87,7 +87,7 @@ describe('useCulledAlbumFilters', () => {
       }, undefined, ALBUM_ID),
     );
 
-    expect(hook.result.current.filteredPhotos.map(photo => photo.photoId)).toEqual([
+    expect(hook.result.current.gridView.photos.map(photo => photo.photoId)).toEqual([
       'keep',
     ]);
     expect(hook.result.current.filterCounts.blurred).toBe(1);
@@ -101,7 +101,7 @@ describe('useCulledAlbumFilters', () => {
       hook.result.current.toggleFilter('blurred');
     });
 
-    expect(hook.result.current.filteredPhotos.map(photo => photo.photoId)).toEqual([
+    expect(hook.result.current.gridView.photos.map(photo => photo.photoId)).toEqual([
       'keep',
       'blur',
     ]);
@@ -116,7 +116,7 @@ describe('useCulledAlbumFilters', () => {
       hook.result.current.setSelectionFilter('unselected');
     });
 
-    expect(hook.result.current.filteredPhotos.map(photo => photo.photoId)).toEqual(
+    expect(hook.result.current.gridView.photos.map(photo => photo.photoId)).toEqual(
       [],
     );
 
@@ -126,7 +126,7 @@ describe('useCulledAlbumFilters', () => {
       hook.result.current.toggleFilter('blurred');
     });
 
-    expect(hook.result.current.filteredPhotos.map(photo => photo.photoId)).toEqual([
+    expect(hook.result.current.gridView.photos.map(photo => photo.photoId)).toEqual([
       'blur',
     ]);
     hook.unmount();

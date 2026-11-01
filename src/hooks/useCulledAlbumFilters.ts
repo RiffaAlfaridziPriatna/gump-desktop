@@ -183,7 +183,6 @@ export function useCulledAlbumFilters(
     activeFilters,
     selectionFilter,
     starRatingFilter,
-    filteredPhotos,
     gridView,
     filterCounts,
     hasActiveFilter,

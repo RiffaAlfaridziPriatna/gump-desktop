@@ -1,15 +1,10 @@
+import type {SimilarShotsViewSection} from '@lib/culling/similarShotsView';
+
 export const GRID_COLUMNS = 3;
 /** Fixed height of a section header row (includes its bottom gap). */
 export const HEADER_ROW_HEIGHT = 40;
 
-export type CulledAlbumGridSection = {
-  key: string;
-  title: string;
-  subtitle?: string;
-  /** Renders the stack icon (group header); omit for the plain header. */
-  isGroup?: boolean;
-  photoIds: string[];
-};
+export type CulledAlbumGridSection = SimilarShotsViewSection;
 
 export type GridListItem = {
   photoId: string;

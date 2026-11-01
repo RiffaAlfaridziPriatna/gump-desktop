@@ -18,6 +18,7 @@ export type SimilarShotsViewSection = {
   key: string;
   title: string;
   subtitle?: string;
+  /** Renders the layers icon (group header); omit for the plain header. */
   isGroup?: boolean;
   photoIds: string[];
 };
