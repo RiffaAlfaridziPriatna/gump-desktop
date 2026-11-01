@@ -4,6 +4,7 @@ import {UploadPickedButton} from '../../src/components/culling/UploadPickedButto
 import {getAllByRole, render} from '../helpers/render';
 
 const NOTE = 'Upload includes picked photos outside this view.';
+const PICK_HINT = 'Pick photos using the circle beside each filename.';
 
 function texts(renderer: ReturnType<typeof render>['renderer']) {
   return renderer.root.findAllByType(Text).map(t => t.props.children);
@@ -28,13 +29,13 @@ describe('UploadPickedButton', () => {
     expect(texts(renderer)).toEqual(['Upload Picked (148)', NOTE]);
   });
 
-  it('is disabled and unnumbered at zero picked', () => {
+  it('is disabled with a pick hint at zero picked', () => {
     const {renderer} = render(
-      <UploadPickedButton {...base} pickedCount={0} disabled />,
+      <UploadPickedButton {...base} pickedCount={0} disabled includesHidden />,
     );
     const [button] = getAllByRole(renderer, 'button');
     expect(button?.props.accessibilityState).toEqual({disabled: true});
-    expect(texts(renderer)).toEqual(['Upload Picked']);
+    expect(texts(renderer)).toEqual(['Upload Picked (0)', PICK_HINT]);
   });
 
   it('presses through when enabled', () => {
@@ -54,7 +55,7 @@ describe('UploadPickedButton', () => {
     const plain = render(<UploadPickedButton {...base} pickedCount={0} disabled />);
     const [zero] = getAllByRole(plain.renderer, 'button');
     expect(zero?.props.accessibilityLabel).toBe('Upload picked photos');
-    expect(zero?.props.accessibilityHint).toBeUndefined();
+    expect(zero?.props.accessibilityHint).toBe(PICK_HINT);
     const done = render(<UploadPickedButton {...base} uploaded includesHidden />);
     expect(getAllByRole(done.renderer, 'button')[0]?.props.accessibilityLabel).toBe(
       'Uploaded',

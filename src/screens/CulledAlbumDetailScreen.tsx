@@ -4,6 +4,7 @@ import {
   CulledAlbumDetailSidebar,
 } from '@components/culling/CulledAlbumDetailSidebar';
 import {CulledAlbumGridWithSummary} from '@components/culling/CulledAlbumGridWithSummary';
+import {PICK_PHOTOS_HINT} from '@components/culling/UploadPickedButton';
 import {CulledAlbumDetailHeader} from '@components/culling/CulledAlbumDetailHeader';
 import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
 import {ApplyLookModal} from '@components/modals/ApplyLookModal';
@@ -43,6 +44,7 @@ import {
   isServerUploadBatchFinished,
 } from '@lib/culledAlbum/serverUploadProgress';
 import {getPhotoById, saveLastCullFilters} from '@lib/culledAlbum/store';
+import {photoDetailParams} from '@lib/culledAlbum/photoDetailParams';
 import {photoKey} from '@lib/culledAlbum/photoStateStore';
 import {bumpPhotoVersion} from '@lib/culledAlbum/photoVersionStore';
 import {captureAppEvent} from '@lib/observability/posthogClient';
@@ -300,12 +302,15 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         preloadImage(resolveDetailDisplayUri(file)).catch(() => undefined);
       }
       photoDetailReturnIdRef.current = photoId;
-      navigation.navigate('CulledAlbumPhotoDetail', {
-        albumId,
-        photoId,
-        photoIds: gridView.photos.map(photo => photo.photoId),
-        ...(typeof faceIndex === 'number' ? {faceIndex} : {}),
-      });
+      navigation.navigate(
+        'CulledAlbumPhotoDetail',
+        photoDetailParams(
+          albumId,
+          photoId,
+          gridView.photos.map(photo => photo.photoId),
+          faceIndex,
+        ),
+      );
     },
     [albumId, gridView.photos, navigation],
   );
@@ -718,8 +723,14 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             }}>
             {gridView.photos.length === 0 ? (
               <View style={styles.emptyState}>
-                <IconNoPhoto width={40} height={40} />
-                <Text style={styles.emptyStateText}>No photos to show.</Text>
+                {selectionFilter !== 'selected' && (
+                  <IconNoPhoto width={40} height={40} />
+                )}
+                <Text style={styles.emptyStateText}>
+                  {selectionFilter === 'selected'
+                    ? PICK_PHOTOS_HINT
+                    : 'No photos to show.'}
+                </Text>
               </View>
             ) : (
               <CulledAlbumGridWithSummary

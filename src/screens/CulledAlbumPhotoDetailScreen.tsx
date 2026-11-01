@@ -8,6 +8,7 @@ import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {usePhotoNavigation} from '@hooks/usePhotoNavigation';
 import {cullingEngine} from '@lib/culling/cullingEngine';
+import {useTogglePick} from '@hooks/useTogglePick';
 import {reportError} from '@lib/observability/reportError';
 import {toCullingPhoto, isCulledPhotoDisabled} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
@@ -424,11 +425,7 @@ export default function CulledAlbumPhotoDetailScreen({
     );
   }
 
-  const toggleMemberSelection = useCallback(
-    (memberId: string, selected: boolean) =>
-      cullingEngine.updateSelection(albumId, memberId, {selected}),
-    [albumId],
-  );
+  const toggleMemberSelection = useTogglePick(albumId);
 
   async function updateStarRating(starIndex: number) {
     if (!analysis || disabled) {

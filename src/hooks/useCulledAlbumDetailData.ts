@@ -1,5 +1,6 @@
 import {useCulledAlbumPhotosState, useCulledAlbumStore} from '@context/culledAlbum';
 import {cullingEngine} from '@lib/culling/cullingEngine';
+import {useTogglePick} from '@hooks/useTogglePick';
 import {reportError} from '@lib/observability/reportError';
 import {orderPhotosForCulling} from '@lib/culling/cullingUtil';
 import {toCullingPhoto} from '@lib/culledAlbum/types';
@@ -67,18 +68,17 @@ export function useCulledAlbumDetailData(
 
   const analyzedPhotoCount = analyzedPhotos.length;
 
+  const togglePick = useTogglePick(albumId);
   const toggleSelection = useCallback(
     async (photoId: string, selected: boolean) => {
-      await cullingEngine
-        .updateSelection(albumId, photoId, {selected})
-        .catch(err =>
-          reportError(err, {
-            source: 'culled_album_grid',
-            operation: 'toggle_pick',
-          }),
-        );
+      await togglePick(photoId, selected).catch(err =>
+        reportError(err, {
+          source: 'culled_album_grid',
+          operation: 'toggle_pick',
+        }),
+      );
     },
-    [albumId],
+    [togglePick],
   );
 
   const updateStarRating = useCallback(

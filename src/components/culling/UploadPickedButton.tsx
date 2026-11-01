@@ -8,6 +8,8 @@ import IconInfo from '../../assets/images/icon_info.svg';
 import IconUpload from '../../assets/images/icon_upload.svg';
 
 const NOTE_HINT = 'Includes picked photos outside this view.';
+export const PICK_PHOTOS_HINT =
+  'Pick photos using the circle beside each filename.';
 
 type UploadPickedButtonProps = {
   pickedCount: number;
@@ -24,18 +26,22 @@ export function UploadPickedButton({
   includesHidden,
   onPress,
 }: UploadPickedButtonProps) {
-  const label = uploaded
-    ? 'Uploaded'
-    : pickedCount > 0
-      ? `Upload Picked (${pickedCount})`
-      : 'Upload Picked';
+  const label = uploaded ? 'Uploaded' : `Upload Picked (${pickedCount})`;
 
   const a11yLabel = uploaded
     ? 'Uploaded'
     : pickedCount > 0
       ? `Upload ${pickedCount} picked photos`
       : 'Upload picked photos';
-  const showNote = includesHidden && !uploaded;
+  const note = uploaded
+    ? null
+    : pickedCount === 0
+      ? PICK_PHOTOS_HINT
+      : includesHidden
+        ? 'Upload includes picked photos outside this view.'
+        : null;
+  const hint =
+    note === null ? undefined : pickedCount === 0 ? note : NOTE_HINT;
 
   return (
     <>
@@ -49,7 +55,7 @@ export function UploadPickedButton({
         ]}
         accessibilityRole="button"
         accessibilityLabel={a11yLabel}
-        accessibilityHint={showNote ? NOTE_HINT : undefined}
+        accessibilityHint={hint}
         accessibilityState={{disabled: uploaded || disabled}}>
         {uploaded ? (
           <IconCheckCircle width={24} height={24} color={colors.accent} />
@@ -60,16 +66,14 @@ export function UploadPickedButton({
           {label}
         </Text>
       </Pressable>
-      {showNote && (
+      {note !== null && (
         <View style={styles.note}>
           <View
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants">
             <IconInfo width={16} height={16} color={colors.textMuted} />
           </View>
-          <Text style={styles.noteText}>
-            Upload includes picked photos outside this view.
-          </Text>
+          <Text style={styles.noteText}>{note}</Text>
         </View>
       )}
     </>
