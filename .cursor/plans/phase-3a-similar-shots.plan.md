@@ -81,10 +81,10 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
 - **Rules:** group "n" in "Group n" is the 1-based position after ordering (inferred, confirm). `groupId` is not shown; it changes when the best photo changes (`dup-<bestId>-<size>`).
 - **Mirror:** `patchDuplicateGroupsAfterDelete` in src/lib/culling/deletePhotoDerivedState.ts (pure function over groups + `getPhoto`), tests in __tests__/deletePhotoDerivedState.test.ts.
 - **Acceptance:**
-  - [ ] Stale ids (deleted photos) are dropped; a group with < 2 live members is not returned
-  - [ ] Order is stable for equal `capturedAt` (file-name tiebreak)
-  - [ ] `pickedCount` counts `selected` only, independent of `bestPhotoId`
-  - [ ] Tests cover empty groups, undefined groups, stale ids, ordering, picked count, section building
+  - [x] Stale ids (deleted photos) are dropped; a group with < 2 live members is not returned
+  - [x] Order is stable for equal `capturedAt` (file-name tiebreak)
+  - [x] `pickedCount` counts `selected` only, independent of `bestPhotoId`
+  - [x] Tests cover empty groups, undefined groups, stale ids, ordering, picked count, section building
 - **Out of scope:** store access (s3b), UI.
 - **Gate:** none
 
@@ -97,8 +97,8 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
 - **Scope:** new `src/hooks/useSimilarShotGroups.ts`: selects `cullingDuplicateGroups` for one album from `culledAlbumStore` plus the grid photos the screen already has; returns memoized `{orderedGroups, groupIndexByPhotoId, summaryFor(groupIndex)}` from s3a.
 - **Mirror:** how CulledAlbumDetailScreen / sidebar read `cullingKeyFaces` from the album (inferred, confirm the exact selector during the slice).
 - **Acceptance:**
-  - [ ] Hook re-derives only when the groups reference or the photo list changes (test with a store fixture)
-  - [ ] Undefined groups returns empty results and `hasGroups: false`, no throw
+  - [x] Hook re-derives only when the groups reference or the photo list changes (test with a store fixture)
+  - [x] Undefined groups returns empty results and `hasGroups: false`, no throw
 - **Out of scope:** writing groups.
 - **Gate:** R (end of Data group)
 
@@ -113,12 +113,12 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
 - **Scope:** `CulledAlbumPhotoGrid` (588 lines) accepts optional sections `{title, photoIds}[]`. Move `GridRow` / `buildRows` out to new `src/components/culling/culledAlbumGridRows.ts` and add a header row kind; new `src/components/culling/SimilarShotGroupHeader.tsx` (stack icon + "Group n · x shots · y picked", and the plain "Other matching photos" header). Without sections the grid behaves as today.
 - **Mirror:** existing `buildRows` / row renderer in CulledAlbumPhotoGrid.tsx.
 - **Acceptance:**
-  - [ ] Flat grid output (no sections) is unchanged: same row keys, same windowing props
-  - [ ] Header rows never contain photo cells; a group never shares a row with another group
-  - [ ] CulledAlbumPhotoGrid.tsx line count does not grow
-  - [ ] Headers are announced as headers to screen readers
+  - [x] Flat grid output (no sections) is unchanged: same row keys, same windowing props
+  - [x] Header rows never contain photo cells; a group never shares a row with another group
+  - [x] CulledAlbumPhotoGrid.tsx line count does not grow
+  - [x] Headers are announced as headers to screen readers
 - **Out of scope:** deciding when sections are used (s3e).
-- **TODO (decided by user 2026-10-31):** `src/assets/images/icon_stack.svg` is hand-drawn; replace it with the Figma export (frame 12975:48189) before release.
+- **Done 2026-11-01:** group header uses the user-provided `src/assets/images/icon_layers.png`; the hand-drawn `icon_stack.svg` is removed.
 - **Gate:** A
 
 ### s3e. Similar Shots filter renders grouped view [W2, sequential]
@@ -139,10 +139,10 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
   - Group header "x shots · y picked" always counts the full live group, even when only some members are shown; same numbers as the viewer strip. The "Showing: … · M photos" line counts the shown photos.
 - **Mirror:** `matchesCulledAlbumGridFilters` + `useCulledAlbumFilters` filtering.
 - **Acceptance:**
-  - [ ] Filter tests in __tests__/culledAlbumPhotoFilters.test.ts or hooks.test.ts cover: Similar Shots alone, + Closed Eyes (only matching members shown, empty group hidden), + selection filter, empty result, missing groups fallback
-  - [ ] Sidebar count equals the number of photos shown with Similar Shots alone
-  - [ ] Group header picked count updates after toggling a pick, without re-running detection
-  - [ ] CulledAlbumDetailScreen.tsx and CulledAlbumDetailSidebar.tsx line counts do not grow
+  - [x] Filter tests in __tests__/culledAlbumPhotoFilters.test.ts or hooks.test.ts cover: Similar Shots alone, + Closed Eyes (only matching members shown, empty group hidden), + selection filter, empty result, missing groups fallback
+  - [x] Sidebar count equals the number of photos shown with Similar Shots alone
+  - [x] Group header picked count updates after toggling a pick, without re-running detection
+  - [x] CulledAlbumDetailScreen.tsx and CulledAlbumDetailSidebar.tsx line counts do not grow
 - **Out of scope:** card badge (s3f), viewer (s3g), AI Selection levels, Faces panel.
 - **Gate:** none
 
@@ -156,10 +156,10 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
 - **Rules (decided by user 2026-10-31):** badge on all group members; tap opens the viewer and does not change active filters.
 - **Placement (decided by user 2026-10-31):** the badge goes in the same chip row as the existing status chips ("Check eyes", "+1"), after them. The card has no such chips yet; user confirmed 2026-10-31 a chip row overlaid bottom-left on the thumbnail (SimilarShotsBadge.tsx), which later chips can join.
 - **Acceptance:**
-  - [ ] Every member of a live group shows the badge; count = live group size from s3b
-  - [ ] Tap opens the viewer for that photo; active filters unchanged
-  - [ ] Badge is a button with an accessible label
-  - [ ] No badge on albums without stored groups
+  - [x] Every member of a live group shows the badge; count = live group size from s3b
+  - [x] Tap opens the viewer for that photo; active filters unchanged (card test: open-without-select; __tests__/photoDetailParams.test.ts: viewer params carry only photo + grid order)
+  - [x] Badge is a button with an accessible label
+  - [x] No badge on albums without stored groups
 - **Out of scope:** collapsing groups in the main grid (not in Figma).
 - **Gate:** A, R (end of UI group)
 
@@ -172,9 +172,9 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
 - **Scope:** new `src/components/culling/SimilarShotsStrip.tsx`: "Similar shots · x photos · y picked", member thumbnails with pick toggle, AI recommended badge, current photo outlined; tap a thumbnail opens that photo. Hidden when the photo is in no group. CulledAlbumPhotoDetailScreen (927 lines) gets wiring only.
 - **Mirror:** `CulledAlbumPhotoThumbnail` and the existing pick toggle handler in CulledAlbumPhotoDetailScreen.
 - **Acceptance:**
-  - [ ] Pick toggle in the strip uses the existing selection action (same store write as "Pick for upload")
-  - [ ] Strip is keyboard reachable; thumbnails have accessible labels with file name and picked state
-  - [ ] CulledAlbumPhotoDetailScreen.tsx line count does not grow
+  - [x] Pick toggle in the strip uses the existing selection action (same store write as "Pick for upload") (grid and viewer/strip share `useTogglePick`; __tests__/useTogglePick.test.ts + useCulledAlbumDetailData.test.ts)
+  - [x] Strip is keyboard reachable; thumbnails have accessible labels with file name and picked state
+  - [x] CulledAlbumPhotoDetailScreen.tsx line count does not grow
 - **Out of scope:** Faces panel, AI markers.
 - **Gate:** A
 
@@ -194,11 +194,11 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
   - Existing per-photo upload eligibility (whatever `pendingUploadPhotos` filters out today, e.g. already uploaded) stays.
 - **Mirror:** the sidebar "Picked for Upload" count and its selector.
 - **Acceptance:**
-  - [ ] With any filter active (incl. Similar Shots), upload/export/Edit Photos sets equal the picked photos of the whole album; tests in __tests__/useCulledAlbumFilters.test.ts (or the new hook's test)
-  - [ ] Button reads "Upload Picked (N)" with N = picked count; disabled when N = 0
-  - [ ] Note text shown under the button as in Figma 50306
-  - [ ] Picking or unpicking updates N without changing the active filters
-  - [ ] CulledAlbumDetailScreen.tsx and CulledAlbumDetailSidebar.tsx line counts do not grow
+  - [x] With any filter active (incl. Similar Shots), upload/export/Edit Photos sets equal the picked photos of the whole album; tests in __tests__/useCulledAlbumFilters.test.ts (or the new hook's test) (hook test "picked set is every picked album photo whatever the view"; export/Edit Photos read the same `pickedPhotos` in CulledAlbumDetailScreen)
+  - [x] Button reads "Upload Picked (N)" with N = picked count; disabled when N = 0
+  - [x] Note text shown under the button as in Figma 50306
+  - [x] Picking or unpicking updates N without changing the active filters (same hook test: unpick drops N, `activeFilters` identity kept)
+  - [x] CulledAlbumDetailScreen.tsx and CulledAlbumDetailSidebar.tsx line counts do not grow
 - **Decided during checks (user, 2026-10-31):** note color stays `colors.textMuted` as in Figma (contrast ~3.9:1, below WCAG 4.5:1; raise with the designer); Upload Picked is disabled while culling runs. Picked set requires `selected`, `status === "uploaded"` (import done) and `analysisStatus === "analyzed"`. Confirm modal count and size use the photos that will actually upload (picked minus already on server). Upload order is album order (was grid order).
 - **Out of scope:** pick/unpick-all controls (Figma has no Select all / Deselect all design; checked 2026-10-31), upload pipeline internals.
 - **Gate:** S (upload set), A, R
@@ -206,9 +206,9 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
 ## Follow-ups (Gate R Lows, recorded 2026-10-31)
 
 - Count wording checked against Figma 2026-10-31: header "x shots", viewer strip "x photos", badge "N similar shots" match frames 50306, 54491, 48189. No change.
-- `SimilarShotsViewSection` (src/lib/culling/similarShotsView.ts) and `CulledAlbumGridSection` (src/components/culling/culledAlbumGridRows.ts) are duplicate types; alias the grid type to the lib one.
+- Done 2026-11-01: `CulledAlbumGridSection` is now an alias of `SimilarShotsViewSection`.
 - `CulledAlbumPhotoCard` sets `accessible={similarShotCount == null}`, so the a11y tree differs between cards with and without the badge; consider card role/label + `accessibilityActions`.
-- `filteredPhotos` from `useCulledAlbumFilters` has no src consumer; remove or document.
+- Done 2026-11-01: `filteredPhotos` removed from the `useCulledAlbumFilters` return; tests read `gridView.photos`.
 - In the grouped view the viewer prev/next follows group order (matches the grid; behaviour note only).
 - `usePhotoNavigation` and `useCulledAlbumFilters` (previous-sections ref) write `ref.current` during render. Idempotent today; move to useState-compare or `useLayoutEffect` before enabling React Compiler or `react-hooks/refs` (Gate R, 2026-10-31).
 - Screen-level wiring (`cullingBusy` / pending-upload gate on Upload Picked) has no test; the screen has no harness.
