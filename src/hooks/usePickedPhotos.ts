@@ -17,6 +17,16 @@ export function derivePickedSets(albumPhotos: CulledAlbumPhoto[]) {
   return {picked, pending};
 }
 
+// True when a picked photo is not in the current grid, i.e. upload reaches
+// beyond what the user can see.
+export function hasPickedOutsideView(
+  picked: CulledAlbumPhoto[],
+  visible: {photoId: string}[],
+) {
+  const visibleIds = new Set(visible.map(photo => photo.photoId));
+  return picked.some(photo => !visibleIds.has(photo.photoId));
+}
+
 export function usePickedPhotos(albumPhotos: CulledAlbumPhoto[]) {
   return useMemo(() => derivePickedSets(albumPhotos), [albumPhotos]);
 }

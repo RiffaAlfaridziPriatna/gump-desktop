@@ -32,7 +32,7 @@ import {
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
 import {useCulledAlbumDetailData} from '@hooks/useCulledAlbumDetailData';
 import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
-import {usePickedPhotos} from '@hooks/usePickedPhotos';
+import {hasPickedOutsideView, usePickedPhotos} from '@hooks/usePickedPhotos';
 import {usePreloadGridImages} from '@hooks/usePreloadGridImages';
 import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
 import {useProfileMenu} from '@hooks/useProfileMenu';
@@ -285,7 +285,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     starRatingFilter,
     gridView,
     filterCounts,
-    hasActiveFilter,
     toggleFilter,
     setSelectionFilter,
     setStarRatingFilter,
@@ -594,7 +593,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     onApplyLook: handleOpenApplyLook,
     uploaded: cullingHasUploads,
     uploadDisabled: pendingUploadPhotos.length === 0 || cullingBusy,
-    uploadIncludesHidden: hasActiveFilter,
+    uploadIncludesHidden: hasPickedOutsideView(pickedPhotos, gridView.photos),
     addPhotosDisabled: cullingBusy,
     exportDisabled: exportPhotoCount === 0,
     applyLookDisabled: exportPhotoCount === 0,

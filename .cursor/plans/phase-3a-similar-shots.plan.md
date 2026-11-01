@@ -210,6 +210,7 @@ Project map: `.cursor/rules/project-map.mdc` does not exist in this repo. Assump
 - `CulledAlbumPhotoCard` sets `accessible={similarShotCount == null}`, so the a11y tree differs between cards with and without the badge; consider card role/label + `accessibilityActions`.
 - Done 2026-11-01: `filteredPhotos` removed from the `useCulledAlbumFilters` return; tests read `gridView.photos`.
 - In the grouped view the viewer prev/next follows group order (matches the grid; behaviour note only).
+- `hasActiveFilter` from `useCulledAlbumFilters` has no src consumer since the Upload note now uses `hasPickedOutsideView` (2026-11-01); remove or reuse.
 - `usePhotoNavigation` and `useCulledAlbumFilters` (previous-sections ref) write `ref.current` during render. Idempotent today; move to useState-compare or `useLayoutEffect` before enabling React Compiler or `react-hooks/refs` (Gate R, 2026-10-31).
 - Screen-level wiring (`cullingBusy` / pending-upload gate on Upload Picked) has no test; the screen has no harness.
 

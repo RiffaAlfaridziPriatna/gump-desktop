@@ -1,4 +1,7 @@
-import {derivePickedSets} from '../src/hooks/usePickedPhotos';
+import {
+  derivePickedSets,
+  hasPickedOutsideView,
+} from '../src/hooks/usePickedPhotos';
 import {makeCulledAlbumPhoto} from './helpers/fixtures';
 
 const photo = (
@@ -34,5 +37,22 @@ describe('derivePickedSets', () => {
     ]);
     expect(picked).toHaveLength(1);
     expect(pending).toHaveLength(0);
+  });
+});
+
+describe('hasPickedOutsideView', () => {
+  const picked = [photo('a'), photo('b')];
+
+  it('is false when every picked photo is in the visible grid', () => {
+    expect(hasPickedOutsideView(picked, [{photoId: 'b'}, {photoId: 'a'}, {photoId: 'z'}])).toBe(false);
+  });
+
+  it('is true when a picked photo is hidden by the view', () => {
+    expect(hasPickedOutsideView(picked, [{photoId: 'a'}])).toBe(true);
+  });
+
+  it('is false when nothing is picked, whatever the view', () => {
+    expect(hasPickedOutsideView([], [])).toBe(false);
+    expect(hasPickedOutsideView([], [{photoId: 'a'}])).toBe(false);
   });
 });
