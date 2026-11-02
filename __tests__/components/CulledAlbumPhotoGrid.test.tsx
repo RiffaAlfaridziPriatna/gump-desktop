@@ -48,6 +48,7 @@ function grid(sections: CulledAlbumGridSection[]) {
       containerWidth={600}
       isMobileLayout
       canDeletePhoto={false}
+      onCardPress={noop}
       onOpenDetail={noop}
       onToggleSelection={noop}
       onDeletePress={noop}
@@ -101,6 +102,7 @@ describe('CulledAlbumPhotoGrid similar shot counts', () => {
       isMobileLayout
       canDeletePhoto={false}
       getSimilarShotCount={getSimilarShotCount}
+      onCardPress={noop}
       onOpenDetail={noop}
       onToggleSelection={noop}
       onDeletePress={noop}

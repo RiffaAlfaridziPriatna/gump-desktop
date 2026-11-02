@@ -1,5 +1,6 @@
 import React from 'react';
 import {CulledAlbumPhotoCard} from '../../src/components/culling/CulledAlbumPhotoCard';
+import {CulledAlbumPhotoFocusFrame} from '../../src/components/culling/CulledAlbumPhotoFocusFrame';
 import {Pressable} from '../../src/components/ui';
 import {getByLabel, render} from '../helpers/render';
 
@@ -21,8 +22,9 @@ jest.mock('@lib/culledAlbum/photoHover', () => ({
   useCulledAlbumPhotoHoverStore: () => ({hoverIn: jest.fn(), hoverOut: jest.fn()}),
 }));
 
-function renderCard(similarShotCount?: number) {
+function renderCard(similarShotCount?: number, isFocused = false) {
   const handlers = {
+    onCardPress: jest.fn(),
     onOpenDetail: jest.fn(),
     onToggleSelection: jest.fn(),
     onDeletePress: jest.fn(),
@@ -36,6 +38,7 @@ function renderCard(similarShotCount?: number) {
       canDeletePhoto={false}
       isMobileLayout
       similarShotCount={similarShotCount}
+      isFocused={isFocused}
       {...handlers}
     />,
   );
@@ -74,5 +77,29 @@ describe('CulledAlbumPhotoCard similar shots badge', () => {
     ).toBe('button');
     const plain = renderCard().view.renderer.root;
     expect(plain.findAllByType(Pressable)[0]?.props.accessible).toBe(true);
+  });
+});
+
+describe('CulledAlbumPhotoCard focus', () => {
+  it('exposes selected state and the focus frame only when focused', () => {
+    const plain = renderCard().view.renderer.root;
+    expect(plain.findAllByType(Pressable)[0]?.props.accessibilityState).toEqual({
+      selected: false,
+    });
+    expect(plain.findAllByType(CulledAlbumPhotoFocusFrame)).toHaveLength(0);
+    const focused = renderCard(undefined, true).view.renderer.root;
+    expect(
+      focused.findAllByType(Pressable)[0]?.props.accessibilityState,
+    ).toEqual({selected: true});
+    expect(focused.findAllByType(CulledAlbumPhotoFocusFrame)).toHaveLength(1);
+  });
+
+  it('routes a card press to onCardPress, not onOpenDetail', () => {
+    const {view, onCardPress, onOpenDetail} = renderCard();
+    view.renderer.root.findAllByType(Pressable)[0]?.props.onPress({
+      nativeEvent: {locationX: 0, locationY: 0},
+    });
+    expect(onCardPress).toHaveBeenCalledWith('p1');
+    expect(onOpenDetail).not.toHaveBeenCalled();
   });
 });

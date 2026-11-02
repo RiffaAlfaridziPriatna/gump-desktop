@@ -44,6 +44,7 @@ import {
   FlatList,
   ListRenderItemInfo,
   Platform,
+  Pressable,
   StyleProp,
   StyleSheet,
   View,
@@ -76,6 +77,10 @@ type CulledAlbumPhotoGridProps = {
   contentContainerStyle?: StyleProp<ViewStyle>;
   /** Flat-grid badge count; leave undefined where the view already shows it. */
   getSimilarShotCount?: (photoId: string) => number | undefined;
+  focusedPhotoId?: string | null;
+  onCardPress: CulledAlbumPhotoCardProps['onCardPress'];
+  /** Click on empty grid area. */
+  onClearFocus?: () => void;
   onOpenDetail: CulledAlbumPhotoCardProps['onOpenDetail'];
   onToggleSelection: CulledAlbumPhotoCardProps['onToggleSelection'];
   onDeletePress: CulledAlbumPhotoCardProps['onDeletePress'];
@@ -122,6 +127,9 @@ export function CulledAlbumPhotoGrid({
   deferHeavyMediaWork = false,
   contentContainerStyle,
   getSimilarShotCount,
+  focusedPhotoId,
+  onCardPress,
+  onClearFocus,
   onOpenDetail,
   onToggleSelection,
   onDeletePress,
@@ -446,6 +454,8 @@ export function CulledAlbumPhotoGrid({
           isMobileLayout={isMobileLayout}
           deferHeavyMediaWork={deferHeavyMediaWork}
           getSimilarShotCount={getSimilarShotCount}
+          focusedPhotoId={focusedPhotoId}
+          onCardPress={onCardPress}
           onOpenDetail={onOpenDetail}
           onToggleSelection={onToggleSelection}
           onDeletePress={onDeletePress}
@@ -457,6 +467,8 @@ export function CulledAlbumPhotoGrid({
       canDeletePhoto,
       deferHeavyMediaWork,
       getSimilarShotCount,
+      focusedPhotoId,
+      onCardPress,
       renderCardWidth,
       isMobileLayout,
       onDeletePress,
@@ -490,27 +502,32 @@ export function CulledAlbumPhotoGrid({
   return (
     <CulledAlbumPhotoHoverContext.Provider value={hoverStoreRef.current}>
       <CulledAlbumImageLoadContext.Provider value={imageLoadStore}>
-        <FlatList
-          ref={listRef}
-          data={rows}
-          keyExtractor={item => item.key}
-          renderItem={renderRow}
-          getItemLayout={getItemLayout}
-          contentContainerStyle={contentContainerStyle}
+        <Pressable
+          accessible={false}
           style={styles.list}
-          initialNumToRender={6}
-          maxToRenderPerBatch={maxToRenderPerBatch}
-          windowSize={windowSize}
-          updateCellsBatchingPeriod={updateCellsBatchingPeriod}
-          removeClippedSubviews={false}
-          showsVerticalScrollIndicator
-          onScroll={handleScroll}
-          onScrollBeginDrag={handleScrollBegin}
-          onScrollEndDrag={handleScrollEnd}
-          onMomentumScrollEnd={handleScrollEnd}
-          scrollEventThrottle={16}
-          viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
-        />
+          onPress={onClearFocus}>
+          <FlatList
+            ref={listRef}
+            data={rows}
+            keyExtractor={item => item.key}
+            renderItem={renderRow}
+            getItemLayout={getItemLayout}
+            contentContainerStyle={contentContainerStyle}
+            style={styles.list}
+            initialNumToRender={6}
+            maxToRenderPerBatch={maxToRenderPerBatch}
+            windowSize={windowSize}
+            updateCellsBatchingPeriod={updateCellsBatchingPeriod}
+            removeClippedSubviews={false}
+            showsVerticalScrollIndicator
+            onScroll={handleScroll}
+            onScrollBeginDrag={handleScrollBegin}
+            onScrollEndDrag={handleScrollEnd}
+            onMomentumScrollEnd={handleScrollEnd}
+            scrollEventThrottle={16}
+            viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
+          />
+        </Pressable>
       </CulledAlbumImageLoadContext.Provider>
     </CulledAlbumPhotoHoverContext.Provider>
   );
