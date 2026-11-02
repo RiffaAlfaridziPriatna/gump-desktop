@@ -59,6 +59,7 @@ import {preloadImage, preloadImages} from '@lib/media/imagePreload';
 import {
   resolveDetailDisplayUri,
   resolveGridDisplayUri,
+  resolveKeyFaceDisplayUri,
 } from '@lib/storage/localStorage';
 import {hasInFlightServerUploads} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
@@ -147,7 +148,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     keyFaceTooltipHeight,
     screenOrigin,
     syncScreenOrigin,
-    handleKeyFaceTooltipChange,
     dismissKeyFaceTooltip,
     setKeyFaceTooltipWidth,
     setKeyFaceTooltipHeight,
@@ -158,7 +158,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     fileName: string;
   } | null>(null);
   const [cullFiltersExpanded, setCullFiltersExpanded] = useState(true);
-  const [keyFacesExpanded, setKeyFacesExpanded] = useState(true);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadPhase, setUploadPhase] =
     useState<UploadSelectedPhase>('confirm');
@@ -233,6 +232,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     starRatingFilter,
     gridView,
     filterCounts,
+    hasActiveFilter,
     toggleFilter,
     setSelectionFilter,
     setStarRatingFilter,
@@ -267,13 +267,22 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     handleOpenPhotoDetail,
   );
 
-  const handleKeyFacePress = useCallback(
-    (photoId: string, faceIndex?: number) => {
-      dismissKeyFaceTooltip();
-      handleOpenPhotoDetail(photoId, faceIndex);
-    },
-    [dismissKeyFaceTooltip, handleOpenPhotoDetail],
-  );
+  const focusedPanelPhoto = useMemo(() => {
+    const photo = albumPhotos.find(item => item.photoId === focusedPhotoId);
+    return photo
+      ? {
+          photoId: photo.photoId,
+          fileName: photo.file.name,
+          uri: resolveKeyFaceDisplayUri(photo.file),
+          faces: photo.faces.map((face, index) => ({
+            faceId: face.rekognitionFaceId ?? `${photo.photoId}-${index}`,
+            bounds: face.boundingBox,
+            eyeStatus: face.eyeStatus,
+            focusLevel: face.focusLevel,
+          })),
+        }
+      : null;
+  }, [albumPhotos, focusedPhotoId]);
 
   const handleDeletePhotoPress = useCallback(
     (photoId: string, fileName: string) => {
@@ -457,10 +466,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     setCullFiltersExpanded(current => !current);
   }, []);
 
-  const handleKeyFacesToggle = useCallback(() => {
-    setKeyFacesExpanded(current => !current);
-  }, []);
-
   const handleAddPhotosPress = useCallback(() => {
     if (cullingBusy) {
       return;
@@ -543,18 +548,18 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     },
     onAddPhotos: handleAddPhotosPress,
     onExport: handleOpenExport,
-    onApplyLook: handleOpenApplyLook,
+    onEditPhotos: handleOpenApplyLook,
     uploaded: cullingHasUploads,
     uploadDisabled: pendingUploadPhotos.length === 0 || cullingBusy,
     uploadIncludesHidden: hasPickedOutsideView(pickedPhotos, gridView.photos),
     addPhotosDisabled: cullingBusy,
     exportDisabled: exportPhotoCount === 0,
-    applyLookDisabled: exportPhotoCount === 0,
+    editPhotosDisabled: exportPhotoCount === 0,
   };
 
   useEffect(() => {
     syncScreenOrigin();
-  }, [cullFiltersExpanded, keyFacesExpanded, syncScreenOrigin]);
+  }, [cullFiltersExpanded, syncScreenOrigin]);
 
   const keyFaceDisplayUrisKey = useMemo(
     () =>
@@ -645,20 +650,16 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             <CulledAlbumDetailSidebar
               isMobileLayout={isMobileLayout}
               totalPhotos={totalPhotos}
-              mySelectionsCount={actionCount}
               actionCount={actionCount}
               selectionFilter={selectionFilter}
+              hasActiveFilter={hasActiveFilter}
               onSelectionFilterChange={setSelectionFilter}
               activeFilters={activeFilters}
               onToggleFilter={toggleFilter}
               filterCounts={filterCounts}
               cullFiltersExpanded={cullFiltersExpanded}
               onCullFiltersToggle={handleCullFiltersToggle}
-              keyFaces={keyFaces}
-              keyFacesExpanded={keyFacesExpanded}
-              onKeyFacesToggle={handleKeyFacesToggle}
-              onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
-              onKeyFacePress={handleKeyFacePress}
+              focusedPhoto={focusedPanelPhoto}
               {...sidebarActionProps}
             />
           )}
@@ -712,20 +713,16 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             <CulledAlbumDetailSidebar
               isMobileLayout={isMobileLayout}
               totalPhotos={totalPhotos}
-              mySelectionsCount={actionCount}
               actionCount={actionCount}
               selectionFilter={selectionFilter}
+              hasActiveFilter={hasActiveFilter}
               onSelectionFilterChange={setSelectionFilter}
               activeFilters={activeFilters}
               onToggleFilter={toggleFilter}
               filterCounts={filterCounts}
               cullFiltersExpanded={cullFiltersExpanded}
               onCullFiltersToggle={handleCullFiltersToggle}
-              keyFaces={keyFaces}
-              keyFacesExpanded={keyFacesExpanded}
-              onKeyFacesToggle={handleKeyFacesToggle}
-              onKeyFaceTooltipChange={handleKeyFaceTooltipChange}
-              onKeyFacePress={handleKeyFacePress}
+              focusedPhoto={focusedPanelPhoto}
               {...sidebarActionProps}
             />
           )}
