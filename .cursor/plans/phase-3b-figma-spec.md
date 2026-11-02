@@ -71,3 +71,7 @@ Empty state "No picks" (node 49527, 1025 x 420, centered): "Pick photos using th
 Clear filters pill (node 50359, grouped frame): border 1px orange, radius 100, padding X14 Y6, "Clear filters" Inter Semi Bold 13 orange. In frame 49887 (no results) the pill is 111x33 and centered under "No photos match these filters."; in the grouped frame it is 102x28 at the right end of the Showing row.
 
 Grouped view: group header "Group 1 · 4 shots · 1 picked" (node 50371, text 17 high); Showing row starts with "Showing:" text 57 wide.
+
+## Focus ring lookup (2026-11-02)
+
+Metadata of frame 12975:52872 was read once (get_metadata). The focused card "Photo" 12975:53002 has no border, outline or ring node: its children are Container (thumbnail), Container (footer), AI badges and Inspect faces only. The ring is not drawn in this frame. Color, width and radius are therefore still not in Figma; s4e keeps `colors.blue`, width 2, radius 8 as unverified placeholders. Card radius in Figma is 6 (see Grid). Frames 49760, 50177, 50582, 51005 not read.
