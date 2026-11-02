@@ -1,4 +1,5 @@
 import React from 'react';
+import {StyleSheet} from 'react-native';
 import {AlbumLookStatus} from '../../src/components/culling/AlbumLookStatus';
 import {CulledAlbumFilterBar} from '../../src/components/culling/CulledAlbumFilterBar';
 import {getByLabel, press, render} from '../helpers/render';
@@ -11,6 +12,14 @@ describe('AlbumLookStatus', () => {
     expect(
       getByLabel(view.renderer, 'Look: Film Mood. Auto-applies to new photos'),
     ).toBeTruthy();
+  });
+
+  it('wraps the outer row on narrow layouts', () => {
+    const view = render(
+      <AlbumLookStatus lookLabel="Film Mood" onChange={jest.fn()} />,
+    );
+    const outer = view.renderer.root.findByProps({testID: 'album-look-status'});
+    expect(StyleSheet.flatten(outer.props.style).flexWrap).toBe('wrap');
   });
 
   it('calls onChange from the Change button', () => {

@@ -9,11 +9,12 @@ type AlbumLookStatusProps = {
 };
 
 const AUTO_APPLY_TEXT = 'Auto-applies to new photos';
-const HIT_SLOP = {top: 12, bottom: 12, left: 8, right: 8};
+// 19 high row + 13 + 13 = 45 point target without growing the row.
+const HIT_SLOP = {top: 13, bottom: 13, left: 8, right: 8};
 
 export function AlbumLookStatus({lookLabel, onChange}: AlbumLookStatusProps) {
   return (
-    <View style={styles.row}>
+    <View style={styles.outerRow} testID="album-look-status">
       <View
         accessible
         accessibilityLabel={`Look: ${lookLabel}. ${AUTO_APPLY_TEXT}`}
@@ -40,6 +41,13 @@ export function AlbumLookStatus({lookLabel, onChange}: AlbumLookStatusProps) {
 }
 
 const styles = StyleSheet.create({
+  outerRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    rowGap: 4,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
