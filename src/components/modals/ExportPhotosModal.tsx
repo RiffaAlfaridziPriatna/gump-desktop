@@ -25,7 +25,7 @@ import { reportError } from '@lib/observability/reportError';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
 import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
@@ -39,6 +39,10 @@ import QuarterCircleOrange from '../../assets/images/upload/orange_quarter_circl
 import QuarterCircleRed from '../../assets/images/upload/red_quarter_circle.svg';
 
 import { ExportFailureView } from './ExportFailureView';
+import { focusDesktopNode } from './focusDesktopNode';
+
+const SAVE_CANCELLED_MESSAGE =
+  'Saving was cancelled. Your export is still ready.';
 
 const EXPORT_FORMAT_OPTIONS: ReadonlyArray<{
   id: ExportFormat;
@@ -232,6 +236,7 @@ export function ExportPhotosModal({
   const [exportError, setExportError] = useState<ExportError | null>(null);
   const [saveCancelled, setSaveCancelled] = useState(false);
   const prepareRequestIdRef = useRef(0);
+  const saveButtonRef = useRef<View | null>(null);
 
   useEffect(() => {
     if (!visible) {
@@ -249,6 +254,14 @@ export function ExportPhotosModal({
     setExportError(null);
     setSaveCancelled(false);
   }, [visible]);
+
+  useEffect(() => {
+    if (step !== 'ready' || !saveCancelled) {
+      return;
+    }
+    focusDesktopNode(saveButtonRef.current);
+    AccessibilityInfo.announceForAccessibility(SAVE_CANCELLED_MESSAGE);
+  }, [saveCancelled, step]);
 
   const handleSelectCompressed = useCallback(() => {
     setFormatMenuOpen(false);
@@ -573,7 +586,7 @@ export function ExportPhotosModal({
             <Text style={styles.title}>Your export is ready</Text>
             <Text style={styles.subtitle}>
               {saveCancelled
-                ? 'Saving was cancelled. Your export is still ready.'
+                ? SAVE_CANCELLED_MESSAGE
                 : 'Download it to your laptop'}
             </Text>
           </View>
@@ -589,12 +602,18 @@ export function ExportPhotosModal({
               </Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={styles.primaryButton}
+          <Pressable
+            // The ui wrapper forwards unknown props; React 19 passes ref as a prop.
+            {...{ref: saveButtonRef}}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              pressed && { opacity: 0.8 },
+            ]}
             onPress={handleDownloadToLaptop}
-            activeOpacity={0.8}>
+            accessibilityRole="button"
+            accessibilityLabel="Save to computer">
             <Text style={styles.primaryButtonText}>Save to computer</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
       

@@ -1,6 +1,12 @@
 import React from 'react';
 import TestRenderer, {act, type ReactTestRenderer} from 'react-test-renderer';
-import {NativeModules, Platform, Text, UIManager} from 'react-native';
+import {
+  AccessibilityInfo,
+  NativeModules,
+  Platform,
+  Text,
+  UIManager,
+} from 'react-native';
 import {
   makeFakeGumpLocalStorage,
   type FakeLocalStorageOptions,
@@ -69,8 +75,39 @@ async function prepare(options: FakeLocalStorageOptions) {
   return {fake, renderer};
 }
 
+const realFindNodeHandle = Object.getOwnPropertyDescriptor(
+  require('react-native'),
+  'findNodeHandle',
+)!;
+const realFocus = (UIManager as {focus?: unknown}).focus;
+const realDispatch = UIManager.dispatchViewManagerCommand;
+const focus = jest.fn();
+const dispatch = jest.fn();
+const announce = jest.fn();
+
+function stubDesktopFocus() {
+  (UIManager as {focus?: unknown}).focus = focus;
+  UIManager.dispatchViewManagerCommand = dispatch;
+  // RN exposes findNodeHandle as a getter, which jest.spyOn cannot wrap.
+  Object.defineProperty(require('react-native'), 'findNodeHandle', {
+    configurable: true,
+    value: () => 7,
+  });
+  jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(announce);
+}
+
+afterAll(() => {
+  Object.defineProperty(require('react-native'), 'findNodeHandle', realFindNodeHandle);
+  (UIManager as {focus?: unknown}).focus = realFocus;
+  UIManager.dispatchViewManagerCommand = realDispatch;
+});
+
 describe('ExportPhotosModal failure states', () => {
   beforeEach(() => {
+    focus.mockClear();
+    dispatch.mockClear();
+    announce.mockClear();
+    stubDesktopFocus();
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
   });
   afterEach(() => jest.restoreAllMocks());
@@ -81,6 +118,7 @@ describe('ExportPhotosModal failure states', () => {
       'Not enough space on this computer',
       'This export needs 0.5 GB. Free up space or choose another location.',
       'Try again',
+      'Cancel',
     ]);
   });
 
@@ -149,24 +187,33 @@ describe('ExportPhotosModal failure states', () => {
     expect(texts).toContain('Saving was cancelled. Your export is still ready.');
     expect(texts).toContain('Save to computer');
     expect(texts).not.toContain("Can't save to this folder");
+    expect(focus).toHaveBeenCalledWith(7);
+    expect(announce).toHaveBeenCalledWith(
+      'Saving was cancelled. Your export is still ready.',
+    );
+    const save = getByLabel(renderer, 'Save to computer');
+    expect(save.props.accessibilityRole).toBe('button');
   });
 });
 
 describe('ExportFailureView accessibility', () => {
-  it('labels the buttons and focuses the primary one on mount', () => {
-    const focus = jest.fn();
-    (UIManager as {focus?: unknown}).focus = focus;
-    // RN exposes findNodeHandle as a getter, which jest.spyOn cannot wrap.
-    Object.defineProperty(require('react-native'), 'findNodeHandle', {
-      configurable: true,
-      value: () => 7,
-    });
+  beforeEach(() => {
+    focus.mockClear();
+    dispatch.mockClear();
+    announce.mockClear();
+    stubDesktopFocus();
+  });
+  afterEach(() => {
+    Platform.OS = 'macos' as typeof Platform.OS;
+  });
+
+  function mount(failedStep: 'prepare' | 'download', reason = 'folderNotWritable') {
     let renderer!: ReactTestRenderer;
     act(() => {
       renderer = TestRenderer.create(
         <ExportFailureView
-          reason="folderNotWritable"
-          failedStep="download"
+          reason={reason}
+          failedStep={failedStep}
           onTryAgain={jest.fn()}
           onChangeSaveLocation={jest.fn()}
           onCancel={jest.fn()}
@@ -174,12 +221,41 @@ describe('ExportFailureView accessibility', () => {
         {createNodeMock: () => ({})},
       );
     });
+    return renderer;
+  }
+
+  it('labels buttons, focuses the primary one and announces the failure', () => {
+    const renderer = mount('download');
     expect(focus).toHaveBeenCalledWith(7);
+    expect(announce).toHaveBeenCalledWith(
+      "Can't save to this folder. Choose another location or check the folder's permissions.",
+    );
     expect(getByLabel(renderer, 'Try again').props.accessibilityRole).toBe(
       'button',
     );
     expect(
       getByLabel(renderer, 'Change save location').props.accessibilityRole,
     ).toBe('button');
+    const alert = renderer.root.findByProps({accessibilityRole: 'alert'});
+    expect(alert.props.accessibilityLiveRegion).toBe('assertive');
+    const icon = renderer.root.findByProps({
+      importantForAccessibility: 'no-hide-descendants',
+    });
+    expect(icon.props.accessibilityElementsHidden).toBe(true);
+  });
+
+  it('offers Cancel instead of Change save location at the prepare stage', () => {
+    const renderer = mount('prepare');
+    expect(getByLabel(renderer, 'Cancel').props.accessibilityRole).toBe('button');
+    expect(
+      renderer.root.findAllByProps({accessibilityLabel: 'Change save location'}),
+    ).toHaveLength(0);
+  });
+
+  it('focuses through the Windows view command on Windows', () => {
+    Platform.OS = 'windows' as typeof Platform.OS;
+    mount('download');
+    expect(dispatch).toHaveBeenCalledWith(7, 'focus', []);
+    expect(focus).not.toHaveBeenCalled();
   });
 });

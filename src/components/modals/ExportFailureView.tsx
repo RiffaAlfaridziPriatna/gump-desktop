@@ -1,18 +1,11 @@
-import {Pressable, TouchableOpacity} from '@components/ui';
+import {Pressable} from '@components/ui';
 import {formatGigabytes} from '@lib/export/formatByteSize';
 import type {ExportFailureReason} from '@lib/export/types';
-import {reportError} from '@lib/observability/reportError';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {useEffect, useRef} from 'react';
-import {
-  findNodeHandle,
-  Platform,
-  StyleSheet,
-  Text,
-  UIManager,
-  View,
-} from 'react-native';
+import {AccessibilityInfo, StyleSheet, Text, View} from 'react-native';
+import {focusDesktopNode} from './focusDesktopNode';
 import IconError from '../../assets/images/icon_error.svg';
 
 export type ExportFailureViewProps = {
@@ -74,48 +67,39 @@ function describeFailure({
   }
 }
 
-/**
- * Host `.focus()` can crash macOS later (see PhotoDetailNavigationFrame), so
- * focus through UIManager on macOS and the Fabric command on Windows.
- */
-function focusDesktopNode(node: View | null) {
-  const reactTag = node ? findNodeHandle(node) : null;
-  if (reactTag == null) {
-    return;
-  }
-  try {
-    if (Platform.OS === 'windows') {
-      UIManager.dispatchViewManagerCommand(reactTag, 'focus', []);
-    } else {
-      (UIManager as typeof UIManager & {focus?: (tag: number) => void}).focus?.(
-        reactTag,
-      );
-    }
-  } catch (error) {
-    reportError(error, {step: 'focusExportFailureAction'});
-  }
-}
-
 export function ExportFailureView(props: ExportFailureViewProps) {
   const {reason, failedStep, onTryAgain, onChangeSaveLocation, onCancel} =
     props;
   const {title, subtitle} = describeFailure(props);
   const primaryRef = useRef<View | null>(null);
-  // Saving can be redirected only after the ZIP exists; sourceMissing offers Cancel instead.
+  // Saving can be redirected only after the ZIP exists. Before that, disk and
+  // folder failures offer Cancel; sourceMissing always does.
   const showChangeLocation =
     reason !== 'sourceMissing' && failedStep === 'download';
-  const isSingleAction = !showChangeLocation && reason !== 'sourceMissing';
+  const showCancel =
+    reason === 'sourceMissing' ||
+    (failedStep === 'prepare' &&
+      (reason === 'diskFull' || reason === 'folderNotWritable'));
+  const isSingleAction = !showChangeLocation && !showCancel;
 
   useEffect(() => {
     focusDesktopNode(primaryRef.current);
+    AccessibilityInfo.announceForAccessibility(`${title}. ${subtitle}`);
+    // Announce once per failure view mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <View style={styles.content}>
-      <View accessibilityElementsHidden importantForAccessibility="no">
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants">
         <IconError width={40} height={40} />
       </View>
-      <View style={styles.titleBlock} accessibilityRole="alert">
+      <View
+        style={styles.titleBlock}
+        accessibilityRole="alert"
+        accessibilityLiveRegion="assertive">
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.subtitle}>{subtitle}</Text>
       </View>
@@ -134,24 +118,22 @@ export function ExportFailureView(props: ExportFailureViewProps) {
           <Text style={styles.primaryButtonText}>Try again</Text>
         </Pressable>
         {showChangeLocation ? (
-          <TouchableOpacity
-            style={styles.secondaryButton}
+          <Pressable
+            style={({pressed}) => [styles.secondaryButton, pressed && styles.pressed]}
             onPress={onChangeSaveLocation}
-            activeOpacity={0.8}
             accessibilityRole="button"
             accessibilityLabel="Change save location">
             <Text style={styles.secondaryButtonText}>Change save location</Text>
-          </TouchableOpacity>
+          </Pressable>
         ) : null}
-        {reason === 'sourceMissing' ? (
-          <TouchableOpacity
-            style={styles.secondaryButton}
+        {showCancel ? (
+          <Pressable
+            style={({pressed}) => [styles.secondaryButton, pressed && styles.pressed]}
             onPress={onCancel}
-            activeOpacity={0.8}
             accessibilityRole="button"
             accessibilityLabel="Cancel">
             <Text style={styles.secondaryButtonText}>Cancel</Text>
-          </TouchableOpacity>
+          </Pressable>
         ) : null}
       </View>
     </View>
