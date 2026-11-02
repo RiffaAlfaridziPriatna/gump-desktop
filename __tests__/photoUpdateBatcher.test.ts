@@ -2,14 +2,23 @@ jest.mock('@lib/navigation/uploadAwareNavigation', () => ({
   shouldDeferHeavyWorkForNavigation: () => false,
 }));
 
-import {
-  flushPendingPhotoUpdates,
-  PHOTO_UPDATE_APPLY_CHUNK,
-  schedulePhotoUpdate,
-  type PendingPhotoUpdate,
-} from '../src/lib/culledAlbum/photoUpdateBatcher';
+import type {PendingPhotoUpdate} from '../src/lib/culledAlbum/photoUpdateBatcher';
+
+type Batcher = typeof import('../src/lib/culledAlbum/photoUpdateBatcher');
+
+// Platform.OS is read at module load, so load a fresh registry per platform.
+function loadBatcher(os: 'macos' | 'windows'): Batcher {
+  let loaded!: Batcher;
+  jest.isolateModules(() => {
+    const {Platform} = require('react-native');
+    jest.replaceProperty(Platform, 'OS', os);
+    loaded = require('../src/lib/culledAlbum/photoUpdateBatcher');
+  });
+  return loaded;
+}
 
 function queueUpdates(
+  schedulePhotoUpdate: Batcher['schedulePhotoUpdate'],
   count: number,
   applyBatch: (updates: PendingPhotoUpdate[]) => void,
 ): void {
@@ -25,51 +34,69 @@ function queueUpdates(
   }
 }
 
-describe('photoUpdateBatcher', () => {
-  beforeEach(() => {
-    jest.useFakeTimers();
-    flushPendingPhotoUpdates(jest.fn(), {drain: true});
-  });
+describe.each(['macos', 'windows'] as const)(
+  'photoUpdateBatcher on %s',
+  os => {
+    let batcher: Batcher;
 
-  afterEach(() => {
-    flushPendingPhotoUpdates(jest.fn(), {drain: true});
-    jest.useRealTimers();
-  });
+    beforeEach(() => {
+      jest.useFakeTimers();
+      batcher = loadBatcher(os);
+    });
 
-  it('applies at most PHOTO_UPDATE_APPLY_CHUNK per scheduled flush', () => {
-    const applied: number[] = [];
-    const applyBatch = (updates: PendingPhotoUpdate[]) => {
-      applied.push(updates.length);
-    };
+    afterEach(() => {
+      jest.restoreAllMocks();
+      batcher.flushPendingPhotoUpdates(jest.fn(), {drain: true});
+      jest.useRealTimers();
+    });
 
-    queueUpdates(45, applyBatch);
-    flushPendingPhotoUpdates(applyBatch);
-    expect(applied).toEqual([PHOTO_UPDATE_APPLY_CHUNK]);
+    function collect(count: number) {
+      const applied: number[] = [];
+      const applyBatch = (updates: PendingPhotoUpdate[]) => {
+        applied.push(updates.length);
+      };
+      queueUpdates(batcher.schedulePhotoUpdate, count, applyBatch);
+      return {applied, applyBatch};
+    }
 
-    flushPendingPhotoUpdates(applyBatch);
-    expect(applied).toEqual([
-      PHOTO_UPDATE_APPLY_CHUNK,
-      PHOTO_UPDATE_APPLY_CHUNK,
-    ]);
+    if (os === 'macos') {
+      it('applies at most PHOTO_UPDATE_APPLY_CHUNK per scheduled flush', () => {
+        const chunk = batcher.PHOTO_UPDATE_APPLY_CHUNK;
+        const {applied, applyBatch} = collect(45);
 
-    flushPendingPhotoUpdates(applyBatch);
-    expect(applied).toEqual([
-      PHOTO_UPDATE_APPLY_CHUNK,
-      PHOTO_UPDATE_APPLY_CHUNK,
-      5,
-    ]);
-  });
+        batcher.flushPendingPhotoUpdates(applyBatch);
+        expect(applied).toEqual([chunk]);
 
-  it('drains the full queue in apply-sized chunks when requested', () => {
-    const applied: number[] = [];
-    const applyBatch = (updates: PendingPhotoUpdate[]) => {
-      applied.push(updates.length);
-    };
+        batcher.flushPendingPhotoUpdates(applyBatch);
+        expect(applied).toEqual([chunk, chunk]);
 
-    queueUpdates(45, applyBatch);
-    flushPendingPhotoUpdates(applyBatch, {drain: true});
+        batcher.flushPendingPhotoUpdates(applyBatch);
+        expect(applied).toEqual([chunk, chunk, 5]);
+      });
+    } else {
+      it('drains the whole queue on a scheduled flush', () => {
+        const {applied, applyBatch} = collect(45);
 
-    expect(applied.reduce((sum, size) => sum + size, 0)).toBe(45);
-    expect(applied.every(size => size <= PHOTO_UPDATE_APPLY_CHUNK)).toBe(true);
-  });
-});
+        batcher.flushPendingPhotoUpdates(applyBatch);
+
+        expect(applied).toEqual([45]);
+      });
+    }
+
+    it('drains the full queue when requested', () => {
+      const {applied, applyBatch} = collect(45);
+
+      batcher.flushPendingPhotoUpdates(applyBatch, {drain: true});
+
+      if (os === 'macos') {
+        expect(applied).toEqual([
+          batcher.PHOTO_UPDATE_APPLY_CHUNK,
+          batcher.PHOTO_UPDATE_APPLY_CHUNK,
+          5,
+        ]);
+      } else {
+        expect(applied).toEqual([45]);
+      }
+    });
+  },
+);
