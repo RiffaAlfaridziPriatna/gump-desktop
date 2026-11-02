@@ -222,11 +222,11 @@ bool WriteBytesToPath(const std::filesystem::path &path, const std::vector<uint8
       static_cast<DWORD>(bytes.size()),
       &written,
       nullptr);
+  const DWORD writeError = writeOk ? ERROR_SUCCESS : GetLastError();
   FlushFileBuffers(file);
   CloseHandle(file);
 
   if (!writeOk || written != bytes.size()) {
-    const DWORD writeError = GetLastError();
     DeleteFileW(tempPath.c_str());
     SetLastError(writeError);
     return false;
@@ -1292,6 +1292,10 @@ void RunAsync(Work &&work, ReactPromiseJS &&promise) {
         reactError.UserInfo["missingCount"] = winrtRN::JSValue(static_cast<int64_t>(failure.MissingCount()));
       }
       promise.Reject(std::move(reactError));
+    } catch (const std::filesystem::filesystem_error &error) {
+      // what() embeds the full path; send a fixed message with the numeric code only.
+      promise.Reject(winrtRN::ReactError{
+          "Error", "File operation failed (error " + std::to_string(error.code().value()) + ")"});
     } catch (const winrt::hresult_error &error) {
       promise.Reject(winrtRN::ReactError{"Error", ToUtf8(error.message())});
     } catch (const std::exception &error) {
@@ -1936,15 +1940,19 @@ void GumpLocalStorage::CreateZipFromEntries(
         errno = 0;
         try {
           result = ZipStore::CreateZip(destination, zipEntries);
-        } catch (const std::exception &) {
+        } catch (const std::exception &ex) {
           const DWORD win32Error = GetLastError();
           const int posixError = errno;
           std::error_code cleanupError;
           std::filesystem::remove(destination, cleanupError);
-          if (const char *code = ExportCodeForErrors(win32Error, posixError)) {
+          // A source read failure is not a destination write failure.
+          const bool sourceFailure = std::string(ex.what()).find("source file") != std::string::npos;
+          if (const char *code = sourceFailure ? nullptr : ExportCodeForErrors(win32Error, posixError)) {
             ThrowExportFailure(code);
           }
-          throw;
+          throw std::runtime_error(
+              "Unable to create zip file (error " + std::to_string(win32Error) + ", errno " +
+              std::to_string(posixError) + ")");
         }
         return winrtRN::JSValue(winrtRN::JSValueObject{
             {"path", ToUtf8(destination.wstring())},
@@ -2089,7 +2097,8 @@ void GumpLocalStorage::CopyFile(
           if (const char *code = ExportCodeForErrorCode(copyError)) {
             ThrowExportFailure(code);
           }
-          throw std::runtime_error("Unable to copy export file");
+          throw std::runtime_error(
+              "Unable to copy export file (error " + std::to_string(copyError.value()) + ")");
         }
 
         const auto byteSize = static_cast<double>(std::filesystem::file_size(destination));
@@ -2729,9 +2738,15 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
   EnsureDirectory(destPath.parent_path());
   std::error_code removeError;
   std::filesystem::remove(destPath, removeError);
+  std::vector<uint8_t> jpegBytes;
+  try {
+    jpegBytes = EncodeSoftwareBitmapJpeg(output, jpegQuality);
+  } catch (...) {
+    throw std::runtime_error("Apply look could not encode the baked JPEG");
+  }
   SetLastError(0);
   errno = 0;
-  if (!WriteSoftwareBitmapJpeg(output, destPath, jpegQuality)) {
+  if (!WriteBytesToPath(destPath, jpegBytes)) {
     const DWORD win32Error = GetLastError();
     const int posixError = errno;
     std::error_code cleanupError;
@@ -2740,7 +2755,8 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
       ThrowExportFailure(code);
     }
     throw std::runtime_error(
-        "Apply look could not write the baked JPEG to export staging");
+        "Apply look could not write the baked JPEG to export staging (error " +
+        std::to_string(win32Error) + ")");
   }
   return destPath;
 }
