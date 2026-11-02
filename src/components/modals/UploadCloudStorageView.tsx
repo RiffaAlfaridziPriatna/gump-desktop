@@ -1,11 +1,17 @@
-import {formatPhotoCount} from '@application/plan/formatPlanNumbers';
-import {formatGigabytes} from '@lib/export/formatByteSize';
-import type {CloudStoragePreflight} from '@lib/culledAlbum/uploadPreflight';
-import {View} from 'react-native';
+import { formatPhotoCount } from '@application/plan/formatPlanNumbers';
+import { formatGigabytes } from '@lib/export/formatByteSize';
+import type { CloudStoragePreflight } from '@lib/culledAlbum/uploadPreflight';
+import { useRef } from 'react';
+import { View } from 'react-native';
 import IconError from '../../assets/images/icon_error.svg';
-import {CloudStorageBanner} from './CloudStorageBanner';
-import {CloudStorageCard} from './CloudStorageCard';
-import {PopupButton, PopupIcon, PopupTitleBlock, popupStyles} from './UploadPopupParts';
+import { CloudStorageBanner } from './CloudStorageBanner';
+import { CloudStorageCard } from './CloudStorageCard';
+import {
+  PopupButton,
+  PopupIcon,
+  PopupTitleBlock,
+  popupStyles,
+} from './UploadPopupParts';
 
 export type UploadCloudStorageViewProps = {
   preflight: CloudStoragePreflight;
@@ -17,6 +23,9 @@ export type UploadCloudStorageViewProps = {
   onViewCloudPlans: () => void;
   onChooseFewer: () => void;
 };
+
+const EXCEEDED_BANNER =
+  'Upgrade your cloud plan, free up storage or select fewer photos.';
 
 function uploadTitle(photoCount: number): string {
   return `Upload ${formatPhotoCount(photoCount)} photo${
@@ -34,6 +43,41 @@ export function UploadCloudStorageView({
   onViewCloudPlans,
   onChooseFewer,
 }: UploadCloudStorageViewProps) {
+  // Keep the last resolved view during a refresh so focus is not dropped;
+  // only the very first load shows the bare checking view.
+  const lastResolved = useRef<CloudStoragePreflight | null>(null);
+  const refreshing =
+    preflight.status === 'checking' && lastResolved.current != null;
+  if (preflight.status !== 'checking') {
+    lastResolved.current = preflight;
+  }
+  const shown = refreshing ? lastResolved.current! : preflight;
+  return renderState(shown, refreshing, {
+    photoCount,
+    starting,
+    onUploadNow,
+    onRetry,
+    onCancel,
+    onViewCloudPlans,
+    onChooseFewer,
+  });
+}
+
+type Actions = Omit<UploadCloudStorageViewProps, 'preflight'>;
+
+function renderState(
+  preflight: CloudStoragePreflight,
+  refreshing: boolean,
+  {
+    photoCount,
+    starting,
+    onUploadNow,
+    onRetry,
+    onCancel,
+    onViewCloudPlans,
+    onChooseFewer,
+  }: Actions,
+) {
   if (preflight.status === 'checking') {
     return (
       <View style={popupStyles.content}>
@@ -54,12 +98,14 @@ export function UploadCloudStorageView({
         <PopupTitleBlock
           title="Couldn't check cloud storage"
           subtitle="Check your connection and try again."
+          urgent
         />
         <View style={popupStyles.buttonRow}>
           <PopupButton
             label="Try again"
             variant="primary"
             onPress={onRetry}
+            disabled={refreshing}
             autoFocus
           />
           <PopupButton label="Cancel" variant="secondary" onPress={onCancel} />
@@ -69,7 +115,10 @@ export function UploadCloudStorageView({
   }
 
   if (preflight.status === 'exceeded') {
-    const remaining = Math.max(0, (preflight.limitBytes ?? 0) - preflight.usedBytes);
+    const remaining = Math.max(
+      0,
+      (preflight.limitBytes ?? 0) - preflight.usedBytes,
+    );
     return (
       <View style={popupStyles.content}>
         <PopupTitleBlock
@@ -77,13 +126,12 @@ export function UploadCloudStorageView({
           subtitle={`This upload needs ${formatGigabytes(
             preflight.uploadBytes,
           )}. You have ${formatGigabytes(remaining)} remaining.`}
+          extra={EXCEEDED_BANNER}
+          urgent
         />
         <View style={popupStyles.fullWidth}>
           <CloudStorageCard {...preflight} exceeded />
-          <CloudStorageBanner
-            tone="danger"
-            message="Upgrade your cloud plan, free up storage or select fewer photos."
-          />
+          <CloudStorageBanner tone="danger" message={EXCEEDED_BANNER} />
         </View>
         <View style={popupStyles.buttonColumn}>
           <PopupButton
@@ -103,26 +151,35 @@ export function UploadCloudStorageView({
   }
 
   const left =
-    preflight.limitBytes == null ? 0 : preflight.limitBytes - preflight.afterBytes;
+    preflight.limitBytes == null
+      ? 0
+      : preflight.limitBytes - preflight.afterBytes;
+  const nearLimitMessage =
+    preflight.status === 'nearLimit'
+      ? `You'll have ${formatGigabytes(
+          left,
+        )} of cloud storage left after this upload.`
+      : undefined;
   return (
     <View style={popupStyles.content}>
-      <PopupTitleBlock title={uploadTitle(photoCount)} />
+      <PopupTitleBlock
+        title={uploadTitle(photoCount)}
+        extra={nearLimitMessage}
+      />
       <View style={popupStyles.fullWidth}>
         <CloudStorageCard {...preflight} />
         {preflight.status === 'nearLimit' ? (
-          <CloudStorageBanner
-            tone="warning"
-            message={`You'll have ${formatGigabytes(
-              left,
-            )} of cloud storage left after this upload.`}
-          />
+          <CloudStorageBanner tone="warning" message={nearLimitMessage!} />
         ) : null}
       </View>
       <PopupButton
         label={starting ? 'Starting...' : 'Upload now'}
         variant="primary"
         onPress={onUploadNow}
-        disabled={starting || photoCount === 0}
+        disabled={starting || photoCount === 0 || refreshing}
+        accessibilityHint={
+          photoCount === 0 ? 'Select photos to upload' : undefined
+        }
         autoFocus
         single
       />

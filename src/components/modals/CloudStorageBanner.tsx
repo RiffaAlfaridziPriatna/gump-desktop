@@ -14,6 +14,8 @@ export function CloudStorageBanner({
   const color = tone === 'danger' ? colors.red : colors.accent;
   return (
     <View
+      accessible
+      accessibilityLabel={`Warning: ${message}`}
       style={[
         styles.banner,
         tone === 'danger' ? styles.danger : styles.warning,

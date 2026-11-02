@@ -8,8 +8,8 @@ import {openUpgradePlan} from '@lib/plan/billingLinks';
 import {reportError} from '@lib/observability/reportError';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
-import {useState} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {useEffect, useState} from 'react';
+import {AccessibilityInfo, StyleSheet, Text, View} from 'react-native';
 import {UploadCloudStorageView} from './UploadCloudStorageView';
 import {UploadCompleteView} from './UploadCompleteView';
 import CircleBlue from '../../assets/images/upload/blue_circle.svg';
@@ -68,32 +68,48 @@ function UploadingPhase({
   isApplyingLook: boolean;
 }) {
   const percent = Math.round(Math.min(1, Math.max(0, uploadProgress)) * 100);
+  const title = isApplyingLook
+    ? 'Applying look...'
+    : `Uploading ${photoCount} Photo${photoCount === 1 ? '' : 's'}`;
+  const subtitle = isApplyingLook
+    ? 'Baking looks onto your selected photos before upload.\nPlease keep this window open.'
+    : 'Please keep this window open';
+  useEffect(() => {
+    AccessibilityInfo.announceForAccessibility(`${title}. ${subtitle}`);
+  }, [title, subtitle]);
   const uploadedGb = bytesToGigabytes(uploadedBytes);
   const totalGb = bytesToGigabytes(totalUploadBytes);
 
   return (
     <View style={styles.uploadingContainer}>
       <View style={styles.titleBlock}>
-        <Text style={styles.title}>
-          {isApplyingLook
-            ? 'Applying look...'
-            : `Uploading ${photoCount} Photo${photoCount === 1 ? '' : 's'}`}
+        <Text accessibilityRole="header" style={styles.title}>
+          {title}
         </Text>
-        <Text style={styles.subtitle}>
-          {isApplyingLook
-            ? 'Baking looks onto your selected photos before upload.\nPlease keep this window open.'
-            : 'Please keep this window open'}
-        </Text>
+        <Text style={styles.subtitle}>{subtitle}</Text>
       </View>
 
       <View style={styles.uploadProgressBlock}>
-        <ProgressBar
-          progress={uploadProgress}
-          height={9}
-          trackColor={colors.progressTrack}
-          fillColor={colors.accent}
-          style={styles.uploadProgressBar}
-        />
+        <View
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel="Upload progress"
+          accessibilityValue={{
+            min: 0,
+            max: 100,
+            now: percent,
+            text: `${percent}%, ${formatStorageSizeGb(
+              uploadedGb,
+            )} of ${formatStorageSizeGb(totalGb)}`,
+          }}>
+          <ProgressBar
+            progress={uploadProgress}
+            height={9}
+            trackColor={colors.progressTrack}
+            fillColor={colors.accent}
+            style={styles.uploadProgressBar}
+          />
+        </View>
         <Text style={styles.uploadProgressMeta}>
           <Text style={styles.uploadProgressMetaValue}>{percent}%</Text> ·{' '}
           {formatStorageSizeGb(uploadedGb)} of {formatStorageSizeGb(totalGb)}
@@ -158,7 +174,7 @@ export function UploadSelectedModal({
     <Modal
       visible={visible}
       onClose={onClose}
-      width={740}
+      width={720}
       height={modalHeightForPhase(phase, preflight.status === 'exceeded')}
       contentStyle={styles.modalContent}>
       <ModalDecor />

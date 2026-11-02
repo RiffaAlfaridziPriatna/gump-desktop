@@ -20,13 +20,11 @@ function percentOf(bytes: number, limitBytes: number): number {
 
 function StorageBar({
   label,
-  valueText,
   progress,
   height,
   fillColor,
 }: {
   label: string;
-  valueText: string;
   progress: number;
   height: number;
   fillColor: string;
@@ -35,12 +33,11 @@ function StorageBar({
     <View
       accessible
       accessibilityRole="progressbar"
-      accessibilityLabel={label}
+      accessibilityLabel={`${label}, percent of limit`}
       accessibilityValue={{
         min: 0,
         max: 100,
         now: Math.round(progress * 100),
-        text: valueText,
       }}>
       <ProgressBar
         progress={progress}
@@ -57,7 +54,7 @@ type Row = {label: string; value: string; valueColor?: string};
 
 function StorageRow({label, value, valueColor}: Row) {
   return (
-    <View style={styles.row}>
+    <View style={styles.row} accessible accessibilityLabel={`${label}: ${value}`}>
       <Text style={styles.label}>{label}</Text>
       <Text style={[styles.value, valueColor ? {color: valueColor} : null]}>
         {value}
@@ -102,7 +99,6 @@ export function CloudStorageCard({
       {limitBytes == null ? null : (
         <StorageBar
           label="Storage after upload"
-          valueText={afterText}
           progress={exceeded ? 1 : percentOf(afterBytes, limitBytes)}
           height={9}
           fillColor={accent}
@@ -132,7 +128,6 @@ export function UsedStorageCard({
       {limitBytes == null ? null : (
         <StorageBar
           label="Storage used"
-          valueText={valueText}
           progress={percentOf(usedBytes, limitBytes)}
           height={6}
           fillColor={colors.accent}

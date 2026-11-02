@@ -160,7 +160,6 @@ describe('UploadSelectedModal cloud storage states', () => {
       min: 0,
       max: 100,
       now: 40,
-      text: '121.0 GB / 300 GB',
     });
   });
 
@@ -170,6 +169,45 @@ describe('UploadSelectedModal cloud storage states', () => {
       "You'll have 0.3 GB of cloud storage left after this upload.",
     );
     expect(buttonLabels(renderer)).toContain('Upload now');
+    expect(announce).toHaveBeenLastCalledWith(
+      "Upload 99 photos to Gump Cloud. You'll have 0.3 GB of cloud storage left after this upload",
+    );
+    expect(
+      renderer.root.find(n => n.props.accessibilityRole === 'header').props
+        .accessibilityLiveRegion,
+    ).toBe('polite');
+  });
+
+  it('announces the resolved state after checking', async () => {
+    mockRefetch = makeCurrentUserRefetch('exceeded');
+    await mount('exceeded');
+    expect(announce.mock.calls[0][0]).toBe(
+      'Upload 99 photos to Gump Cloud. Checking cloud storage…',
+    );
+    expect(announce.mock.calls.at(-1)?.[0]).toContain('Not enough cloud storage');
+  });
+
+  it('keeps the resolved view while refreshing', async () => {
+    let listener: ((state: string) => void) | undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation(((
+      _: string,
+      cb: (state: string) => void,
+    ) => {
+      listener = cb;
+      return {remove: jest.fn()};
+    }) as never);
+    const {renderer} = await mount('exceeded');
+    mockRefetch = jest.fn(() => new Promise(() => undefined)) as never;
+    await act(async () => {
+      listener?.('active');
+    });
+    expect(texts(renderer)).toContain('View cloud plans');
+    expect(texts(renderer)).not.toContain('Checking cloud storage…');
+  });
+
+  it('gives the uploading progress bar progressbar semantics', async () => {
+    const {renderer} = await mount('normal', {phase: 'uploading'});
+    expect(progressValue(renderer).now).toBe(0);
   });
 
   it('blocks upload when storage is not enough', async () => {
@@ -189,6 +227,21 @@ describe('UploadSelectedModal cloud storage states', () => {
     ]);
     expect(buttonLabels(renderer)).not.toContain('Upload now');
     expect(progressValue(renderer).now).toBe(100);
+    expect(announce).toHaveBeenLastCalledWith(
+      'Not enough cloud storage. This upload needs 0.6 GB. You have 0.2 GB remaining. Upgrade your cloud plan, free up storage or select fewer photos',
+    );
+    expect(
+      renderer.root.find(n => n.props.accessibilityRole === 'alert').props
+        .accessibilityLiveRegion,
+    ).toBe('assertive');
+    expect(
+      renderer.root.findAll(
+        n =>
+          typeof n.type === 'string' &&
+          n.props.accessibilityLabel ===
+            'Warning: Upgrade your cloud plan, free up storage or select fewer photos.',
+      ),
+    ).toHaveLength(1);
 
     await press(renderer, 'View cloud plans');
     expect(mockOpenUpgradePlan).toHaveBeenCalledTimes(1);

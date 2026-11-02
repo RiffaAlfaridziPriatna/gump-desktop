@@ -20,23 +20,30 @@ export function PopupIcon({children}: {children: ReactNode}) {
 export function PopupTitleBlock({
   title,
   subtitle,
+  extra,
+  urgent = false,
 }: {
   title: string;
   subtitle?: string;
+  /** Extra text only announced (the banner message). */
+  extra?: string;
+  /** Failure or blocking state: alert role with an assertive live region. */
+  urgent?: boolean;
 }) {
   useEffect(() => {
     AccessibilityInfo.announceForAccessibility(
-      subtitle ? `${title}. ${subtitle}` : title,
+      [title, subtitle, extra]
+        .filter(Boolean)
+        .map(part => part!.replace(/\.$/, ''))
+        .join('. '),
     );
-    // Announce once per view mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [title, subtitle, extra]);
 
   return (
     <View
       style={styles.titleBlock}
-      accessibilityRole="alert"
-      accessibilityLiveRegion="assertive">
+      accessibilityRole={urgent ? 'alert' : 'header'}
+      accessibilityLiveRegion={urgent ? 'assertive' : 'polite'}>
       <Text style={styles.title}>{title}</Text>
       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
     </View>
@@ -50,6 +57,7 @@ type PopupButtonProps = {
   /** Focus this button on mount (desktop keyboard users). */
   autoFocus?: boolean;
   disabled?: boolean;
+  accessibilityHint?: string;
   /** Primary button that keeps its content width instead of stretching. */
   single?: boolean;
 };
@@ -60,6 +68,7 @@ export function PopupButton({
   onPress,
   autoFocus,
   disabled,
+  accessibilityHint,
   single,
 }: PopupButtonProps) {
   const ref = useRef<View | null>(null);
@@ -88,6 +97,7 @@ export function PopupButton({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityHint={accessibilityHint}
       accessibilityState={{disabled: Boolean(disabled)}}>
       <Text
         style={[
@@ -170,6 +180,7 @@ const styles = StyleSheet.create({
   },
   textButton: {
     flex: 0,
+    minHeight: 44,
   },
   single: {
     flex: 0,
