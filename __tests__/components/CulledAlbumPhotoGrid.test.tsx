@@ -43,6 +43,7 @@ jest.mock('@hooks/useVisiblePhotos', () => ({
 
 const noop = jest.fn();
 const onCardPress = jest.fn();
+const onClearFocus = jest.fn();
 const photos = ['a0', 'a1', 'a2', 'a3', 'b0'].map(photoId => ({
   photoId,
   disabled: false,
@@ -59,6 +60,7 @@ function grid(sections: CulledAlbumGridSection[], focusedPhotoId?: string) {
       canDeletePhoto={false}
       focusedPhotoId={focusedPhotoId}
       onCardPress={onCardPress}
+      onClearFocus={onClearFocus}
       onOpenDetail={noop}
       onToggleSelection={noop}
       onDeletePress={noop}
@@ -167,5 +169,46 @@ describe('CulledAlbumPhotoGrid focus in grouped rows', () => {
       ['b0', false],
     ]);
     expect(cards.every(n => n.props.onCardPress === onCardPress)).toBe(true);
+  });
+});
+
+describe('CulledAlbumPhotoGrid empty-area clear', () => {
+  const sections: CulledAlbumGridSection[] = [
+    {key: 'other', title: 'Other', photoIds: ['a0']},
+  ];
+
+  function findWrapper() {
+    const view = render(grid(sections, 'a0'));
+    const wrapper = view.renderer.root.find(
+      n =>
+        typeof n.type === 'string' &&
+        typeof n.props.onResponderRelease === 'function',
+    );
+    return {view, wrapper};
+  }
+
+  beforeEach(() => onClearFocus.mockClear());
+
+  it('clears focus on wrapper responder release', () => {
+    const {wrapper} = findWrapper();
+    expect(wrapper.props.onStartShouldSetResponder()).toBe(true);
+    wrapper.props.onResponderRelease();
+    expect(onClearFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('has no press handler, focusable or accessible surface', () => {
+    const {wrapper} = findWrapper();
+    expect(wrapper.props.onPress).toBeUndefined();
+    expect(wrapper.props.focusable).toBeUndefined();
+    expect(wrapper.props.accessible).toBe(false);
+  });
+
+  it('does not clear focus when a card is pressed', () => {
+    const {view} = findWrapper();
+    const card = view.renderer.root.find(
+      n => n.props.testID === 'card' && typeof n.type === 'string',
+    );
+    card.props.onCardPress('a0');
+    expect(onClearFocus).not.toHaveBeenCalled();
   });
 });

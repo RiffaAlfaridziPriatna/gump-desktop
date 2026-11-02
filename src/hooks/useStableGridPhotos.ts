@@ -16,7 +16,7 @@ export function useStableGridPhotos(
   albumPhotos: CulledAlbumPhoto[],
   cullingBusy: boolean,
 ): CulledAlbumGridPhoto[] {
-  const gridPhotosCacheRef = useRef(new Map());
+  const gridPhotosCacheRef = useRef(new Map<string, CulledAlbumGridPhoto>());
   const previousGridPhotosRef = useRef<CulledAlbumGridPhoto[]>([]);
   const rawGridPhotos = useMemo(() => {
     return albumPhotos

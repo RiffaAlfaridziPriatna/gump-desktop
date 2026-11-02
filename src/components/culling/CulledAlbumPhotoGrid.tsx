@@ -44,7 +44,6 @@ import {
   FlatList,
   ListRenderItemInfo,
   Platform,
-  Pressable,
   StyleProp,
   StyleSheet,
   View,
@@ -502,10 +501,11 @@ export function CulledAlbumPhotoGrid({
   return (
     <CulledAlbumPhotoHoverContext.Provider value={hoverStoreRef.current}>
       <CulledAlbumImageLoadContext.Provider value={imageLoadStore}>
-        <Pressable
+        <View
           accessible={false}
           style={styles.list}
-          onPress={onClearFocus}>
+          onStartShouldSetResponder={() => true}
+          onResponderRelease={onClearFocus}>
           <FlatList
             ref={listRef}
             data={rows}
@@ -527,7 +527,7 @@ export function CulledAlbumPhotoGrid({
             scrollEventThrottle={16}
             viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
           />
-        </Pressable>
+        </View>
       </CulledAlbumImageLoadContext.Provider>
     </CulledAlbumPhotoHoverContext.Provider>
   );
