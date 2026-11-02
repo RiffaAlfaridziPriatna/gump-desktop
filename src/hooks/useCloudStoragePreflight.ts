@@ -57,8 +57,16 @@ export function useCloudStoragePreflight(
         check();
       }
     });
-    return () => subscription.remove();
+    return () => {
+      subscription.remove();
+      requestId.current += 1;
+      setPhase('checking');
+    };
   }, [isOpen, check]);
+
+  const retry = useCallback(() => {
+    check();
+  }, [check]);
 
   const preflight = useMemo<CloudStoragePreflight>(() => {
     if (phase === 'checking') {
@@ -71,6 +79,14 @@ export function useCloudStoragePreflight(
     const usedBytes = storage.used * BYTES_PER_GB;
     const limitBytes =
       storage.limit == null ? null : storage.limit * BYTES_PER_GB;
+    if (
+      !Number.isFinite(uploadBytes) ||
+      uploadBytes < 0 ||
+      !Number.isFinite(usedBytes) ||
+      (limitBytes != null && !Number.isFinite(limitBytes))
+    ) {
+      return {status: 'unavailable'};
+    }
     const afterBytes = usedBytes + uploadBytes;
     const numbers = {uploadBytes, usedBytes, limitBytes, afterBytes};
     if (limitBytes == null) {
@@ -85,5 +101,5 @@ export function useCloudStoragePreflight(
     return {status: 'ok', ...numbers};
   }, [phase, user, uploadBytes]);
 
-  return {preflight, retry: check};
+  return {preflight, retry};
 }

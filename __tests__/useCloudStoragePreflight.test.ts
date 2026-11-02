@@ -36,8 +36,10 @@ jest.mock('@context/auth', () => {
       const [data, setData] = useState(null);
       const refetch = useCallback(async () => {
         const result = await mockRefetch();
-        setData(result.data);
-        return {...result, isError: false};
+        if (!result.isError) {
+          setData(result.data);
+        }
+        return {isError: false, ...result};
       }, []);
       return {data, refetch};
     },
@@ -133,7 +135,82 @@ describe('useCloudStoragePreflight', () => {
     });
     expect(mockRefetch).toHaveBeenCalledTimes(2);
     hook.unmount();
-    expect(mockRemove).toHaveBeenCalled();
+    expect(mockRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a resolved isError result as unavailable despite stale data', async () => {
+    const okUser = (await makeCurrentUserRefetch('normal')()).data;
+    mockRefetch = jest.fn(async () => ({
+      isError: true,
+      error: new Error('fake query error'),
+      data: okUser,
+    })) as unknown as typeof mockRefetch;
+    const hook = renderHook(() => useCloudStoragePreflight(true, GB));
+    await act(async () => {});
+    expect(hook.result.current.preflight).toEqual({status: 'unavailable'});
+    expect(mockReportError).toHaveBeenCalledTimes(1);
+    hook.unmount();
+  });
+
+  it('fails closed on NaN or negative upload bytes', async () => {
+    for (const bytes of [Number.NaN, -1, Number.POSITIVE_INFINITY]) {
+      const hook = await mountWith('normal', bytes);
+      expect(hook.result.current.preflight).toEqual({status: 'unavailable'});
+      hook.unmount();
+    }
+  });
+
+  it('is checking right after retry() and resets on close', async () => {
+    const hook = await mountWith('normal', GB);
+    act(() => {
+      hook.result.current.retry();
+    });
+    expect(hook.result.current.preflight).toEqual({status: 'checking'});
+    await act(async () => {});
+    expect(hook.result.current.preflight.status).toBe('ok');
+    hook.unmount();
+  });
+
+  it('shows checking on reopen and drops a stale in-flight result', async () => {
+    let resolveOld!: (v: unknown) => void;
+    mockRefetch = jest.fn(
+      () => new Promise(resolve => (resolveOld = resolve)),
+    ) as unknown as typeof mockRefetch;
+    let open = true;
+    const hook = renderHook(() => useCloudStoragePreflight(open, GB));
+    open = false;
+    hook.rerender();
+    mockRefetch = makeCurrentUserRefetch('normal');
+    open = true;
+    hook.rerender();
+    expect(hook.result.current.preflight).toEqual({status: 'checking'});
+    await act(async () => {
+      resolveOld({isError: true, error: new Error('late'), data: null});
+    });
+    await act(async () => {});
+    expect(hook.result.current.preflight.status).toBe('ok');
+    hook.unmount();
+  });
+
+  it('follows the newer refetch when an older one resolves last', async () => {
+    const resolvers: Array<(v: unknown) => void> = [];
+    mockRefetch = jest.fn(
+      () => new Promise(resolve => resolvers.push(resolve)),
+    ) as unknown as typeof mockRefetch;
+    const hook = renderHook(() => useCloudStoragePreflight(true, GB));
+    act(() => {
+      hook.result.current.retry();
+    });
+    const ok = (await makeCurrentUserRefetch('normal')()).data;
+    await act(async () => {
+      resolvers[1]({isError: false, data: ok});
+    });
+    expect(hook.result.current.preflight.status).toBe('ok');
+    await act(async () => {
+      resolvers[0]({isError: true, error: new Error('old'), data: null});
+    });
+    expect(hook.result.current.preflight.status).toBe('ok');
+    hook.unmount();
   });
 
   it('does not refetch or listen while closed', async () => {
