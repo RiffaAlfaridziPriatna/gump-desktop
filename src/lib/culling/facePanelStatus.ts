@@ -30,6 +30,12 @@ export function isValidFaceAssessment(face: {
   );
 }
 
+export function areAllFacesInvalid(
+  faces: readonly {eyeStatus: string; focusLevel: string}[],
+): boolean {
+  return faces.every(face => !isValidFaceAssessment(face));
+}
+
 /** Wording for the Faces in This Photo panel; the tooltip keeps faceStatus.ts labels. */
 export function getFacePanelStatus(face: {
   eyeStatus: EyeStatus;

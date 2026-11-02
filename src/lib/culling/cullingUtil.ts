@@ -267,8 +267,8 @@ export type CullFilterKey =
   | 'duplicated';
 
 export const DEFAULT_CULL_FILTERS: Record<CullFilterKey, boolean> = {
-  aiSelected: true,
-  maybe: true,
+  aiSelected: false,
+  maybe: false,
   blurred: false,
   closedEyes: false,
   duplicated: false,

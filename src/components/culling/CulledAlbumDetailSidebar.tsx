@@ -18,6 +18,7 @@ export type CulledAlbumDetailSidebarProps = {
   selectionFilter: SelectionFilter;
   hasActiveFilter: boolean;
   onSelectionFilterChange: (filter: SelectionFilter) => void;
+  onClearFilters: () => void;
   activeFilters: Record<CullFilterKey, boolean>;
   onToggleFilter: (key: CullFilterKey) => void;
   filterCounts: Record<CullFilterKey, number>;
@@ -43,6 +44,7 @@ function CulledAlbumDetailSidebarComponent({
   selectionFilter,
   hasActiveFilter,
   onSelectionFilterChange,
+  onClearFilters,
   activeFilters,
   onToggleFilter,
   filterCounts,
@@ -51,10 +53,6 @@ function CulledAlbumDetailSidebarComponent({
   focusedPhoto,
   ...actionProps
 }: CulledAlbumDetailSidebarProps) {
-  const handleShowAll = useCallback(
-    () => onSelectionFilterChange(null),
-    [onSelectionFilterChange],
-  );
   const handleTogglePicked = useCallback(
     () =>
       onSelectionFilterChange(selectionFilter === 'selected' ? null : 'selected'),
@@ -75,7 +73,7 @@ function CulledAlbumDetailSidebarComponent({
           pickedCount={actionCount}
           selectionFilter={selectionFilter}
           hasActiveFilter={hasActiveFilter}
-          onShowAll={handleShowAll}
+          onShowAll={onClearFilters}
           onTogglePicked={handleTogglePicked}
         />
         <View style={styles.divider} />

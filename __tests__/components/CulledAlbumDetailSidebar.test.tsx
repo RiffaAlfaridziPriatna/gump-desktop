@@ -14,6 +14,7 @@ function setup(overrides: Partial<Props> = {}) {
     selectionFilter: null,
     hasActiveFilter: false,
     onSelectionFilterChange: jest.fn(),
+    onClearFilters: jest.fn(),
     activeFilters: {
       aiSelected: false,
       maybe: false,
@@ -55,10 +56,11 @@ describe('CulledAlbumDetailSidebar', () => {
     expect(texts.some(t => t.includes('Key Faces'))).toBe(false);
   });
 
-  it('All Photos clears only the selection filter', () => {
+  it('All Photos clears all filters', () => {
     const {props, renderer} = setup({selectionFilter: 'selected'});
     press(getByLabel(renderer, 'All Photos, 635'));
-    expect(props.onSelectionFilterChange).toHaveBeenCalledWith(null);
+    expect(props.onClearFilters).toHaveBeenCalledTimes(1);
+    expect(props.onSelectionFilterChange).not.toHaveBeenCalled();
     expect(props.onToggleFilter).not.toHaveBeenCalled();
   });
 

@@ -241,7 +241,7 @@ Ids use `s4a`..`s4g` so they do not clash with the phase 3a ids (`s3a`..`s3h`). 
 - **Scope:** `CulledAlbumGridWithSummary.tsx` shows "Showing: <active filter labels joined with " + "> · N photos" for every active filter, for example "Showing: Possible Closed Eyes + Similar Shots" (user, 2026-11-01). The line is not shown when no filter is active. It keeps "· N groups · M photos" for the Similar Shots grouped view (frame 12975:50306). Adds a "Clear filters" button and, when the result is empty, "No photos match these filters." (frame 12975:49887). Labels come from `CULL_FILTER_LABELS` (s4a). `summarizeSections` is the existing unit to extend.
 - **Rules:**
   - "Active filter" means what `useCulledAlbumFilters` already treats as active (category checkboxes, selection filter, star filter). Its `hasActiveFilter` is unused today (3a follow-up); reuse or replace it.
-  - "Clear filters" resets category filters, selection filter and star filter to their defaults (user, 2026-11-01). It resets the state the sidebar and toolbar already own; it adds no second owner.
+  - "Clear filters" turns all categories off, clears selection and stars; new albums start with no filter (user, 2026-11-01). It resets the state the sidebar and toolbar already own; it adds no second owner.
   - The Picked-empty copy stays as in 3a ("Pick photos using the circle beside each filename.").
   - Note text "All alternatives are included in similar-shot groups." (Figma, grouped frame screenshot) shows at the right of the Showing line, before "Clear filters", only when Similar Shots is active together with another category (user, 2026-11-01).
 - **Mirror:** `CulledAlbumGridWithSummary` and `summarizeSections`.

@@ -4,8 +4,8 @@ import type {EyeStatus, FocusLevel} from '@domain/valueObjects/Face';
 import {useFaceAssessmentLoading} from '@hooks/useFaceAssessmentLoading';
 import {cullingStatusColors} from '@lib/culling/faceStatus';
 import {
+  areAllFacesInvalid,
   getFacePanelStatus,
-  isValidFaceAssessment,
 } from '@lib/culling/facePanelStatus';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
@@ -107,7 +107,7 @@ function getAnnouncement(photo: FacesInPhotoPanelPhoto): string {
   if (photo.faces.length === 0) {
     return NO_FACES_TEXT;
   }
-  if (!photo.faces.every(isValidFaceAssessment)) {
+  if (areAllFacesInvalid(photo.faces)) {
     return UNAVAILABLE_TEXT;
   }
   return facesCountText(photo.faces.length);
@@ -138,7 +138,7 @@ function PanelBody({
   if (photo.faces.length === 0) {
     return <Text style={styles.stateText}>{NO_FACES_TEXT}</Text>;
   }
-  if (!photo.faces.every(isValidFaceAssessment)) {
+  if (areAllFacesInvalid(photo.faces)) {
     return <Text style={styles.stateText}>{UNAVAILABLE_TEXT}</Text>;
   }
   return (

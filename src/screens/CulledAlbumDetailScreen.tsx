@@ -24,6 +24,7 @@ import {FileAsset} from '@services/upload/types';
 import {UploadToast} from '@components/upload/UploadToast';
 import {
   useCulledAlbumActions,
+  useCulledAlbumPhoto,
   useCulledAlbumPhotosState,
   useCulledAlbumServerUploadBatch,
   useCulledAlbumStore,
@@ -53,11 +54,11 @@ import {
   getUploadLookBakeState,
   subscribeUploadLookBake,
 } from '@lib/look/uploadLookBake';
+import {toFacesPanelPhoto} from '@lib/culling/facesPanelPhoto';
 import {preloadImage} from '@lib/media/imagePreload';
 import {
   resolveDetailDisplayUri,
   resolveGridDisplayUri,
-  resolveKeyFaceDisplayUri,
 } from '@lib/storage/localStorage';
 import {hasInFlightServerUploads} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
@@ -212,6 +213,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     filterCounts,
     hasActiveFilter,
     toggleFilter,
+    clearFilters,
     setSelectionFilter,
     setStarRatingFilter,
   } = useCulledAlbumFilters(gridPhotos, stats, lastCullFilters, albumId);
@@ -245,22 +247,11 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     handleOpenPhotoDetail,
   );
 
-  const focusedPanelPhoto = useMemo(() => {
-    const photo = albumPhotos.find(item => item.photoId === focusedPhotoId);
-    return photo
-      ? {
-          photoId: photo.photoId,
-          fileName: photo.file.name,
-          uri: resolveKeyFaceDisplayUri(photo.file),
-          faces: photo.faces.map((face, index) => ({
-            faceId: face.rekognitionFaceId ?? `${photo.photoId}-${index}`,
-            bounds: face.boundingBox,
-            eyeStatus: face.eyeStatus,
-            focusLevel: face.focusLevel,
-          })),
-        }
-      : null;
-  }, [albumPhotos, focusedPhotoId]);
+  const focusedPhoto = useCulledAlbumPhoto(albumId, focusedPhotoId ?? '');
+  const focusedPanelPhoto = useMemo(
+    () => (focusedPhoto ? toFacesPanelPhoto(focusedPhoto) : null),
+    [focusedPhoto],
+  );
 
   const handleDeletePhotoPress = useCallback(
     (photoId: string, fileName: string) => {
@@ -606,6 +597,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               selectionFilter={selectionFilter}
               hasActiveFilter={hasActiveFilter}
               onSelectionFilterChange={setSelectionFilter}
+              onClearFilters={clearFilters}
               activeFilters={activeFilters}
               onToggleFilter={toggleFilter}
               filterCounts={filterCounts}
@@ -668,6 +660,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               selectionFilter={selectionFilter}
               hasActiveFilter={hasActiveFilter}
               onSelectionFilterChange={setSelectionFilter}
+              onClearFilters={clearFilters}
               activeFilters={activeFilters}
               onToggleFilter={toggleFilter}
               filterCounts={filterCounts}

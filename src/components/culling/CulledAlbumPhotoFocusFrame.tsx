@@ -16,7 +16,7 @@ const styles = StyleSheet.create({
     bottom: -FRAME_OUTSET,
     left: -FRAME_OUTSET,
     borderWidth: 2,
-    borderRadius: 8,
+    borderRadius: 6,
     borderColor: colors.blue,
   },
 });

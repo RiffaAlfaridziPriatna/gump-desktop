@@ -5,6 +5,7 @@ import {
 } from '@lib/culling/culledAlbumPhotoFilters';
 import {
   CullFilterKey,
+  DEFAULT_CULL_FILTERS,
   matchesCullFilterKey,
   normalizeCullFilters,
 } from '@lib/culling/cullingUtil';
@@ -130,15 +131,7 @@ export function useCulledAlbumFilters(
     };
   }, [groupIndexByPhotoId, layout, orderedGroups]);
   const clearFilters = useCallback(() => {
-    // Cleared means all categories off; the saved defaults (AI Recommended,
-    // Needs Review on) are a starting view, not a state to return to.
-    setActiveFilters({
-      aiSelected: false,
-      maybe: false,
-      blurred: false,
-      closedEyes: false,
-      duplicated: false,
-    });
+    setActiveFilters({...DEFAULT_CULL_FILTERS});
     setSelectionFilter(null);
     setStarRatingFilter([]);
   }, []);
@@ -224,6 +217,7 @@ export function useCulledAlbumFilters(
     filterCounts,
     hasActiveFilter,
     toggleFilter,
+    clearFilters,
     setSelectionFilter,
     setStarRatingFilter,
   };

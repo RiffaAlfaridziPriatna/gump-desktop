@@ -119,10 +119,22 @@ describe('FacesInPhotoPanel', () => {
     expect(texts(renderer)).toContain('Faces in This Photo');
   });
 
-  it('shows unavailable when a face has an invalid value', () => {
+  it('renders an invalid face as Unable to assess without failing the panel', () => {
     const { renderer } = render(
       <FacesInPhotoPanel
         photo={photo([face('a', 'open', 'good'), face('b', 'weird', 'good')])}
+      />,
+    );
+    settle();
+    expect(texts(renderer)).toContain('Unable to assess');
+    expect(texts(renderer)).toContain('Eyes open');
+    expect(texts(renderer)).not.toContain('Face assessment unavailable.');
+  });
+
+  it('shows unavailable only when every face is invalid', () => {
+    const { renderer } = render(
+      <FacesInPhotoPanel
+        photo={photo([face('a', 'weird', 'good'), face('b', 'open', 'nope')])}
       />,
     );
     settle();
