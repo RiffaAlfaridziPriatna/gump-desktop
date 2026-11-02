@@ -8,6 +8,7 @@ import {PICK_PHOTOS_HINT} from '@components/culling/UploadPickedButton';
 import {CulledAlbumDetailHeader} from '@components/culling/CulledAlbumDetailHeader';
 import {ProfileMenuPopup} from '@components/navigation/ProfileMenu';
 import {ApplyLookModal} from '@components/modals/ApplyLookModal';
+import {ApplyLookScopeModal} from '@components/modals/ApplyLookScopeModal';
 import {DeletePhotoModal} from '@components/modals/DeletePhotoModal';
 import {ExportPhotosModal} from '@components/modals/ExportPhotosModal';
 import {UploadModal} from '@components/modals/UploadModal';
@@ -19,7 +20,6 @@ import {
   estimateUploadSizeGb,
 } from '@application/plan/uploadStorageEstimate';
 import {getLookLabel} from '@lib/look/lookCatalog';
-import type {LookId} from '@lib/look/types';
 import {FileAsset} from '@services/upload/types';
 import {UploadToast} from '@components/upload/UploadToast';
 import {
@@ -32,13 +32,13 @@ import {
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
 import {useCulledAlbumDetailData} from '@hooks/useCulledAlbumDetailData';
 import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
+import {useAlbumLookFlow} from '@hooks/useAlbumLookFlow';
 import {useGridFocus} from '@hooks/useGridFocus';
 import {useStableGridPhotos} from '@hooks/useStableGridPhotos';
 import {hasPickedOutsideView, usePickedPhotos} from '@hooks/usePickedPhotos';
 import {usePreloadGridImages} from '@hooks/usePreloadGridImages';
 import {useProfileMenu} from '@hooks/useProfileMenu';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
-import {cullingEngine} from '@lib/culling/cullingEngine';
 import {
   computeServerUploadBatchByteProgress,
   countServerUploadBatchItems,
@@ -49,7 +49,6 @@ import {photoDetailParams} from '@lib/culledAlbum/photoDetailParams';
 import {photoKey} from '@lib/culledAlbum/photoStateStore';
 import {bumpPhotoVersion} from '@lib/culledAlbum/photoVersionStore';
 import {captureAppEvent} from '@lib/observability/posthogClient';
-import {reportError} from '@lib/observability/reportError';
 import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
 import {
   getUploadLookBakeState,
@@ -152,14 +151,16 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const [uploadSessionSizeGb, setUploadSessionSizeGb] = useState(0);
   const uploadModalDismissedRef = useRef(false);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [showApplyLookModal, setShowApplyLookModal] = useState(false);
   const [showAddPhotosModal, setShowAddPhotosModal] = useState(false);
   const [mainContentWidth, setMainContentWidth] = useState(0);
+  const lookFlow = useAlbumLookFlow(albumId, albumPhotos.length > 0);
+  const defaultLookId = albumRecord?.defaultLookId ?? 'original';
   const isBlockingModalOpen =
     photoToDelete !== null ||
     showUploadModal ||
     showExportModal ||
-    showApplyLookModal ||
+    lookFlow.pickerVisible ||
+    lookFlow.scopeVisible ||
     showAddPhotosModal;
 
   useEffect(() => {
@@ -249,6 +250,11 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   );
 
   const focusedPhoto = useCulledAlbumPhoto(albumId, focusedPhotoId ?? '');
+  const firstGridPhotoId = gridView.photos[0]?.photoId;
+  const previewPhoto =
+    focusedPhoto ??
+    albumPhotos.find(photo => photo.photoId === firstGridPhotoId) ??
+    albumPhotos[0];
   const focusedPanelPhoto = useMemo(
     () => (focusedPhoto ? toFacesPanelPhoto(focusedPhoto) : null),
     [focusedPhoto],
@@ -463,44 +469,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     setShowExportModal(true);
   }, [exportPhotoCount]);
 
-  const handleOpenApplyLook = useCallback(() => {
-    if (exportPhotoCount === 0) {
-      return;
-    }
-    setShowApplyLookModal(true);
-  }, [exportPhotoCount]);
-
-  const handleApplyLook = useCallback(
-    async (lookId: LookId) => {
-      const photoIds = actionAlbumPhotos.map(photo => photo.photoId);
-      const photoCount = photoIds.length;
-      captureAppEvent('apply_look_started', {
-        albumId,
-        lookId,
-        photoCount,
-      });
-      try {
-        await cullingEngine.updateLook(albumId, photoIds, {
-          lookId,
-        });
-        captureAppEvent('apply_look_completed', {
-          albumId,
-          lookId,
-          photoCount,
-        });
-      } catch (error) {
-        console.error('[CulledAlbumDetailScreen] Failed to apply look', error);
-        captureAppEvent('apply_look_failed', {
-          albumId,
-          lookId,
-          photoCount,
-        });
-        throw error;
-      }
-    },
-    [albumId, actionAlbumPhotos],
-  );
-
   const sidebarActionProps = {
     onUploadSelected: () => {
       if (pendingUploadPhotos.length === 0 || cullingBusy) {
@@ -512,13 +480,14 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     },
     onAddPhotos: handleAddPhotosPress,
     onExport: handleOpenExport,
-    onEditPhotos: handleOpenApplyLook,
+    onEditPhotos: lookFlow.openFromEdit,
+    editPhotosRef: lookFlow.editPhotosRef,
     uploaded: cullingHasUploads,
     uploadDisabled: pendingUploadPhotos.length === 0 || cullingBusy,
     uploadIncludesHidden: hasPickedOutsideView(pickedPhotos, gridView.photos),
     addPhotosDisabled: cullingBusy,
     exportDisabled: exportPhotoCount === 0,
-    editPhotosDisabled: exportPhotoCount === 0,
+    editPhotosDisabled: albumPhotos.length === 0,
   };
 
   return (
@@ -578,7 +547,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
                 ? getLookLabel(albumRecord.defaultLookId)
                 : undefined
             }
-            onChangeLook={handleOpenApplyLook}
+            onChangeLook={lookFlow.openFromChange}
+            changeLookRef={lookFlow.changeLookRef}
             isMobileLayout={isMobileLayout}
           />
         </View>
@@ -715,18 +685,20 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         />
 
         <ApplyLookModal
-          visible={showApplyLookModal}
+          visible={lookFlow.pickerVisible}
           albumName={albumName}
-          // TODO(s6i): previewPhoto = focused else first album photo; currentLookId = album defaultLookId.
-          previewPhoto={focusedPhoto ?? actionAlbumPhotos[0]}
-          currentLookId="original"
-          onUseLook={lookId => {
-            setShowApplyLookModal(false);
-            handleApplyLook(lookId).catch(error =>
-              reportError(error, {step: 'applyLook'}),
-            );
-          }}
-          onClose={() => setShowApplyLookModal(false)}
+          previewPhoto={previewPhoto}
+          currentLookId={defaultLookId}
+          onUseLook={lookFlow.chooseLook}
+          onClose={lookFlow.close}
+        />
+
+        <ApplyLookScopeModal
+          visible={lookFlow.scopeVisible}
+          lookLabel={lookFlow.chosenLookLabel}
+          onApplyAll={lookFlow.applyAll}
+          onApplyNewOnly={lookFlow.applyNewOnly}
+          onClose={lookFlow.close}
         />
 
         <UploadModal

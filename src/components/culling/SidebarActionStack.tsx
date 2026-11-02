@@ -1,6 +1,7 @@
 import { Pressable } from '@components/ui';
 import { colors } from '@lib/ui/colors';
 import { sansBoldStyle } from '@lib/ui/typography';
+import type { Ref } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import IconExport from '../../assets/images/icon_export.svg';
 import IconPlus from '../../assets/images/icon_plus.svg';
@@ -19,6 +20,7 @@ type SidebarActionStackProps = {
   onAddPhotos?: () => void;
   onExport: () => void;
   onEditPhotos: () => void;
+  editPhotosRef?: Ref<View>;
 };
 
 export function SidebarActionStack({
@@ -33,6 +35,7 @@ export function SidebarActionStack({
   onAddPhotos,
   onExport,
   onEditPhotos,
+  editPhotosRef,
 }: SidebarActionStackProps) {
   return (
     <View style={styles.actionStack}>
@@ -67,6 +70,7 @@ export function SidebarActionStack({
       </Pressable>
 
       <Pressable
+        {...{ ref: editPhotosRef }}
         onPress={onEditPhotos}
         disabled={editPhotosDisabled}
         style={[styles.button, editPhotosDisabled && styles.buttonDisabled]}

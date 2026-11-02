@@ -8,7 +8,7 @@ import { SidebarActionStack } from '@components/culling/SidebarActionStack';
 import { SelectionFilter } from '@lib/culling/culledAlbumPhotoFilters';
 import { CullFilterKey } from '@lib/culling/cullingUtil';
 import { colors } from '@lib/ui/colors';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, type Ref } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 export type CulledAlbumDetailSidebarProps = {
@@ -29,6 +29,7 @@ export type CulledAlbumDetailSidebarProps = {
   onAddPhotos?: () => void;
   onExport: () => void;
   onEditPhotos: () => void;
+  editPhotosRef?: Ref<View>;
   uploaded?: boolean;
   uploadDisabled?: boolean;
   uploadIncludesHidden?: boolean;

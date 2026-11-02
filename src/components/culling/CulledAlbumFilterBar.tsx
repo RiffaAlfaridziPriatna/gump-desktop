@@ -7,6 +7,7 @@ import {colors} from '@lib/ui/colors';
 import {sansBoldStyle} from '@lib/ui/typography';
 import {Pressable} from '@components/ui';
 import {AlbumLookStatus} from './AlbumLookStatus';
+import type {Ref} from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -27,6 +28,7 @@ type CulledAlbumFilterBarProps = {
   isMobileLayout?: boolean;
   lookLabel?: string;
   onChangeLook?: () => void;
+  changeLookRef?: Ref<View>;
 };
 
 function SelectionFilterButton({
@@ -95,6 +97,7 @@ export function CulledAlbumFilterBar({
   isMobileLayout = false,
   lookLabel,
   onChangeLook,
+  changeLookRef,
 }: CulledAlbumFilterBarProps) {
   function toggleSelectionFilter(next: Exclude<SelectionFilter, null>) {
     onSelectionFilterChange(selectionFilter === next ? null : next);
@@ -151,7 +154,11 @@ export function CulledAlbumFilterBar({
         filterControls
       )}
       {lookLabel && onChangeLook ? (
-        <AlbumLookStatus lookLabel={lookLabel} onChange={onChangeLook} />
+        <AlbumLookStatus
+          lookLabel={lookLabel}
+          onChange={onChangeLook}
+          changeRef={changeLookRef}
+        />
       ) : null}
     </View>
   );
