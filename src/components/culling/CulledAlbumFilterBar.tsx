@@ -6,6 +6,7 @@ import {
 import {colors} from '@lib/ui/colors';
 import {sansBoldStyle} from '@lib/ui/typography';
 import {Pressable} from '@components/ui';
+import {AlbumLookStatus} from './AlbumLookStatus';
 import {
   ScrollView,
   StyleSheet,
@@ -24,6 +25,8 @@ type CulledAlbumFilterBarProps = {
   onSelectionFilterChange: (filter: SelectionFilter) => void;
   onStarRatingFilterChange: (filter: StarRatingFilter) => void;
   isMobileLayout?: boolean;
+  lookLabel?: string;
+  onChangeLook?: () => void;
 };
 
 function SelectionFilterButton({
@@ -90,6 +93,8 @@ export function CulledAlbumFilterBar({
   onSelectionFilterChange,
   onStarRatingFilterChange,
   isMobileLayout = false,
+  lookLabel,
+  onChangeLook,
 }: CulledAlbumFilterBarProps) {
   function toggleSelectionFilter(next: Exclude<SelectionFilter, null>) {
     onSelectionFilterChange(selectionFilter === next ? null : next);
@@ -145,6 +150,9 @@ export function CulledAlbumFilterBar({
       ) : (
         filterControls
       )}
+      {lookLabel && onChangeLook ? (
+        <AlbumLookStatus lookLabel={lookLabel} onChange={onChangeLook} />
+      ) : null}
     </View>
   );
 }
