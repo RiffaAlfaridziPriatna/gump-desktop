@@ -10,6 +10,7 @@ import {
   type LookId,
 } from '@lib/look/types';
 import {APIResponse} from '@services/api';
+import type {UploadFailureCause} from './uploadPreflight';
 import {FileAsset} from '@services/upload/types';
 
 export type NativeDetectedFace = {
@@ -95,6 +96,7 @@ export type CulledAlbumPhoto = {
   serverUploadStatus: CulledAlbumPhotoServerUploadStatus;
   serverUploadProgress: number;
   serverUploadError?: string;
+  serverUploadCause?: UploadFailureCause;
   simulatedMinDurationMs?: number;
   analysisProgress: number;
   analysisStatus: CulledAlbumPhotoAnalysisStatus;

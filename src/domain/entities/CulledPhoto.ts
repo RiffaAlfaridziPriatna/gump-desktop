@@ -29,6 +29,7 @@ export class CulledPhoto {
   private _serverUploadStatus: ServerUploadStatus;
   private _serverUploadProgress: number;
   private _serverUploadError: string | null;
+  private _serverUploadCause: string | null;
 
   private _selected: boolean;
   private _starRating: number | null;
@@ -59,6 +60,7 @@ export class CulledPhoto {
     serverUploadStatus?: ServerUploadStatus;
     serverUploadProgress?: number;
     serverUploadError?: string | null;
+    serverUploadCause?: string | null;
     selected?: boolean;
     starRating?: number | null;
     lookId?: LookId;
@@ -90,6 +92,7 @@ export class CulledPhoto {
     this._serverUploadStatus = data.serverUploadStatus ?? 'idle';
     this._serverUploadProgress = data.serverUploadProgress ?? 0;
     this._serverUploadError = data.serverUploadError ?? null;
+    this._serverUploadCause = data.serverUploadCause ?? null;
 
     this._selected = data.selected ?? false;
     this._starRating = data.starRating ?? null;
@@ -156,6 +159,10 @@ export class CulledPhoto {
 
   get serverUploadError(): string | null {
     return this._serverUploadError;
+  }
+
+  get serverUploadCause(): string | null {
+    return this._serverUploadCause;
   }
 
   get selected(): boolean {
@@ -272,6 +279,7 @@ export class CulledPhoto {
     this._serverUploadStatus = 'uploading';
     this._serverUploadProgress = 0;
     this._serverUploadError = null;
+    this._serverUploadCause = null;
   }
 
   updateServerUploadProgress(progress: number): void {
@@ -282,6 +290,7 @@ export class CulledPhoto {
     this._serverUploadStatus = 'uploaded';
     this._serverUploadProgress = 100;
     this._serverUploadError = null;
+    this._serverUploadCause = null;
   }
 
   markServerUploadFailed(error: string): void {
@@ -319,6 +328,7 @@ export class CulledPhoto {
       serverUploadStatus: this._serverUploadStatus,
       serverUploadProgress: this._serverUploadProgress,
       serverUploadError: this._serverUploadError,
+      serverUploadCause: this._serverUploadCause,
       selected: this._selected,
       starRating: this._starRating,
       lookId: this._lookId,
@@ -351,6 +361,7 @@ export class CulledPhoto {
       serverUploadStatus: data.serverUploadStatus,
       serverUploadProgress: data.serverUploadProgress,
       serverUploadError: data.serverUploadError,
+      serverUploadCause: data.serverUploadCause,
       selected: data.selected,
       starRating: data.starRating,
       lookId: isLookId(data.lookId) ? data.lookId : 'original',

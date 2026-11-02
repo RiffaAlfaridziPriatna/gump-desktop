@@ -5,6 +5,7 @@ import {APIException, APIService} from '@services/api';
 import type {FileAsset} from '@services/upload/types';
 import {resolveUploadFileAsset} from './resolveUploadFileAsset';
 import {CulledAlbumPhoto} from './types';
+import {UploadSourceMissingError} from './formatUploadError';
 import {getPhotoById, updatePhoto} from './store';
 
 function getUploadSelectedPhotosUseCase() {
@@ -19,7 +20,16 @@ function resolveUploadFile(
   albumId: string,
   photo: CulledAlbumPhoto,
 ): FileAsset {
-  return resolveUploadFileAsset(photo, getBakedUploadFile(albumId, photo.photoId));
+  try {
+    return resolveUploadFileAsset(
+      photo,
+      getBakedUploadFile(albumId, photo.photoId),
+    );
+  } catch (err) {
+    throw new UploadSourceMissingError('Photo source is unavailable', {
+      cause: err,
+    });
+  }
 }
 
 async function uploadFile(
@@ -34,19 +44,24 @@ async function uploadFile(
   );
 }
 
+function isFailed(albumId: string, photoId: string): boolean {
+  return getPhotoById(albumId, photoId)?.serverUploadStatus === 'failed';
+}
+
 export async function uploadServerPhoto(
   albumId: string,
   photoId: string,
 ): Promise<void> {
   const photo = getPhotoById(albumId, photoId);
   if (!photo) {
-    throw new Error('Photo not found');
+    throw new UploadSourceMissingError('Photo not found');
   }
 
   updatePhoto(albumId, photoId, entry => {
     entry.serverUploadStatus = 'uploading';
     entry.serverUploadProgress = 0;
     entry.serverUploadError = undefined;
+    entry.serverUploadCause = undefined;
   });
   getUploadSelectedPhotosUseCase().startUpload(albumId, photoId);
 
@@ -70,7 +85,7 @@ export async function uploadServerPhoto(
   try {
     await uploadFile(photo, albumId, onProgress);
   } catch (err) {
-    if (!isRetryableServerError(err)) {
+    if (!isRetryableServerError(err) || isFailed(albumId, photoId)) {
       throw err;
     }
 
@@ -78,10 +93,15 @@ export async function uploadServerPhoto(
       entry.serverUploadProgress = 0;
       entry.serverUploadStatus = 'uploading';
       entry.serverUploadError = undefined;
+      entry.serverUploadCause = undefined;
     });
     await uploadFile(photo, albumId, onProgress);
   }
 
+  // A stale attempt (after the queue timed out) must not overwrite a settled failure.
+  if (isFailed(albumId, photoId)) {
+    return;
+  }
   updatePhoto(albumId, photoId, entry => {
     entry.serverUploadProgress = 100;
     entry.serverUploadStatus = 'uploaded';
