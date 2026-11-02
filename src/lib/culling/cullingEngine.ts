@@ -935,6 +935,7 @@ export const cullingEngine = {
     albumId: string,
     photoIds: string[],
     data: {lookId: LookId},
+    options: {persist?: boolean} = {},
   ): Promise<void> {
     await ensureAlbumLoaded(albumId);
     if (!isLookId(data.lookId)) {
@@ -961,7 +962,9 @@ export const cullingEngine = {
     if (syncedPhotoIds.length > 0) {
       syncPhotosFromStore(albumId, syncedPhotoIds);
     }
-    await persistAlbum(albumId);
+    if (options.persist !== false) {
+      await persistAlbum(albumId);
+    }
     flushRenderSync();
   },
 
@@ -970,8 +973,13 @@ export const cullingEngine = {
     lookId: LookId,
     scope: ApplyAlbumLookScope,
   ): Promise<number> {
-    return applyAlbumLook(albumId, lookId, scope, photoIds =>
-      cullingEngine.updateLook(albumId, photoIds, {lookId}),
+    return applyAlbumLook(
+      albumId,
+      lookId,
+      scope,
+      photoIds =>
+        cullingEngine.updateLook(albumId, photoIds, {lookId}, {persist: false}),
+      () => persistAlbum(albumId),
     );
   },
 
