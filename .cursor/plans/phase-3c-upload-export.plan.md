@@ -38,7 +38,7 @@ todos:
     status: completed
   - id: s5l
     content: Upload modal failure states (partial, quota, final, disk while baking)
-    status: pending
+    status: completed
 isProject: false
 ---
 
