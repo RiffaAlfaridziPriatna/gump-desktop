@@ -2036,6 +2036,13 @@ void GumpLocalStorage::GetFreeDiskSpace(std::string path, ReactPromiseJS &&promi
         if (!probe.is_absolute()) {
           throw std::runtime_error("An absolute path is required");
         }
+        // UNC and device-namespace roots (double separator) are rejected before any disk access.
+        // Local extended-length roots (the "\\?\C:" form) are rejected too: not detected safely.
+        const std::wstring rootName = probe.root_name().native();
+        const auto isSeparator = [](wchar_t c) { return c == L'\\' || c == L'/'; };
+        if (rootName.size() >= 2 && isSeparator(rootName[0]) && isSeparator(rootName[1])) {
+          throw std::runtime_error("Network paths are not supported");
+        }
 
         std::error_code ec;
         while (!std::filesystem::exists(probe, ec)) {
