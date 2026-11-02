@@ -1943,6 +1943,38 @@ void GumpLocalStorage::EnsureExportStagingDirectory(ReactPromiseJS &&promise) no
       std::move(promise));
 }
 
+void GumpLocalStorage::GetFreeDiskSpace(std::string path, ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [path = std::move(path)]() {
+        if (path.empty()) {
+          throw std::runtime_error("An absolute path is required");
+        }
+
+        auto probe = std::filesystem::path(ToWide(path));
+        if (!probe.is_absolute()) {
+          throw std::runtime_error("An absolute path is required");
+        }
+
+        std::error_code ec;
+        while (!std::filesystem::exists(probe, ec)) {
+          const auto parent = probe.parent_path();
+          if (parent.empty() || parent == probe) {
+            throw std::runtime_error("No existing parent directory for path");
+          }
+          probe = parent;
+        }
+
+        ULARGE_INTEGER available{};
+        if (!GetDiskFreeSpaceExW(probe.c_str(), &available, nullptr, nullptr)) {
+          throw std::runtime_error("Unable to read free disk space");
+        }
+        return winrtRN::JSValue(winrtRN::JSValueObject{
+            {"availableBytes", static_cast<int64_t>(available.QuadPart)},
+        });
+      },
+      std::move(promise));
+}
+
 void GumpLocalStorage::CopyFile(
     std::string sourcePath,
     std::string destinationPath,

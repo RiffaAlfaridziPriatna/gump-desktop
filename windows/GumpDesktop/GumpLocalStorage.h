@@ -128,6 +128,11 @@ struct GumpLocalStorage {
   void EnsureExportStagingDirectory(
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
 
+  REACT_METHOD(GetFreeDiskSpace, L"getFreeDiskSpace");
+  void GetFreeDiskSpace(
+      std::string path,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
   REACT_METHOD(CopyFile, L"copyFile");
   void CopyFile(
       std::string sourcePath,
