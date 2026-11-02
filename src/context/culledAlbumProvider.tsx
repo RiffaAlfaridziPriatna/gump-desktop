@@ -474,9 +474,15 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
         photoId =>
           getPhotoById(albumId, photoId)?.serverUploadStatus === 'pending',
       );
-      if (pendingIds.length > 0) {
-        kickServerUpload(albumId, pendingIds);
+      if (pendingIds.length === 0) {
+        reportError(new Error('No pending photos to retry look bake'), {
+          source: 'culled_album_provider',
+          operation: 'retryUploadLookBake',
+          albumId,
+        });
+        return;
       }
+      kickServerUpload(albumId, pendingIds);
     },
     [kickServerUpload],
   );

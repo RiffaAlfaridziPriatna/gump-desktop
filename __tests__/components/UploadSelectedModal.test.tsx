@@ -98,6 +98,7 @@ async function mount(
       onClose={onClose}
       onUploadNow={jest.fn(async () => undefined)}
       onOpenAlbum={onOpenAlbum}
+      onRetryStarted={jest.fn()}
     />,
   );
   await act(async () => {});
@@ -127,6 +128,7 @@ describe('UploadSelectedModal cloud storage states', () => {
         onClose={jest.fn()}
         onUploadNow={jest.fn(async () => undefined)}
         onOpenAlbum={jest.fn()}
+        onRetryStarted={jest.fn()}
       />,
     );
     await act(async () => {});

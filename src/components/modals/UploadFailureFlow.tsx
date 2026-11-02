@@ -16,6 +16,8 @@ type UploadFailureFlowProps = {
   onBackToAlbum: () => void;
   onClose: () => void;
   onViewCloudPlans: () => void;
+  /** Called in the same event as a retry so the modal leaves the failure view in one commit. */
+  onRetryStarted: () => void;
 };
 
 /** Upload finished with failures: partial failure, or the quota views until a fresh check fits. */
@@ -27,6 +29,7 @@ export function UploadFailureFlow({
   onBackToAlbum,
   onClose,
   onViewCloudPlans,
+  onRetryStarted,
 }: UploadFailureFlowProps) {
   const {retryFailedServerUploads} = useCulledAlbumActions();
   // Keep the last resolved check during a refresh so the view (and focus) stays.
@@ -34,14 +37,19 @@ export function UploadFailureFlow({
   if (preflight.status !== 'checking') {
     lastResolved.current = preflight;
   }
-  const check = lastResolved.current ?? preflight;
   const hasQuota = summary.quota > 0;
-  const fits = check.status === 'ok' || check.status === 'nearLimit';
+  const check = lastResolved.current;
 
-  if (hasQuota && (check.status === 'exceeded' || check.status === 'unavailable')) {
+  // With quota photos, choose failure vs quota view only after the first result.
+  if (
+    hasQuota &&
+    (check == null ||
+      check.status === 'exceeded' ||
+      check.status === 'unavailable')
+  ) {
     return (
       <UploadCloudStorageView
-        preflight={check}
+        preflight={preflight}
         photoCount={summary.total}
         starting={false}
         onUploadNow={noop}
@@ -53,14 +61,18 @@ export function UploadFailureFlow({
     );
   }
 
-  const includeQuota = hasQuota && fits;
+  const includeQuota =
+    hasQuota && (check?.status === 'ok' || check?.status === 'nearLimit');
   return (
     <UploadFailureView
       uploaded={summary.uploaded}
       total={summary.total}
       retryCount={summary.retryable + (includeQuota ? summary.quota : 0)}
       finalCount={summary.final}
-      onRetry={() => retryFailedServerUploads(albumId, {includeQuota})}
+      onRetry={() => {
+        retryFailedServerUploads(albumId, {includeQuota});
+        onRetryStarted();
+      }}
       onBackToAlbum={onBackToAlbum}
     />
   );
@@ -70,18 +82,23 @@ type UploadBakeDiskFullProps = {
   albumId: string;
   requiredBytes: number;
   onCancel: () => void;
+  onRetryStarted: () => void;
 };
 
 export function UploadBakeDiskFull({
   albumId,
   requiredBytes,
   onCancel,
+  onRetryStarted,
 }: UploadBakeDiskFullProps) {
   const {retryUploadLookBake} = useCulledAlbumActions();
   return (
     <UploadBakeDiskFullView
       requiredBytes={requiredBytes}
-      onTryAgain={() => retryUploadLookBake(albumId)}
+      onTryAgain={() => {
+        retryUploadLookBake(albumId);
+        onRetryStarted();
+      }}
       onCancel={onCancel}
     />
   );

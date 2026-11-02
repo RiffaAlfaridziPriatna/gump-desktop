@@ -150,6 +150,7 @@ async function mount(
   mockRefetch = makeCurrentUserRefetch(props.scenario ?? 'normal');
   const onClose = jest.fn();
   const onOpenAlbum = jest.fn();
+  const onRetryStarted = jest.fn();
   const view = render(
     <UploadSelectedModal
       visible
@@ -161,11 +162,12 @@ async function mount(
       onClose={onClose}
       onUploadNow={jest.fn(async () => undefined)}
       onOpenAlbum={onOpenAlbum}
+      onRetryStarted={onRetryStarted}
     />,
   );
   mounted.push(view.renderer);
   await act(async () => {});
-  return {renderer: view.renderer, onClose, onOpenAlbum};
+  return {renderer: view.renderer, onClose, onOpenAlbum, onRetryStarted};
 }
 
 describe('upload failure states', () => {
@@ -252,34 +254,59 @@ describe('upload failure states', () => {
     expect(buttonLabels(renderer)).toContain('Retry 1 photo');
   });
 
-  it('Retry re-queues only retryable photos through the real store action', async () => {
-    seed([
-      {id: 'net', status: 'failed', cause: 'network'},
-      {id: 'quota', status: 'failed', cause: 'storageLimit'},
-      {id: 'final', status: 'failed', cause: 'rejected'},
-      {id: 'done', status: 'uploaded'},
-    ]);
-    // Check pending: quota photos are not offered yet.
-    mockRefetch = jest.fn(() => new Promise(() => undefined)) as never;
-    const view = render(
+  function Controlled() {
+    const [phase, setPhase] = React.useState<'complete' | 'uploading'>('complete');
+    return (
       <UploadSelectedModal
         visible
         albumId={ALBUM}
-        phase="complete"
+        phase={phase}
         photoCount={4}
         uploadSizeGb={0}
         onClose={jest.fn()}
         onUploadNow={jest.fn(async () => undefined)}
         onOpenAlbum={jest.fn()}
-      />,
+        onRetryStarted={() => setPhase('uploading')}
+      />
     );
+  }
+
+  it('Retry re-queues only retryable photos and never flips through Upload complete', async () => {
+    seed([
+      {id: 'net', status: 'failed', cause: 'network'},
+      {id: 'final', status: 'failed', cause: 'rejected'},
+      {id: 'done', status: 'uploaded'},
+    ]);
+    mockRefetch = makeCurrentUserRefetch('normal');
+    const view = render(<Controlled />);
     mounted.push(view.renderer);
     await act(async () => {});
     expect(buttonLabels(view.renderer)).toContain('Retry 1 photo');
     await press(view.renderer, 'Retry 1 photo');
     expect(photoOf('net').serverUploadStatus).toBe('pending');
-    expect(photoOf('quota').serverUploadStatus).toBe('failed');
     expect(photoOf('final').serverUploadStatus).toBe('failed');
+    expect(texts(view.renderer)[0]).toBe('Uploading 4 Photos');
+    expect(texts(view.renderer)).not.toContain('Upload complete');
+    expect(announce).not.toHaveBeenCalledWith(
+      expect.stringContaining('Upload complete'),
+    );
+    expect(mockFocus).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the checking view without buttons for quota photos until the first result', async () => {
+    seed([
+      {id: 'net', status: 'failed', cause: 'network'},
+      {id: 'quota', status: 'failed', cause: 'storageLimit'},
+    ]);
+    mockRefetch = jest.fn(() => new Promise(() => undefined)) as never;
+    const view = render(<Controlled />);
+    mounted.push(view.renderer);
+    await act(async () => {});
+    expect(texts(view.renderer)[1]).toBe('Checking cloud storage…');
+    expect(buttonLabels(view.renderer)).toEqual([]);
+    expect(
+      view.renderer.root.findAll(n => n.props.accessibilityRole === 'alert'),
+    ).toHaveLength(0);
   });
 
   it('shows Not enough cloud storage for quota photos when the retry does not fit', async () => {
@@ -315,7 +342,7 @@ describe('upload failure states', () => {
 
   it('renders the bake disk-full state; Try again re-runs the bake, Cancel closes', async () => {
     seed([{id: 'a', status: 'pending'}]);
-    const {renderer, onClose} = await mount({
+    const {renderer, onClose, onRetryStarted} = await mount({
       phase: 'uploading',
       bakeDiskFull: {requiredBytes: 0.6 * GIB},
     });
@@ -331,6 +358,7 @@ describe('upload failure states', () => {
     expect(mockFocus).toHaveBeenCalledTimes(1);
     await press(renderer, 'Try again');
     expect(mockRetryUploadLookBake).toHaveBeenCalledWith(ALBUM);
+    expect(onRetryStarted).toHaveBeenCalled();
     await press(renderer, 'Cancel');
     expect(onClose).toHaveBeenCalled();
   });

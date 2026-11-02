@@ -9,9 +9,10 @@ import {openUpgradePlan} from '@lib/plan/billingLinks';
 import {reportError} from '@lib/observability/reportError';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {AccessibilityInfo, StyleSheet, Text, View} from 'react-native';
 import {UploadCloudStorageView} from './UploadCloudStorageView';
+import {focusDesktopNode} from './focusDesktopNode';
 import {UploadCompleteView} from './UploadCompleteView';
 import {UploadBakeDiskFull, UploadFailureFlow} from './UploadFailureFlow';
 import CircleBlue from '../../assets/images/upload/blue_circle.svg';
@@ -37,6 +38,8 @@ type UploadSelectedModalProps = {
   onClose: () => void;
   onUploadNow: () => Promise<void>;
   onOpenAlbum: () => void;
+  /** Switch the owner's phase to 'uploading' after a retry starts. */
+  onRetryStarted: () => void;
 };
 
 function ModalDecor() {
@@ -82,6 +85,10 @@ function UploadingPhase({
   useEffect(() => {
     AccessibilityInfo.announceForAccessibility(`${title}. ${subtitle}`);
   }, [title, subtitle]);
+  const progressRef = useRef<View | null>(null);
+  useEffect(() => {
+    focusDesktopNode(progressRef.current);
+  }, []);
   const uploadedGb = bytesToGigabytes(uploadedBytes);
   const totalGb = bytesToGigabytes(totalUploadBytes);
 
@@ -96,6 +103,7 @@ function UploadingPhase({
 
       <View style={styles.uploadProgressBlock}>
         <View
+          ref={progressRef}
           accessible
           accessibilityRole="progressbar"
           accessibilityLabel="Upload progress"
@@ -148,6 +156,7 @@ export function UploadSelectedModal({
   onClose,
   onUploadNow,
   onOpenAlbum,
+  onRetryStarted,
 }: UploadSelectedModalProps) {
   const [starting, setStarting] = useState(false);
   const failures = useUploadFailureSummary(albumId);
@@ -209,6 +218,7 @@ export function UploadSelectedModal({
           albumId={albumId}
           requiredBytes={bakeDiskFull.requiredBytes ?? 0}
           onCancel={onClose}
+          onRetryStarted={onRetryStarted}
         />
       )}
       {phase === 'uploading' && !bakeDiskFull && (
@@ -229,6 +239,7 @@ export function UploadSelectedModal({
           onBackToAlbum={onOpenAlbum}
           onClose={onClose}
           onViewCloudPlans={handleViewCloudPlans}
+          onRetryStarted={onRetryStarted}
         />
       )}
       {phase === 'complete' && !hasFailures && (

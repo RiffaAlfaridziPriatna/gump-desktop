@@ -699,6 +699,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           onClose={handleCloseUploadModal}
           onUploadNow={handleStartUpload}
           onOpenAlbum={handleOpenAlbum}
+          onRetryStarted={() => setUploadPhase('uploading')}
         />
 
         <ExportPhotosModal
