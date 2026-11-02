@@ -32,7 +32,7 @@ todos:
     status: completed
   - id: s5i
     content: Export modal failure states per Figma
-    status: pending
+    status: completed
   - id: s5j
     content: Upload modal cloud storage states per Figma
     status: pending
