@@ -5,16 +5,16 @@ approved: true
 todos:
   - id: s4a
     content: Category label map (AI Recommended, Needs Review, Possible Blur, Possible Closed Eyes, Similar Shots)
-    status: pending
+    status: completed
   - id: s4b
     content: Photo Filters and AI Categories sidebar sections
     status: pending
   - id: s4c
     content: Sidebar action stack (Upload Picked, Add Photos, Export, Edit Photos)
-    status: pending
+    status: completed
   - id: s4e
     content: Grid focus state (first click focuses, click on the focused photo opens detail)
-    status: pending
+    status: completed
   - id: s4f
     content: Faces in This Photo panel
     status: pending
