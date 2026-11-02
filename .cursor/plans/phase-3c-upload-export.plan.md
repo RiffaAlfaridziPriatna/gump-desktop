@@ -26,10 +26,10 @@ todos:
     status: completed
   - id: s5h
     content: Disk check before the upload look bake
-    status: pending
+    status: completed
   - id: s5k
     content: Server upload toast counts failures
-    status: pending
+    status: completed
   - id: s5i
     content: Export modal failure states per Figma
     status: pending
