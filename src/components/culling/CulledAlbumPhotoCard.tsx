@@ -266,7 +266,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
           />
           <CulledAlbumPhotoCardOverlay
             photoId={photoId}
-            fileName={fileName}
+            photo={photo}
             showDeleteButton={showDeleteButton}
             similarShotCount={similarShotCount}
             onDeletePress={onDeletePress}
