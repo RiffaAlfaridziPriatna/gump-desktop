@@ -17,13 +17,13 @@ todos:
     status: completed
   - id: s5e
     content: Native error codes for export and look bake failures
-    status: pending
+    status: completed
   - id: s5f
     content: Export disk preflight and typed export failures
-    status: pending
+    status: completed
   - id: s5g
     content: Cloud storage preflight hook for upload
-    status: pending
+    status: completed
   - id: s5h
     content: Disk check before the upload look bake
     status: pending
