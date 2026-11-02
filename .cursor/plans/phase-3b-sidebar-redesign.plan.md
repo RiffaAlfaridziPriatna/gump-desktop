@@ -8,7 +8,7 @@ todos:
     status: completed
   - id: s4b
     content: Photo Filters and AI Categories sidebar sections
-    status: pending
+    status: completed
   - id: s4c
     content: Sidebar action stack (Upload Picked, Add Photos, Export, Edit Photos)
     status: completed
@@ -17,7 +17,7 @@ todos:
     status: completed
   - id: s4f
     content: Faces in This Photo panel
-    status: pending
+    status: completed
   - id: s4d
     content: Recompose CulledAlbumDetailSidebar per Figma and drop Key Faces from it
     status: pending
@@ -26,10 +26,10 @@ todos:
     status: pending
   - id: s4h
     content: Photo card AI badges (AI recommended, Needs review, Check eyes, Check sharpness)
-    status: pending
+    status: completed
   - id: s4i
     content: Showing line for every active filter, Clear filters, no-results state
-    status: pending
+    status: completed
 isProject: false
 ---
 
