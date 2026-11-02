@@ -18,6 +18,7 @@
 #include <MemoryBuffer.h>
 #include <Shellapi.h>
 #include <shobjidl.h>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <stdexcept>
@@ -225,7 +226,9 @@ bool WriteBytesToPath(const std::filesystem::path &path, const std::vector<uint8
   CloseHandle(file);
 
   if (!writeOk || written != bytes.size()) {
+    const DWORD writeError = GetLastError();
     DeleteFileW(tempPath.c_str());
+    SetLastError(writeError);
     return false;
   }
 
@@ -238,7 +241,9 @@ bool WriteBytesToPath(const std::filesystem::path &path, const std::vector<uint8
     return true;
   }
 
+  const DWORD copyError = GetLastError();
   DeleteFileW(tempPath.c_str());
+  SetLastError(copyError);
   return false;
 }
 
@@ -1234,12 +1239,59 @@ winrtRN::JSValueObject AnalyzePhotoPayload(const std::filesystem::path &path) {
   };
 }
 
+// Typed export failure; message and user info never carry file paths.
+class ExportFailure : public std::runtime_error {
+public:
+  ExportFailure(std::string code, const char *message, int missingCount = 0)
+      : std::runtime_error(message), m_code(std::move(code)), m_missingCount(missingCount) {}
+  const std::string &Code() const { return m_code; }
+  int MissingCount() const { return m_missingCount; }
+
+private:
+  std::string m_code;
+  int m_missingCount;
+};
+
+// Returns nullptr when the codes are not a disk-full or not-writable failure.
+const char *ExportCodeForErrors(DWORD win32Error, int posixError) {
+  if (win32Error == ERROR_DISK_FULL || win32Error == ERROR_HANDLE_DISK_FULL ||
+      posixError == ENOSPC) {
+    return "E_DISK_FULL";
+  }
+  if (win32Error == ERROR_ACCESS_DENIED || win32Error == ERROR_WRITE_PROTECT ||
+      posixError == EACCES || posixError == EPERM || posixError == EROFS) {
+    return "E_NOT_WRITABLE";
+  }
+  return nullptr;
+}
+
+const char *ExportCodeForErrorCode(const std::error_code &error) {
+  if (error.category() == std::system_category()) {
+    return ExportCodeForErrors(static_cast<DWORD>(error.value()), error.default_error_condition().value());
+  }
+  return ExportCodeForErrors(0, error.value());
+}
+
+[[noreturn]] void ThrowExportFailure(const char *code) {
+  const std::string value(code);
+  if (value == "E_DISK_FULL") {
+    throw ExportFailure(value, "Not enough disk space");
+  }
+  throw ExportFailure(value, "Destination is not writable");
+}
+
 template <typename Work>
 void RunAsync(Work &&work, ReactPromiseJS &&promise) {
   std::thread([work = std::forward<Work>(work), promise = std::move(promise)]() mutable {
     winrt::init_apartment(winrt::apartment_type::multi_threaded);
     try {
       promise.Resolve(work());
+    } catch (const ExportFailure &failure) {
+      winrtRN::ReactError reactError{failure.Code(), failure.what()};
+      if (failure.MissingCount() > 0) {
+        reactError.UserInfo["missingCount"] = winrtRN::JSValue(static_cast<int64_t>(failure.MissingCount()));
+      }
+      promise.Reject(std::move(reactError));
     } catch (const winrt::hresult_error &error) {
       promise.Reject(winrtRN::ReactError{"Error", ToUtf8(error.message())});
     } catch (const std::exception &error) {
@@ -1734,6 +1786,9 @@ void EnsureDirectory(const std::filesystem::path &path) {
     return;
   }
   if (!std::filesystem::create_directories(path, error) && error) {
+    if (const char *code = ExportCodeForErrorCode(error)) {
+      ThrowExportFailure(code);
+    }
     throw std::runtime_error("Unable to create export directory");
   }
 }
@@ -1851,6 +1906,7 @@ void GumpLocalStorage::CreateZipFromEntries(
 
         std::vector<ZipStore::Entry> zipEntries;
         zipEntries.reserve(entries.size());
+        int missingCount = 0;
         for (const auto &rawEntry : entries) {
           if (rawEntry.Type() != winrtRN::JSValueType::Object) {
             throw std::runtime_error("Invalid zip entry");
@@ -1863,15 +1919,33 @@ void GumpLocalStorage::CreateZipFromEntries(
           }
           const auto sourcePath = PathFromUri(uri);
           if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
-            throw std::runtime_error("Zip source file not found");
+            missingCount += 1;
+            continue;
           }
           zipEntries.push_back(ZipStore::Entry{sourcePath, name});
+        }
+        if (missingCount > 0) {
+          throw ExportFailure("E_SOURCE_MISSING", "Source file is missing", missingCount);
         }
 
         std::error_code removeError;
         std::filesystem::remove(destination, removeError);
 
-        const auto result = ZipStore::CreateZip(destination, zipEntries);
+        ZipStore::Result result{};
+        SetLastError(0);
+        errno = 0;
+        try {
+          result = ZipStore::CreateZip(destination, zipEntries);
+        } catch (const std::exception &) {
+          const DWORD win32Error = GetLastError();
+          const int posixError = errno;
+          std::error_code cleanupError;
+          std::filesystem::remove(destination, cleanupError);
+          if (const char *code = ExportCodeForErrors(win32Error, posixError)) {
+            ThrowExportFailure(code);
+          }
+          throw;
+        }
         return winrtRN::JSValue(winrtRN::JSValueObject{
             {"path", ToUtf8(destination.wstring())},
             {"uri", "file://" + ToUtf8(destination.wstring())},
@@ -1997,7 +2071,7 @@ void GumpLocalStorage::CopyFile(
         const auto source = std::filesystem::path(ToWide(sourcePath));
         const auto destination = std::filesystem::path(ToWide(destinationPath));
         if (!std::filesystem::exists(source)) {
-          throw std::runtime_error("Source file not found");
+          throw ExportFailure("E_SOURCE_MISSING", "Source file is missing", 1);
         }
 
         EnsureDirectory(destination.parent_path());
@@ -2010,6 +2084,11 @@ void GumpLocalStorage::CopyFile(
             std::filesystem::copy_options::overwrite_existing,
             copyError);
         if (copyError) {
+          std::error_code cleanupError;
+          std::filesystem::remove(destination, cleanupError);
+          if (const char *code = ExportCodeForErrorCode(copyError)) {
+            ThrowExportFailure(code);
+          }
           throw std::runtime_error("Unable to copy export file");
         }
 
@@ -2650,7 +2729,16 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
   EnsureDirectory(destPath.parent_path());
   std::error_code removeError;
   std::filesystem::remove(destPath, removeError);
+  SetLastError(0);
+  errno = 0;
   if (!WriteSoftwareBitmapJpeg(output, destPath, jpegQuality)) {
+    const DWORD win32Error = GetLastError();
+    const int posixError = errno;
+    std::error_code cleanupError;
+    std::filesystem::remove(destPath, cleanupError);
+    if (const char *code = ExportCodeForErrors(win32Error, posixError)) {
+      ThrowExportFailure(code);
+    }
     throw std::runtime_error(
         "Apply look could not write the baked JPEG to export staging");
   }
@@ -2676,7 +2764,7 @@ void GumpLocalStorage::ApplyLook(
        jpegQuality]() {
         const auto sourcePath = PathFromUri(sourceUri);
         if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
-          throw std::runtime_error("Apply look source file not found");
+          throw ExportFailure("E_SOURCE_MISSING", "Source file is missing", 1);
         }
         if (destPath.empty()) {
           throw std::runtime_error("Apply look destination path is empty");
