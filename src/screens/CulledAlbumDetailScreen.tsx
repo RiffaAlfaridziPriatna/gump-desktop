@@ -32,6 +32,8 @@ import {
 import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
 import {useCulledAlbumDetailData} from '@hooks/useCulledAlbumDetailData';
 import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
+import {useGridFocus} from '@hooks/useGridFocus';
+import {useStableGridPhotos} from '@hooks/useStableGridPhotos';
 import {hasPickedOutsideView, usePickedPhotos} from '@hooks/usePickedPhotos';
 import {usePreloadGridImages} from '@hooks/usePreloadGridImages';
 import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
@@ -58,12 +60,7 @@ import {
   resolveDetailDisplayUri,
   resolveGridDisplayUri,
 } from '@lib/storage/localStorage';
-import {stabilizeGridPhotos} from '@lib/culledAlbum/stableGridPhotos';
-import {
-  toCullingPhoto,
-  isCulledPhotoDisabled,
-  hasInFlightServerUploads,
-} from '@lib/culledAlbum/types';
+import {hasInFlightServerUploads} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
@@ -156,10 +153,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     setKeyFaceTooltipHeight,
   } = useKeyFaceTooltip();
 
-  const gridPhotosCacheRef = useRef(new Map());
-  const previousGridPhotosRef = useRef<
-    ReturnType<typeof stabilizeGridPhotos>
-  >([]);
   const [photoToDelete, setPhotoToDelete] = useState<{
     photoId: string;
     fileName: string;
@@ -230,52 +223,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const cullingBusy = isAnalyzing || isLocalImporting || isAnalysisQueueBusy;
   const canDeletePhoto = cullingCompleted && !cullingBusy;
 
-  // Keep the detail grid on already-culled photos only. Newly imported files
-  // stay out of the grid until analysis finishes, so local import feels like
-  // "nothing happened" besides the toast / progress pill.
-  const rawGridPhotos = useMemo(() => {
-    return albumPhotos
-      .filter(
-        photo =>
-          photo.status === 'uploaded' && photo.analysisStatus === 'analyzed',
-      )
-      .map(photo => ({
-        photoId: photo.photoId,
-        lookId: photo.lookId,
-        lookIntensity: photo.lookIntensity,
-        disabled: isCulledPhotoDisabled(photo),
-        analysis: toCullingPhoto(photo),
-      }));
-  }, [albumPhotos]);
-
-  const liveGridPhotos = useMemo(() => {
-    const stablePhotos = stabilizeGridPhotos(
-      gridPhotosCacheRef.current,
-      rawGridPhotos,
-      previousGridPhotosRef.current,
-    );
-    previousGridPhotosRef.current = stablePhotos;
-    return stablePhotos;
-  }, [rawGridPhotos]);
-
-  const frozenGridPhotosRef = useRef(liveGridPhotos);
-  const wasCullingBusyRef = useRef(false);
-  if (cullingBusy) {
-    if (!wasCullingBusyRef.current && liveGridPhotos.length > 0) {
-      frozenGridPhotosRef.current = liveGridPhotos;
-    }
-    wasCullingBusyRef.current = true;
-  } else {
-    wasCullingBusyRef.current = false;
-    if (liveGridPhotos.length > 0) {
-      frozenGridPhotosRef.current = liveGridPhotos;
-    }
-  }
-
-  const gridPhotos =
-    cullingBusy && frozenGridPhotosRef.current.length > 0
-      ? frozenGridPhotosRef.current
-      : liveGridPhotos;
+  const gridPhotos = useStableGridPhotos(albumPhotos, cullingBusy);
 
   const totalPhotos = gridPhotos.length;
 
@@ -312,6 +260,11 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
       );
     },
     [albumId, gridView.photos, navigation],
+  );
+
+  const {focusedPhotoId, handleCardPress, clearFocus} = useGridFocus(
+    gridView.photos,
+    handleOpenPhotoDetail,
   );
 
   const handleKeyFacePress = useCallback(
@@ -744,6 +697,9 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
                   styles.grid,
                   isMobileLayout && styles.gridMobile,
                 ]}
+                focusedPhotoId={focusedPhotoId}
+                onCardPress={handleCardPress}
+                onClearFocus={clearFocus}
                 onOpenDetail={handleOpenPhotoDetail}
                 onToggleSelection={toggleSelection}
                 onDeletePress={handleDeletePhotoPress}

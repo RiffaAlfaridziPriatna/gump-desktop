@@ -1,11 +1,17 @@
 import {CulledAlbumPhotoThumbnail} from '@components/culling/CulledAlbumPhotoThumbnail';
 import {CulledAlbumPhotoCardOverlay} from '@components/culling/CulledAlbumPhotoCardOverlay';
+import {CulledAlbumPhotoFocusFrame} from '@components/culling/CulledAlbumPhotoFocusFrame';
 import {Pressable} from '@components/ui';
 import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {
   useCulledAlbumPhotoHovered,
   useCulledAlbumPhotoHoverStore,
 } from '@lib/culledAlbum/photoHover';
+import {
+  isInsideHit,
+  starIndexFromHit,
+  type HitFrame,
+} from '@lib/culledAlbum/cardChromeHit';
 import {isCulledPhotoDisabled, toCullingPhoto} from '@lib/culledAlbum/types';
 import {resolveGridDisplayUri} from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
@@ -19,7 +25,6 @@ const STAR_GAP = 2;
 const STAR_SLOT_WIDTH = STAR_SIZE + STAR_GAP;
 const STAR_ROW_WIDTH =
   STAR_SIZE * STAR_INDICES.length + STAR_GAP * (STAR_INDICES.length - 1);
-const CHROME_HIT_PADDING = 6;
 const SELECT_ICON_SIZE = 16;
 
 const STAR_RATING_IMAGES = [
@@ -34,8 +39,6 @@ const STAR_RATING_IMAGES = [
 const SELECT_ICON_SELECTED = require('../../assets/images/icon_check_circle.png');
 const SELECT_ICON_UNSELECTED = require('../../assets/images/icon_check_circle_outlined.png');
 
-type HitFrame = {x: number; y: number; width: number; height: number};
-
 export type CulledAlbumPhotoCardProps = {
   albumId: string;
   photoId: string;
@@ -44,6 +47,8 @@ export type CulledAlbumPhotoCardProps = {
   isMobileLayout: boolean;
   deferHeavyMediaWork?: boolean;
   similarShotCount?: number;
+  isFocused?: boolean;
+  onCardPress: (photoId: string) => void;
   onOpenDetail: (photoId: string) => void;
   onToggleSelection: (photoId: string, selected: boolean) => void;
   onDeletePress: (photoId: string, fileName: string) => void;
@@ -86,22 +91,6 @@ const StarRatingRow = memo(
   }),
 );
 
-function isInsideHit(x: number, y: number, frame: HitFrame): boolean {
-  return (
-    x >= frame.x - CHROME_HIT_PADDING &&
-    x <= frame.x + frame.width + CHROME_HIT_PADDING &&
-    y >= frame.y - CHROME_HIT_PADDING &&
-    y <= frame.y + frame.height + CHROME_HIT_PADDING
-  );
-}
-
-function starIndexFromHit(x: number, frame: HitFrame): number {
-  return Math.min(
-    4,
-    Math.max(0, Math.floor((x - frame.x) / STAR_SLOT_WIDTH)),
-  );
-}
-
 export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
   albumId,
   photoId,
@@ -110,6 +99,8 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
   isMobileLayout,
   deferHeavyMediaWork = false,
   similarShotCount,
+  isFocused = false,
+  onCardPress,
   onOpenDetail,
   onToggleSelection,
   onDeletePress,
@@ -176,7 +167,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
         return false;
       }
       if (isInsideHit(x, y, starFrame)) {
-        onStarPress(photoId, starIndexFromHit(x, starFrame), starRating);
+        onStarPress(photoId, starIndexFromHit(x, starFrame, STAR_SLOT_WIDTH), starRating);
         return true;
       }
       if (isInsideHit(x, y, selectFrame)) {
@@ -217,7 +208,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
                 {x: cx, y: cy, width: cw, height: ch},
               )
             ) {
-              handleOpenDetail();
+              onCardPress(photoId);
             }
           });
         });
@@ -232,10 +223,10 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
           selectFrameRef.current,
         )
       ) {
-        handleOpenDetail();
+        onCardPress(photoId);
       }
     },
-    [handleChromeHit, handleOpenDetail],
+    [handleChromeHit, onCardPress, photoId],
   );
 
   const handleHoverIn = useCallback(() => {
@@ -260,6 +251,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
       onHoverIn={isMobileLayout ? undefined : handleHoverIn}
       onHoverOut={isMobileLayout ? undefined : handleHoverOut}
       accessible={similarShotCount == null}
+      accessibilityState={{selected: isFocused}}
       onPress={handleCardPress}>
       <View ref={cardRootRef} collapsable={false} style={styles.photoCardRoot}>
         <View style={styles.thumbnailWrapper}>
@@ -314,6 +306,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
             </View>
           </View>
         </View>
+        {isFocused && <CulledAlbumPhotoFocusFrame />}
       </View>
     </Pressable>
   );
