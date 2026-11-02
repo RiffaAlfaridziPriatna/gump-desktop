@@ -19,6 +19,7 @@ import {
 import {
   estimateUploadSizeGb,
 } from '@application/plan/uploadStorageEstimate';
+import {selectPreviewPhoto} from '@lib/culledAlbum/selectPreviewPhoto';
 import {getLookLabel} from '@lib/look/lookCatalog';
 import {FileAsset} from '@services/upload/types';
 import {UploadToast} from '@components/upload/UploadToast';
@@ -155,6 +156,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const [mainContentWidth, setMainContentWidth] = useState(0);
   const lookFlow = useAlbumLookFlow(albumId, albumPhotos.length > 0);
   const defaultLookId = albumRecord?.defaultLookId ?? 'original';
+  const statusLookLabel =
+    defaultLookId !== 'original' ? getLookLabel(defaultLookId) : undefined;
   const isBlockingModalOpen =
     photoToDelete !== null ||
     showUploadModal ||
@@ -251,10 +254,9 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
   const focusedPhoto = useCulledAlbumPhoto(albumId, focusedPhotoId ?? '');
   const firstGridPhotoId = gridView.photos[0]?.photoId;
-  const previewPhoto =
-    focusedPhoto ??
-    albumPhotos.find(photo => photo.photoId === firstGridPhotoId) ??
-    albumPhotos[0];
+  const previewPhoto = lookFlow.pickerVisible
+    ? selectPreviewPhoto(albumPhotos, focusedPhoto, firstGridPhotoId)
+    : undefined;
   const focusedPanelPhoto = useMemo(
     () => (focusedPhoto ? toFacesPanelPhoto(focusedPhoto) : null),
     [focusedPhoto],
@@ -542,11 +544,8 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             starRatingFilter={starRatingFilter}
             onSelectionFilterChange={setSelectionFilter}
             onStarRatingFilterChange={setStarRatingFilter}
-            lookLabel={
-              albumRecord && albumRecord.defaultLookId !== 'original'
-                ? getLookLabel(albumRecord.defaultLookId)
-                : undefined
-            }
+            lookLabel={statusLookLabel}
+            changeLookDisabled={albumPhotos.length === 0}
             onChangeLook={lookFlow.openFromChange}
             changeLookRef={lookFlow.changeLookRef}
             isMobileLayout={isMobileLayout}

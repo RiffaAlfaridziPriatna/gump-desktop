@@ -37,6 +37,14 @@ describe('ApplyLookScopeModal', () => {
       .mockImplementation(() => {});
   });
 
+  it('focuses a mounted primary button when reopened from hidden', () => {
+    const { rerender, props } = mount({ visible: false });
+    (focusDesktopNode as jest.Mock).mockClear();
+    rerender(<ApplyLookScopeModal {...props} visible />);
+    expect(focusDesktopNode).toHaveBeenCalledTimes(1);
+    expect((focusDesktopNode as jest.Mock).mock.calls[0][0]).not.toBeNull();
+  });
+
   it('shows title and body with the look label', () => {
     const { renderer } = mount();
     expect(texts(renderer)).toEqual(

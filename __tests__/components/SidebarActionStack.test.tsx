@@ -76,4 +76,11 @@ describe('SidebarActionStack', () => {
     expect(props.onExport).not.toHaveBeenCalled();
     expect(props.onEditPhotos).not.toHaveBeenCalled();
   });
+
+  it('disables Edit Photos with a hint for an empty album', () => {
+    const {renderer} = setup({editPhotosDisabled: true});
+    const edit = getByLabel(renderer, EDIT);
+    expect(edit.props.accessibilityState).toEqual({disabled: true});
+    expect(edit.props.accessibilityHint).toBe('Add photos to edit');
+  });
 });

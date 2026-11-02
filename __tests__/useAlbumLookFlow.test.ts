@@ -57,7 +57,6 @@ describe('useAlbumLookFlow', () => {
       albumId: 'a1',
       lookId: 'filmMood',
       scope: 'allPhotos',
-      photoCount: 0,
     });
     expect(mockCapture).toHaveBeenCalledWith(
       'apply_look_completed',
@@ -120,10 +119,70 @@ describe('useAlbumLookFlow', () => {
     act(() => hook.result.current.applyAll());
     await flush();
     expect(mockReport).toHaveBeenCalledWith(error, expect.any(Object));
-    expect(mockCapture).toHaveBeenCalledWith(
-      'apply_look_failed',
-      expect.objectContaining({lookId: 'filmMood', scope: 'allPhotos'}),
+    const failed = mockCapture.mock.calls.find(
+      c => c[0] === 'apply_look_failed',
     );
+    expect(failed?.[1]).toEqual({
+      albumId: 'a1',
+      lookId: 'filmMood',
+      scope: 'allPhotos',
+    });
     expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalled();
+  });
+
+  it('ignores a second applyAll in the same act', () => {
+    mockApply.mockReturnValue(new Promise(() => {}));
+    const {hook} = setup();
+    act(() => hook.result.current.openFromEdit());
+    act(() => hook.result.current.chooseLook('filmMood'));
+    act(() => {
+      hook.result.current.applyAll();
+      hook.result.current.applyAll();
+    });
+    expect(mockApply).toHaveBeenCalledTimes(1);
+    act(() => hook.result.current.applyNewOnly());
+    expect(mockApply).toHaveBeenCalledTimes(1);
+  });
+
+  it('only the latest apply announces; the older reports superseded', async () => {
+    const resolvers: ((n: number) => void)[] = [];
+    mockApply.mockImplementation(
+      () => new Promise<number>(r => resolvers.push(r)),
+    );
+    const {hook} = setup();
+    act(() => hook.result.current.openFromEdit());
+    act(() => hook.result.current.chooseLook('filmMood'));
+    act(() => hook.result.current.applyAll());
+    act(() => hook.result.current.openFromEdit());
+    act(() => hook.result.current.chooseLook('cleanNatural'));
+    act(() => hook.result.current.applyAll());
+    expect(mockApply).toHaveBeenCalledTimes(2);
+    resolvers[0](5);
+    await flush();
+    expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalled();
+    expect(mockCapture).toHaveBeenCalledWith(
+      'apply_look_completed',
+      expect.objectContaining({photoCount: 5, superseded: true}),
+    );
+    resolvers[1](2);
+    await flush();
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns focus to Edit Photos when Change picked Original', () => {
+    const {hook, editNode} = setup();
+    act(() => hook.result.current.openFromChange());
+    act(() => hook.result.current.chooseLook('original'));
+    act(() => hook.result.current.applyAll());
+    expect(mockFocus).toHaveBeenLastCalledWith(editNode);
+  });
+
+  it('focus is a no-op when no trigger is mounted (mobile layout)', () => {
+    const {hook} = setup();
+    hook.result.current.editPhotosRef.current = null;
+    hook.result.current.changeLookRef.current = null;
+    act(() => hook.result.current.openFromEdit());
+    act(() => hook.result.current.close());
+    expect(mockFocus).toHaveBeenLastCalledWith(null);
   });
 });

@@ -75,6 +75,8 @@ export function SidebarActionStack({
         disabled={editPhotosDisabled}
         style={[styles.button, editPhotosDisabled && styles.buttonDisabled]}
         accessibilityRole="button"
+        accessibilityState={{ disabled: editPhotosDisabled }}
+        accessibilityHint={editPhotosDisabled ? 'Add photos to edit' : undefined}
         accessibilityLabel="Edit photos">
         <IconWand width={22} height={22} color={colors.accent} />
         <Text style={styles.buttonText}>Edit Photos</Text>

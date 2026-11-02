@@ -68,14 +68,37 @@ export function ApplyLookScopeModal({
   onClose,
 }: ApplyLookScopeModalProps) {
   const primaryRef = useRef<View | null>(null);
+  const focusedRef = useRef(false);
   const body = `${lookLabel} applies to future uploads.`;
 
-  useEffect(() => {
-    if (!visible) {
+  // The ui Modal mounts its content one commit after `visible` flips, so focus
+  // from the ref callback too, once the primary button exists.
+  const focusPrimary = useCallback(() => {
+    if (focusedRef.current || !primaryRef.current) {
       return;
     }
+    focusedRef.current = true;
     focusDesktopNode(primaryRef.current);
-  }, [visible]);
+  }, []);
+  const setPrimaryRef = useCallback(
+    (node: View | null) => {
+      primaryRef.current = node;
+      if (node && visibleRef.current) {
+        focusPrimary();
+      }
+    },
+    [focusPrimary],
+  );
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+
+  useEffect(() => {
+    if (visible) {
+      focusPrimary();
+    } else {
+      focusedRef.current = false;
+    }
+  }, [visible, focusPrimary]);
 
   useEffect(() => {
     if (!visible) {
@@ -121,7 +144,7 @@ export function ApplyLookScopeModal({
           <View style={styles.actions}>
             <Pressable
               // The ui wrapper forwards unknown props; React 19 passes ref as a prop.
-              {...{ ref: primaryRef }}
+              {...{ ref: setPrimaryRef }}
               style={({ pressed }) => [
                 styles.primaryButton,
                 pressed && styles.pressed,

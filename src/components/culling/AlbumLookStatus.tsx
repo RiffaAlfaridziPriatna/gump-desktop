@@ -8,6 +8,7 @@ type AlbumLookStatusProps = {
   lookLabel: string;
   onChange: () => void;
   changeRef?: Ref<View>;
+  disabled?: boolean;
 };
 
 const AUTO_APPLY_TEXT = 'Auto-applies to new photos';
@@ -18,6 +19,7 @@ export function AlbumLookStatus({
   lookLabel,
   onChange,
   changeRef,
+  disabled = false,
 }: AlbumLookStatusProps) {
   return (
     <View style={styles.outerRow} testID="album-look-status">
@@ -38,6 +40,8 @@ export function AlbumLookStatus({
       <Pressable
         {...{ref: changeRef}}
         onPress={onChange}
+        disabled={disabled}
+        accessibilityState={{disabled}}
         hitSlop={HIT_SLOP}
         accessibilityRole="button"
         accessibilityLabel="Change album look">

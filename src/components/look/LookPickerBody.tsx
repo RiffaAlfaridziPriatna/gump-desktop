@@ -54,11 +54,34 @@ export function LookPickerBody({
   const tileRefs = useRef<Record<string, View | null>>({});
   const pendingFocusRef = useRef(false);
 
+  const openFocusedRef = useRef<string | null>(null);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  const currentRef = useRef(currentLookId);
+  currentRef.current = currentLookId;
+
+  // The ui Modal mounts its content one commit after `visible` flips, so focus
+  // from the tile ref callback too, once the current tile exists.
+  const focusCurrentTile = useCallback(() => {
+    const node = tileRefs.current[currentRef.current];
+    if (
+      openFocusedRef.current === currentRef.current ||
+      !visibleRef.current ||
+      !node
+    ) {
+      return;
+    }
+    openFocusedRef.current = currentRef.current;
+    focusDesktopNode(node);
+  }, []);
+
   useEffect(() => {
     if (visible) {
-      focusDesktopNode(tileRefs.current[currentLookId] ?? null);
+      focusCurrentTile();
+    } else {
+      openFocusedRef.current = null;
     }
-  }, [visible, currentLookId]);
+  }, [visible, currentLookId, focusCurrentTile]);
 
   useEffect(() => {
     if (pendingFocusRef.current) {
@@ -146,6 +169,9 @@ export function LookPickerBody({
             onSelect={onSelectLook}
             focusRef={node => {
               tileRefs.current[look.id] = node;
+              if (node && look.id === currentRef.current) {
+                focusCurrentTile();
+              }
             }}
           />
         ))}

@@ -22,6 +22,9 @@ export function useAlbumLookFlow(albumId: string, hasPhotos: boolean) {
   const editPhotosRef = useRef<View | null>(null);
   const changeLookRef = useRef<View | null>(null);
   const wasOpenRef = useRef(false);
+  const stepRef = useRef<Step>('idle');
+  const runIdRef = useRef(0);
+  const toEditRef = useRef(false);
 
   useEffect(() => {
     if (step !== 'idle') {
@@ -32,8 +35,11 @@ export function useAlbumLookFlow(albumId: string, hasPhotos: boolean) {
       return;
     }
     wasOpenRef.current = false;
+    // The status line unmounts when the new default is Original.
     const preferred =
-      triggerRef.current === 'change' ? changeLookRef.current : null;
+      triggerRef.current === 'change' && !toEditRef.current
+        ? changeLookRef.current
+        : null;
     focusDesktopNode(preferred ?? editPhotosRef.current);
   }, [step]);
 
@@ -43,6 +49,8 @@ export function useAlbumLookFlow(albumId: string, hasPhotos: boolean) {
         return;
       }
       triggerRef.current = trigger;
+      toEditRef.current = false;
+      stepRef.current = 'picker';
       setStep('picker');
     },
     [hasPhotos],
@@ -50,31 +58,45 @@ export function useAlbumLookFlow(albumId: string, hasPhotos: boolean) {
   const openFromEdit = useCallback(() => open('edit'), [open]);
   const openFromChange = useCallback(() => open('change'), [open]);
 
-  const close = useCallback(() => setStep('idle'), []);
+  const close = useCallback(() => {
+    stepRef.current = 'idle';
+    setStep('idle');
+  }, []);
   const chooseLook = useCallback((lookId: LookId) => {
     setChosenLook(lookId);
+    stepRef.current = 'scope';
     setStep('scope');
   }, []);
 
   const apply = useCallback(
     (scope: ApplyAlbumLookScope) => {
+      if (stepRef.current !== 'scope') {
+        return;
+      }
       const lookId = chosenLook;
+      const runId = ++runIdRef.current;
+      toEditRef.current = lookId === 'original';
+      stepRef.current = 'idle';
       setStep('idle');
       captureAppEvent('apply_look_started', {
         albumId,
         lookId,
         scope,
-        photoCount: 0,
       });
       cullingEngine
         .applyAlbumLook(albumId, lookId, scope)
         .then(photoCount => {
+          const superseded = runId !== runIdRef.current;
           captureAppEvent('apply_look_completed', {
             albumId,
             lookId,
             scope,
             photoCount,
+            ...(superseded ? {superseded: true} : {}),
           });
+          if (superseded) {
+            return;
+          }
           AccessibilityInfo.announceForAccessibility(
             `Look: ${getLookLabel(lookId)} applied`,
           );
@@ -85,7 +107,6 @@ export function useAlbumLookFlow(albumId: string, hasPhotos: boolean) {
             albumId,
             lookId,
             scope,
-            photoCount: 0,
           });
         });
     },

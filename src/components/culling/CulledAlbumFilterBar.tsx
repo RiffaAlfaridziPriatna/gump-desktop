@@ -29,6 +29,7 @@ type CulledAlbumFilterBarProps = {
   lookLabel?: string;
   onChangeLook?: () => void;
   changeLookRef?: Ref<View>;
+  changeLookDisabled?: boolean;
 };
 
 function SelectionFilterButton({
@@ -98,6 +99,7 @@ export function CulledAlbumFilterBar({
   lookLabel,
   onChangeLook,
   changeLookRef,
+  changeLookDisabled,
 }: CulledAlbumFilterBarProps) {
   function toggleSelectionFilter(next: Exclude<SelectionFilter, null>) {
     onSelectionFilterChange(selectionFilter === next ? null : next);
@@ -158,6 +160,7 @@ export function CulledAlbumFilterBar({
           lookLabel={lookLabel}
           onChange={onChangeLook}
           changeRef={changeLookRef}
+          disabled={changeLookDisabled}
         />
       ) : null}
     </View>

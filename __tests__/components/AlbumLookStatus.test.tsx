@@ -50,4 +50,15 @@ describe('AlbumLookStatus', () => {
     view.rerender(<CulledAlbumFilterBar {...props} lookLabel="Film Mood" />);
     expect(getByLabel(view.renderer, 'Change album look')).toBeTruthy();
   });
+
+  it('does not call onChange when disabled', () => {
+    const onChange = jest.fn();
+    const view = render(
+      <AlbumLookStatus lookLabel="Film Mood" onChange={onChange} disabled />,
+    );
+    const button = getByLabel(view.renderer, 'Change album look');
+    expect(button.props.accessibilityState).toEqual({disabled: true});
+    press(button);
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
