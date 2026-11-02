@@ -5,10 +5,10 @@ approved: true
 todos:
   - id: s6a
     content: Move look id types into src/domain/valueObjects (fixes CulledPhoto known violation)
-    status: pending
+    status: completed
   - id: s6f
     content: Scope popup UI (All album photos / New photos only)
-    status: pending
+    status: completed
   - id: s6b
     content: Remove lookIntensity everywhere; bake at fixed 100
     status: pending
