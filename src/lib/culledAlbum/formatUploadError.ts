@@ -13,11 +13,14 @@ export class UploadTimeoutError extends Error {
 }
 
 export class UploadSourceMissingError extends Error {
-  constructor(message: string) {
+  constructor(message: string, options?: {cause?: unknown}) {
     super(message);
+    this.cause = options?.cause;
     this.name = 'UploadSourceMissingError';
   }
 }
+
+const FETCH_FAILURE = /network request failed|failed to fetch/i;
 
 function causeFromStatus(status: number): UploadFailureCause {
   if (status >= 500) return 'server';
@@ -40,7 +43,9 @@ export function classifyUploadError(err: unknown): UploadFailureCause {
   }
   if (err instanceof UploadTimeoutError) return 'timeout';
   if (err instanceof UploadSourceMissingError) return 'sourceMissing';
-  if (err instanceof TypeError) return 'network';
+  if (err instanceof TypeError && FETCH_FAILURE.test(err.message)) {
+    return 'network';
+  }
   return 'unknown';
 }
 

@@ -99,7 +99,7 @@ describe('retryFailedServerUploads', () => {
     {id: 'final', status: 'failed', cause: 'rejected'},
     {id: 'gone', status: 'failed', cause: 'sourceMissing'},
     {id: 'done', status: 'uploaded'},
-    {id: 'wait', status: 'pending'},
+    {id: 'idle', status: 'idle'},
   ];
 
   it('re-queues only retryable photos by default', () => {
@@ -113,8 +113,49 @@ describe('retryFailedServerUploads', () => {
     expect(photoOf('quota').serverUploadStatus).toBe('failed');
     expect(
       culledAlbumStore.getState().albums[ALBUM]!.uploadBatchPhotoIds,
-    ).toEqual(['net', 'srv']);
+    ).toEqual(mixed.map(p => p.id));
   });
+
+  it('keeps the full batch so retry with includeQuota after one without still finds quota photos', () => {
+    seed(mixed);
+    retryFailedServerUploads(ALBUM, {includeQuota: false});
+    photoOf('net').serverUploadStatus = 'uploaded';
+    photoOf('srv').serverUploadStatus = 'uploaded';
+    finishServerUploadQueue(ALBUM, {
+      status: 'completed',
+      uploadedCount: 2,
+      failedCount: 3,
+    });
+
+    expect(retryFailedServerUploads(ALBUM, {includeQuota: true})).toEqual([
+      'quota',
+    ]);
+  });
+
+  it.each(['active', 'finalizing'] as const)(
+    'returns nothing while the queue is %s',
+    queueStatus => {
+      seed(mixed);
+      uploadQueueStore.setState(state => {
+        state.queues[ALBUM] = {
+          localImport: {status: 'idle', completionSeen: false, batchTotal: 0, uploadedCount: 0, failedCount: 0},
+          analysis: {status: 'idle', completionSeen: false, batchTotal: 0, uploadedCount: 0, failedCount: 0},
+          serverUpload: {status: queueStatus, completionSeen: false, batchTotal: 1, uploadedCount: 0, failedCount: 0},
+        };
+      });
+      expect(retryFailedServerUploads(ALBUM, {includeQuota: true})).toEqual([]);
+      expect(photoOf('net').serverUploadStatus).toBe('failed');
+    },
+  );
+
+  it.each(['pending', 'uploading'] as const)(
+    'returns nothing while a batch photo is %s',
+    photoStatus => {
+      seed([...mixed, {id: 'busy', status: photoStatus}]);
+      expect(retryFailedServerUploads(ALBUM, {includeQuota: true})).toEqual([]);
+      expect(captureAppEvent).not.toHaveBeenCalled();
+    },
+  );
 
   it('adds quota photos only with includeQuota', () => {
     seed(mixed);
@@ -125,14 +166,14 @@ describe('retryFailedServerUploads', () => {
     ]);
   });
 
-  it('never re-queues final, uploaded or pending photos', () => {
+  it('never re-queues final, uploaded or idle photos', () => {
     seed(mixed);
     retryFailedServerUploads(ALBUM, {includeQuota: true});
     expect(photoOf('final').serverUploadStatus).toBe('failed');
     expect(photoOf('final').serverUploadCause).toBe('rejected');
     expect(photoOf('gone').serverUploadStatus).toBe('failed');
     expect(photoOf('done').serverUploadStatus).toBe('uploaded');
-    expect(photoOf('wait').serverUploadStatus).toBe('pending');
+    expect(photoOf('idle').serverUploadStatus).toBe('idle');
   });
 
   it('treats a failed photo with no stored cause as retryable', () => {
@@ -169,7 +210,7 @@ describe('retryFailedServerUploads', () => {
     });
   });
 
-  it('reports the retry once with ids and causes, without file paths', () => {
+  it('reports the retry once with counts per cause, without file paths', () => {
     seed(mixed);
     retryFailedServerUploads(ALBUM, {includeQuota: true});
 
@@ -180,9 +221,11 @@ describe('retryFailedServerUploads', () => {
       albumId: ALBUM,
       retryCount: 3,
       includeQuota: true,
-      photoIds: 'net,srv,quota',
-      causes: 'net:network,srv:server,quota:storageLimit',
+      cause_network: 1,
+      cause_server: 1,
+      cause_storageLimit: 1,
     });
+    expect(props).not.toHaveProperty('photoIds');
     expect(JSON.stringify(props)).not.toContain('file://');
   });
 });

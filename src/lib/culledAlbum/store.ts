@@ -649,7 +649,18 @@ export function retryFailedServerUploads(
   albumId: string,
   options: {includeQuota: boolean},
 ): string[] {
-  const batchIds = getAlbumFromState(albumId)?.uploadBatchPhotoIds ?? [];
+  const batchIds = [...(getAlbumFromState(albumId)?.uploadBatchPhotoIds ?? [])];
+  const queueStatus = getAlbumQueueState(albumId).serverUpload.status;
+  if (queueStatus === 'active' || queueStatus === 'finalizing') {
+    return [];
+  }
+  const inFlight = batchIds.some(photoId => {
+    const status = getPhotoById(albumId, photoId)?.serverUploadStatus;
+    return status === 'pending' || status === 'uploading';
+  });
+  if (inFlight) {
+    return [];
+  }
   const retried: {photoId: string; cause: UploadFailureCause}[] = [];
   for (const photoId of batchIds) {
     const photo = getPhotoById(albumId, photoId);
@@ -668,13 +679,23 @@ export function retryFailedServerUploads(
 
   const photoIds = retried.map(item => item.photoId);
   startServerUploadBatch(albumId, photoIds);
+  // Keep the full batch so a later includeQuota retry still finds quota photos.
+  culledAlbumStore.setState(state => {
+    const album = state.albums[albumId];
+    if (album) {
+      album.uploadBatchPhotoIds = batchIds;
+    }
+  });
   beginServerUploadQueue(albumId, photoIds.length);
+  const causeCounts: Record<string, number> = {};
+  for (const {cause} of retried) {
+    causeCounts[`cause_${cause}`] = (causeCounts[`cause_${cause}`] ?? 0) + 1;
+  }
   captureAppEvent('server_upload_retried', {
     albumId,
     retryCount: photoIds.length,
     includeQuota: options.includeQuota,
-    photoIds: photoIds.join(','),
-    causes: retried.map(item => `${item.photoId}:${item.cause}`).join(','),
+    ...causeCounts,
   });
   return photoIds;
 }

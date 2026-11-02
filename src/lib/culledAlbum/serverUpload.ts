@@ -20,7 +20,16 @@ function resolveUploadFile(
   albumId: string,
   photo: CulledAlbumPhoto,
 ): FileAsset {
-  return resolveUploadFileAsset(photo, getBakedUploadFile(albumId, photo.photoId));
+  try {
+    return resolveUploadFileAsset(
+      photo,
+      getBakedUploadFile(albumId, photo.photoId),
+    );
+  } catch (err) {
+    throw new UploadSourceMissingError('Photo source is unavailable', {
+      cause: err,
+    });
+  }
 }
 
 async function uploadFile(
@@ -33,6 +42,10 @@ async function uploadFile(
     {file: resolveUploadFile(albumId, photo), albumId},
     onProgress,
   );
+}
+
+function isFailed(albumId: string, photoId: string): boolean {
+  return getPhotoById(albumId, photoId)?.serverUploadStatus === 'failed';
 }
 
 export async function uploadServerPhoto(
@@ -72,7 +85,7 @@ export async function uploadServerPhoto(
   try {
     await uploadFile(photo, albumId, onProgress);
   } catch (err) {
-    if (!isRetryableServerError(err)) {
+    if (!isRetryableServerError(err) || isFailed(albumId, photoId)) {
       throw err;
     }
 
@@ -85,6 +98,10 @@ export async function uploadServerPhoto(
     await uploadFile(photo, albumId, onProgress);
   }
 
+  // A stale attempt (after the queue timed out) must not overwrite a settled failure.
+  if (isFailed(albumId, photoId)) {
+    return;
+  }
   updatePhoto(albumId, photoId, entry => {
     entry.serverUploadProgress = 100;
     entry.serverUploadStatus = 'uploaded';
