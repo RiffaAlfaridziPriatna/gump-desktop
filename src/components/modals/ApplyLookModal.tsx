@@ -1,17 +1,12 @@
-import { LookCompareToggle } from '@components/look/LookCompareToggle';
-import { LookPickerTile } from '@components/look/LookPickerTile';
-import { LookPreviewImage } from '@components/look/LookPreviewImage';
+import { LookPickerDecorations } from '@components/look/LookPickerDecorations';
+import { LookPickerBody } from '@components/look/LookPickerBody';
+import { resolveLookPreviewUri } from '@components/look/resolveLookPreviewUri';
 import { Modal, Pressable } from '@components/ui';
 import type { CulledAlbumPhoto } from '@lib/culledAlbum/types';
-import { LOOK_CATALOG } from '@lib/look/lookCatalog';
 import type { LookId } from '@lib/look/types';
-import {
-  isUsableDetailUri,
-  isUsableThumbnailUri,
-} from '@lib/storage/localStorage';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
   Platform,
@@ -20,12 +15,6 @@ import {
   View,
 } from 'react-native';
 import IconClose from '../../assets/images/icon_close.svg';
-import CircleBlue from '../../assets/images/upload/blue_circle.svg';
-import HalfCircle from '../../assets/images/upload/half_circle.svg';
-import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
-import QuarterCircleOrange from '../../assets/images/upload/orange_quarter_circle.svg';
-import QuarterCircleRed from '../../assets/images/upload/red_quarter_circle.svg';
-import { focusDesktopNode } from './focusDesktopNode';
 
 type ApplyLookModalProps = {
   visible: boolean;
@@ -37,8 +26,6 @@ type ApplyLookModalProps = {
 };
 
 const TITLE = 'Edit Photos';
-const CAPTION = 'Choose a look for this album';
-const NOTE = 'Applies to photos in this album and new photos added later.';
 // Figma GumpLight/Grey4; no matching token in colors.ts.
 const SUBTITLE_COLOR = '#454545';
 const HANDLED_BUBBLING = 3;
@@ -47,48 +34,6 @@ const escapeKeyDownEvents =
   Platform.OS === 'windows'
     ? [{ code: 'Escape', handledEventPhase: HANDLED_BUBBLING }]
     : [{ key: 'Escape' }];
-
-/**
- * Oriented derivative for preview + LUT bake. Prefer the 1920 thumb over the
- * 4096 detail; never the album master on Windows (XAML Image skips EXIF).
- */
-function resolvePreviewDisplayUri(photo: CulledAlbumPhoto | undefined): string {
-  if (!photo) {
-    return '';
-  }
-  if (isUsableThumbnailUri(photo.file.thumbnailUri)) {
-    return photo.file.thumbnailUri!;
-  }
-  if (isUsableDetailUri(photo.file.detailUri)) {
-    return photo.file.detailUri!;
-  }
-  return photo.file.uri || '';
-}
-
-function Decorations() {
-  return (
-    <View
-      style={styles.decorations}
-      pointerEvents="none"
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-    >
-      <QuarterCircleRed style={styles.quarterRedDecor} width={80} height={80} />
-      <CircleBlue style={styles.circleBlueDecor} width={32} height={32} />
-      <HalfCircle style={styles.halfCircleDecor} width={72} />
-      <QuarterCircleOrange
-        style={styles.quarterOrangeDecor}
-        width={98}
-        height={98}
-      />
-      <CircleLightBlue
-        style={styles.circleLightBlueDecor}
-        width={36}
-        height={36}
-      />
-    </View>
-  );
-}
 
 export function ApplyLookModal({
   visible,
@@ -99,13 +44,11 @@ export function ApplyLookModal({
   onClose,
 }: ApplyLookModalProps) {
   const previewUri = useMemo(
-    () => resolvePreviewDisplayUri(previewPhoto),
+    () => resolveLookPreviewUri(previewPhoto),
     [previewPhoto],
   );
   const [selectedLookId, setSelectedLookId] = useState<LookId>(currentLookId);
   const [showAfter, setShowAfter] = useState(true);
-  const selectedTileRef = useRef<View | null>(null);
-
   useEffect(() => {
     if (!visible) {
       return;
@@ -115,25 +58,10 @@ export function ApplyLookModal({
   }, [visible, currentLookId]);
 
   useEffect(() => {
-    if (!visible) {
-      return;
+    if (visible) {
+      AccessibilityInfo.announceForAccessibility(`${TITLE}. ${albumName}`);
     }
-    focusDesktopNode(selectedTileRef.current);
-    AccessibilityInfo.announceForAccessibility(`${TITLE}. ${albumName}`);
   }, [visible, albumName]);
-
-  const handleSelectLook = useCallback((lookId: LookId) => {
-    setSelectedLookId(lookId);
-    const label = LOOK_CATALOG.find(look => look.id === lookId)?.label;
-    AccessibilityInfo.announceForAccessibility(`${label} selected`);
-  }, []);
-
-  const handleToggle = useCallback((nextShowAfter: boolean) => {
-    setShowAfter(nextShowAfter);
-    AccessibilityInfo.announceForAccessibility(
-      nextShowAfter ? 'Showing after' : 'Showing before, original photo',
-    );
-  }, []);
 
   const handleKeyDown = useCallback(
     (event: unknown) => {
@@ -161,7 +89,7 @@ export function ApplyLookModal({
         onKeyDown={handleKeyDown}
         keyDownEvents={escapeKeyDownEvents}
       >
-        <Decorations />
+        <LookPickerDecorations />
         <View style={styles.content}>
           <View style={styles.textBlock}>
             <Text style={styles.title} accessibilityRole="header">
@@ -169,41 +97,15 @@ export function ApplyLookModal({
             </Text>
             <Text style={styles.subtitle}>{albumName}</Text>
           </View>
-          <View style={styles.body}>
-            <View style={styles.preview}>
-              {previewUri ? (
-                <LookPreviewImage
-                  uri={previewUri}
-                  lookId={showAfter ? selectedLookId : 'original'}
-                  style={styles.previewPhoto}
-                />
-              ) : null}
-              <View style={styles.toggle}>
-                <LookCompareToggle
-                  showAfter={showAfter}
-                  onChange={handleToggle}
-                />
-              </View>
-            </View>
-            <Text style={styles.caption}>{CAPTION}</Text>
-            <View style={styles.tiles} accessibilityRole="radiogroup">
-              {LOOK_CATALOG.map(look => (
-                <LookPickerTile
-                  key={look.id}
-                  lookId={look.id}
-                  label={look.label}
-                  previewUri={previewUri}
-                  selected={look.id === selectedLookId}
-                  current={look.id === currentLookId}
-                  onSelect={handleSelectLook}
-                  focusRef={
-                    look.id === currentLookId ? selectedTileRef : undefined
-                  }
-                />
-              ))}
-            </View>
-            <Text style={styles.note}>{NOTE}</Text>
-          </View>
+          <LookPickerBody
+            visible={visible}
+            previewUri={previewUri}
+            currentLookId={currentLookId}
+            selectedLookId={selectedLookId}
+            showAfter={showAfter}
+            onSelectLook={setSelectedLookId}
+            onShowAfterChange={setShowAfter}
+          />
           <View style={styles.actions}>
             <Pressable
               style={({ pressed }) => [
@@ -266,9 +168,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
   },
-  decorations: {
-    ...StyleSheet.absoluteFillObject,
-  },
   content: {
     width: 480,
     alignItems: 'center',
@@ -291,46 +190,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 16 * 1.4,
     color: SUBTITLE_COLOR,
-    textAlign: 'center',
-  },
-  body: {
-    alignSelf: 'stretch',
-    gap: 12,
-    alignItems: 'flex-start',
-  },
-  preview: {
-    alignSelf: 'stretch',
-    aspectRatio: 312 / 212,
-    backgroundColor: colors.cardGrayLight,
-  },
-  previewPhoto: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  toggle: {
-    position: 'absolute',
-    left: 16,
-    bottom: 18,
-  },
-  caption: {
-    ...sansBoldStyle,
-    fontSize: 14,
-    lineHeight: 14 * 1.2,
-    color: colors.textDark,
-  },
-  tiles: {
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  note: {
-    alignSelf: 'stretch',
-    paddingVertical: 8,
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    lineHeight: 14 * 1.2,
-    color: colors.textDark,
     textAlign: 'center',
   },
   actions: {
@@ -377,30 +236,5 @@ const styles = StyleSheet.create({
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  halfCircleDecor: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-  },
-  quarterOrangeDecor: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-  },
-  quarterRedDecor: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-  },
-  circleBlueDecor: {
-    position: 'absolute',
-    bottom: 24,
-    left: 24,
-  },
-  circleLightBlueDecor: {
-    position: 'absolute',
-    top: 80,
-    right: 0,
   },
 });

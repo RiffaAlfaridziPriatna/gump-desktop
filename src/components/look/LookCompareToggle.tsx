@@ -18,7 +18,9 @@ export function LookCompareToggle({
   onChange,
 }: LookCompareToggleProps) {
   return (
-    <View style={styles.row} accessibilityRole="tablist">
+    <View style={styles.row} accessibilityRole="tablist"
+      accessibilityLabel="Compare before and after"
+    >
       {SEGMENTS.map(segment => {
         const selected = segment.after === showAfter;
         return (

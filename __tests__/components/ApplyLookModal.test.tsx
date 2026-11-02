@@ -3,6 +3,7 @@ import { AccessibilityInfo, Text } from 'react-native';
 import { act } from 'react-test-renderer';
 import { getByLabel, press, render } from '../helpers/render';
 import { LookPreviewImage } from '../../src/components/look/LookPreviewImage';
+import { focusDesktopNode } from '../../src/components/modals/focusDesktopNode';
 import { ApplyLookModal } from '../../src/components/modals/ApplyLookModal';
 
 jest.mock('../../src/components/modals/focusDesktopNode', () => ({
@@ -115,6 +116,56 @@ describe('ApplyLookModal', () => {
       card.props.onKeyDown({ nativeEvent: { key: 'Escape' } });
     });
     expect(props.onClose).toHaveBeenCalledTimes(3);
+  });
+
+  it('exposes roles, labels and one tab stop', () => {
+    const { renderer } = mount();
+    const group = renderer.root.find(
+      node => node.props.accessibilityRole === 'radiogroup',
+    );
+    expect(group.props.accessibilityLabel).toBe('Choose a look for this album');
+    const current = getByLabel(renderer, 'Clean Natural, current look');
+    expect(current.props.accessibilityRole).toBe('radio');
+    expect(current.props.focusable).toBe(true);
+    expect(getByLabel(renderer, 'Film Mood').props.focusable).toBe(false);
+    expect(getByLabel(renderer, 'Before').props.accessibilityRole).toBe('tab');
+    expect(
+      renderer.root.find(node => node.props.accessibilityRole === 'tablist')
+        .props.accessibilityLabel,
+    ).toBe('Compare before and after');
+    expect(
+      renderer.root.find(node => node.props.accessibilityRole === 'image').props
+        .accessibilityLabel,
+    ).toBe('Preview, Clean Natural');
+  });
+
+  it('focuses the current tile on open', () => {
+    mount();
+    expect(focusDesktopNode).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves selection and focus with arrow keys, wrapping around', () => {
+    const { renderer } = mount({ currentLookId: 'original' });
+    const group = () =>
+      renderer.root.find(node => node.props.accessibilityRole === 'radiogroup');
+    const key = (name: string) =>
+      act(() => {
+        group().props.onKeyDown({ nativeEvent: { key: name } });
+      });
+    (focusDesktopNode as jest.Mock).mockClear();
+    key('ArrowRight');
+    expect(
+      getByLabel(renderer, 'Clean Natural').props.accessibilityState,
+    ).toEqual({ selected: true });
+    expect(focusDesktopNode).toHaveBeenCalledTimes(1);
+    key('ArrowLeft');
+    key('ArrowLeft');
+    expect(getByLabel(renderer, 'Film Mood').props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(focusDesktopNode).toHaveBeenCalledTimes(3);
+    key('Enter');
+    expect(focusDesktopNode).toHaveBeenCalledTimes(3);
   });
 
   it('announces the title on open', () => {

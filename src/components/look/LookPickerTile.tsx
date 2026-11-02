@@ -35,6 +35,7 @@ export function LookPickerTile({
         pressed && styles.pressed,
       ]}
       onPress={() => onSelect(lookId)}
+      focusable={selected}
       accessibilityRole="radio"
       accessibilityLabel={current ? `${label}, current look` : label}
       accessibilityState={{ selected }}
