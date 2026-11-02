@@ -18,6 +18,7 @@ import {
 import {
   estimateUploadSizeGb,
 } from '@application/plan/uploadStorageEstimate';
+import {getLookLabel} from '@lib/look/lookCatalog';
 import type {LookId} from '@lib/look/types';
 import {FileAsset} from '@services/upload/types';
 import {UploadToast} from '@components/upload/UploadToast';
@@ -572,7 +573,12 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
             starRatingFilter={starRatingFilter}
             onSelectionFilterChange={setSelectionFilter}
             onStarRatingFilterChange={setStarRatingFilter}
-
+            lookLabel={
+              albumRecord && albumRecord.defaultLookId !== 'original'
+                ? getLookLabel(albumRecord.defaultLookId)
+                : undefined
+            }
+            onChangeLook={handleOpenApplyLook}
             isMobileLayout={isMobileLayout}
           />
         </View>
