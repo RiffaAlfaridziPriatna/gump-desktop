@@ -1,5 +1,6 @@
 import {Modal, ProgressBar} from '@components/ui';
 import {useCloudStoragePreflight} from '@hooks/useCloudStoragePreflight';
+import {useUploadFailureSummary} from '@hooks/useUploadFailureSummary';
 import {
   bytesToGigabytes,
   formatStorageSizeGb,
@@ -12,6 +13,7 @@ import {useEffect, useState} from 'react';
 import {AccessibilityInfo, StyleSheet, Text, View} from 'react-native';
 import {UploadCloudStorageView} from './UploadCloudStorageView';
 import {UploadCompleteView} from './UploadCompleteView';
+import {UploadBakeDiskFull, UploadFailureFlow} from './UploadFailureFlow';
 import CircleBlue from '../../assets/images/upload/blue_circle.svg';
 import HalfCircle from '../../assets/images/upload/half_circle.svg';
 import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
@@ -22,6 +24,7 @@ export type UploadSelectedPhase = 'confirm' | 'uploading' | 'complete';
 
 type UploadSelectedModalProps = {
   visible: boolean;
+  albumId: string;
   phase: UploadSelectedPhase;
   photoCount: number;
   uploadSizeGb: number;
@@ -29,6 +32,8 @@ type UploadSelectedModalProps = {
   totalUploadBytes?: number;
   uploadProgress?: number;
   isApplyingLook?: boolean;
+  /** Set when applying looks failed for lack of disk space. */
+  bakeDiskFull?: {requiredBytes?: number};
   onClose: () => void;
   onUploadNow: () => Promise<void>;
   onOpenAlbum: () => void;
@@ -126,11 +131,12 @@ function modalHeightForPhase(
   if (phase === 'uploading') {
     return 360;
   }
-  return phase === 'confirm' && isExceeded ? 495 : 456;
+  return isExceeded ? 495 : 456;
 }
 
 export function UploadSelectedModal({
   visible,
+  albumId,
   phase,
   photoCount,
   uploadSizeGb,
@@ -138,14 +144,18 @@ export function UploadSelectedModal({
   totalUploadBytes = 0,
   uploadProgress = 0,
   isApplyingLook = false,
+  bakeDiskFull,
   onClose,
   onUploadNow,
   onOpenAlbum,
 }: UploadSelectedModalProps) {
   const [starting, setStarting] = useState(false);
+  const failures = useUploadFailureSummary(albumId);
+  const hasFailures =
+    failures.retryable + failures.quota + failures.final > 0;
   const {preflight, retry} = useCloudStoragePreflight(
     visible && phase !== 'uploading',
-    phase === 'complete' ? 0 : uploadSizeGb * 1024 ** 3,
+    phase === 'complete' ? failures.retryBytes : uploadSizeGb * 1024 ** 3,
   );
 
   async function handleViewCloudPlans() {
@@ -175,7 +185,11 @@ export function UploadSelectedModal({
       visible={visible}
       onClose={onClose}
       width={720}
-      height={modalHeightForPhase(phase, preflight.status === 'exceeded')}
+      height={modalHeightForPhase(
+        phase,
+        preflight.status === 'exceeded' &&
+          (phase === 'confirm' || failures.quota > 0),
+      )}
       contentStyle={styles.modalContent}>
       <ModalDecor />
       {phase === 'confirm' && (
@@ -190,7 +204,14 @@ export function UploadSelectedModal({
           onChooseFewer={onClose}
         />
       )}
-      {phase === 'uploading' && (
+      {phase === 'uploading' && bakeDiskFull && (
+        <UploadBakeDiskFull
+          albumId={albumId}
+          requiredBytes={bakeDiskFull.requiredBytes ?? 0}
+          onCancel={onClose}
+        />
+      )}
+      {phase === 'uploading' && !bakeDiskFull && (
         <UploadingPhase
           photoCount={photoCount}
           uploadProgress={uploadProgress}
@@ -199,7 +220,18 @@ export function UploadSelectedModal({
           isApplyingLook={isApplyingLook}
         />
       )}
-      {phase === 'complete' && (
+      {phase === 'complete' && hasFailures && (
+        <UploadFailureFlow
+          albumId={albumId}
+          summary={failures}
+          preflight={preflight}
+          onRetryPreflight={retry}
+          onBackToAlbum={onOpenAlbum}
+          onClose={onClose}
+          onViewCloudPlans={handleViewCloudPlans}
+        />
+      )}
+      {phase === 'complete' && !hasFailures && (
         <UploadCompleteView
           photoCount={photoCount}
           preflight={preflight}

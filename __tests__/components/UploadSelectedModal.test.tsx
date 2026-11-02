@@ -11,6 +11,15 @@ let mockRefetch: ReturnType<typeof makeCurrentUserRefetch>;
 const mockOpenUpgradePlan = jest.fn();
 const mockReportError = jest.fn();
 
+jest.mock('@lib/navigation/uploadAwareNavigation', () => ({
+  shouldDeferHeavyWorkForNavigation: () => false,
+  shouldYieldUploadQueueForNavigation: () => false,
+  runOrDeferHeavyWorkForNavigation: (fn: () => void) => fn(),
+}));
+jest.mock('../../src/di/container', () => ({container: {resolve: jest.fn()}}));
+jest.mock('../../src/lib/culledAlbum/storage', () => ({}));
+jest.mock('../../src/lib/culledAlbum/sync', () => ({}));
+jest.mock('../../src/application/syncPhotoRepository', () => ({}));
 jest.mock('@lib/observability/reportError', () => ({
   reportError: (...args: unknown[]) => mockReportError(...args),
 }));
@@ -81,6 +90,7 @@ async function mount(
   const onOpenAlbum = jest.fn();
   const view = render(
     <UploadSelectedModal
+      albumId="album-1"
       visible
       phase={phase}
       photoCount={photoCount}
@@ -109,6 +119,7 @@ describe('UploadSelectedModal cloud storage states', () => {
     mockRefetch = jest.fn(() => new Promise(() => undefined)) as never;
     const view = render(
       <UploadSelectedModal
+        albumId="album-1"
         visible
         phase="confirm"
         photoCount={99}

@@ -30,6 +30,8 @@ export type CulledAlbumActions = {
     albumId: string,
     options: {includeQuota: boolean},
   ) => void;
+  /** Re-runs the look bake and upload start for batch photos still pending after a disk-full bake failure. */
+  retryUploadLookBake: (albumId: string) => void;
   purgeAlbum: (albumId: string) => Promise<void>;
   hideToast: (mode: CulledAlbumToastMode, albumId: string) => void;
   clearCompleted: (mode: CulledAlbumToastMode, albumId: string) => void;

@@ -683,6 +683,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
         <UploadSelectedModal
           visible={showUploadModal}
+          albumId={albumId}
           phase={uploadPhase}
           photoCount={modalPhotoCount}
           uploadSizeGb={modalUploadSizeGb}
@@ -690,6 +691,11 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           totalUploadBytes={totalUploadBytes}
           uploadProgress={uploadProgressValue}
           isApplyingLook={isApplyingLook}
+          bakeDiskFull={
+            lookBake.status === 'failed' && lookBake.reason === 'diskFull'
+              ? {requiredBytes: lookBake.requiredBytes}
+              : undefined
+          }
           onClose={handleCloseUploadModal}
           onUploadNow={handleStartUpload}
           onOpenAlbum={handleOpenAlbum}

@@ -468,6 +468,19 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     [kickServerUpload],
   );
 
+  const retryUploadLookBake = useCallback(
+    (albumId: string) => {
+      const pendingIds = (getAlbum(albumId)?.uploadBatchPhotoIds ?? []).filter(
+        photoId =>
+          getPhotoById(albumId, photoId)?.serverUploadStatus === 'pending',
+      );
+      if (pendingIds.length > 0) {
+        kickServerUpload(albumId, pendingIds);
+      }
+    },
+    [kickServerUpload],
+  );
+
   const purgeAlbum = useCallback(async (albumId: string) => {
     syncedAlbumsRef.current.delete(albumId);
     await purgeLocalCulledAlbum(albumId);
@@ -676,6 +689,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     startAnalysis,
     startSelectedUpload,
     retryFailedServerUploads,
+    retryUploadLookBake,
     purgeAlbum,
     hideToast,
     clearCompleted,
