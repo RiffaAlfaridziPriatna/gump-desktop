@@ -110,6 +110,42 @@ export function beginLocalImportQueue(
   });
 }
 
+export function beginServerUploadQueue(
+  albumId: string,
+  batchTotal: number,
+): void {
+  uploadQueueStore.setState(state => {
+    if (!state.queues[albumId]) {
+      state.queues[albumId] = {...defaultAlbumQueueState};
+    }
+    state.queues[albumId].serverUpload = {
+      status: 'active',
+      completionSeen: false,
+      batchTotal,
+      uploadedCount: 0,
+      failedCount: 0,
+    };
+  });
+}
+
+export function finishServerUploadQueue(
+  albumId: string,
+  result: FinishLocalImportQueueInput,
+): void {
+  uploadQueueStore.setState(state => {
+    if (!state.queues[albumId]) {
+      state.queues[albumId] = {...defaultAlbumQueueState};
+    }
+    state.queues[albumId].serverUpload = {
+      ...state.queues[albumId].serverUpload,
+      status: result.status,
+      completionSeen: false,
+      uploadedCount: result.uploadedCount,
+      failedCount: result.failedCount,
+    };
+  });
+}
+
 export type FinishLocalImportQueueInput = {
   status: Extract<QueueOperationStatus, 'completed' | 'failed'>;
   uploadedCount: number;

@@ -25,6 +25,11 @@ export type CulledAlbumActions = {
   resumeInFlightWork: (albumId: string) => void;
   startAnalysis: (albumId: string) => void;
   startSelectedUpload: (albumId: string, photoIds: string[]) => void;
+  /** Re-queues failed photos of the last batch that are worth retrying; quota failures only with includeQuota. */
+  retryFailedServerUploads: (
+    albumId: string,
+    options: {includeQuota: boolean},
+  ) => void;
   purgeAlbum: (albumId: string) => Promise<void>;
   hideToast: (mode: CulledAlbumToastMode, albumId: string) => void;
   clearCompleted: (mode: CulledAlbumToastMode, albumId: string) => void;

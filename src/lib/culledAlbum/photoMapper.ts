@@ -2,6 +2,15 @@ import {CulledPhoto} from '@/domain/entities/CulledPhoto';
 import {Face} from '@/domain/valueObjects/Face';
 import {DEFAULT_LOOK_INTENSITY, isLookId} from '@lib/look/types';
 import {CulledAlbumPhoto} from './types';
+import {UPLOAD_FAILURE_GROUP, type UploadFailureCause} from './uploadPreflight';
+
+function toUploadFailureCause(
+  raw: string | null,
+): UploadFailureCause | undefined {
+  return (Object.keys(UPLOAD_FAILURE_GROUP) as UploadFailureCause[]).find(
+    cause => cause === raw,
+  );
+}
 
 export function legacyPhotoToDomain(
   photo: CulledAlbumPhoto,
@@ -29,6 +38,7 @@ export function legacyPhotoToDomain(
     serverUploadStatus: photo.serverUploadStatus,
     serverUploadProgress: photo.serverUploadProgress,
     serverUploadError: photo.serverUploadError,
+    serverUploadCause: photo.serverUploadCause,
     selected: photo.selected,
     starRating: photo.starRating,
     lookId: photo.lookId,
@@ -64,6 +74,7 @@ export function domainPhotoToLegacy(photo: CulledPhoto): CulledAlbumPhoto {
     serverUploadStatus: photo.serverUploadStatus,
     serverUploadProgress: photo.serverUploadProgress,
     serverUploadError: photo.serverUploadError ?? undefined,
+    serverUploadCause: toUploadFailureCause(photo.serverUploadCause),
     analysisProgress: photo.analysisProgress,
     analysisStatus: photo.analysisStatus,
     analysisError: photo.analysisError ?? undefined,

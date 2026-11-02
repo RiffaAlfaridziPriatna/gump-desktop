@@ -31,6 +31,7 @@ import {
   setAutoStartAnalysisAfterImportHandler,
   setFilenameDuplicateNames,
   startServerUploadBatch,
+  retryFailedServerUploads as retryFailedServerUploadsInStore,
   updatePhoto,
 } from '@lib/culledAlbum/store';
 import {partitionFilesByFilename} from '@lib/culledAlbum/filenameDuplicates';
@@ -406,18 +407,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     };
   }, []);
 
-  const startSelectedUpload = useCallback((albumId: string, photoIds: string[]) => {
-    const trace = {
-      ...getAlbumTraceContext(albumId),
-      selectedCount: photoIds.length,
-    };
-    beginTimedFlow(serverUploadFlowKey(albumId), {
-      selectedCount: photoIds.length,
-    });
-    addErrorStep('server_upload_started', trace);
-    captureAppEvent('server_upload_started', trace);
-
-    startServerUploadBatch(albumId, photoIds);
+  const kickServerUpload = useCallback((albumId: string, photoIds: string[]) => {
     serverUploadQueueRef.current!.resetActiveUploadCount(albumId);
     setQueueOperationStatus(albumId, 'serverUpload', 'active');
     beginUploadLookBake(albumId, photoIds.length);
@@ -443,6 +433,35 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
         }, 0);
       });
   }, []);
+
+  const startSelectedUpload = useCallback((albumId: string, photoIds: string[]) => {
+    const trace = {
+      ...getAlbumTraceContext(albumId),
+      selectedCount: photoIds.length,
+    };
+    beginTimedFlow(serverUploadFlowKey(albumId), {
+      selectedCount: photoIds.length,
+    });
+    addErrorStep('server_upload_started', trace);
+    captureAppEvent('server_upload_started', trace);
+
+    startServerUploadBatch(albumId, photoIds);
+    kickServerUpload(albumId, photoIds);
+  }, [kickServerUpload]);
+
+  const retryFailedServerUploads = useCallback(
+    (albumId: string, options: {includeQuota: boolean}) => {
+      const photoIds = retryFailedServerUploadsInStore(albumId, options);
+      if (photoIds.length === 0) {
+        return;
+      }
+      beginTimedFlow(serverUploadFlowKey(albumId), {
+        selectedCount: photoIds.length,
+      });
+      kickServerUpload(albumId, photoIds);
+    },
+    [kickServerUpload],
+  );
 
   const purgeAlbum = useCallback(async (albumId: string) => {
     syncedAlbumsRef.current.delete(albumId);
@@ -651,6 +670,7 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
     resumeInFlightWork,
     startAnalysis,
     startSelectedUpload,
+    retryFailedServerUploads,
     purgeAlbum,
     hideToast,
     clearCompleted,

@@ -9,7 +9,13 @@ import {
   getAlbum,
   type UpdatePhotoOptions,
 } from './store';
-import {formatUploadError} from './formatUploadError';
+import {
+  classifyUploadError,
+  formatUploadError,
+  UploadSourceMissingError,
+  UploadTimeoutError,
+} from './formatUploadError';
+import type {UploadFailureCause} from './uploadPreflight';
 import {CulledAlbumPhoto} from './types';
 import {describeFileUri} from '@lib/observability/serializeError';
 import {reportError} from '@lib/observability/reportError';
@@ -25,8 +31,7 @@ function withTimeout<T>(
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
-      () =>
-        reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
+      () => reject(new UploadTimeoutError(label, ms)),
       ms,
     );
     promise.then(
@@ -148,7 +153,19 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
             '[serverUploadQueue] Photo not found in store, marking as failed',
             {albumId, photoId},
           );
-          failPhoto(albumId, photoId, 'Photo data not found');
+          reportError(new UploadSourceMissingError('Photo data not found'), {
+            source: 'server_upload_queue',
+            operation: 'server_photo_upload',
+            albumId,
+            photoId,
+            cause: 'sourceMissing',
+          });
+          failPhoto(
+            albumId,
+            photoId,
+            'Photo data not found',
+            'sourceMissing',
+          );
           continue;
         }
         if (
@@ -187,7 +204,12 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
     });
   }
 
-  function failPhoto(albumId: string, photoId: string, error?: string): void {
+  function failPhoto(
+    albumId: string,
+    photoId: string,
+    error?: string,
+    cause: UploadFailureCause = 'unknown',
+  ): void {
     const photo = getPhoto(albumId, photoId);
     
     getInFlightPhotoIds(albumId).delete(photoId);
@@ -214,6 +236,7 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
         if (entry.serverUploadStatus !== 'uploaded') {
           entry.serverUploadStatus = 'failed';
           entry.serverUploadError = error;
+          entry.serverUploadCause = cause;
         }
       },
       {recomputeTotals: false},
@@ -224,6 +247,35 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
       error ?? 'Upload failed',
     );
     schedulePersist(albumId);
+  }
+
+  // Settles the photo before startUpload's finally runs processPending, so a failed photo is not picked up again.
+  function handleUploadFailure(
+    albumId: string,
+    photoId: string,
+    err: unknown,
+  ): void {
+    const photo = getPhoto(albumId, photoId);
+    const errorMessage = formatUploadError(err) ?? 'Upload failed';
+    const cause = classifyUploadError(err);
+    reportError(err, {
+      source: 'server_upload_queue',
+      operation: 'server_photo_upload',
+      albumId,
+      photoId,
+      fileName: photo?.file.name,
+      fileSize: photo?.file.size ?? null,
+      formattedError: errorMessage,
+      cause,
+      ...describeFileUri(photo?.file.uri),
+    });
+    console.error('[serverUploadQueue] Upload failed', {
+      albumId,
+      photoId,
+      filename: photo?.file.name,
+      error: errorMessage,
+    });
+    failPhoto(albumId, photoId, errorMessage, cause);
   }
 
   function startUpload(albumId: string, photoId: string): Promise<void> {
@@ -238,6 +290,7 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
         entry.serverUploadStatus = 'uploading';
         entry.serverUploadProgress = 0;
         entry.serverUploadError = undefined;
+        entry.serverUploadCause = undefined;
       },
       {recomputeTotals: false},
     );
@@ -252,9 +305,7 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
         getSettledPhotoIds(albumId).add(photoId);
         schedulePersist(albumId);
       })
-      .catch(err => {
-        throw err;
-      })
+      .catch(err => handleUploadFailure(albumId, photoId, err))
       .finally(() => {
         inFlight.delete(photoId);
         trackActiveUpload(albumId, -1);
@@ -302,27 +353,7 @@ export function createServerUploadQueue(deps: ServerUploadQueueDeps) {
       cursor = nextIndex + 1;
       const photoId = pendingPhotoIds[nextIndex]!;
 
-      startUpload(albumId, photoId).catch(err => {
-        const photo = getPhoto(albumId, photoId);
-        const errorMessage = formatUploadError(err) ?? 'Upload failed';
-        reportError(err, {
-          source: 'server_upload_queue',
-          operation: 'server_photo_upload',
-          albumId,
-          photoId,
-          fileName: photo?.file.name,
-          fileSize: photo?.file.size ?? null,
-          formattedError: errorMessage,
-          ...describeFileUri(photo?.file.uri),
-        });
-        console.error('[serverUploadQueue] Upload failed', {
-          albumId,
-          photoId,
-          filename: photo?.file.name,
-          error: errorMessage,
-        });
-        failPhoto(albumId, photoId, errorMessage);
-      });
+      void startUpload(albumId, photoId);
       slotsUsed++;
       started++;
     }

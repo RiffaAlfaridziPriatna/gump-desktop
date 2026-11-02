@@ -5,6 +5,7 @@ import {APIException, APIService} from '@services/api';
 import type {FileAsset} from '@services/upload/types';
 import {resolveUploadFileAsset} from './resolveUploadFileAsset';
 import {CulledAlbumPhoto} from './types';
+import {UploadSourceMissingError} from './formatUploadError';
 import {getPhotoById, updatePhoto} from './store';
 
 function getUploadSelectedPhotosUseCase() {
@@ -40,13 +41,14 @@ export async function uploadServerPhoto(
 ): Promise<void> {
   const photo = getPhotoById(albumId, photoId);
   if (!photo) {
-    throw new Error('Photo not found');
+    throw new UploadSourceMissingError('Photo not found');
   }
 
   updatePhoto(albumId, photoId, entry => {
     entry.serverUploadStatus = 'uploading';
     entry.serverUploadProgress = 0;
     entry.serverUploadError = undefined;
+    entry.serverUploadCause = undefined;
   });
   getUploadSelectedPhotosUseCase().startUpload(albumId, photoId);
 
@@ -78,6 +80,7 @@ export async function uploadServerPhoto(
       entry.serverUploadProgress = 0;
       entry.serverUploadStatus = 'uploading';
       entry.serverUploadError = undefined;
+      entry.serverUploadCause = undefined;
     });
     await uploadFile(photo, albumId, onProgress);
   }
