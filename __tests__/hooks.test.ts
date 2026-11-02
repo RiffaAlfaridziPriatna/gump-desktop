@@ -74,7 +74,7 @@ describe('useCulledAlbumFilters', () => {
     },
   ];
 
-  it('defaults to AI selected + maybe and reports stats-backed counts', () => {
+  it('starts with no active filter and reports stats-backed counts', () => {
     const hook = renderHook(() =>
       useCulledAlbumFilters(photos, {
         totalPhotos: 3,
@@ -89,6 +89,8 @@ describe('useCulledAlbumFilters', () => {
 
     expect(hook.result.current.gridView.photos.map(photo => photo.photoId)).toEqual([
       'keep',
+      'blur',
+      'unanalyzed',
     ]);
     expect(hook.result.current.filterCounts.blurred).toBe(1);
     hook.unmount();
@@ -102,7 +104,6 @@ describe('useCulledAlbumFilters', () => {
     });
 
     expect(hook.result.current.gridView.photos.map(photo => photo.photoId)).toEqual([
-      'keep',
       'blur',
     ]);
     hook.unmount();
@@ -117,7 +118,7 @@ describe('useCulledAlbumFilters', () => {
     });
 
     expect(hook.result.current.gridView.photos.map(photo => photo.photoId)).toEqual(
-      [],
+      ['blur'],
     );
 
     act(() => {

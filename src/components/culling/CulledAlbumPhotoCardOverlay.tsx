@@ -1,12 +1,13 @@
-import {SimilarShotsBadge} from '@components/culling/SimilarShotsBadge';
+import {PhotoAiBadges} from '@components/culling/PhotoAiBadges';
 import {Pressable} from '@components/ui';
+import type {CulledAlbumPhoto} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
 import {StyleSheet} from 'react-native';
 import IconTrash from '../../assets/images/icon_trash.svg';
 
 type CulledAlbumPhotoCardOverlayProps = {
   photoId: string;
-  fileName: string;
+  photo: CulledAlbumPhoto;
   showDeleteButton: boolean;
   similarShotCount?: number;
   onDeletePress: (photoId: string, fileName: string) => void;
@@ -15,12 +16,13 @@ type CulledAlbumPhotoCardOverlayProps = {
 
 export function CulledAlbumPhotoCardOverlay({
   photoId,
-  fileName,
+  photo,
   showDeleteButton,
   similarShotCount,
   onDeletePress,
   onOpenDetail,
 }: CulledAlbumPhotoCardOverlayProps) {
+  const fileName = photo.file?.name ?? '';
   return (
     <>
       {showDeleteButton && (
@@ -35,9 +37,11 @@ export function CulledAlbumPhotoCardOverlay({
           <IconTrash width={24} height={24} color={colors.text} />
         </Pressable>
       )}
-      {similarShotCount != null && (
-        <SimilarShotsBadge count={similarShotCount} onPress={onOpenDetail} />
-      )}
+      <PhotoAiBadges
+        flags={photo}
+        similarShotCount={similarShotCount}
+        onOpenDetail={onOpenDetail}
+      />
     </>
   );
 }

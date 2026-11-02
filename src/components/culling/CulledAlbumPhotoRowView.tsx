@@ -13,11 +13,18 @@ export const GRID_GAP = 16;
 
 type CulledAlbumPhotoRowViewProps = Omit<
   CulledAlbumPhotoCardProps,
-  'photoId' | 'similarShotCount'
+  'photoId' | 'similarShotCount' | 'isFocused'
 > & {
   row: PhotoGridRow;
+  focusedPhotoId?: string | null;
   getSimilarShotCount?: (photoId: string) => number | undefined;
 };
+
+function rowFocus(row: PhotoGridRow, focusedPhotoId?: string | null) {
+  return row.cells.some(cell => cell.photoId === focusedPhotoId)
+    ? focusedPhotoId
+    : null;
+}
 
 export const CulledAlbumPhotoRowView = memo(
   function CulledAlbumPhotoRowView({
@@ -28,6 +35,8 @@ export const CulledAlbumPhotoRowView = memo(
     isMobileLayout,
     deferHeavyMediaWork,
     getSimilarShotCount,
+    focusedPhotoId,
+    onCardPress,
     onOpenDetail,
     onToggleSelection,
     onDeletePress,
@@ -45,6 +54,8 @@ export const CulledAlbumPhotoRowView = memo(
             isMobileLayout={isMobileLayout}
             deferHeavyMediaWork={deferHeavyMediaWork}
             similarShotCount={getSimilarShotCount?.(cell.photoId)}
+            isFocused={cell.photoId === focusedPhotoId}
+            onCardPress={onCardPress}
             onOpenDetail={onOpenDetail}
             onToggleSelection={onToggleSelection}
             onDeletePress={onDeletePress}
@@ -68,7 +79,10 @@ export const CulledAlbumPhotoRowView = memo(
     prev.canDeletePhoto === next.canDeletePhoto &&
     prev.isMobileLayout === next.isMobileLayout &&
     prev.deferHeavyMediaWork === next.deferHeavyMediaWork &&
-    prev.getSimilarShotCount === next.getSimilarShotCount,
+    prev.getSimilarShotCount === next.getSimilarShotCount &&
+    prev.onCardPress === next.onCardPress &&
+    rowFocus(prev.row, prev.focusedPhotoId) ===
+      rowFocus(next.row, next.focusedPhotoId),
 );
 
 const styles = StyleSheet.create({

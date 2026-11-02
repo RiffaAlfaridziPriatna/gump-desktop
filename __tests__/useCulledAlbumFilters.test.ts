@@ -15,6 +15,7 @@ jest.mock('@context/culledAlbum', () => ({
 }));
 
 import { useCulledAlbumFilters } from '../src/hooks/useCulledAlbumFilters';
+import { DEFAULT_CULL_FILTERS } from '../src/lib/culling/cullingUtil';
 import { usePickedPhotos } from '../src/hooks/usePickedPhotos';
 import {
   createCulledAlbumFromSelection,
@@ -288,6 +289,34 @@ describe('useCulledAlbumFilters Similar Shots', () => {
     act(() => hook.result.current.setStarRatingFilter([]));
     act(() => hook.result.current.setSelectionFilter('selected'));
     expect(hook.result.current.hasActiveFilter).toBe(true);
+    hook.unmount();
+  });
+
+  it('clears category, selection and star filters through filter.onClear', () => {
+    const grid = seed(GROUPS);
+    const hook = renderHook(() =>
+      useCulledAlbumFilters(
+        grid,
+        null,
+        { aiSelected: true, maybe: true, blurred: true },
+        ALBUM_ID,
+      ),
+    );
+    act(() => hook.result.current.setStarRatingFilter([5]));
+    act(() => hook.result.current.setSelectionFilter('selected'));
+    expect(hook.result.current.gridView.filter.labels).toEqual([
+      'AI Recommended',
+      'Needs Review',
+      'Possible Blur',
+      'Picked',
+      '5 stars',
+    ]);
+    act(() => hook.result.current.gridView.filter.onClear());
+    expect(hook.result.current.hasActiveFilter).toBe(false);
+    expect(hook.result.current.gridView.filter.labels).toEqual([]);
+    expect(hook.result.current.selectionFilter).toBeNull();
+    expect(hook.result.current.starRatingFilter).toEqual([]);
+    expect(hook.result.current.activeFilters).toEqual(DEFAULT_CULL_FILTERS);
     hook.unmount();
   });
 

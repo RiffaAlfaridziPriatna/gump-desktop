@@ -124,5 +124,3 @@ export function getFaceCropImageStyle(
     top: containerSize / 2 - anchorCenterY * scale,
   };
 }
-
-export type KeyFaceWithSource = APIResponse.CullingKeyFace;

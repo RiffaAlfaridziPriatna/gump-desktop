@@ -5,6 +5,7 @@ import {
 } from '@lib/culling/culledAlbumPhotoFilters';
 import {
   CullFilterKey,
+  DEFAULT_CULL_FILTERS,
   matchesCullFilterKey,
   normalizeCullFilters,
 } from '@lib/culling/cullingUtil';
@@ -15,6 +16,7 @@ import {
   reuseSections,
   type SimilarShotsViewSection,
 } from '@lib/culling/similarShotsView';
+import {buildFilterSummary} from '@lib/culling/filterSummary';
 import {useSimilarShotGroups} from '@hooks/useSimilarShotGroups';
 import {CulledAlbumGridPhoto} from '@components/culling/CulledAlbumPhotoGrid';
 import {APIResponse} from '@services/api';
@@ -128,9 +130,37 @@ export function useCulledAlbumFilters(
         : orderedGroups[groupIndex]?.photoIds.length;
     };
   }, [groupIndexByPhotoId, layout, orderedGroups]);
+  const clearFilters = useCallback(() => {
+    setActiveFilters({...DEFAULT_CULL_FILTERS});
+    setSelectionFilter(null);
+    setStarRatingFilter([]);
+  }, []);
+  const filter = useMemo(() => {
+    const {labels, showSimilarNote} = buildFilterSummary(
+      activeFilters,
+      selectionFilter,
+      starRatingFilter,
+    );
+    return {
+      labels,
+      showSimilarNote,
+      onClear: clearFilters,
+      // Picked-only empties keep their own hint (phase 3a).
+      noResults:
+        filteredPhotos.length === 0 &&
+        labels.length > 0 &&
+        selectionFilter !== 'selected',
+    };
+  }, [
+    activeFilters,
+    clearFilters,
+    filteredPhotos.length,
+    selectionFilter,
+    starRatingFilter,
+  ]);
   const gridView = useMemo(
-    () => ({photos: filteredPhotos, sections, getSimilarShotCount}),
-    [filteredPhotos, sections, getSimilarShotCount],
+    () => ({photos: filteredPhotos, sections, getSimilarShotCount, filter}),
+    [filteredPhotos, sections, getSimilarShotCount, filter],
   );
 
   const hasActiveFilter =
@@ -187,6 +217,7 @@ export function useCulledAlbumFilters(
     filterCounts,
     hasActiveFilter,
     toggleFilter,
+    clearFilters,
     setSelectionFilter,
     setStarRatingFilter,
   };

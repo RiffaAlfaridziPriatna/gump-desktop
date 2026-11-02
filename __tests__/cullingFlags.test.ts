@@ -45,6 +45,10 @@ describe('normalizeCullFilters / matchesCullFilterKey', () => {
     expect(normalizeCullFilters(null)).toEqual(DEFAULT_CULL_FILTERS);
   });
 
+  it('starts new albums with every category off', () => {
+    expect(Object.values(DEFAULT_CULL_FILTERS).some(Boolean)).toBe(false);
+  });
+
   it('keeps exclusive buckets for blurred, closed eyes, and duplicates', () => {
     const duplicated = makeCullingPhoto({
       photoId: 'dup',
