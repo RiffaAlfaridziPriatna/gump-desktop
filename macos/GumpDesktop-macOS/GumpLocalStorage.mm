@@ -3331,7 +3331,6 @@ RCT_EXPORT_METHOD(createZipFromEntries:(NSArray *)entries
       }
 
       try {
-        errno = 0;
         const auto result =
             ZipStore::CreateZip(std::filesystem::path([zipPath UTF8String]), zipEntries);
         NSString *fileName = zipPath.lastPathComponent;
@@ -3341,18 +3340,19 @@ RCT_EXPORT_METHOD(createZipFromEntries:(NSArray *)entries
           @"fileName" : fileName,
           @"byteSize" : @(result.byteSize),
         });
-      } catch (const std::exception &ex) {
-        const int zipErrno = errno;
+      } catch (const ZipStore::Error &ex) {
+        const int zipErrno = ex.code();
         [[NSFileManager defaultManager] removeItemAtPath:zipPath error:nil];
         // A source read failure is not a destination write failure.
-        const std::string reason(ex.what());
-        const bool sourceFailure = reason.find("source file") != std::string::npos;
-        NSString *zipCode = sourceFailure ? nil : GumpExportCodeForErrno(zipErrno);
+        NSString *zipCode = ex.isSourceFailure() ? nil : GumpExportCodeForErrno(zipErrno);
         GumpRejectExport(
             reject,
             zipCode ?: @"EZIP",
             [NSString stringWithFormat:@"Unable to create zip file (errno %d)", zipErrno],
             0);
+      } catch (const std::exception &) {
+        [[NSFileManager defaultManager] removeItemAtPath:zipPath error:nil];
+        GumpRejectExport(reject, @"EZIP", @"Unable to create zip file", 0);
       }
     } @catch (NSException *exception) {
       [[NSFileManager defaultManager] removeItemAtPath:zipPath error:nil];

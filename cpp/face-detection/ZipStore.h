@@ -1,11 +1,16 @@
 #pragma once
 
+#include <cerrno>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 namespace ZipStore {
 
@@ -16,6 +21,29 @@ struct Entry {
 
 struct Result {
   uint64_t byteSize{0};
+};
+
+// Captures errno (and GetLastError on Windows) at the failure site, before unwinding can clobber them.
+class Error : public std::runtime_error {
+public:
+  Error(const std::string &message, bool sourceFailure)
+      : std::runtime_error(message),
+        errno_(errno),
+#if defined(_WIN32)
+        win32_(static_cast<unsigned long>(GetLastError())),
+#else
+        win32_(0),
+#endif
+        source_(sourceFailure) {}
+
+  int code() const noexcept { return errno_; }
+  unsigned long win32Code() const noexcept { return win32_; }
+  bool isSourceFailure() const noexcept { return source_; }
+
+private:
+  int errno_;
+  unsigned long win32_;
+  bool source_;
 };
 
 inline uint32_t Crc32Update(uint32_t crc, const uint8_t *data, size_t length) {
@@ -61,9 +89,13 @@ inline void WriteU32(std::ofstream &out, uint32_t value) {
 inline Result CreateZip(
     const std::filesystem::path &zipPath,
     const std::vector<Entry> &entries) {
+  errno = 0;
+#if defined(_WIN32)
+  SetLastError(0);
+#endif
   std::ofstream out(zipPath, std::ios::binary | std::ios::trunc);
   if (!out) {
-    throw std::runtime_error("Unable to create zip file");
+    throw Error("Unable to create zip file", false);
   }
 
   struct CentralRecord {
@@ -78,15 +110,15 @@ inline Result CreateZip(
 
   for (const auto &entry : entries) {
     if (entry.entryName.empty()) {
-      throw std::runtime_error("Zip entry name is empty");
+      throw Error("Zip entry name is empty", false);
     }
     if (!std::filesystem::exists(entry.sourcePath)) {
-      throw std::runtime_error("Zip source file not found");
+      throw Error("Zip source file not found", true);
     }
 
     std::ifstream input(entry.sourcePath, std::ios::binary);
     if (!input) {
-      throw std::runtime_error("Unable to open zip source file");
+      throw Error("Unable to open zip source file", true);
     }
 
     uint32_t crc = 0;
@@ -107,7 +139,7 @@ inline Result CreateZip(
     const auto localHeaderOffset = static_cast<uint32_t>(out.tellp());
     const auto nameBytes = entry.entryName.size();
     if (nameBytes > 0xFFFFu) {
-      throw std::runtime_error("Zip entry name is too long");
+      throw Error("Zip entry name is too long", false);
     }
 
     WriteU32(out, 0x04034b50u); // local file header signature
@@ -130,6 +162,9 @@ inline Result CreateZip(
         break;
       }
       out.write(reinterpret_cast<const char *>(buffer.data()), static_cast<std::streamsize>(readCount));
+      if (!out) {
+        throw Error("Failed while writing zip file", false);
+      }
     }
 
     centrals.push_back(CentralRecord{
@@ -176,7 +211,7 @@ inline Result CreateZip(
 
   out.flush();
   if (!out) {
-    throw std::runtime_error("Failed while writing zip file");
+    throw Error("Failed while writing zip file", false);
   }
   out.close();
 

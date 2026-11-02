@@ -1936,23 +1936,24 @@ void GumpLocalStorage::CreateZipFromEntries(
         std::filesystem::remove(destination, removeError);
 
         ZipStore::Result result{};
-        SetLastError(0);
-        errno = 0;
         try {
           result = ZipStore::CreateZip(destination, zipEntries);
-        } catch (const std::exception &ex) {
-          const DWORD win32Error = GetLastError();
-          const int posixError = errno;
+        } catch (const ZipStore::Error &ex) {
           std::error_code cleanupError;
           std::filesystem::remove(destination, cleanupError);
           // A source read failure is not a destination write failure.
-          const bool sourceFailure = std::string(ex.what()).find("source file") != std::string::npos;
-          if (const char *code = sourceFailure ? nullptr : ExportCodeForErrors(win32Error, posixError)) {
+          if (const char *code = ex.isSourceFailure()
+                  ? nullptr
+                  : ExportCodeForErrors(static_cast<DWORD>(ex.win32Code()), ex.code())) {
             ThrowExportFailure(code);
           }
           throw std::runtime_error(
-              "Unable to create zip file (error " + std::to_string(win32Error) + ", errno " +
-              std::to_string(posixError) + ")");
+              "Unable to create zip file (error " + std::to_string(ex.win32Code()) + ", errno " +
+              std::to_string(ex.code()) + ")");
+        } catch (const std::exception &) {
+          std::error_code cleanupError;
+          std::filesystem::remove(destination, cleanupError);
+          throw std::runtime_error("Unable to create zip file");
         }
         return winrtRN::JSValue(winrtRN::JSValueObject{
             {"path", ToUtf8(destination.wstring())},
