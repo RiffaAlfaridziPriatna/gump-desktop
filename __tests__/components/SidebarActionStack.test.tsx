@@ -7,8 +7,8 @@ type Props = React.ComponentProps<typeof SidebarActionStack>;
 
 const UPLOAD = 'Upload 3 picked photos';
 const ADD = 'Add photos to cull';
-const EXPORT = 'Export selected photos';
-const EDIT = 'Edit selected photos';
+const EXPORT = 'Export picked photos';
+const EDIT = 'Edit photos';
 
 function setup(overrides: Partial<Props> = {}) {
   const props: Props = {

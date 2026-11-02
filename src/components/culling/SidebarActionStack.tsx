@@ -61,7 +61,7 @@ export function SidebarActionStack({
         disabled={exportDisabled}
         style={[styles.button, exportDisabled && styles.buttonDisabled]}
         accessibilityRole="button"
-        accessibilityLabel="Export selected photos">
+        accessibilityLabel="Export picked photos">
         <IconExport width={24} height={24} color={colors.accent} />
         <Text style={styles.buttonText}>Export</Text>
       </Pressable>
@@ -71,8 +71,8 @@ export function SidebarActionStack({
         disabled={editPhotosDisabled}
         style={[styles.button, editPhotosDisabled && styles.buttonDisabled]}
         accessibilityRole="button"
-        accessibilityLabel="Edit selected photos">
-        <IconWand width={24} height={24} color={colors.accent} />
+        accessibilityLabel="Edit photos">
+        <IconWand width={22} height={22} color={colors.accent} />
         <Text style={styles.buttonText}>Edit Photos</Text>
       </Pressable>
     </View>
@@ -85,12 +85,12 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   button: {
-    minHeight: 48,
+    height: 48,
     borderRadius: 24,
     borderWidth: 1,
     borderColor: colors.accent,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
