@@ -42,11 +42,14 @@ export function toExportError(error: unknown): ExportError {
   const missingCount =
     reason === 'sourceMissing' &&
     typeof rawCount === 'number' &&
-    Number.isFinite(rawCount)
+    Number.isSafeInteger(rawCount) &&
+    rawCount >= 0
       ? rawCount
       : undefined;
-  const message = error instanceof Error ? error.message : 'Export failed';
-  return new ExportError(reason, message, {cause: error, missingCount});
+  return new ExportError(reason, `Export failed: ${reason}`, {
+    cause: error,
+    missingCount,
+  });
 }
 
 async function assertDiskSpace(
@@ -173,19 +176,19 @@ export async function prepareSelectedPhotosExport(
     throw new Error('No selected photos to export');
   }
 
-  const stagingDirectory = await ensureExportStagingDirectory();
-  const {totalBytes, missingSizeCount} = estimateExportBytes(photos);
-  if (missingSizeCount > 0) {
-    reportError(new Error('Export photos without size'), {
-      albumId,
-      missingSizeCount,
-    });
-  }
-  await assertDiskSpace(stagingDirectory.path, totalBytes, {
-    albumId,
-    photoCount: photos.length,
-  });
   try {
+    const stagingDirectory = await ensureExportStagingDirectory();
+    const {totalBytes, missingSizeCount} = estimateExportBytes(photos);
+    if (missingSizeCount > 0) {
+      reportError(new Error('Export photos without size'), {
+        albumId,
+        missingSizeCount,
+      });
+    }
+    await assertDiskSpace(stagingDirectory.path, totalBytes, {
+      albumId,
+      photoCount: photos.length,
+    });
     return await buildExportZip(options, stagingDirectory.path);
   } catch (error) {
     throw toExportError(error);
@@ -263,28 +266,30 @@ export async function downloadPreparedExport(options: {
   prepared: PreparedExport;
   directory?: ExportDirectoryInfo | null;
 }): Promise<ExportZipResult> {
-  const directory =
-    options.directory ?? (await ensureDefaultExportDirectory());
-  await assertDiskSpace(directory.path, options.prepared.byteSize, {
-    photoCount: options.prepared.photoCount,
-  });
-  const destinationPath = await resolveUniqueZipPath(
-    directory.path,
-    options.prepared.fileName,
-  );
-  let copied: Awaited<ReturnType<typeof copyExportFile>>;
+  const {prepared} = options;
   try {
-    copied = await copyExportFile(
-      options.prepared.stagingPath,
-      destinationPath,
+    const directory =
+      options.directory ?? (await ensureDefaultExportDirectory());
+    if (Number.isFinite(prepared.byteSize) && prepared.byteSize >= 0) {
+      await assertDiskSpace(directory.path, prepared.byteSize, {
+        photoCount: prepared.photoCount,
+      });
+    } else {
+      reportError(new Error('Prepared export has invalid byte size'), {
+        photoCount: prepared.photoCount,
+      });
+    }
+    const destinationPath = await resolveUniqueZipPath(
+      directory.path,
+      prepared.fileName,
     );
+    const copied = await copyExportFile(prepared.stagingPath, destinationPath);
+    return {
+      ...copied,
+      displayPath: directory.displayPath,
+      photoCount: prepared.photoCount,
+    };
   } catch (error) {
     throw toExportError(error);
   }
-
-  return {
-    ...copied,
-    displayPath: directory.displayPath,
-    photoCount: options.prepared.photoCount,
-  };
 }

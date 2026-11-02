@@ -152,6 +152,68 @@ describe('downloadPreparedExport preflight', () => {
   });
 });
 
+describe('download failure recovery', () => {
+  it.each(['lowDestination', 'copyNotWritable'] as const)(
+    'keeps prepared usable after %s and a retry succeeds',
+    async scenario => {
+      const snapshot = {...prepared};
+      mockNative.current = makeFakeGumpLocalStorage(
+        scenario === 'lowDestination'
+          ? {disk: 'lowDestination'}
+          : {export: 'copyNotWritable'},
+      );
+      await expect(downloadPreparedExport({prepared})).rejects.toBeInstanceOf(
+        ExportError,
+      );
+      expect(prepared).toEqual(snapshot);
+      expect(Object.keys(mockNative.current)).not.toContain('remove');
+
+      mockNative.current = makeFakeGumpLocalStorage();
+      await expect(downloadPreparedExport({prepared})).resolves.toMatchObject({
+        photoCount: 1,
+      });
+      expect(mockNative.current.copyFile).toHaveBeenCalledWith(
+        prepared.stagingPath,
+        expect.any(String),
+      );
+    },
+  );
+
+  it('maps directory and unique-path failures', async () => {
+    mockNative.current = makeFakeGumpLocalStorage();
+    mockNative.current.ensureDefaultExportDirectory.mockRejectedValueOnce(
+      makeNativeError('E_NOT_WRITABLE'),
+    );
+    await expect(downloadPreparedExport({prepared})).rejects.toMatchObject({
+      reason: 'folderNotWritable',
+    });
+    mockNative.current.resolveUniqueZipPath.mockRejectedValueOnce(
+      makeNativeError('E_NOT_WRITABLE'),
+    );
+    await expect(downloadPreparedExport({prepared})).rejects.toMatchObject({
+      reason: 'folderNotWritable',
+    });
+  });
+
+  it('maps staging directory failure in prepare', async () => {
+    mockNative.current = makeFakeGumpLocalStorage();
+    mockNative.current.ensureExportStagingDirectory.mockRejectedValueOnce(
+      makeNativeError('E_NOT_WRITABLE'),
+    );
+    await expect(prepare()).rejects.toMatchObject({
+      reason: 'folderNotWritable',
+    });
+  });
+
+  it('skips preflight and reports on invalid byteSize', async () => {
+    await expect(
+      downloadPreparedExport({prepared: {...prepared, byteSize: Number.NaN}}),
+    ).resolves.toMatchObject({photoCount: 1});
+    expect(mockNative.current.getFreeDiskSpace).not.toHaveBeenCalled();
+    expect(mockReportError).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('toExportError', () => {
   it.each([
     ['E_DISK_FULL', 'diskFull'],
@@ -162,6 +224,26 @@ describe('toExportError', () => {
     ['__proto__', 'unknown'],
   ])('maps %s to %s', (code, reason) => {
     expect(toExportError(makeNativeError(code)).reason).toBe(reason);
+  });
+
+  it('maps E_DISK_FULL from the zip path', async () => {
+    mockNative.current = makeFakeGumpLocalStorage({export: 'zipDiskFull'});
+    await expect(prepare()).rejects.toMatchObject({reason: 'diskFull'});
+  });
+
+  it.each([-1, 1.5, Number.NaN, '3' as unknown as number])(
+    'drops invalid missingCount %p',
+    count => {
+      const error = makeNativeError('E_SOURCE_MISSING');
+      error.userInfo = {missingCount: count};
+      expect(toExportError(error).missingCount).toBeUndefined();
+    },
+  );
+
+  it('uses a fixed message and keeps native text only in cause', () => {
+    const mapped = toExportError(makeNativeError('E_DISK_FULL'));
+    expect(mapped.message).toBe('Export failed: diskFull');
+    expect(mapped.message).not.toContain('fake native');
   });
 
   it('keeps missingCount and cause', () => {
