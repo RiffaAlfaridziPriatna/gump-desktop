@@ -3,7 +3,10 @@ import {
   createCulledAlbumPhoto,
 } from '../src/lib/culledAlbum/types';
 import {addPhotosToAlbum, culledAlbumStore} from '../src/lib/culledAlbum/store';
-import {photoStateStore} from '../src/lib/culledAlbum/photoStateStore';
+import {
+  getPhotosSnapshot,
+  photoStateStore,
+} from '../src/lib/culledAlbum/photoStateStore';
 
 jest.mock('@lib/navigation/uploadAwareNavigation', () => ({
   shouldDeferHeavyWorkForNavigation: () => false,
@@ -73,8 +76,11 @@ describe('addPhotosToAlbum default look', () => {
     culledAlbumStore.setState(state => {
       state.albums[ALBUM]!.defaultLookId = 'original';
     });
-    addPhotosToAlbum(ALBUM, [file('b')]);
-    expect(first.lookId).toBe('warmRomantic');
+    const second = addPhotosToAlbum(ALBUM, [file('b')])[0]!;
+    const stored = (id: string) =>
+      getPhotosSnapshot(ALBUM).find(p => p.photoId === id)!.lookId;
+    expect(stored(first.photoId)).toBe('warmRomantic');
+    expect(stored(second.photoId)).toBe('original');
   });
 
   it('createCulledAlbumPhoto defaults to original (sync path)', () => {
