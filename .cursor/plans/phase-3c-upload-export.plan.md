@@ -5,7 +5,7 @@ approved: true
 todos:
   - id: s5a
     content: Contracts for disk space, sizes, failure reasons, native error codes and upload preflight
-    status: pending
+    status: completed
   - id: s5b
     content: Native getFreeDiskSpace in GumpLocalStorage (macOS and Windows)
     status: pending
