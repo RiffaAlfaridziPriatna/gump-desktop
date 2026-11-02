@@ -22,7 +22,6 @@ import {
 import type {LookId} from '@lib/look/types';
 import {FileAsset} from '@services/upload/types';
 import {UploadToast} from '@components/upload/UploadToast';
-import {FaceStatusTooltip} from '@components/culling/FaceStatusTooltip';
 import {
   useCulledAlbumActions,
   useCulledAlbumPhotosState,
@@ -36,7 +35,6 @@ import {useGridFocus} from '@hooks/useGridFocus';
 import {useStableGridPhotos} from '@hooks/useStableGridPhotos';
 import {hasPickedOutsideView, usePickedPhotos} from '@hooks/usePickedPhotos';
 import {usePreloadGridImages} from '@hooks/usePreloadGridImages';
-import {useKeyFaceTooltip} from '@hooks/useKeyFaceTooltip';
 import {useProfileMenu} from '@hooks/useProfileMenu';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {cullingEngine} from '@lib/culling/cullingEngine';
@@ -55,7 +53,7 @@ import {
   getUploadLookBakeState,
   subscribeUploadLookBake,
 } from '@lib/look/uploadLookBake';
-import {preloadImage, preloadImages} from '@lib/media/imagePreload';
+import {preloadImage} from '@lib/media/imagePreload';
 import {
   resolveDetailDisplayUri,
   resolveGridDisplayUri,
@@ -134,24 +132,11 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   }, [albumId, isFocused, resumeInFlightWork]);
   const {
     stats,
-    keyFaces,
     isAnalyzing,
     toggleSelection,
     updateStarRating,
     deletePhoto,
   } = useCulledAlbumDetailData(albumId, albumPhotos, !loadingPhotos);
-
-  const {
-    screenRootRef,
-    keyFaceTooltip,
-    keyFaceTooltipWidth,
-    keyFaceTooltipHeight,
-    screenOrigin,
-    syncScreenOrigin,
-    dismissKeyFaceTooltip,
-    setKeyFaceTooltipWidth,
-    setKeyFaceTooltipHeight,
-  } = useKeyFaceTooltip();
 
   const [photoToDelete, setPhotoToDelete] = useState<{
     photoId: string;
@@ -174,13 +159,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     showExportModal ||
     showApplyLookModal ||
     showAddPhotosModal;
-
-  useEffect(() => {
-    if (!isBlockingModalOpen) {
-      return;
-    }
-    dismissKeyFaceTooltip();
-  }, [dismissKeyFaceTooltip, isBlockingModalOpen]);
 
   useEffect(() => {
     setMainContentWidth(0);
@@ -557,38 +535,12 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     editPhotosDisabled: exportPhotoCount === 0,
   };
 
-  useEffect(() => {
-    syncScreenOrigin();
-  }, [cullFiltersExpanded, syncScreenOrigin]);
-
-  const keyFaceDisplayUrisKey = useMemo(
-    () =>
-      [...new Set(
-        keyFaces
-          .map(face => face.cropUri)
-          .filter((uri): uri is string => Boolean(uri)),
-      )].join('\0'),
-    [keyFaces],
-  );
-
-  useEffect(() => {
-    if (!keyFaceDisplayUrisKey) {
-      return;
-    }
-
-    preloadImages(keyFaceDisplayUrisKey.split('\0'), {concurrency: 8}).catch(
-      () => undefined,
-    );
-  }, [keyFaceDisplayUrisKey]);
-
   return (
     <UploadAwareModalShell {...shellProps}>
       <SafeAreaView style={styles.container}>
       <View style={styles.screenShell}>
         <View
-          ref={screenRootRef}
-          style={styles.screenRoot}
-          onLayout={syncScreenOrigin}>
+          style={styles.screenRoot}>
         <View
           style={styles.screenContent}
           pointerEvents={isBlockingModalOpen ? 'none' : 'auto'}>
@@ -705,7 +657,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
                 onToggleSelection={toggleSelection}
                 onDeletePress={handleDeletePhotoPress}
                 onStarPress={updateStarRating}
-                onScrollInteractionStart={dismissKeyFaceTooltip}
               />
             )}
           </View>
@@ -777,45 +728,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           onSelect={handleAddPhotosSelected}
         />
 
-        {keyFaceTooltip && (
-          <View
-            pointerEvents="none"
-            style={[
-              styles.keyFaceTooltipHost,
-              {
-                top:
-                  keyFaceTooltip.placement === 'above'
-                    ? (keyFaceTooltip.topY ?? keyFaceTooltip.bottomY) -
-                      screenOrigin.y -
-                      6
-                    : keyFaceTooltip.bottomY - screenOrigin.y + 6,
-                left: keyFaceTooltip.centerX - screenOrigin.x,
-                transform:
-                  keyFaceTooltip.placement === 'above'
-                    ? [
-                        {translateX: -keyFaceTooltipWidth / 2},
-                        {translateY: -keyFaceTooltipHeight},
-                      ]
-                    : [{translateX: -keyFaceTooltipWidth / 2}],
-                opacity:
-                  keyFaceTooltipWidth > 0 &&
-                  (keyFaceTooltip.placement !== 'above' ||
-                    keyFaceTooltipHeight > 0)
-                    ? 1
-                    : 0,
-              },
-            ]}
-            onLayout={event => {
-              setKeyFaceTooltipWidth(event.nativeEvent.layout.width);
-              setKeyFaceTooltipHeight(event.nativeEvent.layout.height);
-            }}>
-            <FaceStatusTooltip
-              eyeMeta={keyFaceTooltip.eyeMeta}
-              focusMeta={keyFaceTooltip.focusMeta}
-              placement={keyFaceTooltip.placement}
-            />
-          </View>
-        )}
         </View>
       </View>
       <ProfileMenuPopup
@@ -893,9 +805,5 @@ const styles = StyleSheet.create({
   gridMobile: {
     paddingRight: 0,
     paddingVertical: 12,
-  },
-  keyFaceTooltipHost: {
-    position: 'absolute',
-    zIndex: 1000,
   },
 });
