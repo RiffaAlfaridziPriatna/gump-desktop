@@ -130,7 +130,7 @@ export function beginServerUploadQueue(
 
 export function finishServerUploadQueue(
   albumId: string,
-  result: FinishLocalImportQueueInput,
+  result: FinishQueueInput,
 ): void {
   uploadQueueStore.setState(state => {
     if (!state.queues[albumId]) {
@@ -146,7 +146,7 @@ export function finishServerUploadQueue(
   });
 }
 
-export type FinishLocalImportQueueInput = {
+export type FinishQueueInput = {
   status: Extract<QueueOperationStatus, 'completed' | 'failed'>;
   uploadedCount: number;
   failedCount: number;
@@ -169,7 +169,7 @@ export function beginAnalysisQueue(albumId: string, batchTotal: number): void {
 
 export function finishLocalImportQueue(
   albumId: string,
-  result: FinishLocalImportQueueInput,
+  result: FinishQueueInput,
 ): void {
   uploadQueueStore.setState(state => {
     const current = state.queues[albumId]?.localImport ?? defaultQueueOperation;

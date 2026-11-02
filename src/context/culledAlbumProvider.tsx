@@ -43,6 +43,7 @@ import {
   hasInFlightUploads,
 } from '@lib/culledAlbum/types';
 import {createServerUploadQueue} from '@lib/culledAlbum/serverUploadQueue';
+import {selectPendingLookBakeIds} from '@lib/culledAlbum/serverUploadRetry';
 import {uploadServerPhoto} from '@lib/culledAlbum/serverUpload';
 import {createUploadQueue} from '@lib/culledAlbum/uploadQueue';
 import {
@@ -470,16 +471,12 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
 
   const retryUploadLookBake = useCallback(
     (albumId: string) => {
-      const pendingIds = (getAlbum(albumId)?.uploadBatchPhotoIds ?? []).filter(
-        photoId =>
-          getPhotoById(albumId, photoId)?.serverUploadStatus === 'pending',
+      const pendingIds = selectPendingLookBakeIds(
+        albumId,
+        getAlbum(albumId)?.uploadBatchPhotoIds ?? [],
+        getPhotoById,
       );
       if (pendingIds.length === 0) {
-        reportError(new Error('No pending photos to retry look bake'), {
-          source: 'culled_album_provider',
-          operation: 'retryUploadLookBake',
-          albumId,
-        });
         return;
       }
       kickServerUpload(albumId, pendingIds);

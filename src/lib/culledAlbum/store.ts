@@ -39,7 +39,10 @@ import {
   setPhotoOrder,
 } from './photoLoader';
 import {beginServerUploadQueue, finishLocalImportQueue, finishServerUploadQueue, getAlbumQueueState, hasActiveQueueWork} from './uploadQueueStore';
-import {UPLOAD_FAILURE_GROUP, type UploadFailureCause} from './uploadPreflight';
+import {
+  captureServerUploadRetried,
+  selectRetryablePhotos,
+} from './serverUploadRetry';
 import {
   countServerUploadBatchItems,
   getServerUploadBatchPhotos,
@@ -654,25 +657,12 @@ export function retryFailedServerUploads(
   if (queueStatus === 'active' || queueStatus === 'finalizing') {
     return [];
   }
-  const inFlight = batchIds.some(photoId => {
-    const status = getPhotoById(albumId, photoId)?.serverUploadStatus;
-    return status === 'pending' || status === 'uploading';
-  });
-  if (inFlight) {
-    return [];
-  }
-  const retried: {photoId: string; cause: UploadFailureCause}[] = [];
-  for (const photoId of batchIds) {
-    const photo = getPhotoById(albumId, photoId);
-    if (photo?.serverUploadStatus !== 'failed') {
-      continue;
-    }
-    const cause = photo.serverUploadCause ?? 'unknown';
-    const group = UPLOAD_FAILURE_GROUP[cause];
-    if (group === 'retryable' || (group === 'quota' && options.includeQuota)) {
-      retried.push({photoId, cause});
-    }
-  }
+  const retried = selectRetryablePhotos(
+    albumId,
+    batchIds,
+    getPhotoById,
+    options,
+  );
   if (retried.length === 0) {
     return [];
   }
@@ -687,16 +677,7 @@ export function retryFailedServerUploads(
     }
   });
   beginServerUploadQueue(albumId, photoIds.length);
-  const causeCounts: Record<string, number> = {};
-  for (const {cause} of retried) {
-    causeCounts[`cause_${cause}`] = (causeCounts[`cause_${cause}`] ?? 0) + 1;
-  }
-  captureAppEvent('server_upload_retried', {
-    albumId,
-    retryCount: photoIds.length,
-    includeQuota: options.includeQuota,
-    ...causeCounts,
-  });
+  captureServerUploadRetried(albumId, retried, options);
   return photoIds;
 }
 
