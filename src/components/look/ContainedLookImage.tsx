@@ -24,7 +24,6 @@ type ContainedLookImageProps = {
   width: number;
   height: number;
   lookId?: LookId | null;
-  lookIntensity?: number | null;
   isTransparent?: boolean;
   borderRadius?: number;
 };
@@ -39,7 +38,6 @@ export const ContainedLookImage = memo(function ContainedLookImage({
   width,
   height,
   lookId,
-  lookIntensity,
   isTransparent = true,
   borderRadius = 8,
 }: ContainedLookImageProps) {
@@ -134,7 +132,6 @@ export const ContainedLookImage = memo(function ContainedLookImage({
             uri={uri}
             bakeSourceUri={bakeSourceUri}
             lookId={lookId}
-            lookIntensity={lookIntensity}
             onLoad={handleLoad}
             onError={handleError}
             style={[

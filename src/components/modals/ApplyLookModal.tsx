@@ -1,12 +1,8 @@
 import { ContainedLookImage } from '@components/look/ContainedLookImage';
-import { IntensitySlider } from '@components/look/IntensitySlider';
 import { Modal, Pressable, TouchableOpacity } from '@components/ui';
 import type { CulledAlbumPhoto } from '@lib/culledAlbum/types';
 import { LOOK_CATALOG } from '@lib/look/lookCatalog';
-import {
-  DEFAULT_LOOK_INTENSITY,
-  type LookId,
-} from '@lib/look/types';
+import type { LookId } from '@lib/look/types';
 import {
   isUsableDetailUri,
   isUsableThumbnailUri,
@@ -25,7 +21,7 @@ type ApplyLookModalProps = {
   visible: boolean;
   selectedPhotos: CulledAlbumPhoto[];
   onClose: () => void;
-  onApply: (lookId: LookId, lookIntensity: number) => Promise<void>;
+  onApply: (lookId: LookId) => Promise<void>;
 };
 
 const SCROLL_OVERFLOW_EPS = 1;
@@ -154,10 +150,7 @@ export function ApplyLookModal({
   );
 
   const [lookId, setLookId] = useState<LookId>('warmRomantic');
-  const [intensity, setIntensity] = useState(DEFAULT_LOOK_INTENSITY);
   const [applying, setApplying] = useState(false);
-  /** False while dragging intensity so Windows mouse drag isn't swallowed. */
-  const [intensityScrollAllowed, setIntensityScrollAllowed] = useState(true);
   const [canScroll, setCanScroll] = useState(false);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
@@ -188,7 +181,6 @@ export function ApplyLookModal({
       setScrollOffset(0);
       setViewportHeight(0);
       setContentHeight(0);
-      setIntensityScrollAllowed(true);
       setTitleOverlayHeight(TITLE_OVERLAY_FALLBACK_HEIGHT);
       return;
     }
@@ -200,20 +192,8 @@ export function ApplyLookModal({
         ? seedId
         : 'warmRomantic';
     setLookId(nextId);
-    setIntensity(seed?.lookIntensity ?? DEFAULT_LOOK_INTENSITY);
     setApplying(false);
-    setIntensityScrollAllowed(true);
   }, [selectedPhotos, visible]);
-
-  const intensityDisabled = lookId === 'original';
-
-  const handleIntensityDragStart = useCallback(() => {
-    setIntensityScrollAllowed(false);
-  }, []);
-
-  const handleIntensityDragEnd = useCallback(() => {
-    setIntensityScrollAllowed(true);
-  }, []);
 
   const handleApply = useCallback(async () => {
     if (applying || selectedPhotos.length === 0) {
@@ -227,10 +207,7 @@ export function ApplyLookModal({
       });
     });
     try {
-      await onApply(
-        lookId,
-        intensityDisabled ? DEFAULT_LOOK_INTENSITY : intensity,
-      );
+      await onApply(lookId);
       onClose();
     } catch (error) {
       console.error('[ApplyLookModal] Failed to apply look', error);
@@ -239,8 +216,6 @@ export function ApplyLookModal({
     }
   }, [
     applying,
-    intensity,
-    intensityDisabled,
     lookId,
     onApply,
     onClose,
@@ -259,8 +234,7 @@ export function ApplyLookModal({
         One flex:1 ScrollView fills the modal (required on RNW — a title flex
         sibling above ScrollView breaks height constraints). Title is an absolute
         white band so it stays pinned. Top decor sits above that band; bottom
-        decor stays at corners under the scroll surface. Disable scroll while
-        dragging intensity (Windows).
+        decor stays at corners under the scroll surface.
         Fabric's native shy scrollbar flashes wide then hides until hover — on
         Windows we draw a custom always-on thin thumb instead when overflowing.
       */}
@@ -272,7 +246,6 @@ export function ApplyLookModal({
             styles.scrollContent,
             {paddingTop: titleOverlayHeight},
           ]}
-          scrollEnabled={intensityScrollAllowed}
           keyboardShouldPersistTaps="handled"
           nestedScrollEnabled
           bounces={false}
@@ -302,7 +275,6 @@ export function ApplyLookModal({
                   width={480}
                   height={326}
                   lookId={lookId}
-                  lookIntensity={intensityDisabled ? 0 : intensity}
                   isTransparent={false}
                 />
               ) : (
@@ -330,8 +302,6 @@ export function ApplyLookModal({
                           height={70}
                           borderRadius={4}
                           lookId={look.id}
-                          // Chips match Figma: always show full-strength look.
-                          lookIntensity={look.id === 'original' ? 0 : 100}
                         />
                       ) : (
                         <View
@@ -352,20 +322,6 @@ export function ApplyLookModal({
                     </Pressable>
                   );
                 })}
-              </View>
-
-              <View style={styles.intensityRow}>
-                <Text style={styles.intensityLabel}>Intensity</Text>
-                <IntensitySlider
-                  value={intensity}
-                  onChange={setIntensity}
-                  disabled={intensityDisabled}
-                  onDragStart={handleIntensityDragStart}
-                  onDragEnd={handleIntensityDragEnd}
-                />
-                <Text style={styles.intensityValue}>
-                  {intensityDisabled ? '—' : `${intensity}%`}
-                </Text>
               </View>
             </View>
 
@@ -540,28 +496,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 14,
     color: colors.textDark,
-  },
-  intensityRow: {
-    width: 480,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 24,
-    overflow: 'visible',
-  },
-  intensityLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textDark,
-  },
-  intensityValue: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textDark,
-    textAlign: 'right',
-    width: 40,
-    fontVariant: ['tabular-nums'],
   },
   buttonContainer: {
     gap: 12,

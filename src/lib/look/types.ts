@@ -2,7 +2,8 @@ import {LOOK_IDS, isLookId, type LookId} from '@domain/valueObjects/Look';
 
 export {LOOK_IDS, isLookId, type LookId};
 
-export const DEFAULT_LOOK_INTENSITY = 80;
+/** Only strength value ever sent to the native bake. */
+export const LOOK_BAKE_INTENSITY = 100;
 
 export type LookDefinition = {
   id: LookId;
@@ -13,13 +14,6 @@ export type LookDefinition = {
    */
   lutName?: string;
 };
-
-export function normalizeLookIntensity(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return DEFAULT_LOOK_INTENSITY;
-  }
-  return Math.max(0, Math.min(100, Math.round(value)));
-}
 
 export function hasAppliedLook(
   lookId: LookId | null | undefined,

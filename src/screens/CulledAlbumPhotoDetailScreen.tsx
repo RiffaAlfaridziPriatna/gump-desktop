@@ -244,7 +244,7 @@ export default function CulledAlbumPhotoDetailScreen({
       return '';
     }
     if (hasAppliedLook(photo.lookId)) {
-      return isLookDetailCurrent(photo.file, photo.lookId, photo.lookIntensity)
+      return isLookDetailCurrent(photo.file, photo.lookId)
         ? photo.file.lookDetailUri!
         : '';
     }
@@ -257,7 +257,6 @@ export default function CulledAlbumPhotoDetailScreen({
   const photoLookDetailUri = photo?.file.lookDetailUri;
   const photoLookDetailKey = photo?.file.lookDetailKey;
   const photoLookId = photo?.lookId;
-  const photoLookIntensity = photo?.lookIntensity;
   const lookApplied = hasAppliedLook(photoLookId);
   const lookDetailReady =
     lookApplied &&
@@ -268,7 +267,6 @@ export default function CulledAlbumPhotoDetailScreen({
         lookDetailKey: photoLookDetailKey,
       },
       photoLookId,
-      photoLookIntensity ?? 0,
     );
 
   // Layout phase so uri and photoId stay in sync before paint. A deferred
@@ -344,7 +342,6 @@ export default function CulledAlbumPhotoDetailScreen({
     photo,
     photoId,
     photoLookId,
-    photoLookIntensity,
   ]);
 
   useEffect(() => {
@@ -653,7 +650,6 @@ export default function CulledAlbumPhotoDetailScreen({
                     faces={faces}
                     zoomFaceIndex={zoomFaceIndex}
                     lookId={lookDetailReady ? 'original' : photo?.lookId}
-                    lookIntensity={photo?.lookIntensity}
                     imageSize={imageSize}
                     onImageReady={handleMainImageReady}
                     onTooltipAnchorChange={handleTooltipChange}

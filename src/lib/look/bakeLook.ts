@@ -1,7 +1,6 @@
 import type {CulledAlbumPhoto} from '@lib/culledAlbum/types';
-import {normalizeLookIntensityPercent} from '@lib/look/lookCatalog';
 import {
-  DEFAULT_LOOK_INTENSITY,
+  LOOK_BAKE_INTENSITY,
   hasAppliedLook,
   type LookId,
 } from '@lib/look/types';
@@ -58,19 +57,14 @@ function stripUnsafeFileNameChars(value: string): string {
 function previewCacheKey(
   sourceUri: string,
   lookId: LookId,
-  intensity: number,
   maxPixelSize: number,
 ): string {
-  return `${sourceUri}|${lookId}|${intensity}|${maxPixelSize}`;
+  return `${sourceUri}|${lookId}|${LOOK_BAKE_INTENSITY}|${maxPixelSize}`;
 }
 
 /** Cache key stored on FileAsset.lookDetailKey for a 4096 look bake. */
-export function lookDetailCacheKey(
-  lookId: LookId,
-  intensityPercent: number,
-): string {
-  const intensity = normalizeLookIntensityPercent(intensityPercent);
-  return `${lookId}|${intensity}|${LOOK_DETAIL_MAX_PIXEL_SIZE}`;
+export function lookDetailCacheKey(lookId: LookId): string {
+  return `${lookId}|${LOOK_BAKE_INTENSITY}|${LOOK_DETAIL_MAX_PIXEL_SIZE}`;
 }
 
 export function isUsableLookDetailUri(
@@ -82,7 +76,6 @@ export function isUsableLookDetailUri(
 export function isLookDetailCurrent(
   file: Pick<FileAsset, 'lookDetailUri' | 'lookDetailKey'>,
   lookId: LookId,
-  intensityPercent: number,
 ): boolean {
   if (!hasAppliedLook(lookId)) {
     return false;
@@ -90,7 +83,7 @@ export function isLookDetailCurrent(
   if (!isUsableLookDetailUri(file.lookDetailUri) || !file.lookDetailKey) {
     return false;
   }
-  return file.lookDetailKey === lookDetailCacheKey(lookId, intensityPercent);
+  return file.lookDetailKey === lookDetailCacheKey(lookId);
 }
 
 export function photoNeedsLookBake(photo: CulledAlbumPhoto): boolean {
@@ -104,8 +97,7 @@ export async function resolveBakeDestinationPath(
   const staging = await ensureExportStagingDirectory();
   const settings = QUALITY_SETTINGS[quality];
   const safeId = stripUnsafeFileNameChars(photo.photoId);
-  const intensity = normalizeLookIntensityPercent(photo.lookIntensity);
-  const fileName = `${safeId}-${photo.lookId}-${intensity}-${settings.maxPixelSize}.jpg`;
+  const fileName = `${safeId}-${photo.lookId}-${LOOK_BAKE_INTENSITY}-${settings.maxPixelSize}.jpg`;
   const separator = staging.path.includes('\\') ? '\\' : '/';
   return `${staging.path}${separator}looks${separator}${fileName}`;
 }
@@ -113,14 +105,13 @@ export async function resolveBakeDestinationPath(
 async function resolvePreviewDestinationPath(
   sourceUri: string,
   lookId: LookId,
-  intensity: number,
 ): Promise<string> {
   const staging = await ensureExportStagingDirectory();
   const settings = QUALITY_SETTINGS.preview;
   const hash = stripUnsafeFileNameChars(
     sourceUri.replace(/[^a-zA-Z0-9]+/g, '').slice(-48) || 'preview',
   );
-  const fileName = `preview-${hash}-${lookId}-${intensity}-${settings.maxPixelSize}.jpg`;
+  const fileName = `preview-${hash}-${lookId}-${LOOK_BAKE_INTENSITY}-${settings.maxPixelSize}.jpg`;
   const separator = staging.path.includes('\\') ? '\\' : '/';
   return `${staging.path}${separator}looks${separator}${fileName}`;
 }
@@ -138,15 +129,11 @@ export async function bakePhotoLook(
   }
 
   const settings = QUALITY_SETTINGS[quality];
-  const intensity = normalizeLookIntensityPercent(
-    photo.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
-  );
   const destPath = await resolveBakeDestinationPath(photo, quality);
   const baked = await applyLookToJpeg({
     sourceUri: photo.file.uri,
     destPath,
     lookId: photo.lookId as LookId,
-    intensity,
     maxPixelSize: settings.maxPixelSize,
     jpegQuality: settings.jpegQuality,
   });
@@ -179,11 +166,8 @@ export async function ensureLookDetail(
     return {lookDetailUri: null, lookDetailKey: null};
   }
 
-  const intensity = normalizeLookIntensityPercent(
-    photo.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
-  );
-  const key = lookDetailCacheKey(photo.lookId, intensity);
-  if (isLookDetailCurrent(photo.file, photo.lookId, intensity)) {
+  const key = lookDetailCacheKey(photo.lookId);
+  if (isLookDetailCurrent(photo.file, photo.lookId)) {
     return {
       lookDetailUri: photo.file.lookDetailUri!,
       lookDetailKey: key,
@@ -201,39 +185,23 @@ export async function ensureLookDetail(
 export async function bakeLookPreviewUri(
   sourceUri: string,
   lookId: LookId,
-  intensityPercent: number = DEFAULT_LOOK_INTENSITY,
 ): Promise<string> {
   if (!sourceUri || !hasAppliedLook(lookId)) {
     return sourceUri;
   }
 
-  const intensity = normalizeLookIntensityPercent(intensityPercent);
-  if (intensity <= 0) {
-    return sourceUri;
-  }
-
   const settings = QUALITY_SETTINGS.preview;
-  const key = previewCacheKey(
-    sourceUri,
-    lookId,
-    intensity,
-    settings.maxPixelSize,
-  );
+  const key = previewCacheKey(sourceUri, lookId, settings.maxPixelSize);
   const cached = previewUriCache.get(key);
   if (cached) {
     return cached;
   }
 
-  const destPath = await resolvePreviewDestinationPath(
-    sourceUri,
-    lookId,
-    intensity,
-  );
+  const destPath = await resolvePreviewDestinationPath(sourceUri, lookId);
   const baked = await applyLookToJpeg({
     sourceUri,
     destPath,
     lookId,
-    intensity,
     maxPixelSize: settings.maxPixelSize,
     jpegQuality: settings.jpegQuality,
   });

@@ -1,7 +1,3 @@
-import {
-  DEFAULT_LOOK_INTENSITY,
-  normalizeLookIntensity,
-} from '@lib/look/types';
 import {isLookId, type LookId} from '../valueObjects/Look';
 import {FileAsset} from '../valueObjects/FileAsset';
 import {Face} from '../valueObjects/Face';
@@ -33,7 +29,6 @@ export class CulledPhoto {
   private _selected: boolean;
   private _starRating: number | null;
   private _lookId: LookId;
-  private _lookIntensity: number;
   private _aiSelected: boolean;
   private _maybe: boolean;
   private _blurred: boolean;
@@ -63,7 +58,6 @@ export class CulledPhoto {
     selected?: boolean;
     starRating?: number | null;
     lookId?: LookId;
-    lookIntensity?: number;
     aiSelected?: boolean;
     maybe?: boolean;
     blurred?: boolean;
@@ -96,9 +90,6 @@ export class CulledPhoto {
     this._selected = data.selected ?? false;
     this._starRating = data.starRating ?? null;
     this._lookId = data.lookId ?? 'original';
-    this._lookIntensity = normalizeLookIntensity(
-      data.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
-    );
     this._aiSelected = data.aiSelected ?? false;
     this._maybe = data.maybe ?? false;
     this._blurred = data.blurred ?? false;
@@ -174,10 +165,6 @@ export class CulledPhoto {
 
   get lookId(): LookId {
     return this._lookId;
-  }
-
-  get lookIntensity(): number {
-    return this._lookIntensity;
   }
 
   get aiSelected(): boolean {
@@ -269,9 +256,8 @@ export class CulledPhoto {
     this._starRating = rating;
   }
 
-  setLook(lookId: LookId, intensity: number): void {
+  setLook(lookId: LookId): void {
     this._lookId = lookId;
-    this._lookIntensity = normalizeLookIntensity(intensity);
   }
 
   startServerUpload(): void {
@@ -331,7 +317,6 @@ export class CulledPhoto {
       selected: this._selected,
       starRating: this._starRating,
       lookId: this._lookId,
-      lookIntensity: this._lookIntensity,
       aiSelected: this._aiSelected,
       maybe: this._maybe,
       blurred: this._blurred,
@@ -364,9 +349,6 @@ export class CulledPhoto {
       selected: data.selected,
       starRating: data.starRating,
       lookId: isLookId(data.lookId) ? data.lookId : 'original',
-      lookIntensity: normalizeLookIntensity(
-        data.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
-      ),
       aiSelected: data.aiSelected,
       maybe: data.maybe,
       blurred: data.blurred,

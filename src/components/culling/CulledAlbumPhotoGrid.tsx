@@ -55,7 +55,6 @@ export type CulledAlbumGridPhoto = {
   photoId: string;
   analysis?: APIResponse.CullingPhoto;
   lookId?: LookId | null;
-  lookIntensity?: number | null;
   disabled: boolean;
 };
 

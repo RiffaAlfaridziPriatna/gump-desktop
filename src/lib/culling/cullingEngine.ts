@@ -27,12 +27,7 @@ import {
   updatePhoto,
 } from '@lib/culledAlbum/store';
 import { CulledAlbumPhoto, isCulledPhotoDisabled, NativeDetectedFace, toCullingPhoto, type CullingDuplicateGroup } from '@lib/culledAlbum/types';
-import {
-  DEFAULT_LOOK_INTENSITY,
-  isLookId,
-  normalizeLookIntensity,
-  type LookId,
-} from '@lib/look/types';
+import {isLookId, type LookId} from '@lib/look/types';
 import { readImageCaptureTime } from '@lib/media/imageCaptureTime';
 import { computeImagePerceptualHash } from '@lib/media/perceptualHash';
 import {
@@ -938,15 +933,12 @@ export const cullingEngine = {
   async updateLook(
     albumId: string,
     photoIds: string[],
-    data: {lookId: LookId; lookIntensity?: number},
+    data: {lookId: LookId},
   ): Promise<void> {
     await ensureAlbumLoaded(albumId);
     if (!isLookId(data.lookId)) {
       throw new Error('Invalid look id');
     }
-    const lookIntensity = normalizeLookIntensity(
-      data.lookIntensity ?? DEFAULT_LOOK_INTENSITY,
-    );
     const uniquePhotoIds = Array.from(new Set(photoIds));
     const syncedPhotoIds: string[] = [];
     for (const photoId of uniquePhotoIds) {
@@ -956,7 +948,6 @@ export const cullingEngine = {
       }
       updatePhoto(albumId, photoId, photo => {
         photo.lookId = data.lookId;
-        photo.lookIntensity = lookIntensity;
         // Invalidate look-baked detail so UI holds gray until rebuilt.
         if (photo.file.lookDetailUri || photo.file.lookDetailKey) {
           const {lookDetailUri: _u, lookDetailKey: _k, ...rest} = photo.file;

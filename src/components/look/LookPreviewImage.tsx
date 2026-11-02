@@ -1,9 +1,5 @@
 import {bakeLookPreviewUri} from '@lib/look/bakeLook';
-import {
-  DEFAULT_LOOK_INTENSITY,
-  hasAppliedLook,
-  type LookId,
-} from '@lib/look/types';
+import {hasAppliedLook, type LookId} from '@lib/look/types';
 import {getErrorMessage} from '@lib/observability';
 import {memo, useEffect, useState} from 'react';
 import {
@@ -16,7 +12,7 @@ import {
 } from 'react-native';
 
 type LookPreviewImageProps = {
-  /** Oriented display URI (thumb/detail). Used when look is original / intensity 0. */
+  /** Oriented display URI (thumb/detail). Used when look is original. */
   uri: string;
   /**
    * Optional bake source (album master). Prefer this for LUT bake when display
@@ -24,7 +20,6 @@ type LookPreviewImageProps = {
    */
   bakeSourceUri?: string | null;
   lookId?: LookId | null;
-  lookIntensity?: number | null;
   style?: StyleProp<ImageStyle>;
   onLoad?: (event: NativeSyntheticEvent<ImageLoadEventData>) => void;
   onError?: (event: NativeSyntheticEvent<ImageErrorEventData>) => void;
@@ -41,21 +36,18 @@ export const LookPreviewImage = memo(function LookPreviewImage({
   uri,
   bakeSourceUri,
   lookId = 'original',
-  lookIntensity = DEFAULT_LOOK_INTENSITY,
   style,
   onLoad,
   onError,
 }: LookPreviewImageProps) {
-  const intensity = lookIntensity ?? DEFAULT_LOOK_INTENSITY;
   const bakeUri = bakeSourceUri || uri;
-  const needsLookBake =
-    Boolean(bakeUri) && hasAppliedLook(lookId) && intensity > 0;
+  const needsLookBake = Boolean(bakeUri) && hasAppliedLook(lookId);
   const [displayUri, setDisplayUri] = useState(() =>
     needsLookBake ? '' : uri,
   );
 
   useEffect(() => {
-    if (!uri || !hasAppliedLook(lookId) || intensity <= 0) {
+    if (!uri || !hasAppliedLook(lookId)) {
       setDisplayUri(uri);
       return;
     }
@@ -64,7 +56,7 @@ export const LookPreviewImage = memo(function LookPreviewImage({
     setDisplayUri('');
     let cancelled = false;
     const timer = setTimeout(() => {
-      bakeLookPreviewUri(bakeUri, lookId, intensity)
+      bakeLookPreviewUri(bakeUri, lookId)
         .then(bakedUri => {
           if (!cancelled && bakedUri) {
             setDisplayUri(bakedUri);
@@ -90,7 +82,7 @@ export const LookPreviewImage = memo(function LookPreviewImage({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [bakeUri, intensity, lookId, uri]);
+  }, [bakeUri, lookId, uri]);
 
   if (!uri || !displayUri) {
     return null;

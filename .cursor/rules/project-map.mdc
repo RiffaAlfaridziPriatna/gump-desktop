@@ -131,7 +131,6 @@ Source: docs/PROJECT.md "Dual state".
 
 ## Known violations
 Existing layer leaks. Do not copy these patterns; fix only inside a task that owns the file.
-- src/domain/entities/CulledPhoto.ts:6 imports `@lib/look/types`. Target: move those types into src/domain/valueObjects.
 - src/lib/culledAlbum/stableGridPhotos.ts:1, src/hooks/useCulledAlbumFilters.ts:11, src/hooks/useKeyFaceTooltip.ts:1, src/hooks/useMeasuredTooltipHover.ts:1, src/hooks/useUploadAwareModalScreen.ts:1-2 import from `@components`. Target: move `CulledAlbumGridPhoto` and `KeyFaceTooltipAnchor` into src/lib.
 - `APIResponse` wire types used in UI (src/components/album/AlbumCard.tsx:11, src/components/culling/KeyFaceSidebarItem.tsx:15, others). Target: map at the hook.
 - src/components/modals/ForgotPasswordModal.tsx calls `make()` directly instead of a hook.

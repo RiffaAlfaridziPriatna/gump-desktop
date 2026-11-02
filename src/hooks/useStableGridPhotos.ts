@@ -27,7 +27,6 @@ export function useStableGridPhotos(
       .map(photo => ({
         photoId: photo.photoId,
         lookId: photo.lookId,
-        lookIntensity: photo.lookIntensity,
         disabled: isCulledPhotoDisabled(photo),
         analysis: toCullingPhoto(photo),
       }));

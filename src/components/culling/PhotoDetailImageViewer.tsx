@@ -33,7 +33,6 @@ type PhotoDetailImageViewerProps = {
   faces: APIResponse.CullingFace[];
   zoomFaceIndex: number | null;
   lookId?: LookId | null;
-  lookIntensity?: number | null;
   imageSize?: ImageDimensions | null;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
   onImageReady?: () => void;
@@ -133,7 +132,6 @@ export function PhotoDetailImageViewer({
   faces,
   zoomFaceIndex,
   lookId,
-  lookIntensity,
   imageSize: imageSizeProp,
   onTooltipAnchorChange,
   onImageReady,
@@ -340,7 +338,6 @@ export function PhotoDetailImageViewer({
             key={photoId}
             uri={uri}
             lookId={lookId}
-            lookIntensity={lookIntensity}
             onLoad={handleImageLoad}
             onError={handleImageError}
             style={[

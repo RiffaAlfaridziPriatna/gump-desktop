@@ -469,24 +469,21 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   }, [exportPhotoCount]);
 
   const handleApplyLook = useCallback(
-    async (lookId: LookId, lookIntensity: number) => {
+    async (lookId: LookId) => {
       const photoIds = actionAlbumPhotos.map(photo => photo.photoId);
       const photoCount = photoIds.length;
       captureAppEvent('apply_look_started', {
         albumId,
         lookId,
-        lookIntensity,
         photoCount,
       });
       try {
         await cullingEngine.updateLook(albumId, photoIds, {
           lookId,
-          lookIntensity,
         });
         captureAppEvent('apply_look_completed', {
           albumId,
           lookId,
-          lookIntensity,
           photoCount,
         });
       } catch (error) {
@@ -494,7 +491,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         captureAppEvent('apply_look_failed', {
           albumId,
           lookId,
-          lookIntensity,
           photoCount,
         });
         throw error;

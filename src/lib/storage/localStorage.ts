@@ -1,6 +1,7 @@
 import {FileAsset} from '@services/upload/types';
 import {NativeDetectedFace} from '@lib/culledAlbum/types';
 import {describeFileUri} from '@lib/observability/serializeError';
+import {LOOK_BAKE_INTENSITY} from '@lib/look/types';
 import {wrapError} from '@lib/observability/AppError';
 import {NativeModules, Platform} from 'react-native';
 
@@ -407,7 +408,6 @@ export async function applyLookToJpeg(options: {
   sourceUri: string;
   destPath: string;
   lookId: string;
-  intensity: number;
   maxPixelSize: number;
   jpegQuality: number;
 }): Promise<ApplyLookNativeResult> {
@@ -421,7 +421,7 @@ export async function applyLookToJpeg(options: {
     normalizeNativeFileUri(options.sourceUri),
     options.destPath,
     options.lookId,
-    options.intensity,
+    LOOK_BAKE_INTENSITY,
     options.maxPixelSize,
     options.jpegQuality,
   );

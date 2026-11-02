@@ -34,7 +34,6 @@ function gridPhotoEqual(
     cached.photoId === next.photoId &&
     cached.disabled === next.disabled &&
     cached.lookId === next.lookId &&
-    cached.lookIntensity === next.lookIntensity &&
     analysisEqual(cached.analysis, next.analysis)
   );
 }

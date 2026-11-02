@@ -1,4 +1,4 @@
-import {DEFAULT_LOOK_INTENSITY, type LookDefinition, type LookId} from './types';
+import type {LookDefinition, LookId} from './types';
 
 /**
  * Apply Look catalog. Grade source of truth is the Lightroom-trained .cube
@@ -47,10 +47,4 @@ export function resolveLookLutName(lookId: LookId): string | null {
     return null;
   }
   return getLookDefinition(lookId).lutName ?? lookId;
-}
-
-export function normalizeLookIntensityPercent(
-  intensityPercent: number = DEFAULT_LOOK_INTENSITY,
-): number {
-  return Math.max(0, Math.min(100, Math.round(intensityPercent)));
 }
