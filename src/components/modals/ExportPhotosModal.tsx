@@ -1,6 +1,6 @@
 import { Modal, Pressable, ProgressBar, TouchableOpacity } from '@components/ui';
 import type { CulledAlbumPhoto } from '@lib/culledAlbum/types';
-import { formatByteSize } from '@lib/export/formatByteSize';
+import { formatByteSize, formatGigabytes } from '@lib/export/formatByteSize';
 import {
   openInFileManager,
   pickExportDirectory,
@@ -8,10 +8,12 @@ import {
 import {
   downloadPreparedExport,
   prepareSelectedPhotosExport,
+  toExportError,
   type PreparedExport,
 } from '@lib/export/prepareExport';
 import type {
   ExportDirectoryInfo,
+  ExportError,
   ExportFormat,
   ExportPhotosModalStep,
   ExportQuality,
@@ -19,6 +21,7 @@ import type {
 } from '@lib/export/types';
 import { photoNeedsLookBake } from '@lib/look/bakeLook';
 import { captureAppEvent } from '@lib/observability/posthogClient';
+import { reportError } from '@lib/observability/reportError';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansBoldStyle } from '@lib/ui/typography';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -34,6 +37,8 @@ import HalfCircle from '../../assets/images/upload/half_circle.svg';
 import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
 import QuarterCircleOrange from '../../assets/images/upload/orange_quarter_circle.svg';
 import QuarterCircleRed from '../../assets/images/upload/red_quarter_circle.svg';
+
+import { ExportFailureView } from './ExportFailureView';
 
 const EXPORT_FORMAT_OPTIONS: ReadonlyArray<{
   id: ExportFormat;
@@ -224,6 +229,8 @@ export function ExportPhotosModal({
   const [failureKind, setFailureKind] = useState<'prepare' | 'download' | null>(
     null,
   );
+  const [exportError, setExportError] = useState<ExportError | null>(null);
+  const [saveCancelled, setSaveCancelled] = useState(false);
   const prepareRequestIdRef = useRef(0);
 
   useEffect(() => {
@@ -239,6 +246,8 @@ export function ExportPhotosModal({
     setDownloadedExport(null);
     setExportDirectory(null);
     setFailureKind(null);
+    setExportError(null);
+    setSaveCancelled(false);
   }, [visible]);
 
   const handleSelectCompressed = useCallback(() => {
@@ -277,6 +286,8 @@ export function ExportPhotosModal({
     setPreparedExport(null);
     setDownloadedExport(null);
     setFailureKind(null);
+    setExportError(null);
+    setSaveCancelled(false);
     const photoCount = selectedPhotos.length;
     const startedAt = Date.now();
     captureAppEvent('export_prepare_started', {
@@ -323,7 +334,9 @@ export function ExportPhotosModal({
       if (prepareRequestIdRef.current !== requestId) {
         return;
       }
-      console.error('[ExportPhotosModal] Failed to prepare export', error);
+      const failure = toExportError(error);
+      reportError(failure, {albumId, step: 'prepare'});
+      setExportError(failure);
       setFailureKind('prepare');
       setStep('failed');
       captureAppEvent('export_prepare_failed', {
@@ -339,6 +352,7 @@ export function ExportPhotosModal({
   const runDownload = useCallback(
     async (directory?: ExportDirectoryInfo | null) => {
       if (!preparedExport) {
+        setExportError(null);
         setFailureKind('prepare');
         setStep('failed');
         return;
@@ -346,6 +360,7 @@ export function ExportPhotosModal({
 
       const photoCount = preparedExport.photoCount ?? selectedPhotos.length;
       const startedAt = Date.now();
+      setSaveCancelled(false);
       captureAppEvent('export_download_started', {
         albumId,
         photoCount,
@@ -371,7 +386,9 @@ export function ExportPhotosModal({
           durationMs: Date.now() - startedAt,
         });
       } catch (error) {
-        console.error('[ExportPhotosModal] Failed to download export', error);
+        const failure = toExportError(error);
+        reportError(failure, {albumId, step: 'download'});
+        setExportError(failure);
         setFailureKind('download');
         setStep('failed');
         captureAppEvent('export_download_failed', {
@@ -387,38 +404,47 @@ export function ExportPhotosModal({
 
   const handlePrepareExport = useCallback(() => {
     setFormatMenuOpen(false);
-    runPrepareExport().catch(() => undefined);
-  }, [runPrepareExport]);
+    runPrepareExport().catch(error => reportError(error, {albumId}));
+  }, [albumId, runPrepareExport]);
 
   const handleDownloadToLaptop = useCallback(() => {
-    runDownload().catch(() => undefined);
-  }, [runDownload]);
+    runDownload().catch(error => reportError(error, {albumId}));
+  }, [albumId, runDownload]);
 
   const handleTryAgain = useCallback(() => {
-    if (preparedExport) {
-      runDownload(exportDirectory).catch(() => undefined);
+    if (preparedExport && exportError?.reason !== 'sourceMissing') {
+      runDownload(exportDirectory).catch(error => reportError(error, {albumId}));
       return;
     }
-    runPrepareExport().catch(() => undefined);
-  }, [exportDirectory, preparedExport, runDownload, runPrepareExport]);
+    runPrepareExport().catch(error => reportError(error, {albumId}));
+  }, [
+    albumId,
+    exportDirectory,
+    exportError,
+    preparedExport,
+    runDownload,
+    runPrepareExport,
+  ]);
 
   const handleChangeSaveLocation = useCallback(() => {
     pickExportDirectory()
       .then(async picked => {
         if (!picked) {
+          setSaveCancelled(true);
+          setStep('ready');
           return;
         }
         setExportDirectory(picked);
         await runDownload(picked);
       })
       .catch(error => {
-        console.error(
-          '[ExportPhotosModal] Failed to change save location',
-          error,
-        );
+        const failure = toExportError(error);
+        reportError(failure, {albumId, step: 'pickDirectory'});
+        setExportError(failure);
+        setFailureKind('download');
         setStep('failed');
       });
-  }, [runDownload]);
+  }, [albumId, runDownload]);
 
   const handleOpenFolder = useCallback(() => {
     if (!downloadedExport) {
@@ -437,8 +463,7 @@ export function ExportPhotosModal({
   const modalSize =
     step === 'options'
       ? { width: 720, height: 500 }
-      : { width: 720, height: 440 };
-     
+      : { width: 720, height: 456 };
 
   return (
     <Modal
@@ -546,7 +571,11 @@ export function ExportPhotosModal({
         <View style={styles.centeredContent}>
           <View style={styles.titleBlock}>
             <Text style={styles.title}>Your export is ready</Text>
-            <Text style={styles.subtitle}>Download it to your laptop</Text>
+            <Text style={styles.subtitle}>
+              {saveCancelled
+                ? 'Saving was cancelled. Your export is still ready.'
+                : 'Download it to your laptop'}
+            </Text>
           </View>
           <View style={styles.fileCard}>
             <View style={styles.fileIcon}>
@@ -555,8 +584,8 @@ export function ExportPhotosModal({
             <View>
               <Text style={styles.fileName}>{preparedExport.fileName}</Text>
               <Text style={styles.fileMeta}>
-                {preparedExport.photoCount} photos ·{' '}
-                {formatByteSize(preparedExport.byteSize)}
+                {preparedExport.photoCount} photos  ·{'  '}
+                {formatGigabytes(preparedExport.byteSize)}
               </Text>
             </View>
           </View>
@@ -564,7 +593,7 @@ export function ExportPhotosModal({
             style={styles.primaryButton}
             onPress={handleDownloadToLaptop}
             activeOpacity={0.8}>
-            <Text style={styles.primaryButtonText}>Download to Laptop</Text>
+            <Text style={styles.primaryButtonText}>Save to computer</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -595,40 +624,15 @@ export function ExportPhotosModal({
       )}
 
       {step === 'failed' && (
-        <View style={styles.centeredContent}>
-          <View style={styles.errorBadge}>
-            <Text style={styles.errorBadgeText}>!</Text>
-          </View>
-          <View style={styles.titleBlock}>
-            <Text style={styles.title}>
-              {failureKind === 'prepare' ? 'Export failed' : 'Download failed'}
-            </Text>
-            <Text style={styles.subtitle}>
-              {failureKind === 'prepare'
-                ? 'Something went wrong while preparing your ZIP.'
-                : 'Your export is still ready — nothing was lost.'}
-            </Text>
-          </View>
-          <View style={styles.failedActions}>
-            <TouchableOpacity
-              style={[styles.primaryButton, styles.failedPrimary]}
-              onPress={handleTryAgain}
-              activeOpacity={0.8}>
-              <Text style={styles.primaryButtonText}>Try Again</Text>
-            </TouchableOpacity>
-            {failureKind !== 'prepare' ? (
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={handleChangeSaveLocation}
-                activeOpacity={0.8}
-                disabled={!preparedExport}>
-                <Text style={styles.secondaryButtonText}>
-                  Change save location
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        </View>
+        <ExportFailureView
+          reason={exportError?.reason ?? 'unknown'}
+          failedStep={failureKind === 'download' ? 'download' : 'prepare'}
+          requiredBytes={exportError?.requiredBytes}
+          missingCount={exportError?.missingCount}
+          onTryAgain={handleTryAgain}
+          onChangeSaveLocation={handleChangeSaveLocation}
+          onCancel={onClose}
+        />
       )}
     </Modal>
   );
