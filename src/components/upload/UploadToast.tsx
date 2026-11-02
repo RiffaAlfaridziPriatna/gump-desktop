@@ -535,7 +535,11 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
         ? allAnalyzeFailed
           ? `Failed to analyze ${counts.failed} photo${counts.failed === 1 ? '' : 's'}`
           : `Culled ${counts.completed} photos`
-        : `Uploaded ${counts.completed} photos to server`;
+        : queueOperation.failedCount > 0
+          ? `Uploaded ${queueOperation.uploadedCount} out of ${
+              queueOperation.uploadedCount + queueOperation.failedCount
+            } photos`
+          : `Uploaded ${counts.completed} photos to server`;
 
   const showFilenameDuplicatesChrome =
     hasFilenameDuplicates &&
