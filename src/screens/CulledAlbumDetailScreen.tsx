@@ -48,6 +48,7 @@ import {photoDetailParams} from '@lib/culledAlbum/photoDetailParams';
 import {photoKey} from '@lib/culledAlbum/photoStateStore';
 import {bumpPhotoVersion} from '@lib/culledAlbum/photoVersionStore';
 import {captureAppEvent} from '@lib/observability/posthogClient';
+import {reportError} from '@lib/observability/reportError';
 import {useAlbumQueueOperation} from '@lib/culledAlbum/uploadQueueStore';
 import {
   getUploadLookBakeState,
@@ -709,9 +710,17 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
         <ApplyLookModal
           visible={showApplyLookModal}
-          selectedPhotos={actionAlbumPhotos}
+          albumName={albumName}
+          // TODO(s6i): previewPhoto = focused else first album photo; currentLookId = album defaultLookId.
+          previewPhoto={focusedPhoto ?? actionAlbumPhotos[0]}
+          currentLookId="original"
+          onUseLook={lookId => {
+            setShowApplyLookModal(false);
+            handleApplyLook(lookId).catch(error =>
+              reportError(error, {step: 'applyLook'}),
+            );
+          }}
           onClose={() => setShowApplyLookModal(false)}
-          onApply={handleApplyLook}
         />
 
         <UploadModal
