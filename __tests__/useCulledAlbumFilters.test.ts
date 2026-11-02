@@ -291,6 +291,28 @@ describe('useCulledAlbumFilters Similar Shots', () => {
     hook.unmount();
   });
 
+  it('clears category, selection and star filters through filter.onClear', () => {
+    const grid = seed(GROUPS);
+    const hook = renderHook(() =>
+      useCulledAlbumFilters(grid, null, { blurred: true }, ALBUM_ID),
+    );
+    act(() => hook.result.current.setStarRatingFilter([5]));
+    act(() => hook.result.current.setSelectionFilter('selected'));
+    expect(hook.result.current.gridView.filter.labels).toEqual([
+      'AI Recommended',
+      'Needs Review',
+      'Possible Blur',
+      'Picked',
+      '5 stars',
+    ]);
+    act(() => hook.result.current.gridView.filter.onClear());
+    expect(hook.result.current.hasActiveFilter).toBe(false);
+    expect(hook.result.current.gridView.filter.labels).toEqual([]);
+    expect(hook.result.current.selectionFilter).toBeNull();
+    expect(hook.result.current.starRatingFilter).toEqual([]);
+    hook.unmount();
+  });
+
   it('combines selection, star and another category', () => {
     const grid = seed(GROUPS);
     grid.find(p => p.photoId === 'b')!.analysis.starRating = 5;
