@@ -50,6 +50,7 @@ import {
   beginUploadLookBake,
   whenUploadLookBakeReady,
 } from '@lib/look/uploadLookBake';
+import {ExportError} from '@lib/export/types';
 import {onUploadNavigationCoopEnd} from '@lib/navigation/uploadAwareNavigation';
 import {
   beginAnalysisQueue,
@@ -425,6 +426,10 @@ export function CulledAlbumProvider({children}: PropsWithChildren) {
           '[CulledAlbumProvider] Failed to bake looks before upload',
           error,
         );
+        if (error instanceof ExportError && error.reason === 'diskFull') {
+          setQueueOperationStatus(albumId, 'serverUpload', 'idle');
+          return;
+        }
         // Still attempt upload of originals if bake fails entirely.
         setTimeout(() => {
           flushRenderSync();
