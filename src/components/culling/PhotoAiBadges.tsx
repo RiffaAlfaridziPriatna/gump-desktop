@@ -2,6 +2,7 @@ import { SimilarShotsBadge } from '@components/culling/SimilarShotsBadge';
 import type { CulledAlbumPhoto } from '@lib/culledAlbum/types';
 import { colors } from '@lib/ui/colors';
 import { sansBoldStyle } from '@lib/ui/typography';
+import { Pressable } from '@components/ui';
 import { StyleSheet, Text, View } from 'react-native';
 
 type BadgeFlags = Pick<
@@ -37,7 +38,7 @@ export function listPhotoBadges(flags: BadgeFlags): BadgeSpec[] {
   return badges;
 }
 
-/** One badge shows; the rest collapse into a non-interactive "+N" pill. */
+/** One badge shows; the rest collapse into a "+N" pill that opens the viewer when grouped. */
 export function PhotoAiBadges({
   flags,
   similarShotCount,
@@ -50,9 +51,15 @@ export function PhotoAiBadges({
       <SimilarShotsBadge count={similarShotCount} onPress={onOpenDetail} />
     );
   }
-  const hidden = badges.length - 1 + (similarShotCount == null ? 0 : 1);
+  const grouped = similarShotCount != null;
+  const hiddenLabels = badges.slice(1).map(b => b.label);
+  if (grouped) {
+    hiddenLabels.push(`${similarShotCount} similar shots`);
+  }
+  const hidden = hiddenLabels.length;
+  const moreLabel = `${hidden} more: ${hiddenLabels.join(', ')}`;
   return (
-    <View pointerEvents="none" style={styles.row}>
+    <View pointerEvents="box-none" style={styles.row}>
       <View
         accessible
         accessibilityLabel={first.label}
@@ -67,15 +74,25 @@ export function PhotoAiBadges({
           {first.label}
         </Text>
       </View>
-      {hidden > 0 && (
-        <View
-          accessible
-          accessibilityLabel={`${hidden} more badges`}
-          style={styles.chip}
-        >
-          <Text style={styles.label}>{`+${hidden}`}</Text>
-        </View>
-      )}
+      {hidden > 0 &&
+        (grouped ? (
+          <Pressable
+            style={styles.chip}
+            onPress={event => {
+              event.stopPropagation();
+              onOpenDetail();
+            }}
+            accessibilityRole="button"
+            focusable
+            accessibilityLabel={`${moreLabel}, open viewer`}
+          >
+            <Text style={styles.label}>{`+${hidden}`}</Text>
+          </Pressable>
+        ) : (
+          <View accessible accessibilityLabel={moreLabel} style={styles.chip}>
+            <Text style={styles.label}>{`+${hidden}`}</Text>
+          </View>
+        ))}
     </View>
   );
 }
