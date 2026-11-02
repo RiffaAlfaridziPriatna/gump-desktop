@@ -29,7 +29,7 @@ todos:
     status: completed
   - id: s6i
     content: Wire Edit Photos and Change to picker, scope popup and apply action
-    status: pending
+    status: completed
 isProject: false
 ---
 
