@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
 import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
+import IconScanFace from '../../assets/images/lucide_scan_face.svg';
 
 export const FACES_EMPTY_HINT =
   'Choose Inspect faces on a photo to check eyes and sharpness here.';
@@ -179,6 +180,7 @@ export function FacesInPhotoPanel({photo}: FacesInPhotoPanelProps) {
         onPress={() => setExpanded(value => !value)}
         style={styles.header}>
         <Chevron width={16} height={16} color={colors.white} />
+        <IconScanFace width={16} height={16} color={colors.white} />
         <Text style={styles.title}>
           {count ? `${TITLE} · ${count}` : TITLE}
         </Text>

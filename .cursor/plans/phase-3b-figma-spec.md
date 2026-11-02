@@ -75,3 +75,9 @@ Grouped view: group header "Group 1 · 4 shots · 1 picked" (node 50371, text 17
 ## Focus ring lookup (2026-11-02)
 
 Metadata of frame 12975:52872 was read once (get_metadata). The focused card "Photo" 12975:53002 has no border, outline or ring node: its children are Container (thumbnail), Container (footer), AI badges and Inspect faces only. The ring is not drawn in this frame. Color, width and radius are therefore still not in Figma; s4e keeps `colors.blue`, width 2, radius 8 as unverified placeholders. Card radius in Figma is 6 (see Grid). Frames 49760, 50177, 50582, 51005 not read.
+
+## Icons (2026-11-02)
+
+Exported with download_assets (svgAssets entry of each node) and saved in `src/assets/images` as `lucide_<name>.svg` (stroke `currentColor`; color comes from the caller). Nodes: sliders-horizontal 12975:53184, layout-grid 53188, circle-check 53197, sparkles 53226, circle-help 53234, focus 53242, eye-off 53250, layers 53258, scan-face 53270. Sizes in frame 52872: Photo Filters heading and nav rows 16; AI Categories rows 14 (stroke `#B7B7B7`); Faces heading 16.
+Photo card AI badges (nodes 52962, 53055, 53001, 52943): lucide icon 12x12 at x 8, text at x 24: AI recommended = sparkles, Needs review = circle-help, Check sharpness = focus, Check eyes = eye-off. Icons inside photo cards are PNG 512 (`lucide_<name>_512.png`, black, tint with `tintColor`) because SVG per card made grid scroll heavy (user, 2026-11-02). Rendered with qlmanage from the exported SVG.
+Not exported: loader-circle (loading row keeps `ActivityIndicator`). Frames 49760, 50177, 50582, 51005 not read.

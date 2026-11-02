@@ -6,7 +6,23 @@ import {
 import type {CullFilterKey} from '@lib/culling/cullingUtil';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
+import type React from 'react';
 import {StyleSheet, Text, View} from 'react-native';
+import Svg, {Path} from 'react-native-svg';
+import type {SvgProps} from 'react-native-svg';
+import IconEyeOff from '../../assets/images/lucide_eye_off.svg';
+import IconFocus from '../../assets/images/lucide_focus.svg';
+import IconHelp from '../../assets/images/lucide_circle_help.svg';
+import IconLayers from '../../assets/images/lucide_layers.svg';
+import IconSparkles from '../../assets/images/lucide_sparkles.svg';
+
+const CATEGORY_ICONS: Record<CullFilterKey, React.FC<SvgProps>> = {
+  aiSelected: IconSparkles,
+  maybe: IconHelp,
+  blurred: IconFocus,
+  closedEyes: IconEyeOff,
+  duplicated: IconLayers,
+};
 
 type AiCategoriesSectionProps = {
   activeFilters: Record<CullFilterKey, boolean>;
@@ -27,6 +43,7 @@ export function AiCategoriesSection({
       <View style={styles.rows}>
         {CULL_FILTER_ORDER.map(key => {
           const checked = activeFilters[key];
+          const Icon = CATEGORY_ICONS[key];
           return (
             <Pressable
               key={key}
@@ -36,8 +53,19 @@ export function AiCategoriesSection({
               accessibilityLabel={`${CULL_FILTER_LABELS[key]}, ${filterCounts[key]}`}
               accessibilityState={{checked}}>
               <View style={[styles.box, checked && styles.boxChecked]}>
-                {checked && <Text style={styles.check}>✓</Text>}
+                {checked && (
+                  <Svg width={12} height={12} viewBox="0 0 12 12" fill="none">
+                    <Path
+                      d="M2.5 6.25L5 8.75L9.5 3.75"
+                      stroke={colors.white}
+                      strokeWidth={1.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </Svg>
+                )}
               </View>
+              <Icon width={14} height={14} color={colors.textGray} />
               <Text style={styles.label}>{CULL_FILTER_LABELS[key]}</Text>
               <Text style={styles.count}>{filterCounts[key]}</Text>
             </Pressable>
@@ -78,7 +106,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     borderColor: colors.accent,
   },
-  check: {fontSize: 12, lineHeight: 14, color: colors.white},
   label: {
     flex: 1,
     fontFamily: fonts.sans,

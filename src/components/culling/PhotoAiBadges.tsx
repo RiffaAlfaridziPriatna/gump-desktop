@@ -3,7 +3,7 @@ import type { CulledAlbumPhoto } from '@lib/culledAlbum/types';
 import { colors } from '@lib/ui/colors';
 import { sansBoldStyle } from '@lib/ui/typography';
 import { Pressable } from '@components/ui';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 
 type BadgeFlags = Pick<
   CulledAlbumPhoto,
@@ -19,6 +19,13 @@ type PhotoAiBadgesProps = {
 type BadgeSpec = { label: string; tone: 'ai' | 'warning' };
 
 const WARNING_TEXT = '#FFD700';
+
+const BADGE_ICONS: Record<string, number> = {
+  'AI recommended': require('../../assets/images/lucide_sparkles_512.png'),
+  'Needs review': require('../../assets/images/lucide_circle_help_512.png'),
+  'Check sharpness': require('../../assets/images/lucide_focus_512.png'),
+  'Check eyes': require('../../assets/images/lucide_eye_off_512.png'),
+};
 
 /** Badges in display order: AI recommended, status (eyes before sharpness). */
 export function listPhotoBadges(flags: BadgeFlags): BadgeSpec[] {
@@ -63,8 +70,16 @@ export function PhotoAiBadges({
       <View
         accessible
         accessibilityLabel={first.label}
-        style={[styles.chip, first.tone === 'ai' && styles.chipAi]}
+        style={[styles.chip, styles.chipIcon, first.tone === 'ai' && styles.chipAi]}
       >
+        <Image
+          accessible={false}
+          source={BADGE_ICONS[first.label]}
+          style={[
+            styles.icon,
+            { tintColor: first.tone === 'warning' ? WARNING_TEXT : colors.text },
+          ]}
+        />
         <Text
           style={[
             styles.label,
@@ -110,6 +125,17 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 100,
     backgroundColor: 'rgba(19,20,21,0.75)',
+  },
+  chipIcon: {
+    paddingLeft: 24,
+  },
+  icon: {
+    position: 'absolute',
+    left: 8,
+    top: '50%',
+    marginTop: -6,
+    width: 12,
+    height: 12,
   },
   chipAi: {
     backgroundColor: colors.blue,

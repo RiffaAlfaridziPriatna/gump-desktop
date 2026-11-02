@@ -2,9 +2,14 @@ import {Pressable} from '@components/ui';
 import type {SelectionFilter} from '@lib/culling/culledAlbumPhotoFilters';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
+import type React from 'react';
 import {StyleSheet, Text, View} from 'react-native';
+import type {SvgProps} from 'react-native-svg';
 import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
 import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
+import IconCircleCheck from '../../assets/images/lucide_circle_check.svg';
+import IconLayoutGrid from '../../assets/images/lucide_layout_grid.svg';
+import IconSliders from '../../assets/images/lucide_sliders_horizontal.svg';
 
 type PhotoFiltersSectionProps = {
   expanded: boolean;
@@ -18,13 +23,14 @@ type PhotoFiltersSectionProps = {
 };
 
 type NavRowProps = {
+  Icon: React.FC<SvgProps>;
   label: string;
   count: number;
   selected: boolean;
   onPress: () => void;
 };
 
-function NavRow({label, count, selected, onPress}: NavRowProps) {
+function NavRow({Icon, label, count, selected, onPress}: NavRowProps) {
   return (
     <Pressable
       onPress={onPress}
@@ -32,6 +38,7 @@ function NavRow({label, count, selected, onPress}: NavRowProps) {
       accessibilityRole="button"
       accessibilityLabel={`${label}, ${count}`}
       accessibilityState={{selected}}>
+      <Icon width={16} height={16} color={colors.white} />
       <Text style={selected ? styles.labelSelected : styles.label}>
         {label}
       </Text>
@@ -60,17 +67,20 @@ export function PhotoFiltersSection({
         accessibilityLabel="Photo Filters"
         accessibilityState={{expanded}}>
         <Chevron width={16} height={16} color={colors.white} />
+        <IconSliders width={16} height={16} color={colors.white} />
         <Text style={styles.title}>Photo Filters</Text>
       </Pressable>
       {expanded && (
         <View style={styles.rows}>
           <NavRow
+            Icon={IconLayoutGrid}
             label="All Photos"
             count={totalCount}
             selected={!hasActiveFilter}
             onPress={onShowAll}
           />
           <NavRow
+            Icon={IconCircleCheck}
             label="Picked for Upload"
             count={pickedCount}
             selected={selectionFilter === 'selected'}

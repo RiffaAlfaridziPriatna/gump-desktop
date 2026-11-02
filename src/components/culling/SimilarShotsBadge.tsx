@@ -30,7 +30,7 @@ export function SimilarShotsBadge({count, onPress}: SimilarShotsBadgeProps) {
 const styles = StyleSheet.create({
   chipRow: {
     position: 'absolute',
-    left: 8,
+    left: 16,
     right: 8,
     bottom: 8,
     flexDirection: 'row',

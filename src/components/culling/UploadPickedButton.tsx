@@ -71,7 +71,7 @@ export function UploadPickedButton({
           <View
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants">
-            <IconInfo width={16} height={16} color={colors.textMuted} />
+            <IconInfo width={14} height={14} color={colors.textMuted} />
           </View>
           <Text style={styles.noteText}>{note}</Text>
         </View>
@@ -82,11 +82,12 @@ export function UploadPickedButton({
 
 const styles = StyleSheet.create({
   button: {
-    minHeight: 48,
-    borderRadius: 24,
+    height: 48,
+    borderRadius: 100,
     backgroundColor: colors.accent,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingLeft: 20,
+    paddingRight: 24,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -110,6 +111,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingHorizontal: 4,
   },
   noteText: {
     flex: 1,
