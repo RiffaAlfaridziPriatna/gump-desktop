@@ -37,4 +37,35 @@ describe('summarizeSections', () => {
       'Showing: Similar Shots · 0 groups · 0 photos',
     );
   });
+
+  it('is null without sections and without labels', () => {
+    expect(summarizeSections(undefined, [], 5)).toBeNull();
+  });
+
+  it('shows one label with the photo count in the flat grid', () => {
+    expect(summarizeSections(undefined, ['Possible Blur'], 3)).toBe(
+      'Showing: Possible Blur · 3 photos',
+    );
+  });
+
+  it('joins two labels and uses singular photo', () => {
+    expect(summarizeSections(undefined, ['Possible Blur', 'Picked'], 1)).toBe(
+      'Showing: Possible Blur + Picked · 1 photo',
+    );
+  });
+
+  it('shows zero photos', () => {
+    expect(summarizeSections(undefined, ['Picked'], 0)).toBe(
+      'Showing: Picked · 0 photos',
+    );
+  });
+
+  it('lists all labels with groups in the grouped view', () => {
+    expect(
+      summarizeSections(
+        [group('g1', 2)],
+        ['Possible Closed Eyes', 'Similar Shots'],
+      ),
+    ).toBe('Showing: Possible Closed Eyes + Similar Shots · 1 group · 2 photos');
+  });
 });

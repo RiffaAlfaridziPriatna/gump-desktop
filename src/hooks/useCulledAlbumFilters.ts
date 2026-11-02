@@ -15,6 +15,7 @@ import {
   reuseSections,
   type SimilarShotsViewSection,
 } from '@lib/culling/similarShotsView';
+import {buildFilterSummary} from '@lib/culling/filterSummary';
 import {useSimilarShotGroups} from '@hooks/useSimilarShotGroups';
 import {CulledAlbumGridPhoto} from '@components/culling/CulledAlbumPhotoGrid';
 import {APIResponse} from '@services/api';
@@ -128,9 +129,45 @@ export function useCulledAlbumFilters(
         : orderedGroups[groupIndex]?.photoIds.length;
     };
   }, [groupIndexByPhotoId, layout, orderedGroups]);
+  const clearFilters = useCallback(() => {
+    // Cleared means all categories off; the saved defaults (AI Recommended,
+    // Needs Review on) are a starting view, not a state to return to.
+    setActiveFilters({
+      aiSelected: false,
+      maybe: false,
+      blurred: false,
+      closedEyes: false,
+      duplicated: false,
+    });
+    setSelectionFilter(null);
+    setStarRatingFilter([]);
+  }, []);
+  const filter = useMemo(() => {
+    const {labels, showSimilarNote} = buildFilterSummary(
+      activeFilters,
+      selectionFilter,
+      starRatingFilter,
+    );
+    return {
+      labels,
+      showSimilarNote,
+      onClear: clearFilters,
+      // Picked-only empties keep their own hint (phase 3a).
+      noResults:
+        filteredPhotos.length === 0 &&
+        labels.length > 0 &&
+        selectionFilter !== 'selected',
+    };
+  }, [
+    activeFilters,
+    clearFilters,
+    filteredPhotos.length,
+    selectionFilter,
+    starRatingFilter,
+  ]);
   const gridView = useMemo(
-    () => ({photos: filteredPhotos, sections, getSimilarShotCount}),
-    [filteredPhotos, sections, getSimilarShotCount],
+    () => ({photos: filteredPhotos, sections, getSimilarShotCount, filter}),
+    [filteredPhotos, sections, getSimilarShotCount, filter],
   );
 
   const hasActiveFilter =

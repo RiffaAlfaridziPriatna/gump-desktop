@@ -673,7 +673,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               }
               setMainContentWidth(width);
             }}>
-            {gridView.photos.length === 0 ? (
+            {gridView.photos.length === 0 && !gridView.filter.noResults ? (
               <View style={styles.emptyState}>
                 {selectionFilter !== 'selected' && (
                   <IconNoPhoto width={40} height={40} />
