@@ -80,7 +80,7 @@ Branch: base from `feat/phase-3` (contains 3a and 3b).
 
 ## Coordination with phase 3c
 
-3c touches `src/lib/look/{bakeLook,uploadLookBake}.ts` (its s5h), `store.ts` and `serverUpload.ts` (its s5d), `CulledAlbumDetailScreen.tsx` (its s5j, s5l), native `GumpLocalStorage` (its s5b, s5e). s6b removes the intensity parameter from the JS bake functions that 3c s5h also edits. Do not run s6b and 3c s5h at the same time. Whichever merges first wins; the other rebases onto it (user decision).
+3c touches `src/lib/look/uploadLookBake.ts` (its s5h; `bakeLook.ts` was not edited), `store.ts` and `serverUpload.ts` (its s5d), `CulledAlbumDetailScreen.tsx` (its s5j, s5l), native `GumpLocalStorage` (its s5b, s5e). s6b removes the intensity parameter from the JS bake functions; its conflict surface with 3c s5h in `src/lib/look` is `uploadLookBake.ts`. Do not run s6b and 3c s5h at the same time. Whichever merges first wins; the other rebases onto it (user decision).
 
 ## Execution waves
 
