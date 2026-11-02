@@ -1,3 +1,4 @@
+import {isLookId, type LookId} from '../valueObjects/Look';
 export class AlbumCover {
   readonly thumbnail: string | null;
   readonly small: string | null;
@@ -46,6 +47,7 @@ export class CulledAlbum {
   private _cullingHasUploads: boolean;
   private _nextFaceClusterId: number;
   private _nextPhotoBatchId: number;
+  private _defaultLookId: LookId;
   private _totalPhotos: number;
   private _totalStorage: number;
   private _syncedMediaCount: number | null;
@@ -67,6 +69,7 @@ export class CulledAlbum {
     cullingHasUploads?: boolean;
     nextFaceClusterId?: number;
     nextPhotoBatchId?: number;
+    defaultLookId?: unknown;
     totalPhotos?: number;
     totalStorage?: number;
     syncedMediaCount?: number | null;
@@ -93,6 +96,9 @@ export class CulledAlbum {
       data.nextPhotoBatchId >= 1
         ? data.nextPhotoBatchId
         : 1;
+    this._defaultLookId = isLookId(data.defaultLookId)
+      ? data.defaultLookId
+      : 'original';
     this._totalPhotos = data.totalPhotos ?? 0;
     this._totalStorage = data.totalStorage ?? 0;
     this._syncedMediaCount = data.syncedMediaCount ?? null;
@@ -117,6 +123,10 @@ export class CulledAlbum {
 
   get nextPhotoBatchId(): number {
     return this._nextPhotoBatchId;
+  }
+
+  get defaultLookId(): LookId {
+    return this._defaultLookId;
   }
 
   get totalPhotos(): number {
@@ -191,6 +201,10 @@ export class CulledAlbum {
     }
   }
 
+  setDefaultLookId(lookId: unknown): void {
+    this._defaultLookId = isLookId(lookId) ? lookId : 'original';
+  }
+
   updateTotals(photoCount: number, storageBytes: number): void {
     this._totalPhotos = photoCount;
     this._totalStorage = storageBytes;
@@ -214,6 +228,7 @@ export class CulledAlbum {
       cullingHasUploads: this._cullingHasUploads,
       nextFaceClusterId: this._nextFaceClusterId,
       nextPhotoBatchId: this._nextPhotoBatchId,
+      defaultLookId: this._defaultLookId,
       totalPhotos: this._totalPhotos,
       totalStorage: this._totalStorage,
       syncedMediaCount: this._syncedMediaCount,
@@ -238,6 +253,7 @@ export class CulledAlbum {
       cullingHasUploads: data.cullingHasUploads,
       nextFaceClusterId: data.nextFaceClusterId,
       nextPhotoBatchId: data.nextPhotoBatchId,
+      defaultLookId: data.defaultLookId,
       totalPhotos: data.totalPhotos,
       totalStorage: data.totalStorage,
       syncedMediaCount: data.syncedMediaCount,

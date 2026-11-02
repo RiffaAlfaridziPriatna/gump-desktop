@@ -138,6 +138,8 @@ export type CulledAlbum = {
   analysisBatchCounts?: AnalysisBatchCounts;
   /** Next cohort id to stamp on newly added photos (starts at 1). */
   nextPhotoBatchId: number;
+  /** Look stamped on new photos; unknown or missing reads as original. */
+  defaultLookId: LookId;
   /**
    * When true, analysis starts automatically after the current local-import
    * batch finishes successfully (used by CulledAlbumDetail "Add Photos").
@@ -246,6 +248,7 @@ export function createCulledAlbumFromSelection(
     analysisBatchPhotoIds: [],
     analysisBatchCounts: undefined,
     nextPhotoBatchId: 1,
+    defaultLookId: 'original',
     autoStartAnalysisAfterImport: false,
     stabilizeDetailUiDuringImport: false,
     filenameDuplicateNames: [],
@@ -506,6 +509,9 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.lastCullFilters = album.lastCullFilters
     ? normalizeCullFilters(album.lastCullFilters)
     : undefined;
+  album.defaultLookId = isLookId(album.defaultLookId)
+    ? album.defaultLookId
+    : 'original';
   album.createdAt ??= new Date(0).toISOString();
   album.totalPhotos ??= album.photos.length;
   album.totalStorage ??= 0;

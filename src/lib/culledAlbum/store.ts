@@ -13,6 +13,7 @@ import {
 import {captureAppEvent} from '@lib/observability/posthogClient';
 import {reportError} from '@lib/observability/reportError';
 import {createStateStore} from '@lib/react/state';
+import {isLookId, type LookId} from '@lib/look/types';
 import {FileAsset} from '@services/upload/types';
 import {Platform} from 'react-native';
 import {mergeAlbumPhotos, mergeWithMemoryAlbum} from './merge';
@@ -595,6 +596,20 @@ export function saveLastCullFilters(
     }
     album.lastCullFilters = normalizeCullFilters(filters);
   });
+}
+
+export async function setAlbumDefaultLook(
+  albumId: string,
+  lookId: LookId,
+): Promise<void> {
+  const next: LookId = isLookId(lookId) ? lookId : 'original';
+  culledAlbumStore.setState(state => {
+    const entry = state.albums[albumId];
+    if (entry) {
+      entry.defaultLookId = next;
+    }
+  });
+  await persistAlbum(albumId);
 }
 
 export async function markCullingHasUploads(albumId: string): Promise<void> {
