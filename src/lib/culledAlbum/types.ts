@@ -202,6 +202,7 @@ export function createCulledAlbumPhoto(
   photoId: string,
   uploadedAt: number = Date.now(),
   batchId: number = 1,
+  lookId: LookId = 'original',
 ): CulledAlbumPhoto {
   return {
     photoId,
@@ -219,7 +220,7 @@ export function createCulledAlbumPhoto(
     faces: [],
     selected: false,
     starRating: null,
-    lookId: 'original',
+    lookId,
     aiSelected: false,
     maybe: false,
     blurred: false,

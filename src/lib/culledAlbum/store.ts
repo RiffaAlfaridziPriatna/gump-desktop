@@ -1016,6 +1016,7 @@ export function addPhotosToAlbum(
       createCullingPhotoId(),
       baseUploadedAt + index,
       batchId,
+      albumBefore.defaultLookId,
     ),
   );
   const addedPhotoIds = addedPhotos.map(photo => photo.photoId);
