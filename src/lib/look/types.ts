@@ -1,11 +1,6 @@
-export const LOOK_IDS = [
-  'original',
-  'cleanNatural',
-  'warmRomantic',
-  'filmMood',
-] as const;
+import {LOOK_IDS, isLookId, type LookId} from '@domain/valueObjects/Look';
 
-export type LookId = (typeof LOOK_IDS)[number];
+export {LOOK_IDS, isLookId, type LookId};
 
 export const DEFAULT_LOOK_INTENSITY = 80;
 
@@ -18,13 +13,6 @@ export type LookDefinition = {
    */
   lutName?: string;
 };
-
-export function isLookId(value: unknown): value is LookId {
-  return (
-    typeof value === 'string' &&
-    (LOOK_IDS as readonly string[]).includes(value)
-  );
-}
 
 export function normalizeLookIntensity(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {

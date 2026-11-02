@@ -1,9 +1,8 @@
 import {
   DEFAULT_LOOK_INTENSITY,
-  isLookId,
   normalizeLookIntensity,
-  type LookId,
 } from '@lib/look/types';
+import {isLookId, type LookId} from '../valueObjects/Look';
 import {FileAsset} from '../valueObjects/FileAsset';
 import {Face} from '../valueObjects/Face';
 import {AnalysisStatus, UploadStatus, ServerUploadStatus} from '../valueObjects/Status';
