@@ -1,19 +1,77 @@
 import {ensureDetail, isUsableDetailUri} from '@lib/storage/localStorage';
 import type {CulledAlbumPhoto} from '@lib/culledAlbum/types';
 import {bakeLooksForPhotos, photoNeedsLookBake} from '@lib/look/bakeLook';
+import {reportError} from '@lib/observability/reportError';
+import {
+  DISK_SPACE_MARGIN_BYTES,
+  estimateExportBytes,
+  hasEnoughDiskSpace,
+} from './diskSpace';
 import {
   copyExportFile,
   createZipFromEntries,
   ensureDefaultExportDirectory,
   ensureExportStagingDirectory,
+  getFreeDiskSpace,
   resolveUniqueZipPath,
 } from './nativeExport';
+import {EXPORT_NATIVE_CODE_REASONS, ExportError} from './types';
 import type {
+  ExportFailureReason,
   ExportDirectoryInfo,
   ExportQuality,
   ExportZipEntry,
   ExportZipResult,
 } from './types';
+
+const NATIVE_CODE_REASONS = new Map<string, ExportFailureReason>(
+  Object.entries(EXPORT_NATIVE_CODE_REASONS),
+);
+
+/** Single translation point: native reject (`code`, `userInfo.missingCount`) to ExportError. */
+export function toExportError(error: unknown): ExportError {
+  if (error instanceof ExportError) {
+    return error;
+  }
+  const code = (error as {code?: unknown} | null)?.code;
+  const reason =
+    (typeof code === 'string' ? NATIVE_CODE_REASONS.get(code) : undefined) ??
+    'unknown';
+  const rawCount = (error as {userInfo?: {missingCount?: unknown}} | null)
+    ?.userInfo?.missingCount;
+  const missingCount =
+    reason === 'sourceMissing' &&
+    typeof rawCount === 'number' &&
+    Number.isSafeInteger(rawCount) &&
+    rawCount >= 0
+      ? rawCount
+      : undefined;
+  return new ExportError(reason, `Export failed: ${reason}`, {
+    cause: error,
+    missingCount,
+  });
+}
+
+async function assertDiskSpace(
+  path: string,
+  payloadBytes: number,
+  context: Record<string, unknown>,
+): Promise<void> {
+  const requiredBytes = payloadBytes + DISK_SPACE_MARGIN_BYTES;
+  let availableBytes: number;
+  try {
+    ({availableBytes} = await getFreeDiskSpace(path));
+  } catch (error) {
+    reportError(error, {...context, step: 'getFreeDiskSpace', requiredBytes});
+    return;
+  }
+  if (!hasEnoughDiskSpace(availableBytes, payloadBytes)) {
+    throw new ExportError('diskFull', 'Not enough disk space for export', {
+      requiredBytes,
+      context: {...context, availableBytes},
+    });
+  }
+}
 
 function stripUnsafeFileNameChars(value: string): string {
   let result = '';
@@ -113,12 +171,35 @@ export type PreparedExport = ExportZipResult & {
 export async function prepareSelectedPhotosExport(
   options: PrepareExportOptions,
 ): Promise<PreparedExport> {
-  const {albumId, albumName, photos, quality, onProgress} = options;
+  const {albumId, photos} = options;
   if (photos.length === 0) {
     throw new Error('No selected photos to export');
   }
 
-  const stagingDirectory = await ensureExportStagingDirectory();
+  try {
+    const stagingDirectory = await ensureExportStagingDirectory();
+    const {totalBytes, missingSizeCount} = estimateExportBytes(photos);
+    if (missingSizeCount > 0) {
+      reportError(new Error('Export photos without size'), {
+        albumId,
+        missingSizeCount,
+      });
+    }
+    await assertDiskSpace(stagingDirectory.path, totalBytes, {
+      albumId,
+      photoCount: photos.length,
+    });
+    return await buildExportZip(options, stagingDirectory.path);
+  } catch (error) {
+    throw toExportError(error);
+  }
+}
+
+async function buildExportZip(
+  options: PrepareExportOptions,
+  stagingPath: string,
+): Promise<PreparedExport> {
+  const {albumId, albumName, photos, quality, onProgress} = options;
   const total = photos.length;
   const rawEntries: ExportZipEntry[] = [];
 
@@ -167,7 +248,7 @@ export async function prepareSelectedPhotosExport(
   onProgress?.({completed: total, total, percent: 92, phase: 'preparing'});
 
   const zipPath = await resolveUniqueZipPath(
-    stagingDirectory.path,
+    stagingPath,
     sanitizeZipFileName(albumName),
   );
   const zip = await createZipFromEntries(entries, zipPath);
@@ -185,17 +266,30 @@ export async function downloadPreparedExport(options: {
   prepared: PreparedExport;
   directory?: ExportDirectoryInfo | null;
 }): Promise<ExportZipResult> {
-  const directory =
-    options.directory ?? (await ensureDefaultExportDirectory());
-  const destinationPath = await resolveUniqueZipPath(
-    directory.path,
-    options.prepared.fileName,
-  );
-  const copied = await copyExportFile(options.prepared.stagingPath, destinationPath);
-
-  return {
-    ...copied,
-    displayPath: directory.displayPath,
-    photoCount: options.prepared.photoCount,
-  };
+  const {prepared} = options;
+  try {
+    const directory =
+      options.directory ?? (await ensureDefaultExportDirectory());
+    if (Number.isFinite(prepared.byteSize) && prepared.byteSize >= 0) {
+      await assertDiskSpace(directory.path, prepared.byteSize, {
+        photoCount: prepared.photoCount,
+      });
+    } else {
+      reportError(new Error('Prepared export has invalid byte size'), {
+        photoCount: prepared.photoCount,
+      });
+    }
+    const destinationPath = await resolveUniqueZipPath(
+      directory.path,
+      prepared.fileName,
+    );
+    const copied = await copyExportFile(prepared.stagingPath, destinationPath);
+    return {
+      ...copied,
+      displayPath: directory.displayPath,
+      photoCount: prepared.photoCount,
+    };
+  } catch (error) {
+    throw toExportError(error);
+  }
 }
