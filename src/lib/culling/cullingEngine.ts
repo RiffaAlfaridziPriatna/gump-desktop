@@ -40,6 +40,7 @@ import { APIResponse } from '@services/api';
 import { FileAsset } from '@services/upload/types';
 import { Platform } from 'react-native';
 import { currentAnalysisEngineVersion } from './analysisEngine';
+import { applyAlbumLook, type ApplyAlbumLookScope } from './applyAlbumLook';
 import {
   backfillMissingAnalyzedPhotoAssets,
   clearScheduledAnalyzedPhotoAssets,
@@ -962,6 +963,16 @@ export const cullingEngine = {
     }
     await persistAlbum(albumId);
     flushRenderSync();
+  },
+
+  applyAlbumLook(
+    albumId: string,
+    lookId: LookId,
+    scope: ApplyAlbumLookScope,
+  ): Promise<number> {
+    return applyAlbumLook(albumId, lookId, scope, photoIds =>
+      cullingEngine.updateLook(albumId, photoIds, {lookId}),
+    );
   },
 
   async deletePhoto(albumId: string, photoId: string): Promise<void> {
