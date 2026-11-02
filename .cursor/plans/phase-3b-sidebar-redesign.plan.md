@@ -23,7 +23,7 @@ todos:
     status: completed
   - id: s4g
     content: Remove Key Faces leftovers from the screen
-    status: pending
+    status: completed
   - id: s4h
     content: Photo card AI badges (AI recommended, Needs review, Check eyes, Check sharpness)
     status: completed
