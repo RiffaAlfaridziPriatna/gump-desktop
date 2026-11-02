@@ -20,7 +20,7 @@ todos:
     status: completed
   - id: s4d
     content: Recompose CulledAlbumDetailSidebar per Figma and drop Key Faces from it
-    status: pending
+    status: completed
   - id: s4g
     content: Remove Key Faces leftovers from the screen
     status: pending
