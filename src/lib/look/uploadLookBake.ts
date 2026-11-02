@@ -5,6 +5,19 @@ import {
   type BakeLookProgress,
 } from '@lib/look/bakeLook';
 import type {CulledAlbumPhoto} from '@lib/culledAlbum/types';
+import {
+  DISK_SPACE_MARGIN_BYTES,
+  estimateExportBytes,
+  hasEnoughDiskSpace,
+} from '@lib/export/diskSpace';
+import {
+  ensureExportStagingDirectory,
+  getFreeDiskSpace,
+} from '@lib/export/nativeExport';
+import {toExportError} from '@lib/export/prepareExport';
+import {ExportError} from '@lib/export/types';
+import type {ExportFailureReason} from '@lib/export/types';
+import {reportError} from '@lib/observability/reportError';
 
 export type UploadLookBakeStatus = 'idle' | 'baking' | 'ready' | 'failed';
 
@@ -14,6 +27,8 @@ export type UploadLookBakeState = {
   total: number;
   percent: number;
   error?: string;
+  reason?: ExportFailureReason;
+  requiredBytes?: number;
 };
 
 export type BakedUploadFile = {
@@ -34,6 +49,8 @@ type AlbumBakeSession = {
   total: number;
   percent: number;
   error?: string;
+  reason?: ExportFailureReason;
+  requiredBytes?: number;
   fileByPhotoId: Map<string, BakedUploadFile>;
   listeners: Set<() => void>;
   snapshot: UploadLookBakeState;
@@ -48,6 +65,8 @@ function buildSnapshot(session: AlbumBakeSession): UploadLookBakeState {
     total: session.total,
     percent: session.percent,
     error: session.error,
+    reason: session.reason,
+    requiredBytes: session.requiredBytes,
   };
 }
 
@@ -118,6 +137,8 @@ export function beginUploadLookBake(albumId: string, photoCount: number): void {
   session.total = photoCount;
   session.percent = 0;
   session.error = undefined;
+  session.reason = undefined;
+  session.requiredBytes = undefined;
   session.fileByPhotoId = new Map();
   emit(albumId);
 }
@@ -165,6 +186,8 @@ export async function bakeLooksForUploadBatch(
 
   session.fileByPhotoId = new Map();
   session.error = undefined;
+  session.reason = undefined;
+  session.requiredBytes = undefined;
 
   if (needingBake.length === 0) {
     session.status = 'ready';
@@ -181,7 +204,19 @@ export async function bakeLooksForUploadBatch(
   session.percent = 0;
   emit(albumId);
 
+  const {totalBytes, missingSizeCount} = estimateExportBytes(needingBake);
+  const requiredBytes = totalBytes + DISK_SPACE_MARGIN_BYTES;
+  const context = {albumId, photoCount: needingBake.length, requiredBytes};
+  if (missingSizeCount > 0) {
+    reportError(new Error('Bake photos without file size'), {
+      ...context,
+      step: 'estimateBakeBytes',
+      missingSizeCount,
+    });
+  }
+
   try {
+    await assertStagingSpace(totalBytes, requiredBytes, context);
     const bakedByPhotoId = await bakeLooksForPhotos(
       needingBake,
       'original',
@@ -202,10 +237,35 @@ export async function bakeLooksForUploadBatch(
     session.percent = 100;
     emit(albumId);
   } catch (error) {
+    const failure = toExportError(error);
     session.status = 'failed';
     session.error =
       error instanceof Error ? error.message : 'Failed to apply look';
+    session.reason = failure.reason;
+    session.requiredBytes =
+      failure.reason === 'diskFull' ? requiredBytes : undefined;
     emit(albumId);
-    throw error;
+    throw failure.reason === 'diskFull' ? failure : error;
+  }
+}
+
+async function assertStagingSpace(
+  payloadBytes: number,
+  requiredBytes: number,
+  context: Record<string, unknown>,
+): Promise<void> {
+  let availableBytes: number;
+  try {
+    const staging = await ensureExportStagingDirectory();
+    ({availableBytes} = await getFreeDiskSpace(staging.path));
+  } catch (error) {
+    reportError(error, {...context, step: 'getFreeDiskSpace'});
+    return;
+  }
+  if (!hasEnoughDiskSpace(availableBytes, payloadBytes)) {
+    throw new ExportError('diskFull', 'Not enough disk space for look bake', {
+      requiredBytes,
+      context: {...context, availableBytes},
+    });
   }
 }
