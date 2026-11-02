@@ -9,14 +9,22 @@ import {
 } from '@lib/culling/facePanelStatus';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
-import React, {useState} from 'react';
-import {ActivityIndicator, StyleSheet, Text, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
 import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
 
 export const FACES_EMPTY_HINT =
   'Choose Inspect faces on a photo to check eyes and sharpness here.';
 const TITLE = 'Faces in This Photo';
+const NO_FACES_TEXT = 'No faces detected.';
+const UNAVAILABLE_TEXT = 'Face assessment unavailable.';
 const CROP_SIZE = 48;
 
 export type FacesInPhotoPanelFace = {
@@ -91,6 +99,20 @@ function FaceItem({
   );
 }
 
+function facesCountText(count: number): string {
+  return `${count} ${count === 1 ? 'face' : 'faces'}`;
+}
+
+function getAnnouncement(photo: FacesInPhotoPanelPhoto): string {
+  if (photo.faces.length === 0) {
+    return NO_FACES_TEXT;
+  }
+  if (!photo.faces.every(isValidFaceAssessment)) {
+    return UNAVAILABLE_TEXT;
+  }
+  return facesCountText(photo.faces.length);
+}
+
 function PanelBody({
   photo,
   loading,
@@ -104,16 +126,20 @@ function PanelBody({
   if (loading) {
     return (
       <View style={styles.loadingRow}>
-        <ActivityIndicator size="small" color={colors.white} />
+        <ActivityIndicator
+          accessible={false}
+          size="small"
+          color={colors.white}
+        />
         <Text style={styles.stateText}>Loading face assessment…</Text>
       </View>
     );
   }
   if (photo.faces.length === 0) {
-    return <Text style={styles.stateText}>No faces detected.</Text>;
+    return <Text style={styles.stateText}>{NO_FACES_TEXT}</Text>;
   }
   if (!photo.faces.every(isValidFaceAssessment)) {
-    return <Text style={styles.stateText}>Face assessment unavailable.</Text>;
+    return <Text style={styles.stateText}>{UNAVAILABLE_TEXT}</Text>;
   }
   return (
     <View style={styles.grid}>
@@ -133,12 +159,22 @@ export function FacesInPhotoPanel({photo}: FacesInPhotoPanelProps) {
   const loading = useFaceAssessmentLoading(photo?.photoId ?? null);
   const Chevron = expanded ? IconChevronUp : IconChevronDown;
   const count = photo && photo.faces.length > 0 ? photo.faces.length : null;
+  const announcement = photo && !loading ? getAnnouncement(photo) : null;
+
+  // macOS has no live regions; announce once per settled focus, not on collapse.
+  useEffect(() => {
+    if (announcement) {
+      AccessibilityInfo.announceForAccessibility(announcement);
+    }
+  }, [announcement, photo?.photoId]);
 
   return (
     <View style={styles.root}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={TITLE}
+        accessibilityLabel={
+          count ? `${TITLE}, ${facesCountText(count)}` : TITLE
+        }
         accessibilityState={{expanded}}
         onPress={() => setExpanded(value => !value)}
         style={styles.header}>
@@ -154,7 +190,9 @@ export function FacesInPhotoPanel({photo}: FacesInPhotoPanelProps) {
               {photo.fileName}
             </Text>
           ) : null}
-          <PanelBody photo={photo} loading={loading} />
+          <View accessibilityLiveRegion="polite">
+            <PanelBody photo={photo} loading={loading} />
+          </View>
         </>
       ) : null}
     </View>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { act } from 'react-test-renderer';
-import { Text } from 'react-native';
+import { AccessibilityInfo, Text } from 'react-native';
 import {
   FACES_EMPTY_HINT,
   FacesInPhotoPanel,
@@ -127,6 +127,39 @@ describe('FacesInPhotoPanel', () => {
     );
     settle();
     expect(texts(renderer)).toContain('Face assessment unavailable.');
+  });
+
+  it('labels the header with the visible title and count', () => {
+    const { renderer } = render(
+      <FacesInPhotoPanel
+        photo={photo([face('a', 'open', 'good'), face('b', 'open', 'good')])}
+      />,
+    );
+    settle();
+    const header = renderer.root.find(
+      n => n.props.accessibilityRole === 'button',
+    );
+    expect(header.props.accessibilityLabel).toBe('Faces in This Photo, 2 faces');
+  });
+
+  it('announces once after loading, not on collapse or expand', () => {
+    const spy = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation(() => {});
+    spy.mockClear();
+    const { renderer } = render(
+      <FacesInPhotoPanel photo={photo([face('a', 'open', 'good')])} />,
+    );
+    expect(spy).not.toHaveBeenCalled();
+    settle();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith('1 face');
+    const header = () =>
+      renderer.root.find(n => n.props.accessibilityRole === 'button');
+    press(header());
+    press(header());
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
   });
 
   it('collapses and expands, exposing expanded state', () => {
