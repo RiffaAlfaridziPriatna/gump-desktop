@@ -1,3 +1,5 @@
+import { AppError, type ErrorContext } from '@lib/observability/AppError';
+
 export type ExportQuality = 'compressed' | 'original';
 
 export type ExportFormat = 'zip';
@@ -28,3 +30,44 @@ export type ExportPhotosModalStep =
   | 'ready'
   | 'success'
   | 'failed';
+
+export type ExportFailureReason =
+  | 'diskFull'
+  | 'folderNotWritable'
+  | 'sourceMissing'
+  | 'unknown';
+
+/** Native reject codes (macOS and Windows) mapped to app reasons. */
+export const EXPORT_NATIVE_CODE_REASONS: Readonly<
+  Record<string, ExportFailureReason>
+> = {
+  E_DISK_FULL: 'diskFull',
+  E_NOT_WRITABLE: 'folderNotWritable',
+  E_SOURCE_MISSING: 'sourceMissing',
+};
+
+export class ExportError extends AppError {
+  readonly reason: ExportFailureReason;
+  readonly requiredBytes?: number;
+  readonly missingCount?: number;
+
+  constructor(
+    reason: ExportFailureReason,
+    message: string,
+    options: {
+      cause?: unknown;
+      context?: ErrorContext;
+      requiredBytes?: number;
+      missingCount?: number;
+    } = {},
+  ) {
+    super(message, {
+      cause: options.cause,
+      context: options.context,
+      name: 'ExportError',
+    });
+    this.reason = reason;
+    this.requiredBytes = options.requiredBytes;
+    this.missingCount = options.missingCount;
+  }
+}

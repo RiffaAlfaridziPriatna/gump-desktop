@@ -1,4 +1,4 @@
-import {NativeModules, Platform} from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 import type {
   ExportDirectoryInfo,
   ExportZipEntry,
@@ -9,7 +9,10 @@ type NativeExportModule = {
   ensureDefaultExportDirectory: () => Promise<ExportDirectoryInfo>;
   ensureExportStagingDirectory: () => Promise<ExportDirectoryInfo>;
   pickExportDirectory: () => Promise<ExportDirectoryInfo | null>;
-  resolveUniqueZipPath: (directory: string, fileName: string) => Promise<string>;
+  resolveUniqueZipPath: (
+    directory: string,
+    fileName: string,
+  ) => Promise<string>;
   createZipFromEntries: (
     entries: ExportZipEntry[],
     zipPath: string,
@@ -29,6 +32,7 @@ type NativeExportModule = {
     byteSize: number;
   }>;
   openInFileManager: (path: string) => Promise<boolean>;
+  getFreeDiskSpace: (path: string) => Promise<{ availableBytes: number }>;
 };
 
 const NativeLocalStorage = NativeModules.GumpLocalStorage as
@@ -97,4 +101,11 @@ export async function copyExportFile(
 export async function openInFileManager(path: string): Promise<boolean> {
   assertNativeExportAvailable();
   return NativeLocalStorage!.openInFileManager(path);
+}
+
+export async function getFreeDiskSpace(
+  path: string,
+): Promise<{ availableBytes: number }> {
+  assertNativeExportAvailable();
+  return NativeLocalStorage!.getFreeDiskSpace(path);
 }
