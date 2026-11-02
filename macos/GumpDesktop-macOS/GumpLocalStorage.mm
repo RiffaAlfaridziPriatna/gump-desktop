@@ -3105,6 +3105,77 @@ RCT_EXPORT_METHOD(getImageDimensions:(NSString *)uri
   return parts.lastObject ?: path;
 }
 
+static NSString *GumpExportCodeForErrno(int posixCode)
+{
+  switch (posixCode) {
+    case ENOSPC:
+      return @"E_DISK_FULL";
+    case EACCES:
+    case EPERM:
+    case EROFS:
+      return @"E_NOT_WRITABLE";
+    default:
+      return nil;
+  }
+}
+
+static NSString *GumpExportCodeForError(NSError *error)
+{
+  for (NSError *current = error; current != nil;
+       current = current.userInfo[NSUnderlyingErrorKey]) {
+    if ([current.domain isEqualToString:NSPOSIXErrorDomain]) {
+      NSString *code = GumpExportCodeForErrno((int)current.code);
+      if (code != nil) {
+        return code;
+      }
+    } else if ([current.domain isEqualToString:NSCocoaErrorDomain]) {
+      switch (current.code) {
+        case NSFileWriteOutOfSpaceError:
+          return @"E_DISK_FULL";
+        case NSFileWriteNoPermissionError:
+        case NSFileWriteVolumeReadOnlyError:
+          return @"E_NOT_WRITABLE";
+        default:
+          break;
+      }
+    }
+  }
+  return nil;
+}
+
+// Rejects with a fixed message and a path-free error; never forwards the raw NSError.
+static void GumpRejectExport(
+    RCTPromiseRejectBlock reject,
+    NSString *code,
+    NSString *fallbackMessage,
+    NSUInteger missingCount)
+{
+  NSString *message = fallbackMessage;
+  NSDictionary *userInfo = @{};
+  if ([code isEqualToString:@"E_DISK_FULL"]) {
+    message = @"Not enough disk space";
+  } else if ([code isEqualToString:@"E_NOT_WRITABLE"]) {
+    message = @"Destination is not writable";
+  } else if ([code isEqualToString:@"E_SOURCE_MISSING"]) {
+    message = @"Source file is missing";
+    userInfo = @{@"missingCount" : @(missingCount)};
+  }
+  reject(code, message, [NSError errorWithDomain:@"GumpExport" code:0 userInfo:userInfo]);
+}
+
+static void GumpRejectExportError(
+    RCTPromiseRejectBlock reject,
+    NSError *error,
+    NSString *fallbackCode,
+    NSString *fallbackMessage)
+{
+  NSString *code = GumpExportCodeForError(error);
+  if (code == nil && error != nil) {
+    fallbackMessage = [NSString stringWithFormat:@"%@ (%@ %ld)", fallbackMessage, error.domain, (long)error.code];
+  }
+  GumpRejectExport(reject, code ?: fallbackCode, fallbackMessage, 0);
+}
+
 - (BOOL)ensureDirectoryAtPath:(NSString *)path error:(NSError **)error
 {
   BOOL isDirectory = NO;
@@ -3219,12 +3290,13 @@ RCT_EXPORT_METHOD(createZipFromEntries:(NSArray *)entries
       NSString *parent = zipPath.stringByDeletingLastPathComponent;
       NSError *dirError = nil;
       if (![self ensureDirectoryAtPath:parent error:&dirError]) {
-        reject(@"EEXPORTDIR", dirError.localizedDescription ?: @"Unable to create zip directory", dirError);
+        GumpRejectExportError(reject, dirError, @"EEXPORTDIR", @"Unable to create zip directory");
         return;
       }
 
       std::vector<ZipStore::Entry> zipEntries;
       zipEntries.reserve(entries.count);
+      NSUInteger missingCount = 0;
       for (id rawEntry in entries) {
         if (![rawEntry isKindOfClass:[NSDictionary class]]) {
           reject(@"EINVAL", @"Invalid zip entry", nil);
@@ -3240,8 +3312,8 @@ RCT_EXPORT_METHOD(createZipFromEntries:(NSArray *)entries
         NSString *sourcePath = [self pathFromUri:uri];
         if (sourcePath.length == 0 ||
             ![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
-          reject(@"ENOENT", @"Zip source file not found", nil);
-          return;
+          missingCount += 1;
+          continue;
         }
         zipEntries.push_back(ZipStore::Entry{
             std::filesystem::path([sourcePath UTF8String]),
@@ -3249,11 +3321,17 @@ RCT_EXPORT_METHOD(createZipFromEntries:(NSArray *)entries
         });
       }
 
+      if (missingCount > 0) {
+        GumpRejectExport(reject, @"E_SOURCE_MISSING", nil, missingCount);
+        return;
+      }
+
       if ([[NSFileManager defaultManager] fileExistsAtPath:zipPath]) {
         [[NSFileManager defaultManager] removeItemAtPath:zipPath error:nil];
       }
 
       try {
+        errno = 0;
         const auto result =
             ZipStore::CreateZip(std::filesystem::path([zipPath UTF8String]), zipEntries);
         NSString *fileName = zipPath.lastPathComponent;
@@ -3264,10 +3342,25 @@ RCT_EXPORT_METHOD(createZipFromEntries:(NSArray *)entries
           @"byteSize" : @(result.byteSize),
         });
       } catch (const std::exception &ex) {
-        reject(@"EZIP", [NSString stringWithUTF8String:ex.what()], nil);
+        const int zipErrno = errno;
+        [[NSFileManager defaultManager] removeItemAtPath:zipPath error:nil];
+        // A source read failure is not a destination write failure.
+        const std::string reason(ex.what());
+        const bool sourceFailure = reason.find("source file") != std::string::npos;
+        NSString *zipCode = sourceFailure ? nil : GumpExportCodeForErrno(zipErrno);
+        GumpRejectExport(
+            reject,
+            zipCode ?: @"EZIP",
+            [NSString stringWithFormat:@"Unable to create zip file (errno %d)", zipErrno],
+            0);
       }
     } @catch (NSException *exception) {
-      reject(@"EUNKNOWN", exception.reason, nil);
+      [[NSFileManager defaultManager] removeItemAtPath:zipPath error:nil];
+      GumpRejectExport(
+          reject,
+          @"EUNKNOWN",
+          [NSString stringWithFormat:@"Unable to create zip file (%@)", exception.name],
+          0);
     }
   });
 }
@@ -3832,6 +3925,7 @@ RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
                          intensity:(CGFloat)intensityPercent
                       maxPixelSize:(NSUInteger)maxPixelSize
                        jpegQuality:(CGFloat)jpegQuality
+                             error:(NSError **)outError
 {
   if (sourcePath.length == 0 || destPath.length == 0) {
     return nil;
@@ -3843,6 +3937,9 @@ RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
                                              attributes:nil
                                                   error:&dirError];
   if (dirError != nil) {
+    if (outError != NULL) {
+      *outError = dirError;
+    }
     return nil;
   }
 
@@ -3952,7 +4049,12 @@ RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
                                        properties:@{
                                          NSImageCompressionFactor : @(quality),
                                        }];
-  if (jpegData.length == 0 || ![jpegData writeToFile:destPath atomically:YES]) {
+  NSError *writeError = nil;
+  if (jpegData.length == 0 ||
+      ![jpegData writeToFile:destPath options:NSDataWritingAtomic error:&writeError]) {
+    if (outError != NULL) {
+      *outError = writeError;
+    }
     return nil;
   }
 
@@ -3974,20 +4076,34 @@ RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
       if (sourcePath.length == 0 ||
           ![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-          resolve(@{@"uri" : [NSNull null]});
+          GumpRejectExport(reject, @"E_SOURCE_MISSING", nil, 1);
         });
         return;
       }
 
+      const BOOL destExistedBefore =
+          destPath.length > 0 && [[NSFileManager defaultManager] fileExistsAtPath:destPath];
+      NSError *bakeError = nil;
       NSString *generatedPath =
           [self applyLookLutFromPath:sourcePath
                               toPath:destPath
                               lookId:lookId ?: @"original"
                            intensity:intensity.doubleValue
                         maxPixelSize:maxPixelSize.unsignedIntegerValue
-                         jpegQuality:jpegQuality.doubleValue];
+                         jpegQuality:jpegQuality.doubleValue
+                               error:&bakeError];
       dispatch_async(dispatch_get_main_queue(), ^{
-        if (generatedPath.length > 0) {
+        NSString *bakeCode = GumpExportCodeForError(bakeError);
+        if (bakeCode != nil || (generatedPath.length == 0)) {
+          if (destPath.length > 0 && !destExistedBefore) {
+            [[NSFileManager defaultManager] removeItemAtPath:destPath error:nil];
+          }
+          NSString *detail =
+              bakeError != nil
+                  ? [NSString stringWithFormat:@"Apply look failed (%@ %ld)", bakeError.domain, (long)bakeError.code]
+                  : @"Apply look failed";
+          GumpRejectExport(reject, bakeCode ?: @"ELOOK", detail, 0);
+        } else if (generatedPath.length > 0) {
           NSDictionary *attributes =
               [[NSFileManager defaultManager] attributesOfItemAtPath:generatedPath
                                                                error:nil];
@@ -3997,13 +4113,15 @@ RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
             @"path" : generatedPath,
             @"size" : fileSize,
           });
-        } else {
-          resolve(@{@"uri" : [NSNull null]});
         }
       });
     } @catch (NSException *exception) {
       dispatch_async(dispatch_get_main_queue(), ^{
-        reject(@"ELOOK", exception.reason ?: @"Apply look failed", nil);
+        GumpRejectExport(
+            reject,
+            @"ELOOK",
+            [NSString stringWithFormat:@"Apply look failed (%@)", exception.name],
+            0);
       });
     }
   });
@@ -4021,14 +4139,14 @@ RCT_EXPORT_METHOD(copyFile:(NSString *)sourcePath
         return;
       }
       if (![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
-        reject(@"ENOENT", @"Source file not found", nil);
+        GumpRejectExport(reject, @"E_SOURCE_MISSING", nil, 1);
         return;
       }
 
       NSString *parent = destinationPath.stringByDeletingLastPathComponent;
       NSError *dirError = nil;
       if (![self ensureDirectoryAtPath:parent error:&dirError]) {
-        reject(@"EEXPORTDIR", dirError.localizedDescription ?: @"Unable to create destination directory", dirError);
+        GumpRejectExportError(reject, dirError, @"EEXPORTDIR", @"Unable to create destination directory");
         return;
       }
 
@@ -4041,7 +4159,8 @@ RCT_EXPORT_METHOD(copyFile:(NSString *)sourcePath
                                                             toPath:destinationPath
                                                              error:&copyError];
       if (!copied) {
-        reject(@"ECOPY", copyError.localizedDescription ?: @"Unable to copy export file", copyError);
+        [[NSFileManager defaultManager] removeItemAtPath:destinationPath error:nil];
+        GumpRejectExportError(reject, copyError, @"ECOPY", @"Unable to copy export file");
         return;
       }
 
@@ -4055,7 +4174,12 @@ RCT_EXPORT_METHOD(copyFile:(NSString *)sourcePath
         @"byteSize" : fileSize,
       });
     } @catch (NSException *exception) {
-      reject(@"EUNKNOWN", exception.reason, nil);
+      [[NSFileManager defaultManager] removeItemAtPath:destinationPath error:nil];
+      GumpRejectExport(
+          reject,
+          @"EUNKNOWN",
+          [NSString stringWithFormat:@"Unable to copy export file (%@)", exception.name],
+          0);
     }
   });
 }
