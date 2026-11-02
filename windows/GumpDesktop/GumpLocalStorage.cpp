@@ -1946,7 +1946,7 @@ void GumpLocalStorage::EnsureExportStagingDirectory(ReactPromiseJS &&promise) no
 void GumpLocalStorage::GetFreeDiskSpace(std::string path, ReactPromiseJS &&promise) noexcept {
   RunAsync(
       [path = std::move(path)]() {
-        if (path.empty()) {
+        if (path.empty() || path.find('\0') != std::string::npos) {
           throw std::runtime_error("An absolute path is required");
         }
 
@@ -1957,6 +1957,9 @@ void GumpLocalStorage::GetFreeDiskSpace(std::string path, ReactPromiseJS &&promi
 
         std::error_code ec;
         while (!std::filesystem::exists(probe, ec)) {
+          if (ec && ec != std::errc::no_such_file_or_directory && ec != std::errc::not_a_directory) {
+            throw std::runtime_error("Unable to inspect path for free disk space");
+          }
           const auto parent = probe.parent_path();
           if (parent.empty() || parent == probe) {
             throw std::runtime_error("No existing parent directory for path");
@@ -1964,9 +1967,15 @@ void GumpLocalStorage::GetFreeDiskSpace(std::string path, ReactPromiseJS &&promi
           probe = parent;
         }
 
+        std::error_code statusEc;
+        if (std::filesystem::is_regular_file(probe, statusEc)) {
+          probe = probe.parent_path();
+        }
+
         ULARGE_INTEGER available{};
         if (!GetDiskFreeSpaceExW(probe.c_str(), &available, nullptr, nullptr)) {
-          throw std::runtime_error("Unable to read free disk space");
+          throw std::runtime_error(
+              "Unable to read free disk space (error " + std::to_string(GetLastError()) + ")");
         }
         return winrtRN::JSValue(winrtRN::JSValueObject{
             {"availableBytes", static_cast<int64_t>(available.QuadPart)},

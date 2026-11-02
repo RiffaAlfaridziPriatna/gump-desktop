@@ -3341,13 +3341,13 @@ RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
 {
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     @try {
-      if (path.length == 0 || !path.isAbsolutePath) {
-        reject(@"EINVAL", @"An absolute path is required", nil);
+      if (![path hasPrefix:@"/"] || [path.pathComponents containsObject:@".."]) {
+        reject(@"EINVAL", @"An absolute path without parent references is required", nil);
         return;
       }
 
       NSFileManager *fm = [NSFileManager defaultManager];
-      NSString *probe = path.stringByStandardizingPath;
+      NSString *probe = path;
       while (![fm fileExistsAtPath:probe]) {
         NSString *parent = probe.stringByDeletingLastPathComponent;
         if (parent.length == 0 || [parent isEqualToString:probe]) {
@@ -3368,7 +3368,7 @@ RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
         available = values[NSURLVolumeAvailableCapacityKey];
       }
       if (available == nil) {
-        reject(@"EDISKSPACE", error.localizedDescription ?: @"Unable to read free disk space", error);
+        reject(@"EDISKSPACE", @"Unable to read free disk space", nil);
         return;
       }
       resolve(@{@"availableBytes" : available});
