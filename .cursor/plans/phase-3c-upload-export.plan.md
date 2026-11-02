@@ -35,7 +35,7 @@ todos:
     status: completed
   - id: s5j
     content: Upload modal cloud storage states per Figma
-    status: pending
+    status: completed
   - id: s5l
     content: Upload modal failure states (partial, quota, final, disk while baking)
     status: pending
