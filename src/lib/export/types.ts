@@ -1,4 +1,4 @@
-import { AppError, type ErrorContext } from '@lib/observability/AppError';
+import {AppError, type ErrorContext} from '@lib/observability/AppError';
 
 export type ExportQuality = 'compressed' | 'original';
 
@@ -38,13 +38,14 @@ export type ExportFailureReason =
   | 'unknown';
 
 /** Native reject codes (macOS and Windows) mapped to app reasons. */
-export const EXPORT_NATIVE_CODE_REASONS: Readonly<
-  Record<string, ExportFailureReason>
-> = {
+export const EXPORT_NATIVE_CODE_REASONS = {
   E_DISK_FULL: 'diskFull',
   E_NOT_WRITABLE: 'folderNotWritable',
   E_SOURCE_MISSING: 'sourceMissing',
-};
+} as const satisfies Record<
+  'E_DISK_FULL' | 'E_NOT_WRITABLE' | 'E_SOURCE_MISSING',
+  ExportFailureReason
+>;
 
 export class ExportError extends AppError {
   readonly reason: ExportFailureReason;

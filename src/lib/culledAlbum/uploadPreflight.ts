@@ -36,6 +36,6 @@ type CloudStorageNumbers = {
 };
 
 export type CloudStoragePreflight =
-  | { status: 'checking' }
-  | { status: 'unavailable' }
-  | ({ status: 'ok' | 'nearLimit' | 'exceeded' } & CloudStorageNumbers);
+  | {status: 'checking'}
+  | {status: 'unavailable'}
+  | ({status: 'ok' | 'nearLimit' | 'exceeded'} & CloudStorageNumbers);

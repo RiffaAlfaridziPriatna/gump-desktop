@@ -3,7 +3,7 @@ import {
   estimateExportBytes,
   hasEnoughDiskSpace,
 } from '../src/lib/export/diskSpace';
-import { formatGigabytes } from '../src/lib/export/formatByteSize';
+import {formatGigabytes} from '../src/lib/export/formatByteSize';
 import {
   UPLOAD_FAILURE_GROUP,
   type UploadFailureCause,
@@ -24,6 +24,18 @@ describe('hasEnoughDiskSpace', () => {
   });
 });
 
+describe('hasEnoughDiskSpace invalid input', () => {
+  it.each([
+    [Number.NaN, 1],
+    [Infinity, 1],
+    [-1, 1],
+    [1e12, -1],
+    [1e12, Number.NaN],
+  ])('rejects (%s, %s)', (available, required) => {
+    expect(hasEnoughDiskSpace(available, required)).toBe(false);
+  });
+});
+
 describe('estimateExportBytes', () => {
   it('returns zero for no photos', () => {
     expect(estimateExportBytes([])).toEqual({
@@ -34,10 +46,10 @@ describe('estimateExportBytes', () => {
 
   it('counts photos without size as 0 and reports them', () => {
     const photos = [
-      { file: { size: 100 } },
-      { file: { size: 0 } },
-      { file: { size: Number.NaN } },
-      { file: { size: 50 } },
+      {file: {size: 100}},
+      {file: {size: 0}},
+      {file: {size: Number.NaN}},
+      {file: {size: 50}},
     ];
     expect(estimateExportBytes(photos)).toEqual({
       totalBytes: 150,

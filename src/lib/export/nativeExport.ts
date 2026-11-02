@@ -1,4 +1,5 @@
-import { NativeModules, Platform } from 'react-native';
+import {NativeModules, Platform} from 'react-native';
+import {ExportError} from './types';
 import type {
   ExportDirectoryInfo,
   ExportZipEntry,
@@ -9,10 +10,7 @@ type NativeExportModule = {
   ensureDefaultExportDirectory: () => Promise<ExportDirectoryInfo>;
   ensureExportStagingDirectory: () => Promise<ExportDirectoryInfo>;
   pickExportDirectory: () => Promise<ExportDirectoryInfo | null>;
-  resolveUniqueZipPath: (
-    directory: string,
-    fileName: string,
-  ) => Promise<string>;
+  resolveUniqueZipPath: (directory: string, fileName: string) => Promise<string>;
   createZipFromEntries: (
     entries: ExportZipEntry[],
     zipPath: string,
@@ -32,7 +30,7 @@ type NativeExportModule = {
     byteSize: number;
   }>;
   openInFileManager: (path: string) => Promise<boolean>;
-  getFreeDiskSpace: (path: string) => Promise<{ availableBytes: number }>;
+  getFreeDiskSpace: (path: string) => Promise<{availableBytes: number}>;
 };
 
 const NativeLocalStorage = NativeModules.GumpLocalStorage as
@@ -105,7 +103,12 @@ export async function openInFileManager(path: string): Promise<boolean> {
 
 export async function getFreeDiskSpace(
   path: string,
-): Promise<{ availableBytes: number }> {
+): Promise<{availableBytes: number}> {
   assertNativeExportAvailable();
-  return NativeLocalStorage!.getFreeDiskSpace(path);
+  const result = await NativeLocalStorage!.getFreeDiskSpace(path);
+  const bytes: unknown = result?.availableBytes;
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) {
+    throw new ExportError('unknown', 'Native free disk space result is invalid');
+  }
+  return {availableBytes: bytes};
 }
