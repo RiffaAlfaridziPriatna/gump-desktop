@@ -11,7 +11,7 @@ todos:
     status: completed
   - id: s6b
     content: Remove lookIntensity everywhere; bake at fixed 100
-    status: pending
+    status: completed
   - id: s6c
     content: Album defaultLookId in model, entity, persistence and store setter
     status: pending
