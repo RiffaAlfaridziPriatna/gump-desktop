@@ -8,13 +8,13 @@ todos:
     status: completed
   - id: s5b
     content: Native getFreeDiskSpace in GumpLocalStorage (macOS and Windows)
-    status: pending
+    status: completed
   - id: s5c
     content: Fake native disk, export error, upload error and cloud storage fixtures
-    status: pending
+    status: completed
   - id: s5d
     content: Server upload failure groups and retry of retryable photos only
-    status: pending
+    status: completed
   - id: s5e
     content: Native error codes for export and look bake failures
     status: pending
