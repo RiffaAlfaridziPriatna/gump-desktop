@@ -1,8 +1,8 @@
 import React from 'react';
-import {AccessibilityInfo, Text} from 'react-native';
-import {getByLabel, press, render} from '../helpers/render';
-import {ApplyLookScopeModal} from '../../src/components/modals/ApplyLookScopeModal';
-import {focusDesktopNode} from '../../src/components/modals/focusDesktopNode';
+import { AccessibilityInfo, Text } from 'react-native';
+import { getByLabel, press, render } from '../helpers/render';
+import { ApplyLookScopeModal } from '../../src/components/modals/ApplyLookScopeModal';
+import { focusDesktopNode } from '../../src/components/modals/focusDesktopNode';
 
 jest.mock('../../src/components/modals/focusDesktopNode', () => ({
   focusDesktopNode: jest.fn(),
@@ -20,7 +20,7 @@ function mount(overrides: Partial<Props> = {}) {
     ...overrides,
   };
   const view = render(<ApplyLookScopeModal {...props} />);
-  return {...view, props};
+  return { ...view, props };
 }
 
 function texts(renderer: ReturnType<typeof mount>['renderer']) {
@@ -38,7 +38,7 @@ describe('ApplyLookScopeModal', () => {
   });
 
   it('shows title and body with the look label', () => {
-    const {renderer} = mount();
+    const { renderer } = mount();
     expect(texts(renderer)).toEqual(
       expect.arrayContaining([
         'Apply this new look to existing photos too?',
@@ -48,7 +48,7 @@ describe('ApplyLookScopeModal', () => {
   });
 
   it('calls onApplyAll and onApplyNewOnly from labeled buttons', () => {
-    const {renderer, props} = mount();
+    const { renderer, props } = mount();
     const all = getByLabel(renderer, 'All album photos');
     const newOnly = getByLabel(renderer, 'New photos only');
     expect(all.props.accessibilityRole).toBe('button');
@@ -61,7 +61,7 @@ describe('ApplyLookScopeModal', () => {
   });
 
   it('close button is a labeled button that calls onClose', () => {
-    const {renderer, props} = mount();
+    const { renderer, props } = mount();
     const close = getByLabel(renderer, 'Close');
     expect(close.props.accessibilityRole).toBe('button');
     press(close);
@@ -69,29 +69,39 @@ describe('ApplyLookScopeModal', () => {
   });
 
   it('Escape calls onClose, other keys do not', () => {
-    const {renderer, props} = mount();
+    const { renderer, props } = mount();
     const keyed = renderer.root.find(
-      node => typeof node.props.onKeyDown === 'function',
+      node =>
+        typeof node.props.onKeyDown === 'function' &&
+        Array.isArray(node.props.keyDownEvents),
     );
-    keyed.props.onKeyDown({nativeEvent: {key: 'Enter'}});
+    for (const label of ['All album photos', 'New photos only', 'Close']) {
+      let up = getByLabel(renderer, label).parent;
+      while (up && up !== keyed) {
+        up = up.parent;
+      }
+      expect(up).toBe(keyed);
+    }
+    keyed.props.onKeyDown({ nativeEvent: { key: 'Enter' } });
     expect(props.onClose).not.toHaveBeenCalled();
-    keyed.props.onKeyDown({nativeEvent: {key: 'Escape'}});
-    keyed.props.onKeyDown({nativeEvent: {code: 'Escape'}});
+    keyed.props.onKeyDown({ nativeEvent: { key: 'Escape' } });
+    keyed.props.onKeyDown({ nativeEvent: { code: 'Escape' } });
     expect(props.onClose).toHaveBeenCalledTimes(2);
   });
 
   it('focuses primary and announces again when the body changes', () => {
-    const {rerender, props} = mount();
+    const { rerender, props } = mount();
     expect(focusDesktopNode).toHaveBeenCalledTimes(1);
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
       'Apply this new look to existing photos too? Warm Romantic applies to future uploads.',
     );
     rerender(<ApplyLookScopeModal {...props} lookLabel="Film Mood" />);
+    expect(focusDesktopNode).toHaveBeenCalledTimes(1);
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledTimes(2);
   });
 
   it('does not announce when hidden', () => {
-    mount({visible: false});
+    mount({ visible: false });
     expect(AccessibilityInfo.announceForAccessibility).not.toHaveBeenCalled();
   });
 });

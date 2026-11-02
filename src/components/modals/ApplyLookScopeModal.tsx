@@ -1,15 +1,21 @@
-import {Modal, Pressable} from '@components/ui';
-import {colors} from '@lib/ui/colors';
-import {fonts, sansBoldStyle} from '@lib/ui/typography';
-import {useCallback, useEffect, useRef} from 'react';
-import {AccessibilityInfo, Platform, StyleSheet, Text, View} from 'react-native';
+import { Modal, Pressable } from '@components/ui';
+import { colors } from '@lib/ui/colors';
+import { fonts, sansBoldStyle } from '@lib/ui/typography';
+import { useCallback, useEffect, useRef } from 'react';
+import {
+  AccessibilityInfo,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import CircleBlue from '../../assets/images/upload/blue_circle.svg';
 import HalfCircle from '../../assets/images/upload/half_circle.svg';
 import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
 import QuarterCircleOrange from '../../assets/images/upload/orange_quarter_circle.svg';
 import QuarterCircleRed from '../../assets/images/upload/red_quarter_circle.svg';
 import IconClose from '../../assets/images/icon_close.svg';
-import {focusDesktopNode} from './focusDesktopNode';
+import { focusDesktopNode } from './focusDesktopNode';
 
 type ApplyLookScopeModalProps = {
   visible: boolean;
@@ -26,8 +32,8 @@ const HANDLED_BUBBLING = 3;
 
 const escapeKeyDownEvents =
   Platform.OS === 'windows'
-    ? [{code: 'Escape', handledEventPhase: HANDLED_BUBBLING}]
-    : [{key: 'Escape'}];
+    ? [{ code: 'Escape', handledEventPhase: HANDLED_BUBBLING }]
+    : [{ key: 'Escape' }];
 
 function Decorations() {
   return (
@@ -35,7 +41,8 @@ function Decorations() {
       style={styles.decorations}
       pointerEvents="none"
       accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants">
+      importantForAccessibility="no-hide-descendants"
+    >
       <QuarterCircleRed style={styles.quarterRedDecor} width={80} height={80} />
       <CircleBlue style={styles.circleBlueDecor} width={32} height={32} />
       <HalfCircle style={styles.halfCircleDecor} width={72} />
@@ -68,13 +75,20 @@ export function ApplyLookScopeModal({
       return;
     }
     focusDesktopNode(primaryRef.current);
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
     AccessibilityInfo.announceForAccessibility(`${TITLE} ${body}`);
   }, [visible, body]);
 
   const handleKeyDown = useCallback(
     (event: unknown) => {
-      const native = (event as {nativeEvent?: {key?: string; code?: string}})
-        .nativeEvent;
+      const native = (
+        event as { nativeEvent?: { key?: string; code?: string } }
+      ).nativeEvent;
       if (native?.key === 'Escape' || native?.code === 'Escape') {
         onClose();
       }
@@ -89,53 +103,66 @@ export function ApplyLookScopeModal({
       width={720}
       height={456}
       showCloseButton={false}
-      contentStyle={styles.modalContent}>
-      <Decorations />
+      contentStyle={styles.modalContent}
+    >
       <View
-        style={styles.content}
+        style={styles.card}
         onKeyDown={handleKeyDown}
-        keyDownEvents={escapeKeyDownEvents}>
-        <View style={styles.textBlock}>
-          <Text style={styles.title}>{TITLE}</Text>
-          <Text style={styles.body}>{body}</Text>
+        keyDownEvents={escapeKeyDownEvents}
+      >
+        <Decorations />
+        <View style={styles.content}>
+          <View style={styles.textBlock}>
+            <Text style={styles.title} accessibilityRole="header">
+              {TITLE}
+            </Text>
+            <Text style={styles.body}>{body}</Text>
+          </View>
+          <View style={styles.actions}>
+            <Pressable
+              // The ui wrapper forwards unknown props; React 19 passes ref as a prop.
+              {...{ ref: primaryRef }}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.pressed,
+              ]}
+              onPress={onApplyAll}
+              accessibilityRole="button"
+              accessibilityLabel="All album photos"
+            >
+              <Text style={styles.primaryButtonText}>All album photos</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                pressed && styles.pressed,
+              ]}
+              onPress={onApplyNewOnly}
+              accessibilityRole="button"
+              accessibilityLabel="New photos only"
+            >
+              <Text style={styles.secondaryButtonText}>New photos only</Text>
+            </Pressable>
+          </View>
         </View>
-        <View style={styles.actions}>
-          <Pressable
-            // The ui wrapper forwards unknown props; React 19 passes ref as a prop.
-            {...{ref: primaryRef}}
-            style={({pressed}) => [
-              styles.primaryButton,
-              pressed && styles.pressed,
-            ]}
-            onPress={onApplyAll}
-            accessibilityRole="button"
-            accessibilityLabel="All album photos">
-            <Text style={styles.primaryButtonText}>All album photos</Text>
-          </Pressable>
-          <Pressable
-            style={({pressed}) => [
-              styles.secondaryButton,
-              pressed && styles.pressed,
-            ]}
-            onPress={onApplyNewOnly}
-            accessibilityRole="button"
-            accessibilityLabel="New photos only">
-            <Text style={styles.secondaryButtonText}>New photos only</Text>
-          </Pressable>
-        </View>
+        <Pressable
+          style={({ pressed }) => [
+            styles.closeButton,
+            pressed && styles.pressed,
+          ]}
+          onPress={onClose}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+        >
+          <View
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <IconClose width={20} height={20} color={colors.textDark} />
+          </View>
+        </Pressable>
       </View>
-      <Pressable
-        style={({pressed}) => [styles.closeButton, pressed && styles.pressed]}
-        onPress={onClose}
-        hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-        accessibilityRole="button"
-        accessibilityLabel="Close">
-        <View
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants">
-          <IconClose width={20} height={20} color={colors.textDark} />
-        </View>
-      </Pressable>
     </Modal>
   );
 }
@@ -147,6 +174,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  card: {
+    flex: 1,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
   },
   decorations: {
     ...StyleSheet.absoluteFillObject,
