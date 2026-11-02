@@ -3335,6 +3335,49 @@ RCT_EXPORT_METHOD(ensureExportStagingDirectory:(RCTPromiseResolveBlock)resolve
   });
 }
 
+RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      if (![path hasPrefix:@"/"] || [path.pathComponents containsObject:@".."]) {
+        reject(@"EINVAL", @"An absolute path without parent references is required", nil);
+        return;
+      }
+
+      NSFileManager *fm = [NSFileManager defaultManager];
+      NSString *probe = path;
+      while (![fm fileExistsAtPath:probe]) {
+        NSString *parent = probe.stringByDeletingLastPathComponent;
+        if (parent.length == 0 || [parent isEqualToString:probe]) {
+          reject(@"EINVAL", @"No existing parent directory for path", nil);
+          return;
+        }
+        probe = parent;
+      }
+
+      NSError *error = nil;
+      NSDictionary<NSURLResourceKey, id> *values =
+          [[NSURL fileURLWithPath:probe] resourceValuesForKeys:@[
+            NSURLVolumeAvailableCapacityForImportantUsageKey,
+            NSURLVolumeAvailableCapacityKey,
+          ] error:&error];
+      NSNumber *available = values[NSURLVolumeAvailableCapacityForImportantUsageKey];
+      if (available == nil) {
+        available = values[NSURLVolumeAvailableCapacityKey];
+      }
+      if (available == nil) {
+        reject(@"EDISKSPACE", @"Unable to read free disk space", nil);
+        return;
+      }
+      resolve(@{@"availableBytes" : available});
+    } @catch (NSException *exception) {
+      reject(@"EUNKNOWN", exception.reason, nil);
+    }
+  });
+}
+
 - (NSString *)lookCubePathForId:(NSString *)lookId
 {
   if (lookId.length == 0 || [lookId isEqualToString:@"original"]) {
