@@ -3,10 +3,8 @@ import {CulledAlbumPhotoCardOverlay} from '@components/culling/CulledAlbumPhotoC
 import {CulledAlbumPhotoFocusFrame} from '@components/culling/CulledAlbumPhotoFocusFrame';
 import {Pressable} from '@components/ui';
 import {useCulledAlbumPhoto} from '@context/culledAlbum';
-import {
-  useCulledAlbumPhotoHovered,
-  useCulledAlbumPhotoHoverStore,
-} from '@lib/culledAlbum/photoHover';
+import {listPhotoBadges} from '@components/culling/PhotoAiBadges';
+import {useCulledAlbumPhotoHovered, useCulledAlbumPhotoHoverStore} from '@lib/culledAlbum/photoHover';
 import {
   isInsideHit,
   starIndexFromHit,
@@ -250,7 +248,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
       style={[styles.photoCard, {width: cardWidth}]}
       onHoverIn={isMobileLayout ? undefined : handleHoverIn}
       onHoverOut={isMobileLayout ? undefined : handleHoverOut}
-      accessible={similarShotCount == null}
+      accessible={similarShotCount == null && listPhotoBadges(photo).length === 0}
       accessibilityState={{selected: isFocused}}
       onPress={handleCardPress}>
       <View ref={cardRootRef} collapsable={false} style={styles.photoCardRoot}>

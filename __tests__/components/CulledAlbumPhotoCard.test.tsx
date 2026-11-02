@@ -83,6 +83,14 @@ describe('CulledAlbumPhotoCard similar shots badge', () => {
     const plain = renderCard().view.renderer.root;
     expect(plain.findAllByType(Pressable)[0]?.props.accessible).toBe(true);
   });
+
+  it('keeps AI badges reachable: badged card is not an accessible group', () => {
+    mockPhoto = {...mockPhoto, aiSelected: true, closedEyes: true};
+    const {view} = renderCard();
+    expect(view.renderer.root.findAllByType(Pressable)[0]?.props.accessible).toBe(false);
+    expect(getByLabel(view.renderer, 'AI recommended')).toBeTruthy();
+    mockPhoto = {photoId: 'p1', file: {name: 'IMG_1.jpg'}, analysisStatus: 'pending'};
+  });
 });
 
 describe('CulledAlbumPhotoCard focus', () => {
