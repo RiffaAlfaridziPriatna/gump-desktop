@@ -8,13 +8,21 @@ jest.mock('../../src/components/culling/CulledAlbumPhotoCard', () => ({
   CulledAlbumPhotoCard: ({
     photoId,
     similarShotCount,
+    isFocused,
+    onCardPress,
   }: {
     photoId: string;
     similarShotCount?: number;
+    isFocused?: boolean;
+    onCardPress?: (photoId: string) => void;
   }) => {
     const {Text: T} = require('react-native');
     return (
-      <T testID="card" similarShotCount={similarShotCount}>
+      <T
+        testID="card"
+        similarShotCount={similarShotCount}
+        isFocused={isFocused}
+        onCardPress={onCardPress}>
         {photoId}
       </T>
     );
@@ -34,12 +42,13 @@ jest.mock('@hooks/useVisiblePhotos', () => ({
 }));
 
 const noop = jest.fn();
+const onCardPress = jest.fn();
 const photos = ['a0', 'a1', 'a2', 'a3', 'b0'].map(photoId => ({
   photoId,
   disabled: false,
 }));
 
-function grid(sections: CulledAlbumGridSection[]) {
+function grid(sections: CulledAlbumGridSection[], focusedPhotoId?: string) {
   return (
     <CulledAlbumPhotoGrid
       photos={photos}
@@ -48,7 +57,8 @@ function grid(sections: CulledAlbumGridSection[]) {
       containerWidth={600}
       isMobileLayout
       canDeletePhoto={false}
-      onCardPress={noop}
+      focusedPhotoId={focusedPhotoId}
+      onCardPress={onCardPress}
       onOpenDetail={noop}
       onToggleSelection={noop}
       onDeletePress={noop}
@@ -130,5 +140,32 @@ describe('CulledAlbumPhotoGrid similar shot counts', () => {
   it('passes no counts when the getter is absent', () => {
     const view = render(flat());
     expect(Object.values(countsByCard(view)).every(c => c === undefined)).toBe(true);
+  });
+});
+
+describe('CulledAlbumPhotoGrid focus in grouped rows', () => {
+  const sections: CulledAlbumGridSection[] = [
+    {
+      key: 'g1',
+      title: 'Group 1',
+      isGroup: true,
+      photoIds: ['a0', 'a1', 'a2', 'a3'],
+    },
+    {key: 'other', title: 'Other matching photos', photoIds: ['b0']},
+  ];
+
+  it('marks only the focused grouped card and hands every card onCardPress', () => {
+    const view = render(grid(sections, 'a1'));
+    const cards = view.renderer.root.findAll(
+      n => n.props.testID === 'card' && typeof n.type === 'string',
+    );
+    expect(cards.map(n => [n.props.children, !!n.props.isFocused])).toEqual([
+      ['a0', false],
+      ['a1', true],
+      ['a2', false],
+      ['a3', false],
+      ['b0', false],
+    ]);
+    expect(cards.every(n => n.props.onCardPress === onCardPress)).toBe(true);
   });
 });
