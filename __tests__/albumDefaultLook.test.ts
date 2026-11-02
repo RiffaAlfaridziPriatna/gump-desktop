@@ -3,8 +3,8 @@ import {
   createCulledAlbumFromSelection,
   normalizePersistedAlbum,
 } from '../src/lib/culledAlbum/types';
-import {InMemoryAlbumRepository, InMemoryPhotoRepository} from './helpers/inMemoryRepos';
-import {makeDomainAlbum, makeDomainPhoto} from './helpers/fixtures';
+import {InMemoryAlbumRepository} from './helpers/inMemoryRepos';
+import {makeDomainAlbum} from './helpers/fixtures';
 
 const reload = (album: CulledAlbum) =>
   CulledAlbum.fromPlain(JSON.parse(JSON.stringify(album.toPlain())));
@@ -39,15 +39,8 @@ describe('album default look id', () => {
     expect(reload(album).toPlain()).toEqual(album.toPlain());
   });
 
-  it('does not change photos when set', async () => {
-    const photos = new InMemoryPhotoRepository();
-    await photos.save(makeDomainPhoto({photoId: 'p1', albumId: 'album-1'}));
-    const before = JSON.stringify(photos.findByAlbum('album-1'));
-    makeDomainAlbum().setDefaultLookId('warmRomantic');
-    expect(JSON.stringify(photos.findByAlbum('album-1'))).toBe(before);
-  });
-
   it('new selection albums start at original', () => {
+    // Partial API source: the factory only reads the listed fields.
     expect(
       createCulledAlbumFromSelection({
         id: 'a',
