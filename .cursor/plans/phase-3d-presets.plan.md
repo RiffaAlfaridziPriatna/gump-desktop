@@ -20,13 +20,13 @@ todos:
     status: completed
   - id: s6d
     content: New photos from Add Photos get the album default look
-    status: pending
+    status: completed
   - id: s6e
     content: Background apply album look action (all photos or new only)
-    status: pending
+    status: completed
   - id: s6g
     content: Look status line on the star filter row
-    status: pending
+    status: completed
   - id: s6i
     content: Wire Edit Photos and Change to picker, scope popup and apply action
     status: pending
@@ -77,6 +77,7 @@ Branch: base from `feat/phase-3` (contains 3a and 3b).
 - Analytics `apply_look_started/completed/failed` send `lookId`, `scope`, `photoCount` (photos actually changed; 0 for new only). `lookIntensity` is dropped.
 - Domain move: only `LOOK_IDS`, `LookId`, `isLookId`. `hasAppliedLook`, `LookDefinition`, catalog and bake stay in `src/lib/look`.
 - Decorations: reuse the SVGs in `src/assets/images/upload/`.
+- Cancelled apply (s6e): photos already changed by a cancelled "All album photos" apply stay changed (no rollback); the album default is the last call's. A failure after the first chunk rejects with a partial change; the caller reports it. The album persists once per apply (`persistAlbum` has no debounce; it only defers during navigation).
 
 ## Coordination with phase 3c
 
