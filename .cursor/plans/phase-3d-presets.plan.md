@@ -14,10 +14,10 @@ todos:
     status: completed
   - id: s6c
     content: Album defaultLookId in model, entity, persistence and store setter
-    status: pending
+    status: completed
   - id: s6h
     content: Edit Photos look picker redesign per Figma
-    status: pending
+    status: completed
   - id: s6d
     content: New photos from Add Photos get the album default look
     status: pending
