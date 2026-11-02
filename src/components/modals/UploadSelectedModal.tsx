@@ -1,14 +1,17 @@
-import {formatPhotoCount} from '@application/plan/formatPlanNumbers';
-import {Modal, ProgressBar, TouchableOpacity} from '@components/ui';
+import {Modal, ProgressBar} from '@components/ui';
+import {useCloudStoragePreflight} from '@hooks/useCloudStoragePreflight';
 import {
   bytesToGigabytes,
   formatStorageSizeGb,
 } from '@lib/culledAlbum/format';
+import {openUpgradePlan} from '@lib/plan/billingLinks';
+import {reportError} from '@lib/observability/reportError';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
-import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
+import {UploadCloudStorageView} from './UploadCloudStorageView';
+import {UploadCompleteView} from './UploadCompleteView';
 import CircleBlue from '../../assets/images/upload/blue_circle.svg';
 import HalfCircle from '../../assets/images/upload/half_circle.svg';
 import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
@@ -26,7 +29,6 @@ type UploadSelectedModalProps = {
   totalUploadBytes?: number;
   uploadProgress?: number;
   isApplyingLook?: boolean;
-  exportQualityLabel: string;
   onClose: () => void;
   onUploadNow: () => Promise<void>;
   onOpenAlbum: () => void;
@@ -49,62 +51,6 @@ function ModalDecor() {
         height={36}
       />
     </>
-  );
-}
-
-function ConfirmPhase({
-  photoCount,
-  uploadSizeGb,
-  exportQualityLabel,
-  starting,
-  onUploadNow,
-}: {
-  photoCount: number;
-  uploadSizeGb: number;
-  exportQualityLabel: string;
-  starting: boolean;
-  onUploadNow: () => void;
-}) {
-  return (
-    <View style={styles.container}>
-      <View style={styles.titleBlock}>
-        <Text style={styles.title}>Upload Selected ({photoCount})</Text>
-        <Text style={styles.subtitle}>
-          These photos will be uploaded to your Gump cloud storage
-        </Text>
-      </View>
-
-      <View style={styles.body}>
-        <View style={styles.breakdown}>
-          <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownLabel}>Upload size</Text>
-            <Text style={styles.breakdownValue}>
-              {formatStorageSizeGb(uploadSizeGb)}
-            </Text>
-          </View>
-        </View>
-
-        <Text style={styles.exportHint}>
-          Exports as{' '}
-          <Text style={styles.exportHintEmphasis}>{exportQualityLabel}</Text>
-        </Text>
-      </View>
-
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={[
-            styles.primaryButton,
-            (starting || photoCount === 0) && styles.primaryButtonDisabled,
-          ]}
-          onPress={onUploadNow}
-          disabled={starting || photoCount === 0}
-          activeOpacity={0.8}>
-          <Text style={styles.primaryButtonText}>
-            {starting ? 'Starting...' : 'Upload Now'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
   );
 }
 
@@ -157,44 +103,14 @@ function UploadingPhase({
   );
 }
 
-function CompletePhase({
-  photoCount,
-  onOpenAlbum,
-}: {
-  photoCount: number;
-  onOpenAlbum: () => void;
-}) {
-  return (
-    <View style={styles.container}>
-      <View style={styles.completeHeader}>
-        <IconCheckCircle width={48} height={48} color={colors.iconGreen} />
-        <View style={styles.titleBlock}>
-          <Text style={styles.title}>Upload Complete</Text>
-          <Text style={styles.subtitle}>
-            {formatPhotoCount(photoCount)} photo
-            {photoCount === 1 ? '' : 's'} uploaded
-          </Text>
-        </View>
-      </View>
-
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={onOpenAlbum}
-        activeOpacity={0.8}>
-        <Text style={styles.primaryButtonText}>Open Album</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function modalHeightForPhase(phase: UploadSelectedPhase): number {
+function modalHeightForPhase(
+  phase: UploadSelectedPhase,
+  isExceeded: boolean,
+): number {
   if (phase === 'uploading') {
     return 360;
   }
-  if (phase === 'complete') {
-    return 400;
-  }
-  return 440;
+  return phase === 'confirm' && isExceeded ? 495 : 456;
 }
 
 export function UploadSelectedModal({
@@ -206,12 +122,23 @@ export function UploadSelectedModal({
   totalUploadBytes = 0,
   uploadProgress = 0,
   isApplyingLook = false,
-  exportQualityLabel,
   onClose,
   onUploadNow,
   onOpenAlbum,
 }: UploadSelectedModalProps) {
   const [starting, setStarting] = useState(false);
+  const {preflight, retry} = useCloudStoragePreflight(
+    visible && phase !== 'uploading',
+    phase === 'complete' ? 0 : uploadSizeGb * 1024 ** 3,
+  );
+
+  async function handleViewCloudPlans() {
+    try {
+      await openUpgradePlan();
+    } catch (error) {
+      reportError(error, {source: 'upload_modal', operation: 'openUpgradePlan'});
+    }
+  }
 
   async function handleUploadNow() {
     if (starting) {
@@ -232,16 +159,19 @@ export function UploadSelectedModal({
       visible={visible}
       onClose={onClose}
       width={740}
-      height={modalHeightForPhase(phase)}
+      height={modalHeightForPhase(phase, preflight.status === 'exceeded')}
       contentStyle={styles.modalContent}>
       <ModalDecor />
       {phase === 'confirm' && (
-        <ConfirmPhase
+        <UploadCloudStorageView
+          preflight={preflight}
           photoCount={photoCount}
-          uploadSizeGb={uploadSizeGb}
-          exportQualityLabel={exportQualityLabel}
           starting={starting}
           onUploadNow={handleUploadNow}
+          onRetry={retry}
+          onCancel={onClose}
+          onViewCloudPlans={handleViewCloudPlans}
+          onChooseFewer={onClose}
         />
       )}
       {phase === 'uploading' && (
@@ -254,7 +184,11 @@ export function UploadSelectedModal({
         />
       )}
       {phase === 'complete' && (
-        <CompletePhase photoCount={photoCount} onOpenAlbum={onOpenAlbum} />
+        <UploadCompleteView
+          photoCount={photoCount}
+          preflight={preflight}
+          onBackToAlbum={onOpenAlbum}
+        />
       )}
     </Modal>
   );
@@ -265,12 +199,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 48,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  container: {
-    width: 480,
-    maxWidth: '100%',
-    gap: 24,
-    alignItems: 'center',
   },
   uploadingContainer: {
     width: 480,
@@ -296,65 +224,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
   },
-  body: {
-    width: '100%',
-    gap: 16,
-  },
-  breakdown: {
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    borderRadius: 8,
-    padding: 24,
-    gap: 12,
-  },
-  breakdownRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  breakdownLabel: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textMuted,
-  },
-  breakdownValue: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textDark,
-    fontWeight: 600,
-  },
-  exportHint: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textMuted,
-    textAlign: 'center',
-  },
-  exportHintEmphasis: {
-    ...sansBoldStyle,
-    color: colors.textDark,
-  },
-  actions: {
-    width: '100%',
-    gap: 12,
-    alignItems: 'center',
-  },
-  primaryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 9999,
-    paddingHorizontal: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 48,
-    width: '100%',
-  },
-  primaryButtonDisabled: {
-    opacity: 0.6,
-  },
-  primaryButtonText: {
-    ...sansBoldStyle,
-    fontSize: 16,
-    color: colors.white,
-  },
   uploadProgressBlock: {
     width: '100%',
     gap: 12,
@@ -371,10 +240,6 @@ const styles = StyleSheet.create({
   uploadProgressMetaValue: {
     ...sansBoldStyle,
     color: colors.textDark,
-  },
-  completeHeader: {
-    alignItems: 'center',
-    gap: 16,
   },
   halfCircleDecor: {
     position: 'absolute',

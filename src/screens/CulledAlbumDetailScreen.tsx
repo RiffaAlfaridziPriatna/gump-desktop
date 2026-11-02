@@ -16,7 +16,6 @@ import {
   type UploadSelectedPhase,
 } from '@components/modals/UploadSelectedModal';
 import {
-  exportQualityLabel,
   estimateUploadSizeGb,
 } from '@application/plan/uploadStorageEstimate';
 import type {LookId} from '@lib/look/types';
@@ -331,8 +330,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     () => estimateUploadSizeGb(pendingUploadPhotos),
     [pendingUploadPhotos],
   );
-  // Plan gating is disabled for now — always present original-quality upload label.
-  const exportLabel = exportQualityLabel('original');
 
   const isApplyingLook = lookBake.status === 'baking';
   const byteProgress = useMemo(
@@ -693,7 +690,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           totalUploadBytes={totalUploadBytes}
           uploadProgress={uploadProgressValue}
           isApplyingLook={isApplyingLook}
-          exportQualityLabel={exportLabel}
           onClose={handleCloseUploadModal}
           onUploadNow={handleStartUpload}
           onOpenAlbum={handleOpenAlbum}
