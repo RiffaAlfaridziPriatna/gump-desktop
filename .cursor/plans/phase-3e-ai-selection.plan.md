@@ -11,7 +11,7 @@ todos:
     status: completed
   - id: s7c
     content: useAiSelectionFlow hook (draft level, status, retry)
-    status: pending
+    status: completed
   - id: s7d
     content: AI Selection sidebar section UI
     status: pending
