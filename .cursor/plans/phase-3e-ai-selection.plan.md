@@ -60,7 +60,7 @@ Sidebar "AI Selection" block, 246 wide, sits between Photo Filters and AI Catego
 ## Decisions (user, 2026-11-04)
 
 - Ranking is by star rating (`starRating`, 1 to 5): Fewer = 5 stars; Balanced = 5 and 4; More = 5, 4 and 3. Default level is Balanced. Photos with no rating (not analyzed, failed, 0) are never recommended. Duplicate groups, time spread and face flags are not inputs.
-- Existing albums (already analyzed) are left as they are and read as Balanced; their picks are already 5 and 4 stars. `aiSelectionLevel` is written to an album only when the user applies a level; an album without the field reads Balanced (inferred, confirm: the user's wording was that state is saved for new albums).
+- Superseded 2026-11-08 (Gate R High fix, `716ef32`): the album level (default Balanced) is applied after every analysis. Analysis writes use the level, and `completeAnalysis` applies it to the whole album once. So an existing album that runs analysis again moves from the 5-star set to Balanced, `aiSelectionLevel` is persisted on every album that completes analysis, and new albums start with 5 and 4 stars in AI Recommended (overlapping Needs Review). Accepted by the user. Before that, existing albums were to be left as they were and the level written only on Update.
 - The rule runs in JS, not in C++ (the user first chose C++, then moved it to JS once the rule was a star threshold on data JS already holds). No native or bridge change in this phase.
 - Consequence of the rule: Fewer reproduces today's AI Recommended; at the default Balanced, AI Recommended also includes today's Needs Review photos; More adds 3-star photos, which have a closed-eyes or blurred face (their `closedEyes` or `blurred` flags are true).
 
