@@ -35,6 +35,7 @@ import {useCulledAlbumDetailData} from '@hooks/useCulledAlbumDetailData';
 import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
 import {useAlbumLookFlow} from '@hooks/useAlbumLookFlow';
 import {useAiSelectionFlow} from '@hooks/useAiSelectionFlow';
+import {AiSelectionToast} from '@components/culling/AiSelectionToast';
 import {DEFAULT_AI_SELECTION_LEVEL} from '@domain/valueObjects/AiSelection';
 import {useGridFocus} from '@hooks/useGridFocus';
 import {useStableGridPhotos} from '@hooks/useStableGridPhotos';
@@ -661,6 +662,22 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
         <UploadToast mode="analyze" albumId={albumId} />
       <UploadToast mode="upload" albumId={albumId} />
+        {aiSelectionFlow.status === 'updated' &&
+        aiSelectionFlow.recommendedCount !== null &&
+        aiSelectionFlow.lastAppliedLevel !== null ? (
+          <AiSelectionToast
+            variant="updated"
+            level={aiSelectionFlow.lastAppliedLevel}
+            count={aiSelectionFlow.recommendedCount}
+            onDismiss={aiSelectionFlow.dismiss}
+          />
+        ) : null}
+        {aiSelectionFlow.status === 'failed' ? (
+          <AiSelectionToast
+            variant="failed"
+            onDismiss={aiSelectionFlow.dismiss}
+          />
+        ) : null}
           </>
         )}
         </View>

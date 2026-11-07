@@ -18,7 +18,7 @@ import {
 import IconLoader from '../../assets/images/lucide_loader_circle.svg';
 import IconSparkles from '../../assets/images/lucide_sparkles.svg';
 
-const LEVEL_LABELS: Record<AiSelectionLevel, string> = {
+export const LEVEL_LABELS: Record<AiSelectionLevel, string> = {
   fewer: 'Fewer',
   balanced: 'Balanced',
   more: 'More',
