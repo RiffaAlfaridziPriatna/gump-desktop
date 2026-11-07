@@ -14,7 +14,7 @@ todos:
     status: completed
   - id: s7d
     content: AI Selection sidebar section UI
-    status: pending
+    status: completed
   - id: s7e
     content: Updated and Update failed toasts, wired on the screen
     status: pending
