@@ -11,6 +11,7 @@ import {
   getPhotoById,
   setAlbumAiSelectionLevel,
 } from '@lib/culledAlbum/store';
+import { reportError } from '@lib/observability/reportError';
 
 const CHUNK_SIZE = 50;
 const latestApply = new Map<string, symbol>();
@@ -22,10 +23,11 @@ const latestApply = new Map<string, symbol>();
  * is invalid. A newer call for the same album stops this one at its next
  * chunk; photos already changed stay changed (no rollback), the cancelled run
  * does not save the level and returns its partial count. A failure rejects
- * and leaves the level unchanged, but photos already changed stay changed, so
- * the caller must catch it. `updateChunk` must not persist. `syncStats` and
- * `persist` run once when the run ends with changes and no level save
- * (failure or cancel); on success the level setter persists the album once,
+ * and leaves the level unchanged (the setter restores it when its save
+ * fails), but photos already changed stay changed, so the caller must catch
+ * it. A cleanup failure never replaces the original error; it is reported. `updateChunk` must not persist. `syncStats` and
+ * `persist` run once when the run ends with changes before the level save
+ * was attempted (failure or cancel); on success the level setter persists the album once,
  * stats included. Returns the number of photos with `aiSelected` true.
  */
 export async function applyAiSelectionLevel(
@@ -48,7 +50,8 @@ export async function applyAiSelectionLevel(
   const countRecommended = () =>
     photoIds.filter(id => getPhotoById(albumId, id)?.aiSelected).length;
   let dirty = false;
-  let levelSaved = false;
+  let levelSaveAttempted = false;
+  let failure: { error: unknown } | null = null;
   try {
     for (let i = 0; i < photoIds.length; i += CHUNK_SIZE) {
       if (latestApply.get(albumId) !== token) {
@@ -73,16 +76,27 @@ export async function applyAiSelectionLevel(
     if (dirty) {
       syncStats();
     }
+    levelSaveAttempted = true;
     await setAlbumAiSelectionLevel(albumId, level);
-    levelSaved = true;
     return countRecommended();
+  } catch (error) {
+    failure = { error };
+    throw error;
   } finally {
     if (latestApply.get(albumId) === token) {
       latestApply.delete(albumId);
     }
-    if (dirty && !levelSaved) {
-      syncStats();
-      await persist();
+    if (dirty && !levelSaveAttempted) {
+      try {
+        syncStats();
+        await persist();
+      } catch (secondary) {
+        // The original failure wins; a cleanup failure is only reported.
+        if (!failure) {
+          throw secondary;
+        }
+        reportError(secondary, { step: 'applyAiSelectionLevel' });
+      }
     }
   }
 }

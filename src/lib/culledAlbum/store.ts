@@ -622,13 +622,26 @@ export async function setAlbumAiSelectionLevel(
   level: AiSelectionLevel,
 ): Promise<void> {
   const next = isAiSelectionLevel(level) ? level : DEFAULT_AI_SELECTION_LEVEL;
+  const previous = getAlbumFromState(albumId)?.aiSelectionLevel;
   culledAlbumStore.setState(state => {
     const entry = state.albums[albumId];
     if (entry) {
       entry.aiSelectionLevel = next;
     }
   });
-  await persistAlbum(albumId);
+  try {
+    await persistAlbum(albumId);
+  } catch (error) {
+    if (previous) {
+      culledAlbumStore.setState(state => {
+        const entry = state.albums[albumId];
+        if (entry) {
+          entry.aiSelectionLevel = previous;
+        }
+      });
+    }
+    throw error;
+  }
 }
 
 export async function markCullingHasUploads(albumId: string): Promise<void> {

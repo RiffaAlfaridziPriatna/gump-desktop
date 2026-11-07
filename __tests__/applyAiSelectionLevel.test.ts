@@ -21,6 +21,11 @@ jest.mock('@lib/culledAlbum/store', () => ({
   setAlbumAiSelectionLevel: (...args: unknown[]) => mockSetLevel(...args),
 }));
 
+const mockReport = jest.fn();
+jest.mock('@lib/observability/reportError', () => ({
+  reportError: (...args: unknown[]) => mockReport(...args),
+}));
+
 import { isRecommendedAtLevel } from '@domain/valueObjects/AiSelection';
 import type { AiSelectionLevel } from '@domain/valueObjects/AiSelection';
 import { applyAiSelectionLevel } from '../src/lib/culling/applyAiSelectionLevel';
@@ -57,6 +62,7 @@ describe('applyAiSelectionLevel', () => {
     mockAlbumExists = true;
     mockSetLevel.mockReset().mockResolvedValue(undefined);
     syncStats.mockReset();
+    mockReport.mockReset();
     persist.mockReset().mockResolvedValue(undefined);
   });
 
@@ -146,11 +152,51 @@ describe('applyAiSelectionLevel', () => {
     expect(persist).toHaveBeenCalledTimes(1);
   });
 
-  it('level setter failure rejects after photos changed', async () => {
+  it('level setter failure rejects with original error and does not persist again', async () => {
     seedRatings([5]);
     mockSetLevel.mockRejectedValue(new Error('save'));
     await expect(run('fewer')).rejects.toThrow('save');
-    expect(persist).toHaveBeenCalledTimes(1);
+    expect(persist).not.toHaveBeenCalled();
+    expect(mockReport).not.toHaveBeenCalled();
+  });
+
+  it('chunk failure then persist failure keeps original error and reports the second', async () => {
+    persist.mockRejectedValue(new Error('persist'));
+    seedRatings(Array.from({ length: 60 }, () => 5));
+    let n = 0;
+    const lateFail = async (ids: string[], l: AiSelectionLevel) => {
+      await update(ids, l);
+      if (n++ === 0) {
+        throw new Error('boom2');
+      }
+    };
+    await expect(run('fewer', lateFail)).rejects.toThrow('boom2');
+    expect(mockReport).toHaveBeenCalledTimes(1);
+    expect(mockReport.mock.calls[0][0]).toEqual(new Error('persist'));
+  });
+
+  it('cancel with persist failure rejects with the persist error', async () => {
+    seedRatings(Array.from({ length: 120 }, () => 5));
+    persist.mockRejectedValue(new Error('persist'));
+    let release!: () => void;
+    const gate = new Promise<void>(r => {
+      release = r;
+    });
+    let first = true;
+    const slow = async (ids: string[], l: AiSelectionLevel) => {
+      await update(ids, l);
+      if (first) {
+        first = false;
+        await gate;
+      }
+    };
+    const a = run('fewer', slow);
+    await Promise.resolve();
+    await Promise.resolve();
+    const b = run('more');
+    release();
+    await b;
+    await expect(a).rejects.toThrow('persist');
   });
 
   it('throws before any change for missing album or invalid level', async () => {

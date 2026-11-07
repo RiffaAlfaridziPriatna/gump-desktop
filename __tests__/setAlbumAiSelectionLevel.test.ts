@@ -95,6 +95,15 @@ describe('setAlbumAiSelectionLevel', () => {
     expect(aiLevel()).toBe('balanced');
   });
 
+  it('restores the previous level and rethrows when the save fails', async () => {
+    await setAlbumAiSelectionLevel(ALBUM, 'more');
+    (saveAlbum as jest.Mock).mockRejectedValueOnce(new Error('disk'));
+    await expect(setAlbumAiSelectionLevel(ALBUM, 'fewer')).rejects.toThrow(
+      'disk',
+    );
+    expect(aiLevel()).toBe('more');
+  });
+
   it('ignores an unknown album without saving', async () => {
     await expect(
       setAlbumAiSelectionLevel('missing', 'more'),
