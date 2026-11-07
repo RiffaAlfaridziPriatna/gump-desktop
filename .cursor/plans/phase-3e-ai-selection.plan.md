@@ -17,7 +17,7 @@ todos:
     status: completed
   - id: s7e
     content: Updated and Update failed toasts, wired on the screen
-    status: pending
+    status: completed
 isProject: false
 ---
 
