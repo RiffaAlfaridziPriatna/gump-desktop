@@ -36,10 +36,12 @@ import {
   detectFacesForCulling,
   hasNativeDetectFacesForCulling,
 } from '@lib/storage/localStorage';
+import {isRecommendedAtLevel, type AiSelectionLevel} from '@domain/valueObjects/AiSelection';
 import { APIResponse } from '@services/api';
 import { FileAsset } from '@services/upload/types';
 import { Platform } from 'react-native';
 import { currentAnalysisEngineVersion } from './analysisEngine';
+import { applyAiSelectionLevel } from './applyAiSelectionLevel';
 import { applyAlbumLook, type ApplyAlbumLookScope } from './applyAlbumLook';
 import {
   backfillMissingAnalyzedPhotoAssets,
@@ -979,6 +981,54 @@ export const cullingEngine = {
       scope,
       photoIds =>
         cullingEngine.updateLook(albumId, photoIds, {lookId}, {persist: false}),
+      () => persistAlbum(albumId),
+    );
+  },
+
+  /**
+   * Re-flags AI Recommended from star rating at `level`; only `aiSelected`
+   * is written. Stored album stats are recomputed so filter counts match.
+   * Updates are coalesced like updateLook (one store flush, one UI bump).
+   */
+  applyAiSelectionLevel(
+    albumId: string,
+    level: AiSelectionLevel,
+  ): Promise<number> {
+    return applyAiSelectionLevel(
+      albumId,
+      level,
+      async (photoIds, chunkLevel) => {
+        const syncedPhotoIds: string[] = [];
+        for (const photoId of photoIds) {
+          const applied = updatePhoto(albumId, photoId, photo => {
+            photo.aiSelected = isRecommendedAtLevel(
+              photo.starRating,
+              chunkLevel,
+            );
+          });
+          if (applied) {
+            syncedPhotoIds.push(photoId);
+          }
+        }
+        flushAllPendingPhotoUpdates();
+        if (syncedPhotoIds.length > 0) {
+          syncPhotosFromStore(albumId, syncedPhotoIds);
+        }
+        flushRenderSync();
+      },
+      () => {
+        const aiSelected = computeStats(
+          getPhotosForAlbum(albumId)
+            .filter(photo => photo.analysisStatus === 'analyzed')
+            .map(toCullingPhoto),
+        ).aiSelected;
+        culledAlbumStore.setState(state => {
+          const entry = state.albums[albumId];
+          if (entry?.cullingStats) {
+            entry.cullingStats = {...entry.cullingStats, aiSelected};
+          }
+        });
+      },
       () => persistAlbum(albumId),
     );
   },
