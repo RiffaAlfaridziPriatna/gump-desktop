@@ -36,7 +36,11 @@ import {
   detectFacesForCulling,
   hasNativeDetectFacesForCulling,
 } from '@lib/storage/localStorage';
-import {isRecommendedAtLevel, type AiSelectionLevel} from '@domain/valueObjects/AiSelection';
+import {
+  DEFAULT_AI_SELECTION_LEVEL,
+  isRecommendedAtLevel,
+  type AiSelectionLevel,
+} from '@domain/valueObjects/AiSelection';
 import { APIResponse } from '@services/api';
 import { FileAsset } from '@services/upload/types';
 import { Platform } from 'react-native';
@@ -601,6 +605,10 @@ function applyNativeDuplicateGroups(
   }
 }
 
+function albumAiSelectionLevel(albumId: string): AiSelectionLevel {
+  return getAlbum(albumId)?.aiSelectionLevel ?? DEFAULT_AI_SELECTION_LEVEL;
+}
+
 function ingestNativeAnalyzedPhoto(
   albumId: string,
   photoId: string,
@@ -620,6 +628,7 @@ function ingestNativeAnalyzedPhoto(
   const flags = derivePhotoFlags(faces);
   const isFirstAnalysis = existing.faces.length === 0;
   const initialStarRating = existing.starRating ?? deriveStarRating(faces);
+  const aiLevel = albumAiSelectionLevel(albumId);
   const fromStatus =
     existing.analysisStatus === 'analyzing' ? 'analyzing' : 'pending';
 
@@ -633,7 +642,7 @@ function ingestNativeAnalyzedPhoto(
         photo.capturedAt = capturedAt;
       }
       photo.analysisEngineVersion = currentAnalysisEngineVersion();
-      photo.aiSelected = flags.aiSelected;
+      photo.aiSelected = isRecommendedAtLevel(initialStarRating, aiLevel);
       photo.maybe = flags.maybe;
       photo.blurred = flags.blurred;
       photo.closedEyes = flags.closedEyes;
@@ -809,6 +818,7 @@ export const cullingEngine = {
     const isFirstAnalysis = existing.faces.length === 0;
     const initialStarRating =
       existing.starRating ?? deriveStarRating(faces);
+    const aiLevel = albumAiSelectionLevel(albumId);
 
     updatePhoto(albumId, photoId, photo => {
       photo.faces = faces;
@@ -817,7 +827,7 @@ export const cullingEngine = {
         photo.capturedAt = capturedAt;
       }
       photo.analysisEngineVersion = currentAnalysisEngineVersion();
-      photo.aiSelected = flags.aiSelected;
+      photo.aiSelected = isRecommendedAtLevel(initialStarRating, aiLevel);
       photo.maybe = flags.maybe;
       photo.blurred = flags.blurred;
       photo.closedEyes = flags.closedEyes;
@@ -1146,6 +1156,11 @@ export const cullingEngine = {
       regenerateFaceCrops: false,
     });
     flushAllPendingPhotoUpdates();
+    // Old photos may still hold analysis-time flags; align the whole album once.
+    await cullingEngine.applyAiSelectionLevel(
+      albumId,
+      albumAiSelectionLevel(albumId),
+    );
     flushRenderSync();
     flushUpdateCullingSummary(albumId);
     await persistAlbum(albumId);
