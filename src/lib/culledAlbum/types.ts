@@ -4,6 +4,11 @@ import {
   normalizeCullFilters,
 } from '@lib/culling/cullingUtil';
 import {isLookId, type LookId} from '@lib/look/types';
+import {
+  DEFAULT_AI_SELECTION_LEVEL,
+  isAiSelectionLevel,
+  type AiSelectionLevel,
+} from '@domain/valueObjects/AiSelection';
 import {APIResponse} from '@services/api';
 import type {UploadFailureCause} from './uploadPreflight';
 import {FileAsset} from '@services/upload/types';
@@ -140,6 +145,8 @@ export type CulledAlbum = {
   nextPhotoBatchId: number;
   /** Look stamped on new photos; unknown or missing reads as original. */
   defaultLookId: LookId;
+  /** Applied AI selection level; unknown or missing reads as balanced. */
+  aiSelectionLevel: AiSelectionLevel;
   /**
    * When true, analysis starts automatically after the current local-import
    * batch finishes successfully (used by CulledAlbumDetail "Add Photos").
@@ -250,6 +257,7 @@ export function createCulledAlbumFromSelection(
     analysisBatchCounts: undefined,
     nextPhotoBatchId: 1,
     defaultLookId: 'original',
+    aiSelectionLevel: DEFAULT_AI_SELECTION_LEVEL,
     autoStartAnalysisAfterImport: false,
     stabilizeDetailUiDuringImport: false,
     filenameDuplicateNames: [],
@@ -513,6 +521,9 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.defaultLookId = isLookId(album.defaultLookId)
     ? album.defaultLookId
     : 'original';
+  album.aiSelectionLevel = isAiSelectionLevel(album.aiSelectionLevel)
+    ? album.aiSelectionLevel
+    : DEFAULT_AI_SELECTION_LEVEL;
   album.createdAt ??= new Date(0).toISOString();
   album.totalPhotos ??= album.photos.length;
   album.totalStorage ??= 0;

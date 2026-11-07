@@ -14,6 +14,11 @@ import {captureAppEvent} from '@lib/observability/posthogClient';
 import {reportError} from '@lib/observability/reportError';
 import {createStateStore} from '@lib/react/state';
 import {isLookId, type LookId} from '@lib/look/types';
+import {
+  DEFAULT_AI_SELECTION_LEVEL,
+  isAiSelectionLevel,
+  type AiSelectionLevel,
+} from '@domain/valueObjects/AiSelection';
 import {FileAsset} from '@services/upload/types';
 import {Platform} from 'react-native';
 import {mergeAlbumPhotos, mergeWithMemoryAlbum} from './merge';
@@ -607,6 +612,20 @@ export async function setAlbumDefaultLook(
     const entry = state.albums[albumId];
     if (entry) {
       entry.defaultLookId = next;
+    }
+  });
+  await persistAlbum(albumId);
+}
+
+export async function setAlbumAiSelectionLevel(
+  albumId: string,
+  level: AiSelectionLevel,
+): Promise<void> {
+  const next = isAiSelectionLevel(level) ? level : DEFAULT_AI_SELECTION_LEVEL;
+  culledAlbumStore.setState(state => {
+    const entry = state.albums[albumId];
+    if (entry) {
+      entry.aiSelectionLevel = next;
     }
   });
   await persistAlbum(albumId);

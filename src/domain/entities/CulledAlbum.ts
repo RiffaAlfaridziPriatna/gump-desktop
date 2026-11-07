@@ -1,4 +1,9 @@
 import {isLookId, type LookId} from '../valueObjects/Look';
+import {
+  DEFAULT_AI_SELECTION_LEVEL,
+  isAiSelectionLevel,
+  type AiSelectionLevel,
+} from '../valueObjects/AiSelection';
 export class AlbumCover {
   readonly thumbnail: string | null;
   readonly small: string | null;
@@ -48,6 +53,7 @@ export class CulledAlbum {
   private _nextFaceClusterId: number;
   private _nextPhotoBatchId: number;
   private _defaultLookId: LookId;
+  private _aiSelectionLevel: AiSelectionLevel;
   private _totalPhotos: number;
   private _totalStorage: number;
   private _syncedMediaCount: number | null;
@@ -70,6 +76,7 @@ export class CulledAlbum {
     nextFaceClusterId?: number;
     nextPhotoBatchId?: number;
     defaultLookId?: unknown;
+    aiSelectionLevel?: unknown;
     totalPhotos?: number;
     totalStorage?: number;
     syncedMediaCount?: number | null;
@@ -99,6 +106,9 @@ export class CulledAlbum {
     this._defaultLookId = isLookId(data.defaultLookId)
       ? data.defaultLookId
       : 'original';
+    this._aiSelectionLevel = isAiSelectionLevel(data.aiSelectionLevel)
+      ? data.aiSelectionLevel
+      : DEFAULT_AI_SELECTION_LEVEL;
     this._totalPhotos = data.totalPhotos ?? 0;
     this._totalStorage = data.totalStorage ?? 0;
     this._syncedMediaCount = data.syncedMediaCount ?? null;
@@ -127,6 +137,10 @@ export class CulledAlbum {
 
   get defaultLookId(): LookId {
     return this._defaultLookId;
+  }
+
+  get aiSelectionLevel(): AiSelectionLevel {
+    return this._aiSelectionLevel;
   }
 
   get totalPhotos(): number {
@@ -205,6 +219,12 @@ export class CulledAlbum {
     this._defaultLookId = isLookId(lookId) ? lookId : 'original';
   }
 
+  setAiSelectionLevel(level: unknown): void {
+    this._aiSelectionLevel = isAiSelectionLevel(level)
+      ? level
+      : DEFAULT_AI_SELECTION_LEVEL;
+  }
+
   updateTotals(photoCount: number, storageBytes: number): void {
     this._totalPhotos = photoCount;
     this._totalStorage = storageBytes;
@@ -229,6 +249,7 @@ export class CulledAlbum {
       nextFaceClusterId: this._nextFaceClusterId,
       nextPhotoBatchId: this._nextPhotoBatchId,
       defaultLookId: this._defaultLookId,
+      aiSelectionLevel: this._aiSelectionLevel,
       totalPhotos: this._totalPhotos,
       totalStorage: this._totalStorage,
       syncedMediaCount: this._syncedMediaCount,
@@ -254,6 +275,7 @@ export class CulledAlbum {
       nextFaceClusterId: data.nextFaceClusterId,
       nextPhotoBatchId: data.nextPhotoBatchId,
       defaultLookId: data.defaultLookId,
+      aiSelectionLevel: data.aiSelectionLevel,
       totalPhotos: data.totalPhotos,
       totalStorage: data.totalStorage,
       syncedMediaCount: data.syncedMediaCount,
