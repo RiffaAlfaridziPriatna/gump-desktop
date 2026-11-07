@@ -34,6 +34,8 @@ import {useCulledAlbumPhotos} from '@hooks/useCulledAlbumPhotos';
 import {useCulledAlbumDetailData} from '@hooks/useCulledAlbumDetailData';
 import {useCulledAlbumFilters} from '@hooks/useCulledAlbumFilters';
 import {useAlbumLookFlow} from '@hooks/useAlbumLookFlow';
+import {useAiSelectionFlow} from '@hooks/useAiSelectionFlow';
+import {DEFAULT_AI_SELECTION_LEVEL} from '@domain/valueObjects/AiSelection';
 import {useGridFocus} from '@hooks/useGridFocus';
 import {useStableGridPhotos} from '@hooks/useStableGridPhotos';
 import {hasPickedOutsideView, usePickedPhotos} from '@hooks/usePickedPhotos';
@@ -156,6 +158,20 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const [mainContentWidth, setMainContentWidth] = useState(0);
   const lookFlow = useAlbumLookFlow(albumId, albumPhotos.length > 0);
   const defaultLookId = albumRecord?.defaultLookId ?? 'original';
+  const aiSelectionFlow = useAiSelectionFlow(
+    albumId,
+    albumRecord?.aiSelectionLevel ?? DEFAULT_AI_SELECTION_LEVEL,
+  );
+  const {draftLevel, status, setDraftLevel, update} = aiSelectionFlow;
+  const aiSelectionProps = useMemo(
+    () => ({
+      draftLevel,
+      status,
+      onLevelChange: setDraftLevel,
+      onUpdate: update,
+    }),
+    [draftLevel, status, setDraftLevel, update],
+  );
   const statusLookLabel =
     defaultLookId !== 'original' ? getLookLabel(defaultLookId) : undefined;
   const isBlockingModalOpen =
@@ -573,6 +589,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               cullFiltersExpanded={cullFiltersExpanded}
               onCullFiltersToggle={handleCullFiltersToggle}
               focusedPhoto={focusedPanelPhoto}
+              aiSelection={aiSelectionProps}
               {...sidebarActionProps}
             />
           )}
@@ -636,6 +653,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               cullFiltersExpanded={cullFiltersExpanded}
               onCullFiltersToggle={handleCullFiltersToggle}
               focusedPhoto={focusedPanelPhoto}
+              aiSelection={aiSelectionProps}
               {...sidebarActionProps}
             />
           )}

@@ -33,6 +33,12 @@ function setup(overrides: Partial<Props> = {}) {
     cullFiltersExpanded: true,
     onCullFiltersToggle: jest.fn(),
     focusedPhoto: null,
+    aiSelection: {
+      draftLevel: 'balanced',
+      status: 'idle',
+      onLevelChange: jest.fn(),
+      onUpdate: jest.fn(),
+    },
     onUploadSelected: jest.fn(),
     onExport: jest.fn(),
     onEditPhotos: jest.fn(),

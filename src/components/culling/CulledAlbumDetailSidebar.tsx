@@ -1,5 +1,9 @@
 import { AiCategoriesSection } from '@components/culling/AiCategoriesSection';
 import {
+  AiSelectionSection,
+  type AiSelectionSectionProps,
+} from '@components/culling/AiSelectionSection';
+import {
   FacesInPhotoPanel,
   type FacesInPhotoPanelPhoto,
 } from '@components/culling/FacesInPhotoPanel';
@@ -25,6 +29,7 @@ export type CulledAlbumDetailSidebarProps = {
   cullFiltersExpanded: boolean;
   onCullFiltersToggle: () => void;
   focusedPhoto: FacesInPhotoPanelPhoto | null;
+  aiSelection: AiSelectionSectionProps;
   onUploadSelected: () => void;
   onAddPhotos?: () => void;
   onExport: () => void;
@@ -52,6 +57,7 @@ function CulledAlbumDetailSidebarComponent({
   cullFiltersExpanded,
   onCullFiltersToggle,
   focusedPhoto,
+  aiSelection,
   ...actionProps
 }: CulledAlbumDetailSidebarProps) {
   const handleTogglePicked = useCallback(
@@ -77,6 +83,8 @@ function CulledAlbumDetailSidebarComponent({
           onShowAll={onClearFilters}
           onTogglePicked={handleTogglePicked}
         />
+        <View style={styles.divider} />
+        <AiSelectionSection {...aiSelection} />
         <View style={styles.divider} />
         <AiCategoriesSection
           activeFilters={activeFilters}
