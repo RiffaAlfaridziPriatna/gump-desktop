@@ -5,7 +5,7 @@ approved: true
 todos:
   - id: s7a
     content: AiSelectionLevel value object with star rule, album field, persistence and store setter
-    status: pending
+    status: completed
   - id: s7b
     content: Apply recommendations action (chunked, aiSelected only)
     status: pending
