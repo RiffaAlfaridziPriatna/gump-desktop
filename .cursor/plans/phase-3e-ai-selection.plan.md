@@ -8,7 +8,7 @@ todos:
     status: completed
   - id: s7b
     content: Apply recommendations action (chunked, aiSelected only)
-    status: pending
+    status: completed
   - id: s7c
     content: useAiSelectionFlow hook (draft level, status, retry)
     status: pending
