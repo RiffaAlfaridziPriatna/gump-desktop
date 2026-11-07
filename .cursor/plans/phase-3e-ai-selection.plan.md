@@ -48,13 +48,13 @@ Branch: base from `feat/phase-3` (contains 3a to 3d).
 
 Sidebar "AI Selection" block, 246 wide, sits between Photo Filters and AI Categories (frame `12975:48521`, 180 high):
 - Caption: sparkles icon 16 + "AI Selection".
-- Segmented control, 222 wide: "Fewer" (62), "Balanced" (82), "More" (57). Selected segment is 30 high, others 28.
-- Helper line under it: Balanced = "Balance quality, variety and coverage."; More = "A broader selection". Fewer copy is not in the file.
+- Segmented control (read with `get_design_context`, 2026-11-08): three pills in a row, gap 6, radius 24, Red Hat Display Regular 14 white. Unselected: 1px white border, padding X12 Y3, no fill. Selected: orange fill `#ff9632` (`theme/themeorange`), no border, padding X12 Y5.
+- Helper line under it (Red Hat Display Regular 13 white): Balanced = "Balance quality, variety and coverage."; More = "A broader selection". Fewer copy is not in the file.
 - Button "Update recommendations" (222 x 40).
-- Footnote: "Changes AI recommendations only. Your picked photos stay unchanged."
-- Updating (frame `12975:51577`): button becomes "Updating…" with a loader-circle icon; an indicator line "Indicator · Updating recommendations" appears under the button (layer name; the rendered copy is not confirmed); the footnote moves down.
-- Updated (frame `12975:52002`): toast "Recommendations updated · More" with second line "94 recommended photos. Your picked photos are unchanged." and a close button.
-- Update failed (frame `12975:52436`): toast with an error icon and "Couldn't update recommendations". Rest of the copy and any action are not confirmed.
+- Footnote (Red Hat Display Regular 12, `#737373`): "Changes AI recommendations only. Your picked photos stay unchanged."
+- Updating (frame `12975:51577`, block `12975:51909`): button is outlined orange (1px `#ff9632`, radius 24, h 40, opacity 60) with a 16 loader-circle icon and "Updating…" in Inter Semi Bold 14 orange; under it the indicator "Updating recommendations…" (Red Hat Display Regular 12, `#737373`); then the footnote.
+- Updated (frame `12975:52002`, toast `12975:52424`): white toast, text `#131415` 16: bold "Recommendations updated · More" and regular "94 recommended photos. Your picked photos are unchanged.", and a 20 close icon on the right. No action button.
+- Update failed (frame `12975:52436`, toast `12975:52858`): white toast, one row: 16 error icon, bold "Couldn't update recommendations", regular "Previous results kept", close icon on the right. No retry button.
 - Sample counts in the file (AI Recommended 61 at Balanced, 94 at More, Needs Review 92, 635 photos) are mock numbers and do not match the star rule below.
 
 ## Decisions (user, 2026-11-04)
@@ -149,7 +149,7 @@ Sidebar "AI Selection" block, 246 wide, sits between Photo Filters and AI Catego
 - **Scope:** new `AiSelectionSection` component per the Figma facts above: caption, segmented control, helper line, "Update recommendations" button, footnote, and the Updating button and indicator. Placed between Photo Filters and AI Categories (replaces the 3b gap). Uses `useAiSelectionFlow`.
 - **Rules:** follow Figma 100%. The segmented control is one keyboard stop group with arrow keys; segments use the ui `Pressable` (macOS Space/Enter). While updating the control and button are disabled and the button reads "Updating…".
 - **Mirror:** `src/components/culling/AiCategoriesSection.tsx` (sidebar section) and the ui `Pressable`.
-- **Open:** Fewer helper copy and the rendered Updating indicator text are not in the Figma metadata (layer names only). Ask the designer; do not invent.
+- **Copy:** Fewer helper line is "Only the best shots" (user decision, 2026-11-08; no Figma frame shows Fewer selected).
 - **Acceptance:**
   - [ ] Section matches Figma sizes and states (Balanced, More, Updating)
   - [ ] Segments are reachable by keyboard and announce selected state
@@ -166,9 +166,9 @@ Sidebar "AI Selection" block, 246 wide, sits between Photo Filters and AI Catego
 - **Parallel:** no, shares the screen with s7d
 - **Shared-touch:** `src/screens/CulledAlbumDetailScreen.tsx`
 - **Scope:** toast "Recommendations updated · <Level>" with "<N> recommended photos. Your picked photos are unchanged." and a close button; failure toast "Couldn't update recommendations" with an error icon. Triggered by the hook status. Announced to screen readers.
-- **Rules:** follow Figma 100%. Auto-dismiss time, the failure second line and any retry action are not in Figma (see Open).
+- **Rules:** follow Figma 100%. No retry action on the failure toast (Figma has none); only the close icon. The failure line "Previous results kept" is true because a failed save leaves the applied level unchanged (s7b); photo flags changed before a mid-run failure stay (partial change, see s7b).
 - **Mirror:** `src/components/upload/UploadToast.tsx`, `src/components/error/ErrorToast.tsx`.
-- **Open:** auto-dismiss duration; whether the failure toast has a retry action or a second line.
+- **Auto-dismiss:** 5000 ms, the house value in `ErrorToast.tsx` (`TOAST_DURATION`) and `UploadToast.tsx` (`AUTO_CLOSE_DELAY_MS`); Figma gives none (inferred, confirm).
 - **Acceptance:**
   - [ ] Updated toast shows the applied level and the recommended count
   - [ ] Failure toast shows after a rejected update and does not claim any change
