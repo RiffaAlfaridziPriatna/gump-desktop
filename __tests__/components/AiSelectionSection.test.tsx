@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable } from '../../src/components/ui';
-import { Text } from 'react-native';
+import { AccessibilityInfo, Text } from 'react-native';
+import { act } from 'react-test-renderer';
 import { AiSelectionSection } from '../../src/components/culling/AiSelectionSection';
 import { press, render } from '../helpers/render';
 
@@ -23,12 +24,12 @@ function setup(overrides: Partial<Props> = {}) {
     onUpdate: jest.fn(),
     ...overrides,
   };
-  const { renderer } = render(<AiSelectionSection {...props} />);
+  const { renderer, rerender } = render(<AiSelectionSection {...props} />);
   const texts = () =>
     renderer.root
       .findAllByType(Text)
       .map(t => [t.props.children].flat().join(''));
-  return { props, renderer, texts };
+  return { props, renderer, rerender, texts };
 }
 
 describe('AiSelectionSection', () => {
@@ -91,5 +92,60 @@ describe('AiSelectionSection', () => {
     });
     expect(props.onUpdate).not.toHaveBeenCalled();
     expect(props.onLevelChange).not.toHaveBeenCalled();
+  });
+
+  const keyDown = (
+    renderer: ReturnType<typeof render>['renderer'],
+    key: string,
+  ) => {
+    const group = byRole(renderer, 'radiogroup')[0]!;
+    act(() => {
+      group.props.onKeyDown({ nativeEvent: { key } });
+    });
+  };
+
+  it('labels the radiogroup', () => {
+    const { renderer } = setup();
+    expect(byRole(renderer, 'radiogroup')[0]!.props.accessibilityLabel).toBe(
+      'AI Selection',
+    );
+  });
+
+  it('arrow keys step with wraparound', () => {
+    const { props, renderer } = setup({ draftLevel: 'more' });
+    keyDown(renderer, 'ArrowRight');
+    expect(props.onLevelChange).toHaveBeenLastCalledWith('fewer');
+    keyDown(renderer, 'ArrowLeft');
+    expect(props.onLevelChange).toHaveBeenLastCalledWith('balanced');
+  });
+
+  it('ignores non-arrow keys', () => {
+    const { props, renderer } = setup();
+    keyDown(renderer, 'a');
+    expect(props.onLevelChange).not.toHaveBeenCalled();
+  });
+
+  it('only the selected segment is focusable', () => {
+    const { renderer } = setup();
+    expect(byRole(renderer, 'radio').map(r => r.props.focusable)).toEqual([
+      false,
+      true,
+      false,
+    ]);
+  });
+
+  it('announces updating once on transition and ignores arrows meanwhile', () => {
+    const spy = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation(() => {});
+    const { props, renderer, rerender } = setup();
+    spy.mockClear();
+    rerender(<AiSelectionSection {...props} status="updating" />);
+    rerender(<AiSelectionSection {...props} status="updating" />);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith('Updating recommendations');
+    keyDown(renderer, 'ArrowRight');
+    expect(props.onLevelChange).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });

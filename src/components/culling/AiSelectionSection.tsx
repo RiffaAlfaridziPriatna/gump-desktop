@@ -1,12 +1,20 @@
-import {Pressable} from '@components/ui';
+import { focusDesktopNode } from '@components/modals/focusDesktopNode';
+import { Pressable } from '@components/ui';
 import {
   AI_SELECTION_LEVELS,
   type AiSelectionLevel,
 } from '@domain/valueObjects/AiSelection';
-import type {AiSelectionStatus} from '@hooks/useAiSelectionFlow';
-import {colors} from '@lib/ui/colors';
-import {fonts, sansBoldStyle} from '@lib/ui/typography';
-import {StyleSheet, Text, View} from 'react-native';
+import type { AiSelectionStatus } from '@hooks/useAiSelectionFlow';
+import { colors } from '@lib/ui/colors';
+import { fonts, sansBoldStyle } from '@lib/ui/typography';
+import { useCallback, useEffect, useRef } from 'react';
+import {
+  AccessibilityInfo,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import IconLoader from '../../assets/images/lucide_loader_circle.svg';
 import IconSparkles from '../../assets/images/lucide_sparkles.svg';
 
@@ -22,6 +30,21 @@ const LEVEL_HELP: Record<AiSelectionLevel, string> = {
   more: 'A broader selection',
 };
 
+const HANDLED_BUBBLING = 3;
+const ARROW_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'] as const;
+
+const arrowKeyDownEvents =
+  Platform.OS === 'windows'
+    ? ARROW_KEYS.map(code => ({ code, handledEventPhase: HANDLED_BUBBLING }))
+    : ARROW_KEYS.map(key => ({ key }));
+
+function arrowStep(name: string | undefined): number {
+  if (name === 'ArrowRight' || name === 'ArrowDown') {
+    return 1;
+  }
+  return name === 'ArrowLeft' || name === 'ArrowUp' ? -1 : 0;
+}
+
 export type AiSelectionSectionProps = {
   draftLevel: AiSelectionLevel;
   status: AiSelectionStatus;
@@ -36,6 +59,48 @@ export function AiSelectionSection({
   onUpdate,
 }: AiSelectionSectionProps) {
   const updating = status === 'updating';
+  const segmentRefs = useRef<Record<string, View | null>>({});
+  const pendingFocusRef = useRef(false);
+  const buttonRef = useRef<View | null>(null);
+  const buttonFocusedRef = useRef(false);
+  const wasUpdatingRef = useRef(false);
+
+  useEffect(() => {
+    if (pendingFocusRef.current) {
+      pendingFocusRef.current = false;
+      focusDesktopNode(segmentRefs.current[draftLevel] ?? null);
+    }
+  }, [draftLevel]);
+
+  useEffect(() => {
+    if (updating && !wasUpdatingRef.current) {
+      AccessibilityInfo.announceForAccessibility('Updating recommendations');
+    }
+    if (!updating && wasUpdatingRef.current && buttonFocusedRef.current) {
+      focusDesktopNode(buttonRef.current);
+    }
+    wasUpdatingRef.current = updating;
+  }, [updating]);
+
+  const handleKeyDown = useCallback(
+    (event: unknown) => {
+      if (updating) {
+        return;
+      }
+      const native = (
+        event as { nativeEvent?: { key?: string; code?: string } }
+      ).nativeEvent;
+      const step = arrowStep(native?.key ?? native?.code);
+      if (step === 0) {
+        return;
+      }
+      const count = AI_SELECTION_LEVELS.length;
+      const index = AI_SELECTION_LEVELS.indexOf(draftLevel);
+      pendingFocusRef.current = true;
+      onLevelChange(AI_SELECTION_LEVELS[(index + step + count) % count]!);
+    },
+    [updating, draftLevel, onLevelChange],
+  );
 
   return (
     <View style={styles.root}>
@@ -45,20 +110,35 @@ export function AiSelectionSection({
           AI Selection
         </Text>
       </View>
-      <View style={styles.segments} accessibilityRole="radiogroup">
+      <View
+        style={styles.segments}
+        accessibilityRole="radiogroup"
+        accessibilityLabel="AI Selection"
+        onKeyDown={handleKeyDown}
+        keyDownEvents={arrowKeyDownEvents}
+      >
         {AI_SELECTION_LEVELS.map(level => {
           const selected = level === draftLevel;
           return (
             <Pressable
               key={level}
+              // The ui wrapper forwards unknown props; React 19 passes ref as a prop.
+              {...{
+                ref: (node: View | null) => {
+                  segmentRefs.current[level] = node;
+                },
+              }}
+              focusable={selected}
               onPress={() => onLevelChange(level)}
               disabled={updating}
               style={[styles.segment, selected && styles.segmentSelected]}
               accessibilityRole="radio"
               accessibilityLabel={LEVEL_LABELS[level]}
-              accessibilityState={{selected, disabled: updating}}>
+              accessibilityState={{ selected, disabled: updating }}
+            >
               <Text
-                style={[styles.segmentText, selected && styles.segmentTextSel]}>
+                style={[styles.segmentText, selected && styles.segmentTextSel]}
+              >
                 {LEVEL_LABELS[level]}
               </Text>
             </Pressable>
@@ -67,6 +147,16 @@ export function AiSelectionSection({
       </View>
       <Text style={styles.help}>{LEVEL_HELP[draftLevel]}</Text>
       <Pressable
+        {...{ ref: buttonRef }}
+        onFocus={() => {
+          buttonFocusedRef.current = true;
+        }}
+        onBlur={() => {
+          // Disabling the button blurs it; keep the flag for focus return.
+          if (!updating) {
+            buttonFocusedRef.current = false;
+          }
+        }}
         onPress={onUpdate}
         disabled={updating}
         style={[styles.button, updating && styles.buttonUpdating]}
@@ -74,14 +164,19 @@ export function AiSelectionSection({
         accessibilityLabel={
           updating ? 'Updating recommendations' : 'Update recommendations'
         }
-        accessibilityState={{disabled: updating, busy: updating}}>
+        accessibilityState={{ disabled: updating, busy: updating }}
+      >
         {updating && <IconLoader width={16} height={16} />}
         <Text style={styles.buttonText}>
           {updating ? 'Updating…' : 'Update recommendations'}
         </Text>
       </Pressable>
       {updating && (
-        <Text style={styles.note} accessibilityLiveRegion="polite">
+        <Text
+          style={styles.note}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        >
           Updating recommendations…
         </Text>
       )}
@@ -93,15 +188,15 @@ export function AiSelectionSection({
 }
 
 const styles = StyleSheet.create({
-  root: {gap: 10, paddingHorizontal: 12},
-  captionRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
+  root: { gap: 10, paddingHorizontal: 12 },
+  captionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   caption: {
     fontFamily: fonts.sans,
     fontWeight: '600',
     fontSize: 16,
     color: colors.white,
   },
-  segments: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  segments: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   segment: {
     paddingHorizontal: 12,
     paddingVertical: 3,
@@ -123,8 +218,8 @@ const styles = StyleSheet.create({
     color: colors.white,
     textAlign: 'center',
   },
-  segmentTextSel: {lineHeight: 19.6},
-  help: {fontFamily: fonts.sans, fontSize: 13, color: colors.white},
+  segmentTextSel: { lineHeight: 19.6 },
+  help: { fontFamily: fonts.sans, fontSize: 13, color: colors.white },
   button: {
     height: 40,
     paddingHorizontal: 24,
@@ -137,8 +232,8 @@ const styles = StyleSheet.create({
     gap: 8,
     overflow: 'hidden',
   },
-  buttonUpdating: {opacity: 0.6},
+  buttonUpdating: { opacity: 0.6 },
   // Inter Semi Bold is not bundled; sansBold stands in until the font is added.
-  buttonText: {...sansBoldStyle, fontSize: 14, color: colors.accent},
-  note: {fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted},
+  buttonText: { ...sansBoldStyle, fontSize: 14, color: colors.accent },
+  note: { fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted },
 });
