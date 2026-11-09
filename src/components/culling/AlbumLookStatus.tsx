@@ -1,5 +1,5 @@
 import {colors} from '@lib/ui/colors';
-import {fonts, sansBoldStyle} from '@lib/ui/typography';
+import {fonts, interSemiBoldStyle, sansSemiBoldStyle} from '@lib/ui/typography';
 import {Pressable} from '@components/ui';
 import type {Ref} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   label: {
-    ...sansBoldStyle,
+    ...sansSemiBoldStyle,
     fontSize: 14,
     color: colors.white,
   },
@@ -75,8 +75,8 @@ const styles = StyleSheet.create({
     color: '#D1D1D1',
   },
   change: {
+    ...interSemiBoldStyle,
     fontSize: 14,
-    fontWeight: '600',
     color: colors.accent,
   },
 });
