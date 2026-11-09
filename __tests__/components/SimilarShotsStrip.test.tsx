@@ -171,7 +171,7 @@ describe('SimilarShotsStrip', () => {
         fontSize: 14,
         color: '#FFFFFF',
       });
-      expect(viewsWith(view, {gap: 10})).toHaveLength(1);
+      expect(viewsWith(view, {gap: 10, paddingTop: 28})).toHaveLength(1);
       expect(viewsWith(view, {flexDirection: 'row', gap: 8})).toHaveLength(1);
       const cards = viewsWith(view, {
         width: 140,

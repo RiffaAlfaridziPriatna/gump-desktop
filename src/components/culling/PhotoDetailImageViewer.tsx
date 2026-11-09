@@ -82,6 +82,7 @@ function FaceStatusOverlay({
         onHoverIn={onHoverIn}
         onHoverOut={onHoverOut}
         size="large"
+        iconSize={20}
       />
       <FaceStatusIconBadge
         meta={focusMeta}
@@ -438,6 +439,6 @@ const styles = StyleSheet.create({
   faceStatusBadges: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 4,
   },
 });
