@@ -8,6 +8,7 @@ import {
   useCulledAlbumServerUploadBatch,
   useCulledAlbumUiState,
 } from '@context/culledAlbum';
+import { estimateMinutesLeft, formatEtaLabel } from '@lib/culledAlbum/analysisEta';
 import { computeLocalImportBatchProgress } from '@lib/culledAlbum/localImportProgress';
 import { computeServerUploadBatchProgress } from '@lib/culledAlbum/serverUploadProgress';
 import { CulledAlbumPhoto, LocalImportBatchCounts } from '@lib/culledAlbum/types';
@@ -449,6 +450,29 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     batchTotal,
   );
 
+  const etaStartRef = useRef<{
+    key: string;
+    at: number;
+    baseline: number;
+  } | null>(null);
+  const etaKey = `${albumId}:${queueOperation.batchTotal}`;
+  if (mode === 'analyze' && etaStartRef.current?.key !== etaKey) {
+    etaStartRef.current = {
+      key: etaKey,
+      at: Date.now(),
+      baseline: counts.completed + counts.failed,
+    };
+  }
+  const etaMinutes =
+    mode === 'analyze' && etaStartRef.current
+      ? estimateMinutesLeft({
+          completedSinceStart:
+            counts.completed + counts.failed - etaStartRef.current.baseline,
+          elapsedMs: Date.now() - etaStartRef.current.at,
+          remaining: analyzeRemaining,
+        })
+      : null;
+
   const totalProgress = useMemo(() => {
     if (mode === 'upload') {
       if (importFinished) {
@@ -524,7 +548,9 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
           ? 'Finalizing analysis...'
           : duplicatesOnly
             ? 'Analyzing 0 photos'
-            : `Analyzing ${displayAnalyzeRemaining} photos`
+            : etaMinutes !== null
+              ? `Analyzing ${displayAnalyzeRemaining} photos · ${formatEtaLabel(etaMinutes)}`
+              : `Analyzing ${displayAnalyzeRemaining} photos`
         : `Uploading ${counts.pending + counts.inProgress} photos to server`;
   const completedLabel =
     mode === 'upload'

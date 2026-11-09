@@ -2,12 +2,20 @@ import React from 'react';
 import {Text} from 'react-native';
 import {UploadToast} from '../../src/components/upload/UploadToast';
 import {
+  beginAnalysisQueue,
   beginServerUploadQueue,
   finishServerUploadQueue,
   uploadQueueStore,
 } from '../../src/lib/culledAlbum/uploadQueueStore';
 import {render} from '../helpers/render';
 
+let mockAnalysisCounts: {
+  total: number;
+  pending: number;
+  inProgress: number;
+  completed: number;
+  failed: number;
+} | null = null;
 const mockPhotos: Array<{id: string; serverUploadStatus: string}> = [];
 
 jest.mock('@context/culledAlbum', () => ({
@@ -20,7 +28,7 @@ jest.mock('@context/culledAlbum', () => ({
     clearCompleted: jest.fn(),
     clearFilenameDuplicates: jest.fn(),
   }),
-  useCulledAlbumAnalysisCounts: () => null,
+  useCulledAlbumAnalysisCounts: () => mockAnalysisCounts,
   useCulledAlbumFilenameDuplicates: () => [],
   useCulledAlbumFilenameDuplicateToastMode: () => null,
   useCulledAlbumLocalImportProgress: () => null,
@@ -83,5 +91,45 @@ describe('UploadToast serverUpload completed label', () => {
       state.queues[albumId].serverUpload.failedCount = 1;
     });
     expect(labels()).toContain('Uploaded 4 out of 5 photos');
+  });
+});
+
+describe('UploadToast analyze ETA', () => {
+  afterEach(() => {
+    mockAnalysisCounts = null;
+    uploadQueueStore.setState(() => ({queues: {}}));
+    jest.useRealTimers();
+  });
+
+  function analyzeTexts(): string[] {
+    const {renderer, unmount} = render(
+      <UploadToast mode="analyze" albumId={albumId} />,
+    );
+    const texts = renderer.root
+      .findAllByType(Text)
+      .map(node => String(node.props.children));
+    unmount();
+    return texts;
+  }
+
+  it('hides the estimate before enough photos finished', () => {
+    beginAnalysisQueue(albumId, 100);
+    mockAnalysisCounts = {total: 100, pending: 99, inProgress: 1, completed: 0, failed: 0};
+    expect(analyzeTexts()).toContain('Analyzing 100 photos');
+  });
+
+  it('shows About X min left once the pace is known', () => {
+    jest.useFakeTimers().setSystemTime(0);
+    beginAnalysisQueue(albumId, 1000);
+    mockAnalysisCounts = {total: 1000, pending: 1000, inProgress: 0, completed: 0, failed: 0};
+    const {renderer, unmount, rerender} = render(
+      <UploadToast mode="analyze" albumId={albumId} />,
+    );
+    jest.setSystemTime(10000);
+    mockAnalysisCounts = {total: 1000, pending: 890, inProgress: 0, completed: 110, failed: 0};
+    rerender(<UploadToast mode="analyze" albumId={albumId} />);
+    const texts = renderer.root.findAllByType(Text).map(n => String(n.props.children));
+    unmount();
+    expect(texts.some(t => /· About \d+ min left$/.test(t))).toBe(true);
   });
 });
