@@ -129,16 +129,16 @@ export function buildRows(
 }
 
 /** FlatList getItemLayout for mixed header/photo rows; flat lists stay O(1). */
-export function createGetItemLayout(rows: GridRow[], photoRowHeight: number) {
+export function createGetItemLayout(rows: GridRow[], photoHeight: number) {
   if (!rows.some(row => row.kind === 'header')) {
     return (_data: ArrayLike<GridRow> | null | undefined, index: number) => ({
-      length: photoRowHeight,
-      offset: photoRowHeight * index,
+      length: photoHeight,
+      offset: photoHeight * index,
       index,
     });
   }
   const lengths = rows.map(row =>
-    row.kind === 'header' ? headerRowHeight(row.rowIndex) : photoRowHeight,
+    row.kind === 'header' ? headerRowHeight(row.rowIndex) : photoHeight,
   );
   const offsets: number[] = [];
   let offset = 0;
@@ -147,7 +147,7 @@ export function createGetItemLayout(rows: GridRow[], photoRowHeight: number) {
     offset += length;
   }
   return (_data: ArrayLike<GridRow> | null | undefined, index: number) => ({
-    length: lengths[index] ?? photoRowHeight,
+    length: lengths[index] ?? photoHeight,
     offset: offsets[index] ?? offset,
     index,
   });
