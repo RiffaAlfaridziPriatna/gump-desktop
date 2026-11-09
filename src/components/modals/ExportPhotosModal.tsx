@@ -23,23 +23,22 @@ import { photoNeedsLookBake } from '@lib/look/bakeLook';
 import { captureAppEvent } from '@lib/observability/posthogClient';
 import { reportError } from '@lib/observability/reportError';
 import { colors } from '@lib/ui/colors';
-import { fonts, sansBoldStyle } from '@lib/ui/typography';
+import { fonts, sansSemiBoldStyle } from '@lib/ui/typography';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
+import IconCheckCircle40 from '../../assets/images/icon_check_circle_40.svg';
 import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
 import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
 import IconFolder from '../../assets/images/icon_folder.svg';
 import IconFolderZip from '../../assets/images/icon_folder_zip.svg';
 import IconLock from '../../assets/images/icon_lock.svg';
-import CircleBlue from '../../assets/images/upload/blue_circle.svg';
-import HalfCircle from '../../assets/images/upload/half_circle.svg';
-import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
-import QuarterCircleOrange from '../../assets/images/upload/orange_quarter_circle.svg';
-import QuarterCircleRed from '../../assets/images/upload/red_quarter_circle.svg';
 
 import { ExportFailureView } from './ExportFailureView';
-import { focusDesktopNode } from './focusDesktopNode';
+import { ModalDecorations } from './ModalDecorations';
+import { PopupButton, PopupIcon, PopupTitleBlock } from './UploadPopupParts';
+
+const PROGRESS_TRACK = '#ECECEC';
 
 const SAVE_CANCELLED_MESSAGE =
   'Saving was cancelled. Your export is still ready.';
@@ -129,7 +128,6 @@ function FormatExportDropdown({
 type QualityOptionProps = {
   title: string;
   description: string;
-  statusLabels: string[];
   selected: boolean;
   locked?: boolean;
   onPress: () => void;
@@ -138,7 +136,6 @@ type QualityOptionProps = {
 function QualityOption({
   title,
   description,
-  statusLabels,
   selected,
   locked = false,
   onPress,
@@ -179,34 +176,7 @@ function QualityOption({
           </Text>
         </View>
       </View>
-      <View>
-        {statusLabels.map((statusLabel, index) => (
-          <Text key={index} style={styles.qualityStatus}>
-            {statusLabel}
-          </Text>
-        ))}
-      </View>
     </Pressable>
-  );
-}
-
-function ModalDecor() {
-  return (
-    <>
-      <HalfCircle style={styles.halfCircleDecor} width={72} />
-      <QuarterCircleOrange
-        style={styles.quarterOrangeDecor}
-        width={98}
-        height={98}
-      />
-      <QuarterCircleRed style={styles.quarterRedDecor} width={80} height={80} />
-      <CircleBlue style={styles.circleBlueDecor} width={32} height={32} />
-      <CircleLightBlue
-        style={styles.circleLightBlueDecor}
-        width={36}
-        height={36}
-      />
-    </>
   );
 }
 
@@ -236,7 +206,6 @@ export function ExportPhotosModal({
   const [exportError, setExportError] = useState<ExportError | null>(null);
   const [saveCancelled, setSaveCancelled] = useState(false);
   const prepareRequestIdRef = useRef(0);
-  const saveButtonRef = useRef<View | null>(null);
 
   useEffect(() => {
     if (!visible) {
@@ -259,7 +228,6 @@ export function ExportPhotosModal({
     if (step !== 'ready' || !saveCancelled) {
       return;
     }
-    focusDesktopNode(saveButtonRef.current);
     AccessibilityInfo.announceForAccessibility(SAVE_CANCELLED_MESSAGE);
   }, [saveCancelled, step]);
 
@@ -473,9 +441,11 @@ export function ExportPhotosModal({
       });
   }, [downloadedExport, onClose]);
 
+  const savedCount = preparedExport?.photoCount ?? photoCount;
+
   const modalSize =
     step === 'options'
-      ? { width: 720, height: 500 }
+      ? { width: 720, height: 520 }
       : { width: 720, height: 456 };
 
   return (
@@ -485,7 +455,7 @@ export function ExportPhotosModal({
       width={modalSize.width}
       height={modalSize.height}
       contentStyle={step === 'options' ? OPTIONS_CONTENT_STYLE : undefined}>
-      <ModalDecor />
+      <ModalDecorations />
 
       {step === 'options' && (
         <View style={styles.optionsContent}>
@@ -498,28 +468,23 @@ export function ExportPhotosModal({
             />
           ) : null}
 
-          <View style={styles.titleBlock}>
-            <Text style={styles.title}>Export Photos ({photoCount})</Text>
-            <Text style={styles.subtitle}>
-              Saved to your laptop — doesn&apos;t use cloud storage or monthly
-              data
-            </Text>
-          </View>
+          <PopupTitleBlock
+            title={`Export Photos (${photoCount})`}
+            subtitle="Saved to your computer. Does not use Gump Cloud storage or download allowance."
+          />
 
           <View style={styles.exportOptions}>
             <View style={styles.qualityCard}>
               <QualityOption
-                title="Compressed JPG"
-                description="Looks great for online viewing, smaller files."
-                statusLabels={['Smaller file size']}
+                title="Smaller-file JPG"
+                description="Optimised for sharing."
                 selected={quality === 'compressed'}
                 onPress={handleSelectCompressed}
               />
               <View style={styles.qualityPaidWrapper}>
                 <QualityOption
-                  title="Original JPG"
-                  description="Full resolution, best for editing and large prints."
-                  statusLabels={['Full resolution']}
+                  title="Full-resolution JPG"
+                  description="Preserves image dimensions."
                   selected={quality === 'original'}
                   onPress={handleSelectOriginal}
                 />
@@ -534,28 +499,26 @@ export function ExportPhotosModal({
             />
           </View>
 
-          <TouchableOpacity
-            style={styles.primaryButton}
+          <PopupButton
+            label="Prepare Export"
+            variant="primary"
             onPress={handlePrepareExport}
-            activeOpacity={0.8}>
-            <Text style={styles.primaryButtonText}>Prepare Export</Text>
-          </TouchableOpacity>
+            single
+          />
         </View>
       )}
 
       {step === 'applyingLook' && (
         <View style={styles.centeredContent}>
-          <View style={styles.titleBlock}>
-            <Text style={styles.title}>Applying look...</Text>
-            <Text style={styles.subtitle}>
-              Baking looks onto {photoCount} selected photos
-            </Text>
-          </View>
+          <PopupTitleBlock
+            title="Applying look..."
+            subtitle={`Baking looks onto ${photoCount} selected photos`}
+          />
           <View style={styles.progressBlock}>
             <ProgressBar
               progress={progressPercent / 100}
-              height={8}
-              style={styles.progressBar}
+              height={9}
+              trackColor={PROGRESS_TRACK}
             />
             <Text style={styles.progressLabel}>{progressPercent}%</Text>
           </View>
@@ -564,17 +527,15 @@ export function ExportPhotosModal({
 
       {step === 'preparing' && (
         <View style={styles.centeredContent}>
-          <View style={styles.titleBlock}>
-            <Text style={styles.title}>Preparing export</Text>
-            <Text style={styles.subtitle}>
-              Creating ZIP of {photoCount} photos
-            </Text>
-          </View>
+          <PopupTitleBlock
+            title="Preparing export"
+            subtitle={`Creating ZIP of ${photoCount} photos`}
+          />
           <View style={styles.progressBlock}>
             <ProgressBar
               progress={progressPercent / 100}
-              height={8}
-              style={styles.progressBar}
+              height={9}
+              trackColor={PROGRESS_TRACK}
             />
             <Text style={styles.progressLabel}>{progressPercent}%</Text>
           </View>
@@ -583,14 +544,14 @@ export function ExportPhotosModal({
 
       {step === 'ready' && preparedExport && (
         <View style={styles.centeredContent}>
-          <View style={styles.titleBlock}>
-            <Text style={styles.title}>Your export is ready</Text>
-            <Text style={styles.subtitle}>
-              {saveCancelled
+          <PopupTitleBlock
+            title="Your export is ready"
+            subtitle={
+              saveCancelled
                 ? SAVE_CANCELLED_MESSAGE
-                : 'Download it to your laptop'}
-            </Text>
-          </View>
+                : 'Choose where to save it on your computer.'
+            }
+          />
           <View style={styles.fileCard}>
             <View style={styles.fileIcon}>
               <IconFolderZip width={24} height={24} color={colors.accent} />
@@ -603,43 +564,46 @@ export function ExportPhotosModal({
               </Text>
             </View>
           </View>
-          <Pressable
-            // The ui wrapper forwards unknown props; React 19 passes ref as a prop.
-            {...{ref: saveButtonRef}}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              pressed && { opacity: 0.8 },
-            ]}
+          <PopupButton
+            label="Save to computer"
+            variant="primary"
             onPress={handleDownloadToLaptop}
-            accessibilityRole="button"
-            accessibilityLabel="Save to computer">
-            <Text style={styles.primaryButtonText}>Save to computer</Text>
-          </Pressable>
+            autoFocus={saveCancelled}
+            single
+          />
         </View>
       )}
       
       {step === 'success' && downloadedExport && (
         <View style={styles.centeredContent}>
-          <IconCheckCircle width={48} height={48} color={colors.iconGreen} />
-          <View style={styles.titleBlock}>
-            <Text style={styles.title}>Download complete</Text>
-            <Text style={styles.subtitle}>
-              {downloadedExport.fileName} ·{' '}
-              {formatByteSize(downloadedExport.byteSize)}
-            </Text>
+          <PopupIcon>
+            <IconCheckCircle40 width={40} height={40} />
+          </PopupIcon>
+          <PopupTitleBlock
+            title="Export complete"
+            subtitle={`${savedCount} photo${
+              savedCount === 1 ? '' : 's'
+            } saved to your computer`}
+          />
+          <View style={styles.fileCard}>
+            <View style={styles.fileIcon}>
+              <IconFolder width={24} height={24} color={colors.accent} />
+            </View>
+            <View>
+              <Text style={styles.fileName}>{downloadedExport.fileName}</Text>
+              <Text style={styles.fileMeta}>
+                {formatByteSize(downloadedExport.byteSize)} ·{' '}
+                {downloadedExport.displayPath}
+              </Text>
+            </View>
           </View>
-          <View style={styles.pathCardSuccess}>
-            <IconFolder width={24} height={24} color={colors.textMuted} />
-            <Text style={styles.pathCardTextBold}>
-              {downloadedExport.displayPath}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.primaryButton}
+          <PopupButton
+            label="Open folder"
+            variant="primary"
             onPress={handleOpenFolder}
-            activeOpacity={0.8}>
-            <Text style={styles.primaryButtonText}>Open Folder</Text>
-          </TouchableOpacity>
+            autoFocus
+            single
+          />
         </View>
       )}
 
@@ -658,14 +622,14 @@ export function ExportPhotosModal({
   );
 }
 
-// The options column nearly fills the 500 popup; keep the pre-s8g bottom room.
+// Options content (about 444) exceeds the 440 room of a 520 popup with 40 bottom padding.
 const OPTIONS_CONTENT_STYLE = {paddingBottom: 24} as const;
 
 const styles = StyleSheet.create({
   optionsContent: {
     flex: 1,
     justifyContent: 'center',
-    gap: 20,
+    gap: 24,
     width: 480,
     position: 'relative',
     zIndex: 1,
@@ -681,26 +645,6 @@ const styles = StyleSheet.create({
     gap: 24,
     width: 480,
   },
-  titleBlock: {
-    gap: 12,
-    alignItems: 'center',
-  },
-  title: {
-    fontFamily: fonts.serif,
-    fontSize: 28,
-    lineHeight: 28 * 1.2,
-    color: colors.textDark,
-    textAlign: 'center',
-    fontWeight: '700',
-  },
-  subtitle: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    lineHeight: 14 * 1.4,
-    color: colors.textMuted,
-    textAlign: 'center',
-    fontWeight: '400',
-  },
   exportOptions: {
     gap: 16,
     zIndex: 2,
@@ -710,7 +654,8 @@ const styles = StyleSheet.create({
     borderColor: colors.borderLight,
     borderRadius: 8,
     overflow: 'hidden',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
     gap: 12,
   },
   qualityOption: {
@@ -724,7 +669,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   qualityOptionSelected: {
-    backgroundColor: colors.accent + '14',
+    backgroundColor: colors.accent + '1A',
     borderColor: colors.accent,
   },
   qualityOptionContent: {
@@ -769,13 +714,6 @@ const styles = StyleSheet.create({
   qualityDescriptionMuted: {
     color: colors.textMuted + '80',
   },
-  qualityStatus: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.textMuted,
-    letterSpacing: 0,
-    textAlign: "right",
-  },
   qualityPaidWrapper: {
     gap: 8,
   },
@@ -800,9 +738,10 @@ const styles = StyleSheet.create({
   },
   formatValueShell: {
     borderWidth: 1,
-    borderColor: colors.textDark,
+    borderColor: colors.divider,
     borderRadius: 22,
     backgroundColor: colors.white,
+    minHeight: 42,
     overflow: 'hidden',
   },
   formatValue: {
@@ -815,8 +754,9 @@ const styles = StyleSheet.create({
     width: 100,
   },
   formatValueText: {
-    ...sansBoldStyle,
+    fontFamily: fonts.sans,
     fontSize: 16,
+    lineHeight: 16 * 1.4,
     color: colors.textDark,
   },
   // Pull up by formatRow's bottom padding (12) so the 4px gap is from the
@@ -829,7 +769,7 @@ const styles = StyleSheet.create({
     minWidth: 100,
     backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: colors.textDark,
+    borderColor: colors.divider,
     borderRadius: 8,
     overflow: 'hidden',
     zIndex: 4,
@@ -842,58 +782,24 @@ const styles = StyleSheet.create({
   },
   formatMenuItemBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: colors.textDark,
+    borderBottomColor: colors.divider,
   },
   formatMenuItemText: {
-    ...sansBoldStyle,
+    fontFamily: fonts.sans,
     fontSize: 16,
     color: colors.textDark,
-  },
-  primaryButton: {
-    alignSelf: 'center',
-    borderRadius: 24,
-    backgroundColor: colors.accent,
-    paddingVertical: 12,
-    paddingHorizontal: 40,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButtonText: {
-    ...sansBoldStyle,
-    fontSize: 16,
-    color: colors.white,
-  },
-  secondaryButton: {
-    flex: 1,
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: colors.accent,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButtonText: {
-    ...sansBoldStyle,
-    fontSize: 14,
-    color: colors.accent,
   },
   progressBlock: {
     width: '100%',
     maxWidth: 480,
     gap: 12,
   },
-  progressBar: {
-    borderRadius: 4,
-  },
   progressLabel: {
-    fontFamily: fonts.sans,
+    ...sansSemiBoldStyle,
     fontSize: 14,
+    lineHeight: 14 * 1.44,
     color: colors.textMuted,
     textAlign: 'center',
-    fontWeight: '600',
   },
   fileCard: {
     alignSelf: 'center',
@@ -908,118 +814,22 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   fileIcon: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     backgroundColor: colors.cardGrayLight,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   fileName: {
-    ...sansBoldStyle,
+    ...sansSemiBoldStyle,
     fontSize: 16,
     color: colors.textDark,
   },
   fileMeta: {
     fontFamily: fonts.sans,
     fontSize: 12,
+    lineHeight: 12 * 1.6,
     color: colors.textMuted,
-  },
-  pathCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: colors.progressTrack,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  pathCardSuccess: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    borderWidth: 1,
-    borderColor: colors.progressTrack,
-    borderRadius: 12,
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-  },
-  pathCardText: {
-    fontFamily: fonts.sans,
-    fontSize: 14,
-    color: colors.textMuted,
-  },
-  pathCardTextBold: {
-    fontFamily: fonts.sans,
-    fontWeight: '500',
-    fontSize: 16,
-    lineHeight: 16 * 1.2,
-    color: colors.textDark,
-    letterSpacing: 0,
-  },
-  successBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.success,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  successBadgeText: {
-    ...sansBoldStyle,
-    fontSize: 20,
-    color: colors.white,
-  },
-  errorBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.error,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  errorBadgeText: {
-    ...sansBoldStyle,
-    fontSize: 22,
-    color: colors.white,
-  },
-  failedActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    width: '100%',
-    maxWidth: 420,
-    marginTop: 8,
-  },
-  failedPrimary: {
-    flex: 1,
-    alignSelf: 'stretch',
-    paddingHorizontal: 16,
-  },
-  halfCircleDecor: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-  },
-  quarterOrangeDecor: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-  },
-  quarterRedDecor: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-  },
-  circleBlueDecor: {
-    position: 'absolute',
-    bottom: 24,
-    left: 24,
-  },
-  circleLightBlueDecor: {
-    position: 'absolute',
-    top: 80,
-    right: 0,
   },
 });
