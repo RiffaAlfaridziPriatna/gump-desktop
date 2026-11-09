@@ -49,11 +49,11 @@ export function CulledAlbumPhotoCardOverlay({
 const styles = StyleSheet.create({
   deletePhotoButton: {
     position: 'absolute',
-    top: 8,
-    right: 8,
+    top: 12,
+    right: 11.67,
     width: 36,
     height: 36,
-    borderRadius: 36,
+    borderRadius: 100,
     backgroundColor: colors.background + '66',
     alignItems: 'center',
     justifyContent: 'center',

@@ -2,6 +2,7 @@ import {colors} from '@lib/ui/colors';
 import {sansBoldStyle} from '@lib/ui/typography';
 import {Image, StyleSheet, Text, View} from 'react-native';
 import {
+  GROUP_GAP,
   HEADER_ROW_HEIGHT,
   type CulledAlbumGridSection,
 } from './culledAlbumGridRows';
@@ -10,15 +11,20 @@ const ICON_LAYERS = require('../../assets/images/icon_layers.png');
 
 type SimilarShotGroupHeaderProps = {
   section?: Pick<CulledAlbumGridSection, 'title' | 'subtitle' | 'isGroup'>;
+  isFirst?: boolean;
 };
 
-export function SimilarShotGroupHeader({section}: SimilarShotGroupHeaderProps) {
+export function SimilarShotGroupHeader({
+  section,
+  isFirst = false,
+}: SimilarShotGroupHeaderProps) {
+  const containerStyle = isFirst ? styles.container : styles.containerWithGap;
   if (!section) {
-    return <View style={styles.container} />;
+    return <View style={containerStyle} />;
   }
   const {title, subtitle, isGroup} = section;
   return (
-    <View style={styles.container}>
+    <View style={containerStyle}>
       {isGroup && (
         <View
           accessible={false}
@@ -46,6 +52,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingBottom: 8,
+  },
+  containerWithGap: {
+    height: HEADER_ROW_HEIGHT + GROUP_GAP,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: GROUP_GAP,
     paddingBottom: 8,
   },
   icon: {
