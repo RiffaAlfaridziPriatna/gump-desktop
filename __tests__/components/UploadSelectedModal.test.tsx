@@ -412,8 +412,7 @@ describe('UploadSelectedModal cloud storage states', () => {
       renderer.root.find(n => n.type === 'Text' && n.props.children === '0.6 GB')
         .props.style,
     );
-    expect(value.fontFamily).toBe(sansSemiBoldStyle.fontFamily);
-    expect(value.fontWeight).toBeUndefined();
+    expect(value).toMatchObject(sansSemiBoldStyle);
     const bar = renderer.root.find(
       n => n.type === 'View' && StyleSheet.flatten(n.props.style)?.height === 9,
     );

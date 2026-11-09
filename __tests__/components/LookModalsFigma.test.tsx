@@ -6,7 +6,7 @@ import { LookCompareToggle } from '../../src/components/look/LookCompareToggle';
 import { ApplyLookModal } from '../../src/components/modals/ApplyLookModal';
 import { ApplyLookScopeModal } from '../../src/components/modals/ApplyLookScopeModal';
 import IconClose from '../../src/assets/images/icon_close.svg';
-import { fonts } from '../../src/lib/ui/typography';
+import { fonts, interSemiBoldStyle } from '../../src/lib/ui/typography';
 
 jest.mock('../../src/components/modals/focusDesktopNode', () => ({
   focusDesktopNode: jest.fn(),
@@ -116,7 +116,7 @@ describe('look modals to Figma', () => {
     });
     const change = styleOf(textNode(renderer, 'Change'));
     expect(change).toMatchObject({ fontFamily: fonts.interSemiBold, fontSize: 14 });
-    expect(change.fontWeight).toBeUndefined();
+    expect(change).toMatchObject(interSemiBoldStyle);
     expect(String(change.color).toLowerCase()).toBe('#ff9632');
   });
 });
