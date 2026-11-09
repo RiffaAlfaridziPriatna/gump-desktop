@@ -1,8 +1,12 @@
 import type {SimilarShotsViewSection} from '@lib/culling/similarShotsView';
 
 export const GRID_COLUMNS = 3;
+/** Height of the section header bar (padding 10 + 17 line height + 10). */
+export const HEADER_BAR_HEIGHT = 37;
+/** Space between the header bar and the first photo row. */
+export const HEADER_BAR_GAP = 4;
 /** Fixed height of a section header row (includes its bottom gap). */
-export const HEADER_ROW_HEIGHT = 40;
+export const HEADER_ROW_HEIGHT = HEADER_BAR_HEIGHT + HEADER_BAR_GAP;
 /** Space above every section header except the first. */
 export const GROUP_GAP = 24;
 
