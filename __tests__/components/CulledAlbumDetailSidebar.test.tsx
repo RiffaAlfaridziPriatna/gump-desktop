@@ -1,5 +1,5 @@
 import React from 'react';
-import {Text} from 'react-native';
+import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import {CulledAlbumDetailSidebar} from '../../src/components/culling/CulledAlbumDetailSidebar';
 import {FACES_EMPTY_HINT} from '../../src/components/culling/FacesInPhotoPanel';
 import {getByLabel, press, render} from '../helpers/render';
@@ -77,5 +77,15 @@ describe('CulledAlbumDetailSidebar', () => {
     const b = setup({selectionFilter: 'selected'});
     press(getByLabel(b.renderer, 'Picked for Upload, 148'));
     expect(b.props.onSelectionFilterChange).toHaveBeenCalledWith(null);
+  });
+});
+
+describe('CulledAlbumDetailSidebar Figma gaps', () => {
+  it('uses 14 between sidebar blocks and 20 from the action stack', () => {
+    const {renderer} = setup();
+    const sidebar = renderer.root.findAllByType(View)[0]!;
+    expect(StyleSheet.flatten(sidebar.props.style).gap).toBe(20);
+    const scroll = renderer.root.findByType(ScrollView);
+    expect(StyleSheet.flatten(scroll.props.contentContainerStyle).gap).toBe(14);
   });
 });

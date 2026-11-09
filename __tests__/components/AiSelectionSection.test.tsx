@@ -1,6 +1,8 @@
 import React from 'react';
 import { Pressable } from '../../src/components/ui';
-import { AccessibilityInfo, Text } from 'react-native';
+import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
+import { colors } from '../../src/lib/ui/colors';
+import { fonts } from '../../src/lib/ui/typography';
 import { act } from 'react-test-renderer';
 import { AiSelectionSection } from '../../src/components/culling/AiSelectionSection';
 import { press, render } from '../helpers/render';
@@ -147,5 +149,32 @@ describe('AiSelectionSection', () => {
     keyDown(renderer, 'ArrowRight');
     expect(props.onLevelChange).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe('AiSelectionSection Figma values', () => {
+  const styleOf = (text: string, s: ReturnType<typeof setup>) =>
+    StyleSheet.flatten(
+      s.renderer.root.findAllByType(Text).find(t => t.props.children === text)!
+        .props.style,
+    );
+
+  it('caption is Red Hat Display SemiBold 16 white', () => {
+    expect(styleOf('AI Selection', setup())).toMatchObject({
+      fontFamily: fonts.sansSemiBold,
+      fontSize: 16,
+      color: colors.white,
+    });
+  });
+
+  it.each([
+    ['idle', 'Update recommendations'],
+    ['updating', 'Updating…'],
+  ] as const)('%s button label is Inter SemiBold 14 orange', (status, text) => {
+    expect(styleOf(text, setup({ status }))).toMatchObject({
+      fontFamily: fonts.interSemiBold,
+      fontSize: 14,
+      color: colors.accent,
+    });
   });
 });

@@ -1,6 +1,6 @@
 import React from 'react';
 import { act } from 'react-test-renderer';
-import { AccessibilityInfo, Text } from 'react-native';
+import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
 import {
   FACES_EMPTY_HINT,
   FacesInPhotoPanel,
@@ -9,6 +9,8 @@ import {
 } from '../../src/components/culling/FacesInPhotoPanel';
 import { FACE_ASSESSMENT_DELAY_MS } from '../../src/hooks/useFaceAssessmentLoading';
 import { getFacePanelStatus } from '../../src/lib/culling/facePanelStatus';
+import { colors } from '../../src/lib/ui/colors';
+import { fonts } from '../../src/lib/ui/typography';
 import { press, render } from '../helpers/render';
 
 const bounds = { left: 0.1, top: 0.1, width: 0.2, height: 0.2 };
@@ -207,5 +209,46 @@ describe('getFacePanelStatus', () => {
     ]);
     expect(labels('x', 'good')).toEqual(['Unable to assess']);
     expect(labels('open', 'nope')).toEqual(['Unable to assess']);
+  });
+});
+
+describe('FacesInPhotoPanel Figma values', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  const styleOf = (
+    renderer: ReturnType<typeof render>['renderer'],
+    text: string,
+  ) =>
+    StyleSheet.flatten(
+      renderer.root.findAllByType(Text).find(t => t.props.children === text)!
+        .props.style,
+    );
+
+  it('heading is Inter SemiBold 16 white', () => {
+    const { renderer } = render(<FacesInPhotoPanel photo={null} />);
+    expect(styleOf(renderer, 'Faces in This Photo')).toMatchObject({
+      fontFamily: fonts.interSemiBold,
+      fontSize: 16,
+      color: colors.white,
+    });
+  });
+
+  it('warning labels are Inter SemiBold 11 gold, others Regular gray', () => {
+    const { renderer } = render(
+      <FacesInPhotoPanel
+        photo={photo([face('a', 'closed', 'good'), face('b', 'open', 'good')])}
+      />,
+    );
+    settle();
+    expect(styleOf(renderer, 'Check eyes')).toMatchObject({
+      fontFamily: fonts.interSemiBold,
+      fontSize: 11,
+      color: '#FFD700',
+    });
+    expect(styleOf(renderer, 'Eyes open')).toMatchObject({
+      fontFamily: fonts.sans,
+      fontSize: 11,
+    });
   });
 });

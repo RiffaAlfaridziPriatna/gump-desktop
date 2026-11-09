@@ -1,4 +1,7 @@
 import React from 'react';
+import {StyleSheet, Text, View} from 'react-native';
+import {colors} from '../../src/lib/ui/colors';
+import {fonts} from '../../src/lib/ui/typography';
 import {PhotoFiltersSection} from '../../src/components/culling/PhotoFiltersSection';
 import {getByLabel, press, render} from '../helpers/render';
 
@@ -74,5 +77,59 @@ describe('PhotoFiltersSection', () => {
     press(getByLabel(renderer, 'Picked for Upload, 0'));
     expect(props.onShowAll).toHaveBeenCalledTimes(1);
     expect(props.onTogglePicked).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PhotoFiltersSection Figma values', () => {
+  const flat = (n: {props: {style?: unknown}}) =>
+    StyleSheet.flatten(n.props.style as never);
+  const textStyle = (
+    renderer: ReturnType<typeof setup>['renderer'],
+    text: string,
+  ) =>
+    flat(
+      renderer.root.findAllByType(Text).find(t => t.props.children === text)!,
+    );
+  const icons = (renderer: ReturnType<typeof setup>['renderer']) =>
+    renderer.root.findAll(n => n.type === ('SvgMock' as never));
+
+  it('heading is Inter SemiBold 16 white with an 8 gap to the rows', () => {
+    const {renderer} = setup();
+    expect(textStyle(renderer, 'Photo Filters')).toMatchObject({
+      fontFamily: fonts.interSemiBold,
+      fontSize: 16,
+      color: colors.white,
+    });
+    expect(flat(renderer.root.findAllByType(View)[0]!).gap).toBe(8);
+  });
+
+  it('selected row label is Inter SemiBold 14 white, the other stays Regular', () => {
+    const {renderer} = setup({
+      selectionFilter: 'selected',
+      hasActiveFilter: true,
+    });
+    expect(textStyle(renderer, 'Picked for Upload')).toMatchObject({
+      fontFamily: fonts.interSemiBold,
+      fontSize: 14,
+      color: colors.white,
+    });
+    expect(textStyle(renderer, 'All Photos')).toMatchObject({
+      fontFamily: fonts.sans,
+      fontSize: 14,
+    });
+  });
+
+  it.each([
+    ['All Photos selected', {}],
+    ['Picked selected', {selectionFilter: 'selected', hasActiveFilter: true}],
+  ] as const)('circle-check is orange and layout-grid white: %s', (_n, o) => {
+    const {renderer} = setup(o);
+    const colorsOf = icons(renderer).map(i => i.props.color);
+    expect(colorsOf).toEqual([
+      colors.white,
+      colors.white,
+      colors.white,
+      colors.accent,
+    ]);
   });
 });

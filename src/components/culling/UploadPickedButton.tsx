@@ -4,7 +4,7 @@ import {Pressable} from '@components/ui';
 import {colors} from '@lib/ui/colors';
 import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
-import IconInfo from '../../assets/images/icon_info.svg';
+import IconInfo from '../../assets/images/lucide_info.svg';
 import IconUpload from '../../assets/images/icon_upload.svg';
 
 const NOTE_HINT = 'Includes picked photos outside this view.';
@@ -71,7 +71,7 @@ export function UploadPickedButton({
           <View
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants">
-            <IconInfo width={14} height={14} color={colors.textMuted} />
+            <IconInfo width={14} height={14} color={colors.textGray} />
           </View>
           <Text style={styles.noteText}>{note}</Text>
         </View>
@@ -102,6 +102,7 @@ const styles = StyleSheet.create({
   text: {
     ...sansBoldStyle,
     fontSize: 16,
+    lineHeight: 19.2,
     color: colors.white,
   },
   textUploaded: {

@@ -8,7 +8,7 @@ import {
   getFacePanelStatus,
 } from '@lib/culling/facePanelStatus';
 import {colors} from '@lib/ui/colors';
-import {fonts, sansBoldStyle} from '@lib/ui/typography';
+import {fonts, interSemiBoldStyle, sansBoldStyle} from '@lib/ui/typography';
 import React, {useEffect, useState} from 'react';
 import {
   AccessibilityInfo,
@@ -17,8 +17,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
-import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
+import IconChevronDown from '../../assets/images/lucide_chevron_down.svg';
+import IconChevronUp from '../../assets/images/lucide_chevron_up.svg';
 import IconScanFace from '../../assets/images/lucide_scan_face.svg';
 
 export const FACES_EMPTY_HINT =
@@ -204,8 +204,7 @@ export function FacesInPhotoPanel({photo}: FacesInPhotoPanelProps) {
 const styles = StyleSheet.create({
   root: {paddingHorizontal: 12, gap: 10},
   header: {flexDirection: 'row', alignItems: 'center', gap: 6},
-  // Inter Semi Bold is not bundled; closest existing bold is Red Hat Display.
-  title: {...sansBoldStyle, fontSize: 16, color: colors.white},
+  title: {...interSemiBoldStyle, fontSize: 16, color: colors.white},
   fileName: {fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted},
   hint: {fontFamily: fonts.sans, fontSize: 13, color: colors.textMuted},
   stateText: {fontFamily: fonts.sans, fontSize: 13, color: colors.white},
@@ -234,7 +233,7 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   faceLabelWarning: {
-    ...sansBoldStyle,
+    ...interSemiBoldStyle,
     color: cullingStatusColors.warning,
   },
 });
