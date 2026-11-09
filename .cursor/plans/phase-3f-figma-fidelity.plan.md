@@ -5,10 +5,10 @@ approved: true
 todos:
   - id: s8a
     content: Bundle Inter SemiBold and Red Hat Display SemiBold, add font tokens
-    status: pending
+    status: completed
   - id: s8g
     content: Shared modal parts - ProgressBar radius, Modal radius, padding and close, shared decorations
-    status: pending
+    status: completed
   - id: s8b
     content: Photo card shell, footer, pick control, stars, delete, focus ring, grid metrics
     status: pending
