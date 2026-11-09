@@ -674,6 +674,14 @@
       <Link>Assets\Fonts\RedHatDisplay-Bold.ttf</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="..\..\src\assets\fonts\RedHatDisplay-SemiBold.ttf">
+      <Link>Assets\Fonts\RedHatDisplay-SemiBold.ttf</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\src\assets\fonts\Inter-SemiBold.ttf">
+      <Link>Assets\Fonts\Inter-SemiBold.ttf</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="vendor\WinSparkle\x64\WinSparkle.dll" Condition="'$(Platform)'=='x64'">
       <Link>WinSparkle.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

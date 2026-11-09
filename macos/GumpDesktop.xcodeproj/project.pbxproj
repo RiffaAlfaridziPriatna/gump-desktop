@@ -18,6 +18,8 @@
 		B1A2C3D40123456700000002 /* RedHatDisplay-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41123456700000002 /* RedHatDisplay-Regular.ttf */; };
 		B1A2C3D40123456700000003 /* RedHatDisplay-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41123456700000003 /* RedHatDisplay-Medium.ttf */; };
 		B1A2C3D40123456700000004 /* RedHatDisplay-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41123456700000004 /* RedHatDisplay-Bold.ttf */; };
+		B1A2C3D40123456700000005 /* RedHatDisplay-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41123456700000005 /* RedHatDisplay-SemiBold.ttf */; };
+		B1A2C3D40123456700000006 /* Inter-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41123456700000006 /* Inter-SemiBold.ttf */; };
 		C1A2C3D40123456700000001 /* GumpFilePicker.mm in Sources */ = {isa = PBXBuildFile; fileRef = C1A2C3D41123456700000001 /* GumpFilePicker.mm */; };
 		C2B3C4D50123456700000001 /* GumpVisualEffectView.mm in Sources */ = {isa = PBXBuildFile; fileRef = C2B3C4D51123456700000001 /* GumpVisualEffectView.mm */; };
 		C3D4E5F60123456700000001 /* GumpLocalStorage.mm in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F61123456700000001 /* GumpLocalStorage.mm */; };
@@ -164,6 +166,8 @@
 		B1A2C3D41123456700000002 /* RedHatDisplay-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "RedHatDisplay-Regular.ttf"; sourceTree = "<group>"; };
 		B1A2C3D41123456700000003 /* RedHatDisplay-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "RedHatDisplay-Medium.ttf"; sourceTree = "<group>"; };
 		B1A2C3D41123456700000004 /* RedHatDisplay-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "RedHatDisplay-Bold.ttf"; sourceTree = "<group>"; };
+		B1A2C3D41123456700000005 /* RedHatDisplay-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "RedHatDisplay-SemiBold.ttf"; sourceTree = "<group>"; };
+		B1A2C3D41123456700000006 /* Inter-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-SemiBold.ttf"; sourceTree = "<group>"; };
 		C1A2C3D41123456700000001 /* GumpFilePicker.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpFilePicker.mm; sourceTree = "<group>"; };
 		C1A2C3D41123456700000002 /* GumpFilePicker.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GumpFilePicker.h; sourceTree = "<group>"; };
 		C2B3C4D51123456700000001 /* GumpVisualEffectView.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = GumpVisualEffectView.mm; sourceTree = "<group>"; };
@@ -422,6 +426,8 @@
 				B1A2C3D41123456700000002 /* RedHatDisplay-Regular.ttf */,
 				B1A2C3D41123456700000003 /* RedHatDisplay-Medium.ttf */,
 				B1A2C3D41123456700000004 /* RedHatDisplay-Bold.ttf */,
+				B1A2C3D41123456700000005 /* RedHatDisplay-SemiBold.ttf */,
+				B1A2C3D41123456700000006 /* Inter-SemiBold.ttf */,
 			);
 			path = Fonts;
 			sourceTree = "<group>";
@@ -685,6 +691,8 @@
 				B1A2C3D40123456700000002 /* RedHatDisplay-Regular.ttf in Resources */,
 				B1A2C3D40123456700000003 /* RedHatDisplay-Medium.ttf in Resources */,
 				B1A2C3D40123456700000004 /* RedHatDisplay-Bold.ttf in Resources */,
+				B1A2C3D40123456700000005 /* RedHatDisplay-SemiBold.ttf in Resources */,
+				B1A2C3D40123456700000006 /* Inter-SemiBold.ttf in Resources */,
 				D1A2C3D40123456700000010 /* face_detection_scrfd_2.5g_bnkps.onnx in Resources */,
 				D1A2C3D40123456700000011 /* eye_state_ocec_s.onnx in Resources */,
 				E5LOOK010123456700000001 /* cleanNatural.cube in Resources */,
