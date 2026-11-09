@@ -337,6 +337,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: fonts.sans,
     fontSize: 14,
+    lineHeight: 14,
     color: colors.text,
   },
   starRatingContainer: {

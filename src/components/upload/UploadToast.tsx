@@ -889,7 +889,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
       ) : null}
       {showProgress ? (
         <View collapsable={false} style={styles.progressBarContainer}>
-          <ProgressBar progress={displayProgress} />
+          <ProgressBar square progress={displayProgress} />
         </View>
       ) : null}
       {showDuplicatesToggle && duplicatesExpanded ? (
@@ -950,6 +950,7 @@ const styles = StyleSheet.create({
     ...sansBoldStyle,
     flexShrink: 1,
     fontSize: 16,
+    lineHeight: 16,
     letterSpacing: 0,
     color: colors.textDark,
   },

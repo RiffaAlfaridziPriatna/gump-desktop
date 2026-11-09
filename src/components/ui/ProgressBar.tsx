@@ -7,6 +7,8 @@ type ProgressBarProps = {
   height?: number;
   trackColor?: string;
   fillColor?: string;
+  /** Flat 1px outlined bar with a square fill (toast in Figma). */
+  square?: boolean;
   style?: ViewStyle;
 };
 
@@ -15,10 +17,12 @@ export function ProgressBar({
   height = 12,
   trackColor = colors.progressTrack,
   fillColor = colors.accent,
+  square = false,
   style,
 }: ProgressBarProps) {
   const [trackWidth, setTrackWidth] = useState(0);
   const clampedProgress = Math.min(Math.max(progress, 0), 1);
+  const radius = square ? 0 : height / 2;
   const fillWidthPx = trackWidth > 0 ? clampedProgress * trackWidth : 0;
 
   function handleTrackLayout(event: LayoutChangeEvent) {
@@ -34,7 +38,9 @@ export function ProgressBar({
       onLayout={handleTrackLayout}
       style={[
         styles.track,
-        {height, borderRadius: height / 2, backgroundColor: trackColor},
+        square
+          ? [styles.squareTrack, {height}]
+          : {height, borderRadius: radius, backgroundColor: trackColor},
         style,
       ]}>
       <View
@@ -43,10 +49,11 @@ export function ProgressBar({
           styles.fill,
           {
             height,
-            borderRadius: height / 2,
+            borderRadius: radius,
             backgroundColor: fillColor,
             width: fillWidthPx,
           },
+          square && styles.squareFill,
         ]}
       />
     </View>
@@ -58,6 +65,15 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'stretch',
     overflow: 'hidden',
+  },
+  squareTrack: {
+    overflow: 'visible',
+    borderWidth: 1,
+    borderColor: colors.textGray,
+  },
+  squareFill: {
+    left: -1,
+    top: -1,
   },
   fill: {
     position: 'absolute',
