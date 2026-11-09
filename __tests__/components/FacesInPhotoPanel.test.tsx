@@ -252,3 +252,45 @@ describe('FacesInPhotoPanel Figma values', () => {
     });
   });
 });
+
+describe('FacesInPhotoPanel viewer variant', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  const viewerPanel = () =>
+    render(
+      <FacesInPhotoPanel
+        variant="viewer"
+        photo={photo([face('a', 'closed', 'good'), face('b', 'open', 'soft')])}
+      />,
+    );
+
+  it('shows Faces in This Photo, not Key Faces, with no collapse toggle', () => {
+    const { renderer } = viewerPanel();
+    settle();
+    const all = texts(renderer).join('|');
+    expect(all).toContain('Faces in This Photo · 2');
+    expect(all).not.toContain('Key Faces');
+    expect(
+      renderer.root.findAll(
+        n => n.props.accessibilityState?.expanded !== undefined,
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('shows gold issue chips with counts in Inter SemiBold 12', () => {
+    const { renderer } = viewerPanel();
+    settle();
+    const chip = StyleSheet.flatten(
+      renderer.root
+        .findAllByType(Text)
+        .find(t => t.props.children === 'Check eyes · 1')!.props.style,
+    );
+    expect(chip).toMatchObject({
+      fontFamily: fonts.interSemiBold,
+      fontSize: 12,
+      color: '#FFD700',
+    });
+    expect(texts(renderer)).toContain('Possible soft focus · 1');
+  });
+});

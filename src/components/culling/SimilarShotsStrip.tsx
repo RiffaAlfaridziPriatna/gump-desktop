@@ -149,7 +149,7 @@ export function SimilarShotsStrip({
 }
 
 const styles = StyleSheet.create({
-  container: {gap: 10, paddingTop: 12},
+  container: {gap: 10, paddingTop: 28},
   titleRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
   titleIcon: {
     width: 16,
