@@ -1,6 +1,8 @@
 import React from 'react';
 import { Pressable } from '../../src/components/ui';
-import { AccessibilityInfo, Text } from 'react-native';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import { act } from 'react-test-renderer';
 import { AiSelectionToast } from '../../src/components/culling/AiSelectionToast';
 import { press, render } from '../helpers/render';
@@ -14,7 +16,13 @@ function setup(props: Props) {
       .findAllByType(Text)
       .map(t => [t.props.children].flat().join(''));
   const buttons = () => renderer.root.findAllByType(Pressable);
-  return { texts, buttons, unmount };
+  const rootStyle = () =>
+    StyleSheet.flatten(renderer.root.findAllByType(View)[0].props.style);
+  const svgSizes = () =>
+    renderer.root
+      .findAll(n => n.type === 'SvgMock')
+      .map(n => [n.props.width, n.props.height]);
+  return { texts, buttons, unmount, rootStyle, svgSizes };
 }
 
 describe('AiSelectionToast', () => {
@@ -96,5 +104,41 @@ describe('AiSelectionToast', () => {
       jest.advanceTimersByTime(1);
     });
     expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('updated has fixed Figma width, close at the right edge, not absolute', () => {
+    const { rootStyle, svgSizes } = setup({
+      variant: 'updated',
+      level: 'more',
+      count: 94,
+      onDismiss: jest.fn(),
+    });
+    expect(rootStyle().width).toBe(544);
+    expect(rootStyle().justifyContent).toBe('space-between');
+    expect(rootStyle().position).toBeUndefined();
+    expect(svgSizes()).toEqual([[20, 20]]);
+  });
+
+  it('failed has fixed Figma width, 16px error icon and 20px close', () => {
+    const { rootStyle, svgSizes } = setup({
+      variant: 'failed',
+      onDismiss: jest.fn(),
+    });
+    expect(rootStyle().width).toBe(552);
+    expect(svgSizes()).toEqual([
+      [16, 16],
+      [20, 20],
+    ]);
+  });
+
+  it('icon assets carry the Figma colors and sizes', () => {
+    const dir = join(__dirname, '../../src/assets/images');
+    const close = readFileSync(join(dir, 'icon_close_circle.svg'), 'utf8');
+    expect(close).toContain('width="18.75"');
+    expect(close).toContain('fill="#717273"');
+    const err = readFileSync(join(dir, 'icon_error_info.svg'), 'utf8');
+    expect(err).toContain('width="16" height="16"');
+    expect(err).toContain('fill="#FF6E5A"');
+    expect(err).not.toContain('<mask');
   });
 });

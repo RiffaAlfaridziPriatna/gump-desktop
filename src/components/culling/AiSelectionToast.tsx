@@ -5,12 +5,14 @@ import { fonts, sansBoldStyle } from '@lib/ui/typography';
 import { useEffect } from 'react';
 import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import IconCloseCircle from '../../assets/images/icon_close_circle.svg';
-import IconError from '../../assets/images/icon_error.svg';
+import IconError from '../../assets/images/icon_error_info.svg';
 import { LEVEL_LABELS } from './AiSelectionSection';
 
 const AUTO_DISMISS_MS = 5000;
 const FAILED_TITLE = "Couldn't update recommendations";
 const FAILED_DETAIL = 'Previous results kept';
+export const UPDATED_TOAST_WIDTH = 544;
+export const FAILED_TOAST_WIDTH = 552;
 
 export type AiSelectionToastProps =
   | {
@@ -55,7 +57,7 @@ export function AiSelectionToast(props: AiSelectionToastProps) {
 
   if (props.variant === 'failed') {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { width: FAILED_TOAST_WIDTH }]}>
         <View style={styles.row}>
           <IconError width={16} height={16} />
           <Text style={styles.title}>{title}</Text>
@@ -67,7 +69,7 @@ export function AiSelectionToast(props: AiSelectionToastProps) {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { width: UPDATED_TOAST_WIDTH }]}>
       <View style={styles.stack}>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.detail}>{detail}</Text>
@@ -79,10 +81,6 @@ export function AiSelectionToast(props: AiSelectionToastProps) {
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    zIndex: 100,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

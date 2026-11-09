@@ -897,11 +897,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
     backgroundColor: colors.white,
-    zIndex: 100,
     paddingHorizontal: 32,
     paddingTop: 20,
     paddingBottom: 24,
