@@ -167,7 +167,7 @@ export function AiSelectionSection({
         accessibilityState={{ disabled: updating, busy: updating }}
       >
         {updating && <IconLoader width={16} height={16} />}
-        <Text style={styles.buttonText}>
+        <Text numberOfLines={1} style={styles.buttonText}>
           {updating ? 'Updating…' : 'Update recommendations'}
         </Text>
       </Pressable>
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   help: { fontFamily: fonts.sans, fontSize: 13, color: colors.white },
   button: {
     height: 40,
-    paddingHorizontal: 24,
+    paddingHorizontal: 8,
     borderRadius: 24,
     borderWidth: 1,
     borderColor: colors.accent,
