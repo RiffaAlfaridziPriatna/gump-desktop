@@ -11,6 +11,7 @@ import { FACE_ASSESSMENT_DELAY_MS } from '../../src/hooks/useFaceAssessmentLoadi
 import { getFacePanelStatus } from '../../src/lib/culling/facePanelStatus';
 import { colors } from '../../src/lib/ui/colors';
 import { fonts } from '../../src/lib/ui/typography';
+import { Pressable } from '../../src/components/ui';
 import { press, render } from '../helpers/render';
 
 const bounds = { left: 0.1, top: 0.1, width: 0.2, height: 0.2 };
@@ -292,5 +293,37 @@ describe('FacesInPhotoPanel viewer variant', () => {
       color: '#FFD700',
     });
     expect(texts(renderer)).toContain('Possible soft focus · 1');
+  });
+  it('viewer: faces are buttons that report their index and selection', () => {
+    const onFacePress = jest.fn();
+    const { renderer } = render(
+      <FacesInPhotoPanel
+        variant="viewer"
+        photo={photo([face('a', 'open', 'good'), face('b', 'closed', 'good')])}
+        selectedIndex={1}
+        onFacePress={onFacePress}
+      />,
+    );
+    settle();
+    const buttons = renderer.root.findAllByType(Pressable);
+    expect(buttons.map(b => b.props.accessibilityState.selected)).toEqual([
+      false,
+      true,
+    ]);
+    press(buttons[0]);
+    expect(onFacePress).toHaveBeenCalledWith(0);
+  });
+
+  it('sidebar: faces are not pressable', () => {
+    const { renderer } = render(
+      <FacesInPhotoPanel
+        photo={photo([face('a', 'open', 'good')])}
+        onFacePress={jest.fn()}
+      />,
+    );
+    settle();
+    expect(
+      renderer.root.findAll(n => n.props.accessibilityHint === 'Zoom to this face'),
+    ).toHaveLength(0);
   });
 });

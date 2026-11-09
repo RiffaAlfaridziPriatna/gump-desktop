@@ -98,6 +98,10 @@ export default function CulledAlbumPhotoDetailScreen({
   const handleTooltipChangeRef = useRef(handleTooltipChange);
   handleTooltipChangeRef.current = handleTooltipChange;
 
+  const handleFacePress = useCallback((index: number) => {
+    setZoomFaceIndex(current => (current === index ? null : index));
+  }, []);
+
   const faces = analysis?.faces ?? [];
   const fileName = photo?.file.name ?? 'Photo';
 
@@ -419,6 +423,8 @@ export default function CulledAlbumPhotoDetailScreen({
                   <FacesInPhotoPanel
                     photo={facesPanelPhoto}
                     variant="viewer"
+                    selectedIndex={zoomFaceIndex}
+                    onFacePress={handleFacePress}
                   />
                 </ScrollView>
               </View>

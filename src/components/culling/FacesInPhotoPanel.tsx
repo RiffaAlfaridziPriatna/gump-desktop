@@ -51,16 +51,23 @@ type FacesInPhotoPanelProps = {
   photo: FacesInPhotoPanelPhoto | null;
   /** `viewer` is the wide, non-collapsible panel beside the photo viewer. */
   variant?: FacesInPhotoPanelVariant;
+  /** Viewer only: tap a face to zoom to it; tapping the selected face again is the caller's toggle. */
+  onFacePress?: (index: number) => void;
+  selectedIndex?: number | null;
 };
 
 function FaceItem({
   face,
   uri,
   viewer,
+  selected,
+  onPress,
 }: {
   face: FacesInPhotoPanelFace;
   uri?: string;
   viewer: boolean;
+  selected: boolean;
+  onPress?: () => void;
 }) {
   const cropSize = viewer ? VIEWER_CROP_SIZE : CROP_SIZE;
   const status = getFacePanelStatus(face);
@@ -75,12 +82,27 @@ function FaceItem({
         ? cullingStatusColors.warning
         : null;
 
+  const Wrapper = onPress ? Pressable : View;
+  const wrapperProps = onPress
+    ? {
+        accessibilityRole: 'button' as const,
+        accessibilityHint: 'Zoom to this face',
+        accessibilityState: {selected},
+        onPress,
+      }
+    : {};
+
   return (
-    <View
+    <Wrapper
       accessible
       accessibilityLabel={a11yLabel}
+      {...wrapperProps}
       style={[styles.face, viewer && styles.faceViewer]}>
-      <View style={{width: cropSize, height: cropSize}}>
+      <View
+        style={[
+          {width: cropSize, height: cropSize},
+          selected && styles.cropSelected,
+        ]}>
         <FaceCropAvatar uri={uri} boundingBox={face.bounds} size={cropSize} />
       </View>
       {badgeColor ? (
@@ -111,7 +133,7 @@ function FaceItem({
           {label.text}
         </Text>
       ))}
-    </View>
+    </Wrapper>
   );
 }
 
@@ -156,10 +178,14 @@ function PanelBody({
   photo,
   loading,
   viewer,
+  selectedIndex,
+  onFacePress,
 }: {
   photo: FacesInPhotoPanelPhoto | null;
   loading: boolean;
   viewer: boolean;
+  selectedIndex: number | null;
+  onFacePress?: (index: number) => void;
 }) {
   if (!photo) {
     return <Text style={styles.hint}>{FACES_EMPTY_HINT}</Text>;
@@ -190,6 +216,8 @@ function PanelBody({
           face={face}
           uri={photo.uri}
           viewer={viewer}
+          selected={selectedIndex === index}
+          onPress={onFacePress ? () => onFacePress(index) : undefined}
         />
       ))}
     </View>
@@ -199,6 +227,8 @@ function PanelBody({
 export function FacesInPhotoPanel({
   photo,
   variant = 'sidebar',
+  onFacePress,
+  selectedIndex = null,
 }: FacesInPhotoPanelProps) {
   const viewer = variant === 'viewer';
   const [collapsed, setCollapsed] = useState(false);
@@ -249,7 +279,13 @@ export function FacesInPhotoPanel({
           ) : null}
           {viewer && photo && !loading ? <IssueSummary photo={photo} /> : null}
           <View accessibilityLiveRegion="polite">
-            <PanelBody photo={photo} loading={loading} viewer={viewer} />
+            <PanelBody
+              photo={photo}
+              loading={loading}
+              viewer={viewer}
+              selectedIndex={selectedIndex}
+              onFacePress={viewer ? onFacePress : undefined}
+            />
           </View>
         </>
       ) : null}
@@ -269,6 +305,11 @@ const styles = StyleSheet.create({
   grid: {flexDirection: 'row', flexWrap: 'wrap', gap: 12},
   face: {width: 66, alignItems: 'center', gap: 4},
   faceViewer: {width: 73},
+  cropSelected: {
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: colors.white,
+  },
   summary: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
   chip: {
     backgroundColor: '#242424',

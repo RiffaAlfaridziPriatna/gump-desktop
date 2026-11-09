@@ -66,6 +66,7 @@ Branch: base from `feat/phase-3` (contains 3a to 3e).
 - UI follows Figma 100% (standing user rule). Where Figma and the earlier code differ, Figma wins unless listed here.
 - Fonts (user, 2026-11-08): bundle a real Inter SemiBold (not the system font with `fontWeight`), and bundle Red Hat Display SemiBold copied from `camera-to-phone/assets/fonts/RedHatDisplay-SemiBold.ttf`. The Inter file is not in any local repo: it is downloaded (Google Fonts, OFL) by s8a, and the exact filename, source URL and size are stated to the user before the download.
 - Viewer side panel (user, 2026-11-09): "Faces in This Photo" as in Figma replaces "Key Faces" in the viewer. Unblocks s8e.
+- Face zoom in viewer (user, 2026-11-09): tapping a face in the viewer panel zooms to it, tapping the selected face again clears the zoom. Panel viewer variant takes `onFacePress` and `selectedIndex`.
 - Export popup (user, 2026-11-09): Figma copy replaces the current copy. Anything the app does that Figma does not show (for example the saved path card) is kept and handled in the Figma style. Unblocks s8i.
 - Accepted deviations stay: upload popup width 720 (user), Figma token contrast kept (white on orange 2.17:1, `#737373` 3.89:1), "Choose fewer photos" copy kept.
 - Not changed because Figma shows none: previous and next chevrons in the viewer, viewer image frame background and radius, Add Photos button.
