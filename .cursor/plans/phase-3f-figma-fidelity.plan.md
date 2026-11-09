@@ -17,7 +17,7 @@ todos:
     status: completed
   - id: s8e
     content: Photo viewer header, gaps and face badges
-    status: pending
+    status: completed
   - id: s8f
     content: Sidebar gaps, fonts, icons and colors
     status: completed
@@ -26,7 +26,7 @@ todos:
     status: completed
   - id: s8i
     content: Export popup alignment
-    status: pending
+    status: completed
   - id: s8j
     content: Look picker, scope popup and look status alignment
     status: completed
