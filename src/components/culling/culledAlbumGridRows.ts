@@ -3,6 +3,34 @@ import type {SimilarShotsViewSection} from '@lib/culling/similarShotsView';
 export const GRID_COLUMNS = 3;
 /** Fixed height of a section header row (includes its bottom gap). */
 export const HEADER_ROW_HEIGHT = 40;
+/** Space above every section header except the first. */
+export const GROUP_GAP = 24;
+
+export const THUMBNAIL_ASPECT_RATIO = 23 / 16;
+export const CARD_PADDING_TOP = 8;
+export const CARD_PADDING_HORIZONTAL = 8;
+export const CARD_PADDING_BOTTOM = 12;
+export const CARD_INTERNAL_GAP = 8;
+export const CARD_FOOTER_HEIGHT = 28;
+
+export function thumbnailWidthForCard(cardWidth: number): number {
+  return cardWidth - CARD_PADDING_HORIZONTAL * 2;
+}
+
+/** Stride of one photo row: cards abut, so no gap between rows. */
+export function photoRowHeight(cardWidth: number): number {
+  return (
+    CARD_PADDING_TOP +
+    thumbnailWidthForCard(cardWidth) / THUMBNAIL_ASPECT_RATIO +
+    CARD_INTERNAL_GAP +
+    CARD_FOOTER_HEIGHT +
+    CARD_PADDING_BOTTOM
+  );
+}
+
+export function headerRowHeight(rowIndex: number): number {
+  return rowIndex === 0 ? HEADER_ROW_HEIGHT : HEADER_ROW_HEIGHT + GROUP_GAP;
+}
 
 export type CulledAlbumGridSection = SimilarShotsViewSection;
 
@@ -110,7 +138,7 @@ export function createGetItemLayout(rows: GridRow[], photoRowHeight: number) {
     });
   }
   const lengths = rows.map(row =>
-    row.kind === 'header' ? HEADER_ROW_HEIGHT : photoRowHeight,
+    row.kind === 'header' ? headerRowHeight(row.rowIndex) : photoRowHeight,
   );
   const offsets: number[] = [];
   let offset = 0;

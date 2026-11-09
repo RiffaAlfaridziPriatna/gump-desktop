@@ -1,4 +1,5 @@
 import {LookPreviewImage} from '@components/look/LookPreviewImage';
+import {THUMBNAIL_ASPECT_RATIO} from '@components/culling/culledAlbumGridRows';
 import {useShouldLoadCulledAlbumImage} from '@components/culling/culledAlbumImageLoad';
 import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {persistThumbnailDimensions} from '@lib/culledAlbum/persistThumbnailDimensions';
@@ -19,8 +20,6 @@ import {
   View,
   type NativeSyntheticEvent,
 } from 'react-native';
-
-const THUMBNAIL_ASPECT_RATIO = 3 / 2;
 
 type CulledAlbumPhotoThumbnailProps = {
   albumId: string;

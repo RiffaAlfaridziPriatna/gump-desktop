@@ -1,7 +1,10 @@
 import {
   buildRows,
   createGetItemLayout,
+  GROUP_GAP,
   HEADER_ROW_HEIGHT,
+  headerRowHeight,
+  photoRowHeight,
   keepKnownPhotos,
   sectionsLayoutKey,
   type CulledAlbumGridSection,
@@ -98,7 +101,7 @@ describe('buildRows sections', () => {
     const layout = createGetItemLayout(rows, 100);
     expect(layout(null, 0)).toEqual({length: HEADER_ROW_HEIGHT, offset: 0, index: 0});
     expect(layout(null, 3)).toEqual({
-      length: HEADER_ROW_HEIGHT,
+      length: HEADER_ROW_HEIGHT + GROUP_GAP,
       offset: HEADER_ROW_HEIGHT + 200,
       index: 3,
     });
@@ -110,8 +113,21 @@ describe('buildRows sections', () => {
     });
     expect(layout(null, 4)).toEqual({
       length: 100,
-      offset: HEADER_ROW_HEIGHT * 2 + 200,
+      offset: HEADER_ROW_HEIGHT * 2 + GROUP_GAP + 200,
       index: 4,
     });
+  });
+});
+
+describe('photo row height', () => {
+  it('is thumbnail + 8 + 28 + 8 + 12 at the Figma card width', () => {
+    expect(photoRowHeight(341.67)).toBeCloseTo(282.55, 1);
+    const thumb = (341.67 - 16) / (23 / 16);
+    expect(photoRowHeight(341.67)).toBeCloseTo(thumb + 8 + 28 + 8 + 12, 6);
+  });
+
+  it('puts a 24 gap above every header except the first', () => {
+    expect(headerRowHeight(0)).toBe(HEADER_ROW_HEIGHT);
+    expect(headerRowHeight(5)).toBe(HEADER_ROW_HEIGHT + 24);
   });
 });
