@@ -483,7 +483,8 @@ export function ExportPhotosModal({
       visible={visible}
       onClose={onClose}
       width={modalSize.width}
-      height={modalSize.height}>
+      height={modalSize.height}
+      contentStyle={step === 'options' ? OPTIONS_CONTENT_STYLE : undefined}>
       <ModalDecor />
 
       {step === 'options' && (
@@ -656,6 +657,9 @@ export function ExportPhotosModal({
     </Modal>
   );
 }
+
+// The options column nearly fills the 500 popup; keep the pre-s8g bottom room.
+const OPTIONS_CONTENT_STYLE = {paddingBottom: 24} as const;
 
 const styles = StyleSheet.create({
   optionsContent: {

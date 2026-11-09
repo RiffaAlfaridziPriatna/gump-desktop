@@ -380,6 +380,13 @@ describe('UploadSelectedModal cloud storage states', () => {
     expect(StyleSheet.flatten(track.props.style).borderRadius).toBe(4.5);
   });
 
+  it('keeps the not-enough-storage popup 16 taller to offset the 40 bottom padding', async () => {
+    const {renderer} = await mount('exceeded');
+    expect(
+      renderer.root.findAll(n => n.props.width === 720 && n.props.height === 511),
+    ).not.toHaveLength(0);
+  });
+
   it('sizes the not-enough-storage buttons and storage card to Figma', async () => {
     const {renderer} = await mount('exceeded');
     const style = (label: string) =>

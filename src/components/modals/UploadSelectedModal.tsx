@@ -116,7 +116,7 @@ function modalHeightForPhase(
   if (phase === 'uploading') {
     return 456;
   }
-  return isExceeded ? 495 : 456;
+  return isExceeded ? 511 : 456;
 }
 
 export function UploadSelectedModal({

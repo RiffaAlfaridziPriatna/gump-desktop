@@ -102,6 +102,21 @@ afterAll(() => {
   UIManager.dispatchViewManagerCommand = realDispatch;
 });
 
+describe('ExportPhotosModal options padding', () => {
+  it('keeps 24 bottom room on the options step only', async () => {
+    install({});
+    const renderer = mountModal();
+    const modalProps = () =>
+      renderer.root.find(
+        n => n.props.width === 720 && 'contentStyle' in n.props,
+      ).props;
+    expect(modalProps().height).toBe(500);
+    expect(modalProps().contentStyle).toEqual({paddingBottom: 24});
+    await pressText(renderer, 'Prepare Export');
+    expect(modalProps().contentStyle).toBeUndefined();
+  });
+});
+
 describe('ExportPhotosModal failure states', () => {
   beforeEach(() => {
     focus.mockClear();
