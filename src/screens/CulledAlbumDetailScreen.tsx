@@ -661,16 +661,6 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         </View>
 
         <View style={styles.toastColumn} pointerEvents="box-none">
-          {aiSelectionFlow.status === 'updated' &&
-          aiSelectionFlow.recommendedCount !== null &&
-          aiSelectionFlow.lastAppliedLevel !== null ? (
-            <AiSelectionToast
-              variant="updated"
-              level={aiSelectionFlow.lastAppliedLevel}
-              count={aiSelectionFlow.recommendedCount}
-              onDismiss={aiSelectionFlow.dismiss}
-            />
-          ) : null}
           {aiSelectionFlow.status === 'failed' ? (
             <AiSelectionToast
               variant="failed"

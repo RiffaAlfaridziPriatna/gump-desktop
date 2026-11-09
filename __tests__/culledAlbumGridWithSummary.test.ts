@@ -2,7 +2,7 @@ jest.mock('../src/components/culling/CulledAlbumPhotoGrid', () => ({
   CulledAlbumPhotoGrid: () => null,
 }));
 
-import { summarizeSections } from '../src/components/culling/CulledAlbumGridWithSummary';
+import { summarizeSections, summaryParts } from '../src/components/culling/CulledAlbumGridWithSummary';
 
 const group = (key: string, n: number) => ({
   key,
@@ -67,5 +67,14 @@ describe('summarizeSections', () => {
         ['Possible Closed Eyes', 'Similar Shots'],
       ),
     ).toBe('Showing: Possible Closed Eyes + Similar Shots · 1 group · 2 photos');
+  });
+});
+
+describe('summaryParts', () => {
+  it('splits labels from the count tail', () => {
+    expect(summaryParts(undefined, ['Possible Blur', 'Picked'], 3)).toEqual({
+      labels: 'Possible Blur + Picked',
+      tail: '· 3 photos',
+    });
   });
 });

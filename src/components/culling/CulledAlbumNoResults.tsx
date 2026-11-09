@@ -1,6 +1,6 @@
 import {Pressable} from '@components/ui';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, interSemiBoldStyle} from '@lib/ui/typography';
 import {StyleSheet, Text, View} from 'react-native';
 
 export function ClearFiltersButton({onPress}: {onPress: () => void}) {
@@ -39,7 +39,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   pillText: {
-    fontFamily: fonts.sansBold,
+    ...interSemiBoldStyle,
     fontSize: 13,
     color: colors.accent,
   },

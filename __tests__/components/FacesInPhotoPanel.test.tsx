@@ -110,7 +110,7 @@ describe('FacesInPhotoPanel', () => {
       .map(n => n.props.accessibilityLabel);
     expect(labels).toEqual([
       'Check eyes',
-      'Eyes open, Possible soft focus',
+      'Possible soft focus',
       'Eyes open',
     ]);
   });
@@ -325,5 +325,15 @@ describe('FacesInPhotoPanel viewer variant', () => {
     expect(
       renderer.root.findAll(n => n.props.accessibilityHint === 'Zoom to this face'),
     ).toHaveLength(0);
+  });
+
+  it('shows one label per face, eyes before focus', () => {
+    const { renderer } = render(
+      <FacesInPhotoPanel photo={photo([face('a', 'closed', 'soft')])} />,
+    );
+    settle();
+    const t = texts(renderer);
+    expect(t).toContain('Check eyes');
+    expect(t).not.toContain('Possible soft focus');
   });
 });

@@ -17,6 +17,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import IconBadgeEyes from '../../assets/images/icon_face_badge_eyes.svg';
 import IconChevronDown from '../../assets/images/lucide_chevron_down.svg';
 import IconChevronUp from '../../assets/images/lucide_chevron_up.svg';
 import IconScanFace from '../../assets/images/lucide_scan_face.svg';
@@ -71,14 +72,15 @@ function FaceItem({
 }) {
   const cropSize = viewer ? VIEWER_CROP_SIZE : CROP_SIZE;
   const status = getFacePanelStatus(face);
-  const a11yLabel = status.labels.map(l => l.text).join(', ');
-  const EyeIcon = status.kind === 'assessed' ? status.eyeMeta?.Icon : null;
+  const shownLabel = status.labels.find(l => l.warning) ?? status.labels[0];
+  const a11yLabel = shownLabel.text;
+  const showEyes = status.kind === 'assessed' && status.eyeMeta !== null;
   const showBang =
-    status.kind === 'assessed' && !EyeIcon && status.focusWarning;
+    status.kind === 'assessed' && !showEyes && status.focusWarning;
   const badgeColor =
     status.kind === 'unknown'
       ? colors.textMuted
-      : EyeIcon || showBang
+      : showEyes || showBang
         ? cullingStatusColors.warning
         : null;
 
@@ -113,8 +115,8 @@ function FaceItem({
             viewer && styles.badgeViewer,
             {backgroundColor: badgeColor},
           ]}>
-          {EyeIcon ? (
-            <EyeIcon width={10} height={10} />
+          {showEyes ? (
+            <IconBadgeEyes width={10} height={10} />
           ) : (
             <Text
               style={[
@@ -126,13 +128,13 @@ function FaceItem({
           )}
         </View>
       ) : null}
-      {status.labels.map(label => (
-        <Text
-          key={label.text}
-          style={[styles.faceLabel, label.warning && styles.faceLabelWarning]}>
-          {label.text}
-        </Text>
-      ))}
+      <Text
+        style={[
+          styles.faceLabel,
+          shownLabel.warning && styles.faceLabelWarning,
+        ]}>
+        {shownLabel.text}
+      </Text>
     </Wrapper>
   );
 }
