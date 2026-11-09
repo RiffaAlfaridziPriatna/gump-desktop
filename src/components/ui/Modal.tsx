@@ -95,7 +95,7 @@ function ModalCard({
           style={styles.closeButton}
           onPress={onClose}
           hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-          <IconClose width={20} height={20} color={colors.textDark} />
+          <IconClose width={24} height={24} color={colors.textDark} />
         </TouchableOpacity>
       )}
       <View
@@ -336,6 +336,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.white,
+    borderRadius: 8,
     overflow: 'hidden',
   },
   cardHidden: {
@@ -343,8 +344,8 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: 'absolute',
-    top: 16,
-    right: 16,
+    top: 20,
+    right: 20,
     zIndex: 1,
     width: 32,
     height: 32,
@@ -354,7 +355,7 @@ const styles = StyleSheet.create({
   content: {
     paddingTop: 40,
     paddingHorizontal: 32,
-    paddingBottom: 24,
+    paddingBottom: 40,
     alignItems: 'center',
   },
   contentFlex: {
