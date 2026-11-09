@@ -35,7 +35,7 @@ todos:
     status: completed
   - id: s8c
     content: AI badges, similar shots chip and group header bars
-    status: pending
+    status: completed
 isProject: false
 ---
 
