@@ -11,28 +11,28 @@ todos:
     status: completed
   - id: s8b
     content: Photo card shell, footer, pick control, stars, delete, focus ring, grid metrics
-    status: pending
+    status: completed
   - id: s8d
     content: Similar Shots strip rebuilt to Figma
-    status: pending
+    status: completed
   - id: s8e
     content: Photo viewer header, gaps and face badges
     status: pending
   - id: s8f
     content: Sidebar gaps, fonts, icons and colors
-    status: pending
+    status: completed
   - id: s8h
     content: Upload popup and cloud storage card alignment
-    status: pending
+    status: completed
   - id: s8i
     content: Export popup alignment
     status: pending
   - id: s8j
     content: Look picker, scope popup and look status alignment
-    status: pending
+    status: completed
   - id: s8k
     content: AI Selection toast width, icons and stacking
-    status: pending
+    status: completed
   - id: s8c
     content: AI badges, similar shots chip and group header bars
     status: pending
