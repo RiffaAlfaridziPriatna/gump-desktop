@@ -446,8 +446,10 @@ export default function AlbumDetailScreen({ navigation, route }: Props) {
             hideAdd={isCullingInProgress || cullingActive}
           />
         )}
-        <UploadToast mode="upload" albumId={albumId} />
-        <UploadToast mode="analyze" albumId={albumId} />
+        <View style={styles.toastColumn} pointerEvents="box-none">
+          <UploadToast mode="upload" albumId={albumId} />
+          <UploadToast mode="analyze" albumId={albumId} />
+        </View>
         <ProfileMenuPopup
           menu={profileMenu}
           rightOffset={screenPaddingHorizontal}
@@ -458,6 +460,13 @@ export default function AlbumDetailScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
+  toastColumn: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    zIndex: 100,
+    alignItems: 'flex-start',
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,
