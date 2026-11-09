@@ -1,7 +1,7 @@
-import { LookPickerDecorations } from '@components/look/LookPickerDecorations';
 import { LookPickerBody } from '@components/look/LookPickerBody';
 import { resolveLookPreviewUri } from '@components/look/resolveLookPreviewUri';
 import { Modal, Pressable } from '@components/ui';
+import { ModalDecorations } from './ModalDecorations';
 import type { CulledAlbumPhoto } from '@lib/culledAlbum/types';
 import type { LookId } from '@lib/look/types';
 import { colors } from '@lib/ui/colors';
@@ -28,6 +28,9 @@ type ApplyLookModalProps = {
 const TITLE = 'Edit Photos';
 // Figma GumpLight/Grey4; no matching token in colors.ts.
 const SUBTITLE_COLOR = '#454545';
+// 20 high text + 12 + 12 = 44 point target without growing the button.
+const TEXT_BUTTON_HIT_SLOP = { top: 12, bottom: 12, left: 0, right: 0 };
+const CLOSE_HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 };
 const HANDLED_BUBBLING = 3;
 
 const escapeKeyDownEvents =
@@ -89,7 +92,7 @@ export function ApplyLookModal({
         onKeyDown={handleKeyDown}
         keyDownEvents={escapeKeyDownEvents}
       >
-        <LookPickerDecorations />
+        <ModalDecorations />
         <View style={styles.content}>
           <View style={styles.textBlock}>
             <Text style={styles.title} accessibilityRole="header">
@@ -124,6 +127,7 @@ export function ApplyLookModal({
                 pressed && styles.pressed,
               ]}
               onPress={onClose}
+              hitSlop={TEXT_BUTTON_HIT_SLOP}
               accessibilityRole="button"
               accessibilityLabel="Cancel"
             >
@@ -137,7 +141,7 @@ export function ApplyLookModal({
             pressed && styles.pressed,
           ]}
           onPress={onClose}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          hitSlop={CLOSE_HIT_SLOP}
           accessibilityRole="button"
           accessibilityLabel="Close"
         >
@@ -145,7 +149,7 @@ export function ApplyLookModal({
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
           >
-            <IconClose width={20} height={20} color={colors.textDark} />
+            <IconClose width={24} height={24} color={colors.textDark} />
           </View>
         </Pressable>
       </View>
@@ -212,7 +216,6 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
   secondaryButton: {
-    minHeight: 44,
     paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',

@@ -5,7 +5,7 @@ import { focusDesktopNode } from '@components/modals/focusDesktopNode';
 import { getLookLabel, LOOK_CATALOG } from '@lib/look/lookCatalog';
 import type { LookId } from '@lib/look/types';
 import { colors } from '@lib/ui/colors';
-import { fonts, sansBoldStyle } from '@lib/ui/typography';
+import { fonts, sansSemiBoldStyle } from '@lib/ui/typography';
 import { useCallback, useEffect, useRef } from 'react';
 import {
   AccessibilityInfo,
@@ -200,10 +200,10 @@ const styles = StyleSheet.create({
   toggle: {
     position: 'absolute',
     left: 16,
-    bottom: 18,
+    bottom: 16,
   },
   caption: {
-    ...sansBoldStyle,
+    ...sansSemiBoldStyle,
     fontSize: 14,
     lineHeight: 14 * 1.2,
     color: colors.textDark,
