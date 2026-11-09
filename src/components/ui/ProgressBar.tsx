@@ -34,7 +34,7 @@ export function ProgressBar({
       onLayout={handleTrackLayout}
       style={[
         styles.track,
-        {height, backgroundColor: trackColor},
+        {height, borderRadius: height / 2, backgroundColor: trackColor},
         style,
       ]}>
       <View
@@ -43,6 +43,7 @@ export function ProgressBar({
           styles.fill,
           {
             height,
+            borderRadius: height / 2,
             backgroundColor: fillColor,
             width: fillWidthPx,
           },
