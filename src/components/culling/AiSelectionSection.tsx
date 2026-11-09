@@ -6,7 +6,7 @@ import {
 } from '@domain/valueObjects/AiSelection';
 import type { AiSelectionStatus } from '@hooks/useAiSelectionFlow';
 import { colors } from '@lib/ui/colors';
-import { fonts, sansBoldStyle } from '@lib/ui/typography';
+import { fonts, interSemiBoldStyle, sansSemiBoldStyle } from '@lib/ui/typography';
 import { useCallback, useEffect, useRef } from 'react';
 import {
   AccessibilityInfo,
@@ -191,8 +191,7 @@ const styles = StyleSheet.create({
   root: { gap: 10, paddingHorizontal: 12 },
   captionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   caption: {
-    fontFamily: fonts.sans,
-    fontWeight: '600',
+    ...sansSemiBoldStyle,
     fontSize: 16,
     color: colors.white,
   },
@@ -233,7 +232,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   buttonUpdating: { opacity: 0.6 },
-  // Inter Semi Bold is not bundled; sansBold stands in until the font is added.
-  buttonText: { ...sansBoldStyle, fontSize: 14, color: colors.accent },
+  buttonText: { ...interSemiBoldStyle, fontSize: 14, color: colors.accent },
   note: { fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted },
 });

@@ -1,12 +1,12 @@
 import {Pressable} from '@components/ui';
 import type {SelectionFilter} from '@lib/culling/culledAlbumPhotoFilters';
 import {colors} from '@lib/ui/colors';
-import {fonts, sansBoldStyle} from '@lib/ui/typography';
+import {fonts, interSemiBoldStyle, sansBoldStyle} from '@lib/ui/typography';
 import type React from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import type {SvgProps} from 'react-native-svg';
-import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
-import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
+import IconChevronDown from '../../assets/images/lucide_chevron_down.svg';
+import IconChevronUp from '../../assets/images/lucide_chevron_up.svg';
 import IconCircleCheck from '../../assets/images/lucide_circle_check.svg';
 import IconLayoutGrid from '../../assets/images/lucide_layout_grid.svg';
 import IconSliders from '../../assets/images/lucide_sliders_horizontal.svg';
@@ -24,13 +24,14 @@ type PhotoFiltersSectionProps = {
 
 type NavRowProps = {
   Icon: React.FC<SvgProps>;
+  iconColor: string;
   label: string;
   count: number;
   selected: boolean;
   onPress: () => void;
 };
 
-function NavRow({Icon, label, count, selected, onPress}: NavRowProps) {
+function NavRow({Icon, iconColor, label, count, selected, onPress}: NavRowProps) {
   return (
     <Pressable
       onPress={onPress}
@@ -38,7 +39,7 @@ function NavRow({Icon, label, count, selected, onPress}: NavRowProps) {
       accessibilityRole="button"
       accessibilityLabel={`${label}, ${count}`}
       accessibilityState={{selected}}>
-      <Icon width={16} height={16} color={colors.white} />
+      <Icon width={16} height={16} color={iconColor} />
       <Text style={selected ? styles.labelSelected : styles.label}>
         {label}
       </Text>
@@ -74,6 +75,7 @@ export function PhotoFiltersSection({
         <View style={styles.rows}>
           <NavRow
             Icon={IconLayoutGrid}
+            iconColor={colors.white}
             label="All Photos"
             count={totalCount}
             selected={!hasActiveFilter}
@@ -81,6 +83,7 @@ export function PhotoFiltersSection({
           />
           <NavRow
             Icon={IconCircleCheck}
+            iconColor={colors.accent}
             label="Picked for Upload"
             count={pickedCount}
             selected={selectionFilter === 'selected'}
@@ -93,7 +96,7 @@ export function PhotoFiltersSection({
 }
 
 const styles = StyleSheet.create({
-  container: {gap: 14},
+  container: {gap: 8},
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -101,7 +104,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   title: {
-    ...sansBoldStyle,
+    ...interSemiBoldStyle,
     fontSize: 16,
     color: colors.white,
   },
@@ -121,10 +124,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.white,
   },
-  // Inter Semi Bold is not bundled; sansBold stands in until the font is added.
   labelSelected: {
     flex: 1,
-    ...sansBoldStyle,
+    ...interSemiBoldStyle,
     fontSize: 14,
     color: colors.white,
   },
