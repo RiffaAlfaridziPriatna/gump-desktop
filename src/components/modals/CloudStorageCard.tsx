@@ -2,7 +2,7 @@ import {ProgressBar} from '@components/ui';
 import {bytesToGigabytes} from '@lib/culledAlbum/format';
 import {formatGigabytes} from '@lib/export/formatByteSize';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansSemiBoldStyle} from '@lib/ui/typography';
 import {StyleSheet, Text, View} from 'react-native';
 
 const TRACK = '#ECECEC';
@@ -44,7 +44,6 @@ function StorageBar({
         height={height}
         trackColor={TRACK}
         fillColor={fillColor}
-        style={styles.bar}
       />
     </View>
   );
@@ -158,17 +157,13 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   value: {
-    fontFamily: fonts.sans,
+    ...sansSemiBoldStyle,
     fontSize: 14,
     lineHeight: 14 * 1.2,
     color: colors.textDark,
-    fontWeight: '600',
   },
   divider: {
     borderTopWidth: 1,
     borderTopColor: DIVIDER,
-  },
-  bar: {
-    borderRadius: 3,
   },
 });

@@ -5,6 +5,8 @@ import {useEffect, useRef, type ReactNode} from 'react';
 import {AccessibilityInfo, StyleSheet, Text, View} from 'react-native';
 import {focusDesktopNode} from './focusDesktopNode';
 
+const TEXT_BUTTON_HIT_SLOP = {top: 10, bottom: 10, left: 8, right: 8};
+
 /** Decorative icon: hidden from screen readers. */
 export function PopupIcon({children}: {children: ReactNode}) {
   return (
@@ -95,6 +97,7 @@ export function PopupButton({
       ]}
       onPress={onPress}
       disabled={disabled}
+      hitSlop={variant === 'text' ? TEXT_BUTTON_HIT_SLOP : undefined}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={accessibilityHint}
@@ -133,7 +136,7 @@ export const popupStyles = StyleSheet.create({
     gap: 12,
     width: 456,
     maxWidth: '100%',
-    alignItems: 'stretch',
+    alignItems: 'center',
   },
 });
 
@@ -180,7 +183,6 @@ const styles = StyleSheet.create({
   },
   textButton: {
     flex: 0,
-    minHeight: 44,
   },
   single: {
     flex: 0,

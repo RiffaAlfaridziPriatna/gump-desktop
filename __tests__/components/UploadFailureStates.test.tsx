@@ -285,7 +285,7 @@ describe('upload failure states', () => {
     await press(view.renderer, 'Retry 1 photo');
     expect(photoOf('net').serverUploadStatus).toBe('pending');
     expect(photoOf('final').serverUploadStatus).toBe('failed');
-    expect(texts(view.renderer)[0]).toBe('Uploading 4 Photos');
+    expect(texts(view.renderer)[0]).toBe('Uploading 4 photos');
     expect(texts(view.renderer)).not.toContain('Upload complete');
     expect(announce).not.toHaveBeenCalledWith(
       expect.stringContaining('Upload complete'),
