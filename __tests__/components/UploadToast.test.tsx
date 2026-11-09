@@ -3,6 +3,7 @@ import {Text} from 'react-native';
 import {UploadToast} from '../../src/components/upload/UploadToast';
 import {
   beginAnalysisQueue,
+  beginLocalImportQueue,
   beginServerUploadQueue,
   finishServerUploadQueue,
   uploadQueueStore,
@@ -14,6 +15,13 @@ let mockAnalysisCounts: {
   pending: number;
   inProgress: number;
   completed: number;
+  failed: number;
+} | null = null;
+let mockLocalImport: {
+  total: number;
+  pending: number;
+  uploading: number;
+  uploaded: number;
   failed: number;
 } | null = null;
 const mockPhotos: Array<{id: string; serverUploadStatus: string}> = [];
@@ -31,7 +39,7 @@ jest.mock('@context/culledAlbum', () => ({
   useCulledAlbumAnalysisCounts: () => mockAnalysisCounts,
   useCulledAlbumFilenameDuplicates: () => [],
   useCulledAlbumFilenameDuplicateToastMode: () => null,
-  useCulledAlbumLocalImportProgress: () => null,
+  useCulledAlbumLocalImportProgress: () => mockLocalImport,
   useCulledAlbumServerUploadBatch: () => ({
     batchPhotoIds: mockPhotos.map(p => p.id),
     photos: mockPhotos,
@@ -131,5 +139,30 @@ describe('UploadToast analyze ETA', () => {
     const texts = renderer.root.findAllByType(Text).map(n => String(n.props.children));
     unmount();
     expect(texts.some(t => /· About \d+ min left$/.test(t))).toBe(true);
+  });
+});
+
+describe('UploadToast local import ETA', () => {
+  afterEach(() => {
+    mockLocalImport = null;
+    uploadQueueStore.setState(() => ({queues: {}}));
+    jest.useRealTimers();
+  });
+
+  it('shows About X min left on the local import toast once the pace is known', () => {
+    jest.useFakeTimers().setSystemTime(0);
+    beginLocalImportQueue(albumId, 1000);
+    mockLocalImport = {total: 1000, pending: 1000, uploading: 0, uploaded: 0, failed: 0};
+    const {renderer, unmount, rerender} = render(
+      <UploadToast mode="upload" albumId={albumId} />,
+    );
+    const first = renderer.root.findAllByType(Text).map(n => String(n.props.children));
+    expect(first).toContain('Uploading 1000 photos');
+    jest.setSystemTime(10000);
+    mockLocalImport = {total: 1000, pending: 890, uploading: 0, uploaded: 110, failed: 0};
+    rerender(<UploadToast mode="upload" albumId={albumId} />);
+    const texts = renderer.root.findAllByType(Text).map(n => String(n.props.children));
+    unmount();
+    expect(texts.some(t => /^Uploading 890 photos · About \d+ min left$/.test(t))).toBe(true);
   });
 });

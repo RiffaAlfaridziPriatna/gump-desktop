@@ -455,8 +455,9 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     at: number;
     baseline: number;
   } | null>(null);
-  const etaKey = `${albumId}:${queueOperation.batchTotal}`;
-  if (mode === 'analyze' && etaStartRef.current?.key !== etaKey) {
+  const etaEnabled = mode === 'analyze' || mode === 'upload';
+  const etaKey = `${albumId}:${mode}:${queueOperation.batchTotal}`;
+  if (etaEnabled && etaStartRef.current?.key !== etaKey) {
     etaStartRef.current = {
       key: etaKey,
       at: Date.now(),
@@ -464,12 +465,13 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     };
   }
   const etaMinutes =
-    mode === 'analyze' && etaStartRef.current
+    etaEnabled && etaStartRef.current
       ? estimateMinutesLeft({
           completedSinceStart:
             counts.completed + counts.failed - etaStartRef.current.baseline,
           elapsedMs: Date.now() - etaStartRef.current.at,
-          remaining: analyzeRemaining,
+          remaining:
+            mode === 'upload' ? uploadInProgressRemaining : analyzeRemaining,
         })
       : null;
 
@@ -542,7 +544,9 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     : mode === 'upload'
       ? duplicatesOnly
         ? 'Uploaded 0 photos'
-        : `Uploading ${uploadInProgressRemaining} photos`
+        : etaMinutes !== null
+          ? `Uploading ${uploadInProgressRemaining} photos · ${formatEtaLabel(etaMinutes)}`
+          : `Uploading ${uploadInProgressRemaining} photos`
       : mode === 'analyze'
         ? isFinalizingAnalysis
           ? 'Finalizing analysis...'
