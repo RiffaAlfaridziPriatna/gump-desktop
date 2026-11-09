@@ -1,11 +1,12 @@
 import React from 'react';
 import {act, type ReactTestRenderer} from 'react-test-renderer';
-import {AccessibilityInfo, AppState, Text} from 'react-native';
+import {AccessibilityInfo, AppState, StyleSheet, Text} from 'react-native';
 import {
   makeCurrentUserRefetch,
   type FakeCloudStorageScenario,
 } from '../helpers/exportUploadFakes';
 import {render} from '../helpers/render';
+import {sansSemiBoldStyle} from '../../src/lib/ui/typography';
 
 let mockRefetch: ReturnType<typeof makeCurrentUserRefetch>;
 const mockOpenUpgradePlan = jest.fn();
@@ -83,7 +84,17 @@ async function mount(
     phase = 'confirm',
     uploadSizeGb = 0.6,
     photoCount = 99,
-  }: {phase?: UploadSelectedPhase; uploadSizeGb?: number; photoCount?: number} = {},
+    uploadedCount,
+    uploadedBytes,
+    totalUploadBytes,
+  }: {
+    phase?: UploadSelectedPhase;
+    uploadSizeGb?: number;
+    photoCount?: number;
+    uploadedCount?: number;
+    uploadedBytes?: number;
+    totalUploadBytes?: number;
+  } = {},
 ) {
   mockRefetch = makeCurrentUserRefetch(scenario);
   const onClose = jest.fn();
@@ -94,6 +105,9 @@ async function mount(
       visible
       phase={phase}
       photoCount={photoCount}
+      uploadedCount={uploadedCount}
+      uploadedBytes={uploadedBytes}
+      totalUploadBytes={totalUploadBytes}
       uploadSizeGb={uploadSizeGb}
       onClose={onClose}
       onUploadNow={jest.fn(async () => undefined)}
@@ -317,5 +331,85 @@ describe('UploadSelectedModal cloud storage states', () => {
     expect(progressValue(renderer).now).toBe(40);
     await press(renderer, 'Back to album');
     expect(onOpenAlbum).toHaveBeenCalled();
+  });
+
+  it('lays out the uploading popup to Figma: height, gap, copy and meta line', async () => {
+    const {renderer} = await mount('normal', {
+      phase: 'uploading',
+      uploadedCount: 45,
+      uploadedBytes: 0.3 * 1024 ** 3,
+      totalUploadBytes: 0.6 * 1024 ** 3,
+    });
+    expect(
+      renderer.root.findAll(n => n.props.width === 720 && n.props.height === 456),
+    ).not.toHaveLength(0);
+    expect(texts(renderer)).toEqual([
+      'Uploading 99 photos',
+      'Please keep this window open',
+      '45 of 99 photos · 0.3 GB of 0.6 GB',
+    ]);
+    const body = renderer.root.find(
+      n => n.type === 'View' && StyleSheet.flatten(n.props.style)?.gap === 24,
+    );
+    expect(StyleSheet.flatten(body.props.style).width).toBe(480);
+    const byText = (t: string) =>
+      StyleSheet.flatten(
+        renderer.root.find(
+          n => n.type === 'Text' && [n.props.children].flat(3).join('') === t,
+        ).props.style,
+      );
+    expect(byText('Please keep this window open').lineHeight).toBeCloseTo(14 * 1.44);
+    expect(byText('45 of 99 photos · 0.3 GB of 0.6 GB')).toMatchObject({
+      fontFamily: sansSemiBoldStyle.fontFamily,
+      fontSize: 14,
+      color: '#737373',
+    });
+  });
+
+  it('uses a singular photo noun and a pill bar while uploading', async () => {
+    const {renderer} = await mount('normal', {
+      phase: 'uploading',
+      photoCount: 1,
+      uploadedCount: 0,
+    });
+    expect(texts(renderer)[0]).toBe('Uploading 1 photo');
+    expect(texts(renderer)[2]).toMatch(/^0 of 1 photo · /);
+    const track = renderer.root.find(
+      n => n.type === 'View' && StyleSheet.flatten(n.props.style)?.height === 9,
+    );
+    expect(StyleSheet.flatten(track.props.style).borderRadius).toBe(4.5);
+  });
+
+  it('sizes the not-enough-storage buttons and storage card to Figma', async () => {
+    const {renderer} = await mount('exceeded');
+    const style = (label: string) =>
+      StyleSheet.flatten(
+        renderer.root
+          .find(n => n.props.accessibilityLabel === label && typeof n.props.style === 'function')
+          .props.style({pressed: false}),
+      );
+    expect(style('View cloud plans')).toMatchObject({height: 48, flex: 0});
+    expect(style('Choose fewer photos').minHeight).toBeUndefined();
+    const textNode = renderer.root.find(
+      n => n.props.accessibilityLabel === 'Choose fewer photos' && n.props.hitSlop,
+    );
+    expect(textNode.props.hitSlop).toEqual({top: 10, bottom: 10, left: 8, right: 8});
+    const column = renderer.root.find(
+      n => n.type === 'View' && StyleSheet.flatten(n.props.style)?.width === 456,
+    );
+    expect(StyleSheet.flatten(column.props.style)).toMatchObject({
+      alignItems: 'center',
+      gap: 12,
+    });
+    const value = StyleSheet.flatten(
+      renderer.root.find(n => n.type === 'Text' && n.props.children === '0.6 GB')
+        .props.style,
+    );
+    expect(value.fontFamily).toBe(sansSemiBoldStyle.fontFamily);
+    expect(value.fontWeight).toBeUndefined();
+    const bar = renderer.root.find(
+      n => n.type === 'View' && StyleSheet.flatten(n.props.style)?.height === 9,
+    );
+    expect(StyleSheet.flatten(bar.props.style).borderRadius).toBe(4.5);
   });
 });

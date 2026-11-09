@@ -693,6 +693,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           albumId={albumId}
           phase={uploadPhase}
           photoCount={modalPhotoCount}
+          uploadedCount={batchCounts.completed}
           uploadSizeGb={modalUploadSizeGb}
           uploadedBytes={uploadedBytes}
           totalUploadBytes={totalUploadBytes}
