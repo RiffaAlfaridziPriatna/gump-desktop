@@ -1,9 +1,10 @@
 import React from 'react';
-import {View} from 'react-native';
+import {StyleSheet, Text, View} from 'react-native';
 import TestRenderer, {act} from 'react-test-renderer';
 import {CulledAlbumPhotoCard} from '../../src/components/culling/CulledAlbumPhotoCard';
 import {CulledAlbumPhotoFocusFrame} from '../../src/components/culling/CulledAlbumPhotoFocusFrame';
 import {Pressable} from '../../src/components/ui';
+import {colors} from '../../src/lib/ui/colors';
 import {getByLabel, render} from '../helpers/render';
 
 let mockPhoto: Record<string, unknown> = {
@@ -118,7 +119,7 @@ describe('CulledAlbumPhotoCard focus', () => {
 });
 
 describe('CulledAlbumPhotoCard chrome taps keep focus untouched', () => {
-  const STAR_FRAME = {x: 0, y: 200, width: 88, height: 16};
+  const STAR_FRAME = {x: 0, y: 200, width: 96, height: 16};
   const SELECT_FRAME = {x: 100, y: 200, width: 28, height: 28};
 
   beforeEach(() => {
@@ -131,7 +132,7 @@ describe('CulledAlbumPhotoCard chrome taps keep focus untouched', () => {
         const style = ([] as {width?: number}[])
           .concat(this.props.style as never)
           .find(st => st?.width != null);
-        const f = style?.width === 88 ? STAR_FRAME : SELECT_FRAME;
+        const f = style?.width === 96 ? STAR_FRAME : SELECT_FRAME;
         cb(f.x, f.y, f.width, f.height);
       });
     mockPhoto = {
@@ -152,7 +153,7 @@ describe('CulledAlbumPhotoCard chrome taps keep focus untouched', () => {
     };
   });
 
-  // The jest View mock has no layout; stub window frames per view (star row width 88, pick circle otherwise).
+  // The jest View mock has no layout; stub window frames per view (star row width 96, pick circle otherwise).
   function renderAnalyzed(canDeletePhoto = false) {
     const handlers = {
       onCardPress: jest.fn(),
@@ -210,5 +211,118 @@ describe('CulledAlbumPhotoCard chrome taps keep focus untouched', () => {
     expect(onCardPress).toHaveBeenCalledWith('p1');
     expect(onToggleSelection).not.toHaveBeenCalled();
     expect(onStarPress).not.toHaveBeenCalled();
+  });
+});
+
+describe('CulledAlbumPhotoCard Figma shell and footer', () => {
+  const flat = (node: TestRenderer.ReactTestInstance) =>
+    StyleSheet.flatten(node.props.style) ?? {};
+  const rootOf = (analyzed: boolean) => {
+    mockPhoto = {
+      photoId: 'p1',
+      file: {name: 'IMG_1.jpg'},
+      analysisStatus: analyzed ? 'analyzed' : 'pending',
+      selected: analyzed,
+      starRating: 2,
+      faces: [],
+    };
+    const {view} = renderCard(undefined, true);
+    const root = view.renderer.root;
+    const label = root.findByType(Text);
+    const footer = label.parent as TestRenderer.ReactTestInstance;
+    const card = root.findAllByType(View).find(
+      v => flat(v).backgroundColor === colors.photoCardBackground,
+    ) as TestRenderer.ReactTestInstance;
+    return {root, label, footer, card};
+  };
+  afterEach(() => {
+    mockPhoto = {photoId: 'p1', file: {name: 'IMG_1.jpg'}, analysisStatus: 'pending'};
+  });
+
+  it('card shell: background, radius, padding, gap', () => {
+    const {card} = rootOf(false);
+    expect(flat(card)).toMatchObject({
+      backgroundColor: '#161718',
+      borderRadius: 6,
+      paddingTop: 8,
+      paddingHorizontal: 8,
+      paddingBottom: 12,
+      gap: 8,
+    });
+  });
+
+  it('footer: height 28, gap 4, padding right 2, order pick, name, stars', () => {
+    const {footer, label} = rootOf(false);
+    expect(flat(footer)).toMatchObject({height: 28, gap: 4, paddingRight: 2});
+    const kids = footer.children as TestRenderer.ReactTestInstance[];
+    expect(kids[1]).toBe(label);
+    expect(flat(kids[0])).toMatchObject({width: 28, height: 28});
+    expect(flat(kids[2].findAllByType(View)[0])).toMatchObject({width: 96, height: 16});
+    expect(flat(label)).toMatchObject({fontSize: 14, color: colors.text});
+  });
+
+  it('pick control: empty is a 1px white ring, picked is filled orange', () => {
+    const empty = rootOf(false).footer.children[0] as TestRenderer.ReactTestInstance;
+    const emptyCircle = empty.findAllByType(View).find(v => flat(v).width === 20);
+    expect(flat(emptyCircle as TestRenderer.ReactTestInstance)).toMatchObject({
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.white,
+    });
+    const picked = rootOf(true).footer.children[0] as TestRenderer.ReactTestInstance;
+    const pickedCircle = picked.findAllByType(View).find(v => flat(v).width === 20);
+    expect(flat(pickedCircle as TestRenderer.ReactTestInstance)).toMatchObject({
+      backgroundColor: '#FF9632',
+    });
+    expect(flat(pickedCircle as TestRenderer.ReactTestInstance).borderWidth).toBeUndefined();
+  });
+
+  it('focus frame sits on the card bounds, 2px blue, radius 6', () => {
+    const {card} = rootOf(false);
+    const frame = card.findByType(CulledAlbumPhotoFocusFrame).findByType(View);
+    expect(flat(frame)).toMatchObject({
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      borderWidth: 2,
+      borderRadius: 6,
+      borderColor: '#4141FF',
+    });
+  });
+
+  it('delete button: 36 circle, top 12, right 11.67, label kept', () => {
+    mockPhoto = {
+      photoId: 'p1',
+      file: {name: 'IMG_1.jpg'},
+      analysisStatus: 'analyzed',
+      selected: false,
+      starRating: 0,
+      faces: [],
+    };
+    const view = render(
+      <CulledAlbumPhotoCard
+        albumId="album"
+        photoId="p1"
+        cardWidth={200}
+        canDeletePhoto
+        isMobileLayout
+        onCardPress={jest.fn()}
+        onOpenDetail={jest.fn()}
+        onToggleSelection={jest.fn()}
+        onDeletePress={jest.fn()}
+        onStarPress={jest.fn()}
+      />,
+    );
+    const del = getByLabel(view.renderer, 'Delete IMG_1.jpg');
+    expect(StyleSheet.flatten(del.props.style)).toMatchObject({
+      width: 36,
+      height: 36,
+      borderRadius: 100,
+      top: 12,
+      right: 11.67,
+    });
   });
 });

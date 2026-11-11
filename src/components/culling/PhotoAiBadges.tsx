@@ -1,7 +1,12 @@
-import { SimilarShotsBadge } from '@components/culling/SimilarShotsBadge';
+import {
+  CHIP_BACKGROUND,
+  CHIP_HEIGHT,
+  CHIP_ICON_SIZE,
+  SimilarShotsBadge,
+} from '@components/culling/SimilarShotsBadge';
 import type { CulledAlbumPhoto } from '@lib/culledAlbum/types';
 import { colors } from '@lib/ui/colors';
-import { sansBoldStyle } from '@lib/ui/typography';
+import { interSemiBoldStyle } from '@lib/ui/typography';
 import { Pressable } from '@components/ui';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
@@ -70,7 +75,7 @@ export function PhotoAiBadges({
       <View
         accessible
         accessibilityLabel={first.label}
-        style={[styles.chip, styles.chipIcon, first.tone === 'ai' && styles.chipAi]}
+        style={[styles.chip, first.tone === 'ai' && styles.chipAi]}
       >
         <Image
           accessible={false}
@@ -115,33 +120,29 @@ export function PhotoAiBadges({
 const styles = StyleSheet.create({
   row: {
     position: 'absolute',
-    left: 16,
+    left: 8,
     bottom: 8,
     flexDirection: 'row',
     gap: 4,
   },
   chip: {
+    height: CHIP_HEIGHT,
     paddingHorizontal: 8,
-    paddingVertical: 4,
     borderRadius: 100,
-    backgroundColor: 'rgba(19,20,21,0.75)',
-  },
-  chipIcon: {
-    paddingLeft: 24,
+    backgroundColor: CHIP_BACKGROUND,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   icon: {
-    position: 'absolute',
-    left: 8,
-    top: '50%',
-    marginTop: -6,
-    width: 12,
-    height: 12,
+    width: CHIP_ICON_SIZE,
+    height: CHIP_ICON_SIZE,
   },
   chipAi: {
     backgroundColor: colors.blue,
   },
   label: {
-    ...sansBoldStyle,
+    ...interSemiBoldStyle,
     color: colors.text,
     fontSize: 12,
   },

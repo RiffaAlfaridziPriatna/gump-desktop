@@ -1,6 +1,6 @@
 import React from 'react';
 import { act } from 'react-test-renderer';
-import { AccessibilityInfo, Text } from 'react-native';
+import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
 import {
   FACES_EMPTY_HINT,
   FacesInPhotoPanel,
@@ -9,6 +9,9 @@ import {
 } from '../../src/components/culling/FacesInPhotoPanel';
 import { FACE_ASSESSMENT_DELAY_MS } from '../../src/hooks/useFaceAssessmentLoading';
 import { getFacePanelStatus } from '../../src/lib/culling/facePanelStatus';
+import { colors } from '../../src/lib/ui/colors';
+import { fonts } from '../../src/lib/ui/typography';
+import { Pressable } from '../../src/components/ui';
 import { press, render } from '../helpers/render';
 
 const bounds = { left: 0.1, top: 0.1, width: 0.2, height: 0.2 };
@@ -107,7 +110,7 @@ describe('FacesInPhotoPanel', () => {
       .map(n => n.props.accessibilityLabel);
     expect(labels).toEqual([
       'Check eyes',
-      'Eyes open, Possible soft focus',
+      'Possible soft focus',
       'Eyes open',
     ]);
   });
@@ -207,5 +210,130 @@ describe('getFacePanelStatus', () => {
     ]);
     expect(labels('x', 'good')).toEqual(['Unable to assess']);
     expect(labels('open', 'nope')).toEqual(['Unable to assess']);
+  });
+});
+
+describe('FacesInPhotoPanel Figma values', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  const styleOf = (
+    renderer: ReturnType<typeof render>['renderer'],
+    text: string,
+  ) =>
+    StyleSheet.flatten(
+      renderer.root.findAllByType(Text).find(t => t.props.children === text)!
+        .props.style,
+    );
+
+  it('heading is Inter SemiBold 16 white', () => {
+    const { renderer } = render(<FacesInPhotoPanel photo={null} />);
+    expect(styleOf(renderer, 'Faces in This Photo')).toMatchObject({
+      fontFamily: fonts.interSemiBold,
+      fontSize: 16,
+      color: colors.white,
+    });
+  });
+
+  it('warning labels are Inter SemiBold 11 gold, others Regular gray', () => {
+    const { renderer } = render(
+      <FacesInPhotoPanel
+        photo={photo([face('a', 'closed', 'good'), face('b', 'open', 'good')])}
+      />,
+    );
+    settle();
+    expect(styleOf(renderer, 'Check eyes')).toMatchObject({
+      fontFamily: fonts.interSemiBold,
+      fontSize: 11,
+      color: '#FFD700',
+    });
+    expect(styleOf(renderer, 'Eyes open')).toMatchObject({
+      fontFamily: fonts.sans,
+      fontSize: 11,
+    });
+  });
+});
+
+describe('FacesInPhotoPanel viewer variant', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  const viewerPanel = () =>
+    render(
+      <FacesInPhotoPanel
+        variant="viewer"
+        photo={photo([face('a', 'closed', 'good'), face('b', 'open', 'soft')])}
+      />,
+    );
+
+  it('shows Faces in This Photo, not Key Faces, with no collapse toggle', () => {
+    const { renderer } = viewerPanel();
+    settle();
+    const all = texts(renderer).join('|');
+    expect(all).toContain('Faces in This Photo · 2');
+    expect(all).not.toContain('Key Faces');
+    expect(
+      renderer.root.findAll(
+        n => n.props.accessibilityState?.expanded !== undefined,
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('shows gold issue chips with counts in Inter SemiBold 12', () => {
+    const { renderer } = viewerPanel();
+    settle();
+    const chip = StyleSheet.flatten(
+      renderer.root
+        .findAllByType(Text)
+        .find(t => t.props.children === 'Check eyes · 1')!.props.style,
+    );
+    expect(chip).toMatchObject({
+      fontFamily: fonts.interSemiBold,
+      fontSize: 12,
+      color: '#FFD700',
+    });
+    expect(texts(renderer)).toContain('Possible soft focus · 1');
+  });
+  it('viewer: faces are buttons that report their index and selection', () => {
+    const onFacePress = jest.fn();
+    const { renderer } = render(
+      <FacesInPhotoPanel
+        variant="viewer"
+        photo={photo([face('a', 'open', 'good'), face('b', 'closed', 'good')])}
+        selectedIndex={1}
+        onFacePress={onFacePress}
+      />,
+    );
+    settle();
+    const buttons = renderer.root.findAllByType(Pressable);
+    expect(buttons.map(b => b.props.accessibilityState.selected)).toEqual([
+      false,
+      true,
+    ]);
+    press(buttons[0]);
+    expect(onFacePress).toHaveBeenCalledWith(0);
+  });
+
+  it('sidebar: faces are not pressable', () => {
+    const { renderer } = render(
+      <FacesInPhotoPanel
+        photo={photo([face('a', 'open', 'good')])}
+        onFacePress={jest.fn()}
+      />,
+    );
+    settle();
+    expect(
+      renderer.root.findAll(n => n.props.accessibilityHint === 'Zoom to this face'),
+    ).toHaveLength(0);
+  });
+
+  it('shows one label per face, eyes before focus', () => {
+    const { renderer } = render(
+      <FacesInPhotoPanel photo={photo([face('a', 'closed', 'soft')])} />,
+    );
+    settle();
+    const t = texts(renderer);
+    expect(t).toContain('Check eyes');
+    expect(t).not.toContain('Possible soft focus');
   });
 });

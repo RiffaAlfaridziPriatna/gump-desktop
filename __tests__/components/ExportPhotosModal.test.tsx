@@ -4,13 +4,17 @@ import {
   AccessibilityInfo,
   NativeModules,
   Platform,
+  StyleSheet,
   Text,
   UIManager,
+  View,
 } from 'react-native';
 import {
   makeFakeGumpLocalStorage,
   type FakeLocalStorageOptions,
 } from '../helpers/exportUploadFakes';
+import {colors} from '@lib/ui/colors';
+import {fonts, sansSemiBoldStyle} from '@lib/ui/typography';
 import {makeCulledAlbumPhoto} from '../helpers/fixtures';
 import {getByLabel, render} from '../helpers/render';
 
@@ -36,6 +40,26 @@ function allText(renderer: ReactTestRenderer): string[] {
   return renderer.root
     .findAllByType(Text)
     .map(node => [node.props.children].flat(3).join(''));
+}
+
+function styleOf(renderer: ReactTestRenderer, text: string) {
+  const node = renderer.root
+    .findAllByType(Text)
+    .find(n => [n.props.children].flat(3).join('') === text);
+  if (!node) {
+    throw new Error(`No text "${text}"`);
+  }
+  return StyleSheet.flatten(node.props.style);
+}
+
+function viewStyle(renderer: ReactTestRenderer, predicate: (s: Record<string, unknown>) => boolean) {
+  const node = renderer.root
+    .findAllByType(View)
+    .find(n => predicate(StyleSheet.flatten(n.props.style) ?? {}));
+  if (!node) {
+    throw new Error('No matching view');
+  }
+  return StyleSheet.flatten(node.props.style);
 }
 
 async function pressText(renderer: ReactTestRenderer, text: string) {
@@ -100,6 +124,128 @@ afterAll(() => {
   Object.defineProperty(require('react-native'), 'findNodeHandle', realFindNodeHandle);
   (UIManager as {focus?: unknown}).focus = realFocus;
   UIManager.dispatchViewManagerCommand = realDispatch;
+});
+
+describe('ExportPhotosModal options padding', () => {
+  it('keeps 24 bottom room on the options step only', async () => {
+    install({});
+    const renderer = mountModal();
+    const modalProps = () =>
+      renderer.root.find(
+        n => n.props.width === 720 && 'contentStyle' in n.props,
+      ).props;
+    expect(modalProps().height).toBe(520);
+    expect(modalProps().contentStyle).toEqual({paddingBottom: 24});
+    await pressText(renderer, 'Prepare Export');
+    expect(modalProps().contentStyle).toBeUndefined();
+  });
+});
+
+describe('ExportPhotosModal figma values', () => {
+  beforeEach(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('renders the options step with the Figma copy and numbers', () => {
+    install({});
+    const renderer = mountModal();
+    const texts = allText(renderer);
+    expect(texts).toEqual(
+      expect.arrayContaining([
+        'Export Photos (1)',
+        'Saved to your computer. Does not use Gump Cloud storage or download allowance.',
+        'Smaller-file JPG',
+        'Optimised for sharing.',
+        'Full-resolution JPG',
+        'Preserves image dimensions.',
+        'ZIP',
+        'Prepare Export',
+      ]),
+    );
+    expect(texts).not.toContain('Smaller file size');
+    expect(texts).not.toContain('Full resolution');
+    const title = styleOf(renderer, 'Export Photos (1)');
+    expect(title.fontFamily).toBe(fonts.serif);
+    expect(title.fontWeight).toBe('400');
+    expect(
+      styleOf(
+        renderer,
+        'Saved to your computer. Does not use Gump Cloud storage or download allowance.',
+      ).lineHeight,
+    ).toBeCloseTo(14 * 1.44);
+    expect(viewStyle(renderer, s => s.width === 480 && s.gap === 24).gap).toBe(24);
+    expect(
+      viewStyle(renderer, s => s.paddingHorizontal === 16 && s.paddingVertical === 20),
+    ).toMatchObject({borderRadius: 8, gap: 12});
+    expect(
+      viewStyle(renderer, s => s.backgroundColor === colors.accent + '1A').borderColor,
+    ).toBe(colors.accent);
+    const format = styleOf(renderer, 'ZIP');
+    expect(format).toMatchObject({fontFamily: fonts.sans, fontSize: 16});
+    expect(viewStyle(renderer, s => s.borderColor === '#303030')).toMatchObject({
+      borderRadius: 22,
+      minHeight: 42,
+    });
+  });
+
+  it('renders the preparing step with a 9 high pill bar and a SemiBold percent', async () => {
+    install({});
+    const fresh = mountModal();
+    (native.createZipFromEntries as jest.Mock).mockImplementationOnce(
+      () => new Promise(() => undefined),
+    );
+    await pressText(fresh, 'Prepare Export');
+    expect(allText(fresh)).toEqual(
+      expect.arrayContaining(['Preparing export', 'Creating ZIP of 1 photos']),
+    );
+    const percent = allText(fresh).find(t => t.endsWith('%'))!;
+    const bar = viewStyle(fresh, s => s.height === 9 && s.overflow === 'hidden');
+    expect(bar.borderRadius).toBe(4.5);
+    expect(styleOf(fresh, percent)).toMatchObject({
+      ...sansSemiBoldStyle,
+      fontSize: 14,
+    });
+    expect(styleOf(fresh, percent).lineHeight).toBeCloseTo(14 * 1.44);
+  });
+
+  it('renders the ready step with the Figma file card', async () => {
+    const {renderer} = await prepare({});
+    expect(allText(renderer)).toContain('Choose where to save it on your computer.');
+    expect(styleOf(renderer, 'Save to computer')).toMatchObject({fontSize: 16});
+    const name = allText(renderer).find(t => t.endsWith('.zip'))!;
+    expect(styleOf(renderer, name)).toMatchObject({
+      ...sansSemiBoldStyle,
+      fontSize: 16,
+    });
+    expect(
+      viewStyle(renderer, s => s.backgroundColor === colors.cardGrayLight),
+    ).toMatchObject({width: 38, height: 38, borderRadius: 8});
+  });
+
+  it('renders export complete with the count, Open folder and the kept path card', async () => {
+    const {renderer} = await prepare({});
+    await pressText(renderer, 'Save to computer');
+    const texts = allText(renderer);
+    expect(texts).toEqual(
+      expect.arrayContaining([
+        'Export complete',
+        '1 photo saved to your computer',
+        'Open folder',
+      ]),
+    );
+    expect(texts).not.toContain('Download complete');
+    expect(texts.some(t => t.includes('.zip'))).toBe(true);
+    expect(
+      renderer.root.findAllByProps({width: 40, height: 40}).length,
+    ).toBeGreaterThan(0);
+    const card = viewStyle(
+      renderer,
+      s => s.borderColor === colors.borderLight && s.paddingHorizontal === 24,
+    );
+    expect(card).toMatchObject({borderRadius: 8, paddingVertical: 16, gap: 16});
+    expect(getByLabel(renderer, 'Open folder').props.accessibilityRole).toBe('button');
+  });
 });
 
 describe('ExportPhotosModal failure states', () => {
@@ -228,7 +374,7 @@ describe('ExportFailureView accessibility', () => {
     const renderer = mount('download');
     expect(focus).toHaveBeenCalledWith(7);
     expect(announce).toHaveBeenCalledWith(
-      "Can't save to this folder. Choose another location or check the folder's permissions.",
+      "Can't save to this folder. Choose another location or check the folder's permissions",
     );
     expect(getByLabel(renderer, 'Try again').props.accessibilityRole).toBe(
       'button',

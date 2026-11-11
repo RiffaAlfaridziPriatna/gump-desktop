@@ -8,6 +8,7 @@ import {
   useCulledAlbumServerUploadBatch,
   useCulledAlbumUiState,
 } from '@context/culledAlbum';
+import { estimateMinutesLeft, formatEtaLabel } from '@lib/culledAlbum/analysisEta';
 import { computeLocalImportBatchProgress } from '@lib/culledAlbum/localImportProgress';
 import { computeServerUploadBatchProgress } from '@lib/culledAlbum/serverUploadProgress';
 import { CulledAlbumPhoto, LocalImportBatchCounts } from '@lib/culledAlbum/types';
@@ -449,6 +450,31 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     batchTotal,
   );
 
+  const etaStartRef = useRef<{
+    key: string;
+    at: number;
+    baseline: number;
+  } | null>(null);
+  const etaEnabled = mode === 'analyze' || mode === 'upload';
+  const etaKey = `${albumId}:${mode}:${queueOperation.batchTotal}`;
+  if (etaEnabled && etaStartRef.current?.key !== etaKey) {
+    etaStartRef.current = {
+      key: etaKey,
+      at: Date.now(),
+      baseline: counts.completed + counts.failed,
+    };
+  }
+  const etaMinutes =
+    etaEnabled && etaStartRef.current
+      ? estimateMinutesLeft({
+          completedSinceStart:
+            counts.completed + counts.failed - etaStartRef.current.baseline,
+          elapsedMs: Date.now() - etaStartRef.current.at,
+          remaining:
+            mode === 'upload' ? uploadInProgressRemaining : analyzeRemaining,
+        })
+      : null;
+
   const totalProgress = useMemo(() => {
     if (mode === 'upload') {
       if (importFinished) {
@@ -518,13 +544,17 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
     : mode === 'upload'
       ? duplicatesOnly
         ? 'Uploaded 0 photos'
-        : `Uploading ${uploadInProgressRemaining} photos`
+        : etaMinutes !== null
+          ? `Uploading ${uploadInProgressRemaining} photos · ${formatEtaLabel(etaMinutes)}`
+          : `Uploading ${uploadInProgressRemaining} photos`
       : mode === 'analyze'
         ? isFinalizingAnalysis
           ? 'Finalizing analysis...'
           : duplicatesOnly
             ? 'Analyzing 0 photos'
-            : `Analyzing ${displayAnalyzeRemaining} photos`
+            : etaMinutes !== null
+              ? `Analyzing ${displayAnalyzeRemaining} photos · ${formatEtaLabel(etaMinutes)}`
+              : `Analyzing ${displayAnalyzeRemaining} photos`
         : `Uploading ${counts.pending + counts.inProgress} photos to server`;
   const completedLabel =
     mode === 'upload'
@@ -859,7 +889,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
       ) : null}
       {showProgress ? (
         <View collapsable={false} style={styles.progressBarContainer}>
-          <ProgressBar progress={displayProgress} />
+          <ProgressBar square progress={displayProgress} />
         </View>
       ) : null}
       {showDuplicatesToggle && duplicatesExpanded ? (
@@ -897,11 +927,7 @@ export function UploadToast({mode = 'upload', albumId}: UploadToastProps) {
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
     backgroundColor: colors.white,
-    zIndex: 100,
     paddingHorizontal: 32,
     paddingTop: 20,
     paddingBottom: 24,
@@ -924,6 +950,7 @@ const styles = StyleSheet.create({
     ...sansBoldStyle,
     flexShrink: 1,
     fontSize: 16,
+    lineHeight: 16,
     letterSpacing: 0,
     color: colors.textDark,
   },

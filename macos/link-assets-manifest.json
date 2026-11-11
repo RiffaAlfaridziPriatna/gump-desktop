@@ -14,8 +14,16 @@
       "sha1": "413d3b6cf391f6d8abacb562635d8e10e8afc7b7"
     },
     {
+      "path": "src/assets/fonts/Inter-SemiBold.ttf",
+      "sha1": "d48310d2f04c57af1bce0851e053be7b58b25dca"
+    },
+    {
       "path": "src/assets/fonts/RedHatDisplay-Regular.ttf",
       "sha1": "fa31ca9c184688d5f9e084bde6e31ba1d5b0a42d"
+    },
+    {
+      "path": "src/assets/fonts/RedHatDisplay-SemiBold.ttf",
+      "sha1": "151d49fd1f33d33c2e1b4434ac7f1a07ff49e736"
     }
   ]
 }

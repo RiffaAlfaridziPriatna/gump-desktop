@@ -123,7 +123,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    gap: 20,
+    gap: 14,
     paddingBottom: 40,
   },
   divider: {

@@ -1,5 +1,6 @@
 import React from 'react';
-import {Text} from 'react-native';
+import {StyleSheet, Text} from 'react-native';
+import {colors} from '../../src/lib/ui/colors';
 import {UploadPickedButton} from '../../src/components/culling/UploadPickedButton';
 import {getAllByRole, render} from '../helpers/render';
 
@@ -66,6 +67,39 @@ describe('UploadPickedButton', () => {
     const {renderer} = render(<UploadPickedButton {...base} disabled />);
     expect(getAllByRole(renderer, 'button')[0]?.props.accessibilityState).toEqual({
       disabled: true,
+    });
+  });
+});
+
+describe('UploadPickedButton Figma values', () => {
+  const base = {
+    pickedCount: 148,
+    uploaded: false,
+    disabled: false,
+    includesHidden: true,
+    onPress: jest.fn(),
+  };
+
+  it('label is 16 with line height 16 x 1.2', () => {
+    const {renderer} = render(<UploadPickedButton {...base} />);
+    const label = renderer.root
+      .findAllByType(Text)
+      .find(t => t.props.children === 'Upload Picked (148)')!;
+    expect(StyleSheet.flatten(label.props.style)).toMatchObject({
+      fontSize: 16,
+      lineHeight: 19.2,
+    });
+  });
+
+  it('hint icon is 14 in the Figma stroke gray', () => {
+    const {renderer} = render(<UploadPickedButton {...base} />);
+    const icons = renderer.root.findAll(
+      n => n.type === ('SvgMock' as never) && n.props.width === 14,
+    );
+    expect(icons).toHaveLength(1);
+    expect(icons[0]!.props).toMatchObject({
+      height: 14,
+      color: colors.textGray,
     });
   });
 });

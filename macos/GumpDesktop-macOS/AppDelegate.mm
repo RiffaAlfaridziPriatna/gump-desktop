@@ -15,6 +15,8 @@ static void RegisterCustomFonts(void)
          @"RedHatDisplay-Regular",
          @"RedHatDisplay-Medium",
          @"RedHatDisplay-Bold",
+         @"RedHatDisplay-SemiBold",
+         @"Inter-SemiBold",
        ]) {
     NSString *fontPath = [bundle pathForResource:fontName ofType:@"ttf"];
     if (fontPath != nil) {

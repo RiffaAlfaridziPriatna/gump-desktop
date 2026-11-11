@@ -37,7 +37,14 @@ export function LookCompareToggle({
             accessibilityLabel={segment.label}
             accessibilityState={{ selected }}
           >
-            <Text style={styles.label}>{segment.label}</Text>
+            <Text
+              style={[
+                styles.label,
+                selected ? styles.labelSelected : styles.labelIdle,
+              ]}
+            >
+              {segment.label}
+            </Text>
           </Pressable>
         );
       })}
@@ -70,8 +77,13 @@ const styles = StyleSheet.create({
   label: {
     fontFamily: fonts.sans,
     fontSize: 14,
-    lineHeight: 14 * 1.5,
     color: colors.white,
+  },
+  labelIdle: {
+    lineHeight: 14 * 1.6,
+  },
+  labelSelected: {
+    lineHeight: 14 * 1.4,
   },
   pressed: {
     opacity: 0.8,

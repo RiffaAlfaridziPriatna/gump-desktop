@@ -5,37 +5,37 @@ approved: true
 todos:
   - id: s8a
     content: Bundle Inter SemiBold and Red Hat Display SemiBold, add font tokens
-    status: pending
+    status: completed
   - id: s8g
     content: Shared modal parts - ProgressBar radius, Modal radius, padding and close, shared decorations
-    status: pending
+    status: completed
   - id: s8b
     content: Photo card shell, footer, pick control, stars, delete, focus ring, grid metrics
-    status: pending
+    status: completed
   - id: s8d
     content: Similar Shots strip rebuilt to Figma
-    status: pending
+    status: completed
   - id: s8e
     content: Photo viewer header, gaps and face badges
-    status: pending
+    status: completed
   - id: s8f
     content: Sidebar gaps, fonts, icons and colors
-    status: pending
+    status: completed
   - id: s8h
     content: Upload popup and cloud storage card alignment
-    status: pending
+    status: completed
   - id: s8i
     content: Export popup alignment
-    status: pending
+    status: completed
   - id: s8j
     content: Look picker, scope popup and look status alignment
-    status: pending
+    status: completed
   - id: s8k
     content: AI Selection toast width, icons and stacking
-    status: pending
+    status: completed
   - id: s8c
     content: AI badges, similar shots chip and group header bars
-    status: pending
+    status: completed
 isProject: false
 ---
 
@@ -65,6 +65,10 @@ Branch: base from `feat/phase-3` (contains 3a to 3e).
 
 - UI follows Figma 100% (standing user rule). Where Figma and the earlier code differ, Figma wins unless listed here.
 - Fonts (user, 2026-11-08): bundle a real Inter SemiBold (not the system font with `fontWeight`), and bundle Red Hat Display SemiBold copied from `camera-to-phone/assets/fonts/RedHatDisplay-SemiBold.ttf`. The Inter file is not in any local repo: it is downloaded (Google Fonts, OFL) by s8a, and the exact filename, source URL and size are stated to the user before the download.
+- Viewer side panel (user, 2026-11-09): "Faces in This Photo" as in Figma replaces "Key Faces" in the viewer. Unblocks s8e.
+- Culling toast ETA (user, 2026-11-09): Figma frame 12975:29262 adds "About X min left" to the analyze toast. Computed client-side from observed pace, hidden until 5 photos finished, in analyze and local import (upload) toasts, not server upload (`lib/culledAlbum/analysisEta.ts`). Close icon and ProgressBar already match; label stays "Analyzing N photos" (Figma says "Culling N photos", not changed).
+- Face zoom in viewer (user, 2026-11-09): tapping a face in the viewer panel zooms to it, tapping the selected face again clears the zoom. Panel viewer variant takes `onFacePress` and `selectedIndex`.
+- Export popup (user, 2026-11-09): Figma copy replaces the current copy. Anything the app does that Figma does not show (for example the saved path card) is kept and handled in the Figma style. Unblocks s8i.
 - Accepted deviations stay: upload popup width 720 (user), Figma token contrast kept (white on orange 2.17:1, `#737373` 3.89:1), "Choose fewer photos" copy kept.
 - Not changed because Figma shows none: previous and next chevrons in the viewer, viewer image frame background and radius, Add Photos button.
 
@@ -190,13 +194,13 @@ Branch: base from `feat/phase-3` (contains 3a to 3e).
   - Face status badges on the photo: 32 circle, eyes icon 20, focus icon 16, gap 4 (today 28, 16, gap 2). Tooltip: gap 8 between lines, 4 between icon and text, text lineHeight 10 (today 14). Backdrop blur 2 is skipped if the platform has none.
 - **Rules:** Figma 100%.
 - **Open:**
-  - **(blocked)** Side panel: Figma shows "Faces in This Photo" (frame "Faces panel (revised)") and hides the old Cull Filters and Key Faces; the code still renders "Key Faces (n)". Phase 3b left the viewer panel for designer confirmation ("Do not start"). Do not change it until confirmed.
+  - **Decided (user, 2026-11-09):** the viewer side panel becomes "Faces in This Photo" as in Figma (frame "Faces panel (revised)"), replacing "Key Faces (n)" and the old Cull Filters. Read that frame, reuse `FacesInPhotoPanel` where it already matches, keep face data behavior unchanged.
   - Header close glyph size (40 box, glyph about 16) was not verified.
 - **Acceptance:**
   - [ ] Header, pill, gap and badge values above are asserted in component tests
   - [ ] The pill toggles pick state, shows the right label, and exposes selected state to screen readers
   - [ ] Manual check: viewer next to Figma `12975:54491`
-- **Out of scope:** the Key Faces versus Faces panel decision, nav chevrons (not in Figma), the strip (s8d).
+- **Out of scope:** nav chevrons (not in Figma), the strip (s8d).
 - **Gate:** A
 
 ### s8f. Sidebar gaps, fonts, icons and colors [W2, parallel: s8d, s8e]
@@ -254,8 +258,8 @@ Branch: base from `feat/phase-3` (contains 3a to 3e).
   - Export complete: 40 green check (`icon_check_circle_40.svg`, as `UploadCompleteView`), title "Export complete", subtitle "99 photos saved to your computer", button "Open folder".
 - **Rules:** Figma 100% for structure and copy. Reuse `PopupButton` and `PopupTitleBlock` instead of duplicating them. Do not add to the file's length; extract steps only if the diff stays small (inferred, confirm).
 - **Open:**
-  - **Copy and behavior changes.** Figma quality labels are "Smaller-file JPG / Optimised for sharing." and "Full-resolution JPG / Preserves image dimensions." (code: "Compressed JPG", "Original JPG", plus right-hand status labels that Figma does not show); subtitle "Saved to your computer. Does not use Gump Cloud storage or download allowance." Confirm that these Figma strings replace the current ones and that the status labels are dropped.
-  - **Path card.** The code shows a bordered card with the saved path after export; Figma has none. Confirm removing it, since it tells users where the files went.
+  - **Decided (user, 2026-11-09):** the Figma strings replace the current ones, and the right-hand status labels are dropped as Figma shows none. Behavior the app has that Figma does not show must still be handled (see path card).
+  - **Path card. Decided (user, 2026-11-09):** anything not in Figma stays handled. Keep the saved-path information after export, restyled to the Figma popup language (reuse the file card styling); do not remove it.
 - **Acceptance:**
   - [ ] Height, weights, gaps, tint, dropdown, bar, copy and the complete step match the values above in component tests
   - [ ] The ExportPhotosModal tests pass after their copy assertions are updated to the confirmed strings (never weakened)

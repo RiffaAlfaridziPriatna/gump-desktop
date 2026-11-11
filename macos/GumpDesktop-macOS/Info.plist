@@ -82,6 +82,8 @@
 		<string>Fonts/RedHatDisplay-Regular.ttf</string>
 		<string>Fonts/RedHatDisplay-Medium.ttf</string>
 		<string>Fonts/RedHatDisplay-Bold.ttf</string>
+		<string>Fonts/RedHatDisplay-SemiBold.ttf</string>
+		<string>Fonts/Inter-SemiBold.ttf</string>
 	</array>
 </dict>
 </plist>

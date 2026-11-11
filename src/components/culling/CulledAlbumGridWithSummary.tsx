@@ -5,7 +5,7 @@ import {
 import {CulledAlbumPhotoGrid} from '@components/culling/CulledAlbumPhotoGrid';
 import type {FilterSummary} from '@lib/culling/filterSummary';
 import {colors} from '@lib/ui/colors';
-import {sansBoldStyle} from '@lib/ui/typography';
+import {fonts, interSemiBoldStyle, sansBoldStyle} from '@lib/ui/typography';
 import type {ComponentProps} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 
@@ -15,19 +15,31 @@ const SIMILAR_NOTE = 'All alternatives are included in similar-shot groups.';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+export function summaryParts(
+  sections: Sections,
+  labels: readonly string[] = sections ? ['Similar Shots'] : [],
+  photoCount = 0,
+): {labels: string; tail: string} | null {
+  if (!sections) {
+    return labels.length === 0
+      ? null
+      : {labels: labels.join(' + '), tail: `· ${plural(photoCount, 'photo')}`};
+  }
+  const groups = sections.filter(section => section.isGroup).length;
+  const photos = sections.reduce((sum, s) => sum + s.photoIds.length, 0);
+  return {
+    labels: labels.join(' + '),
+    tail: `· ${plural(groups, 'group')} · ${plural(photos, 'photo')}`,
+  };
+}
+
 export function summarizeSections(
   sections: Sections,
   labels: readonly string[] = sections ? ['Similar Shots'] : [],
   photoCount = 0,
 ): string | null {
-  if (!sections) {
-    return labels.length === 0
-      ? null
-      : `Showing: ${labels.join(' + ')} · ${plural(photoCount, 'photo')}`;
-  }
-  const groups = sections.filter(section => section.isGroup).length;
-  const photos = sections.reduce((sum, s) => sum + s.photoIds.length, 0);
-  return `Showing: ${labels.join(' + ')} · ${plural(groups, 'group')} · ${plural(photos, 'photo')}`;
+  const parts = summaryParts(sections, labels, photoCount);
+  return parts && `Showing: ${parts.labels} ${parts.tail}`;
 }
 
 type Props = ComponentProps<typeof CulledAlbumPhotoGrid> & {
@@ -36,6 +48,7 @@ type Props = ComponentProps<typeof CulledAlbumPhotoGrid> & {
 
 /** The grid plus the "Showing: ..." line, Clear filters and no-results state. */
 export function CulledAlbumGridWithSummary({filter, ...props}: Props) {
+  const parts = summaryParts(props.sections, filter.labels, props.photos.length);
   const summary = summarizeSections(
     props.sections,
     filter.labels,
@@ -43,11 +56,17 @@ export function CulledAlbumGridWithSummary({filter, ...props}: Props) {
   );
   return (
     <View style={styles.container}>
-      {summary && (
+      {summary && parts && (
         <View style={styles.row}>
-          <Text accessibilityRole="summary" style={styles.summary}>
-            {summary}
-          </Text>
+          <View
+            accessible
+            accessibilityRole="summary"
+            accessibilityLabel={summary}
+            style={styles.summary}>
+            <Text style={styles.summaryMuted}>Showing:</Text>
+            <Text style={styles.summaryLabel}>{parts.labels}</Text>
+            <Text style={styles.summaryMuted}>{parts.tail}</Text>
+          </View>
           {filter.noResults ? null : (
             <>
               {filter.showSimilarNote ? (
@@ -78,12 +97,9 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     paddingRight: 24,
   },
-  summary: {
-    ...sansBoldStyle,
-    color: colors.textMuted,
-    fontSize: 12,
-    flexShrink: 1,
-  },
+  summary: {flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 1},
+  summaryMuted: {fontFamily: fonts.sans, color: colors.textMuted, fontSize: 14},
+  summaryLabel: {...interSemiBoldStyle, color: colors.white, fontSize: 14},
   spacer: {flex: 1},
   note: {
     ...sansBoldStyle,

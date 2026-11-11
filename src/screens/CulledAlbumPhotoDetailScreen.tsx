@@ -1,5 +1,6 @@
 import {FaceStatusTooltip, type KeyFaceTooltipAnchor} from '@components/culling/FaceStatusTooltip';
-import {KeyFaceSidebarItem} from '@components/culling/KeyFaceSidebarItem';
+import {FacesInPhotoPanel} from '@components/culling/FacesInPhotoPanel';
+import {PhotoDetailHeader} from '@components/culling/PhotoDetailHeader';
 import {PhotoDetailImageViewer} from '@components/culling/PhotoDetailImageViewer';
 import {PhotoDetailNavigationFrame} from '@components/culling/PhotoDetailNavigationFrame';
 import {SimilarShotsStrip} from '@components/culling/SimilarShotsStrip';
@@ -7,6 +8,7 @@ import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShel
 import {useCulledAlbumPhoto} from '@context/culledAlbum';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {usePhotoNavigation} from '@hooks/usePhotoNavigation';
+import {toFacesPanelPhoto} from '@lib/culling/facesPanelPhoto';
 import {cullingEngine} from '@lib/culling/cullingEngine';
 import {useTogglePick} from '@hooks/useTogglePick';
 import {reportError} from '@lib/observability/reportError';
@@ -16,11 +18,10 @@ import {fonts, sansBoldStyle} from '@lib/ui/typography';
 import {
   ScrollAwareTooltipContext,
   createScrollAwareTooltipStore,
-  useScrollAwareTooltipHandlers,
 } from '@lib/ui/scrollAwareTooltip';
 import {MainStackParamList} from '../app/MainNavigator';
 import {StackScreenProps} from '@react-navigation/stack';
-import {memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import {useLayout} from '@hooks/useLayout';
 import {useImageDimensions} from '@hooks/useImageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
@@ -36,127 +37,11 @@ import {
 } from '@lib/storage/localStorage';
 import {getPhotoById, updatePhoto} from '@lib/culledAlbum/store';
 import {syncPhotoFromStore} from '@/application/syncPhotoRepository';
-import {Pressable, TouchableOpacity} from '@components/ui';
-import {
-  ActivityIndicator,
-  FlatList,
-  ListRenderItemInfo,
-  Platform,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import {TouchableOpacity} from '@components/ui';
+import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import IconCheckCircle from '../assets/images/icon_check_circle.svg';
-import IconCheckCircleOutlined from '../assets/images/icon_check_circle_outlined.svg';
-import IconClose from '../assets/images/icon_close.svg';
-import IconStar from '../assets/images/icon_star.svg';
-import IconStarOutlined from '../assets/images/icon_star_outlined.svg';
-import {APIResponse} from '@services/api';
-import {ImageDimensions} from '@lib/media/imageDimensions';
 
 type Props = StackScreenProps<MainStackParamList, 'CulledAlbumPhotoDetail'>;
-
-type CullingFace = APIResponse.CullingFace;
-
-const KEY_FACE_ITEM_SIZE = 64;
-const KEY_FACE_COLUMN_COUNT = 4;
-const KEY_FACE_GAP = 24;
-const KEY_FACE_ROW_HEIGHT = KEY_FACE_ITEM_SIZE + KEY_FACE_GAP;
-const KEY_FACE_SIDEBAR_WIDTH =
-  KEY_FACE_COLUMN_COUNT * KEY_FACE_ITEM_SIZE +
-  (KEY_FACE_COLUMN_COUNT - 1) * KEY_FACE_GAP;
-
-type KeyFaceRow = {
-  key: string;
-  rowIndex: number;
-  startIndex: number;
-  faces: CullingFace[];
-};
-
-function buildKeyFaceRows(faces: CullingFace[]): KeyFaceRow[] {
-  const rows: KeyFaceRow[] = [];
-  for (let index = 0; index < faces.length; index += KEY_FACE_COLUMN_COUNT) {
-    const rowIndex = index / KEY_FACE_COLUMN_COUNT;
-    rows.push({
-      key: `row-${rowIndex}`,
-      rowIndex,
-      startIndex: index,
-      faces: faces.slice(index, index + KEY_FACE_COLUMN_COUNT),
-    });
-  }
-  return rows;
-}
-
-type KeyFaceGridRowProps = {
-  row: KeyFaceRow;
-  uri: string;
-  imageSize?: ImageDimensions | null;
-  zoomFaceIndex: number | null;
-  onFacePress: (index: number) => void;
-  onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
-};
-
-/**
- * Same row pattern as CulledAlbumDetailSidebar. Prefer cropUri so Windows does
- * not hit-test an oversized transform-cropped full image across siblings.
- */
-const KeyFaceGridRow = memo(
-  function KeyFaceGridRow({
-    row,
-    uri,
-    imageSize,
-    zoomFaceIndex,
-    onFacePress,
-    onTooltipAnchorChange,
-  }: KeyFaceGridRowProps) {
-    return (
-      <View style={styles.keyFaceRow}>
-        {row.faces.map((face, offset) => {
-          const faceIndex = row.startIndex + offset;
-          return (
-            <KeyFaceSidebarItem
-              key={`face-${faceIndex}`}
-              cropUri={face.cropUri}
-              uri={face.cropUri ? undefined : uri}
-              boundingBox={face.cropUri ? undefined : face.boundingBox}
-              eyeStatus={face.eyeStatus}
-              focusLevel={face.focusLevel}
-              width={KEY_FACE_ITEM_SIZE}
-              imageSize={face.cropUri ? undefined : imageSize}
-              selected={zoomFaceIndex === faceIndex}
-              onPress={() => onFacePress(faceIndex)}
-              onTooltipAnchorChange={onTooltipAnchorChange}
-            />
-          );
-        })}
-        {row.faces.length < KEY_FACE_COLUMN_COUNT
-          ? Array.from({
-              length: KEY_FACE_COLUMN_COUNT - row.faces.length,
-            }).map((_, fillerIndex) => (
-              <View
-                key={`filler-${row.rowIndex}-${fillerIndex}`}
-                style={styles.keyFaceFiller}
-              />
-            ))
-          : null}
-      </View>
-    );
-  },
-  (prev, next) =>
-    prev.row === next.row &&
-    prev.uri === next.uri &&
-    prev.imageSize === next.imageSize &&
-    prev.zoomFaceIndex === next.zoomFaceIndex,
-);
-
-function KeyFaceRowSeparator() {
-  return <View style={styles.keyFaceRowSeparator} />;
-}
-
-function KeyFaceItemSeparator() {
-  return <View style={styles.keyFaceItemSeparator} />;
-}
 
 export default function CulledAlbumPhotoDetailScreen({
   navigation,
@@ -183,7 +68,6 @@ export default function CulledAlbumPhotoDetailScreen({
   const [zoomFaceIndex, setZoomFaceIndex] = useState<number | null>(() =>
     typeof initialFaceIndex === 'number' ? initialFaceIndex : null,
   );
-  const [mainImageReady, setMainImageReady] = useState(false);
   const [tooltip, setTooltip] = useState<KeyFaceTooltipAnchor | null>(null);
   const [tooltipWidth, setTooltipWidth] = useState(0);
   const [tooltipHeight, setTooltipHeight] = useState(0);
@@ -214,12 +98,9 @@ export default function CulledAlbumPhotoDetailScreen({
   const handleTooltipChangeRef = useRef(handleTooltipChange);
   handleTooltipChangeRef.current = handleTooltipChange;
 
-  // Match album sidebar: don't lock tooltips on Windows wheel noise.
-  const keyFaceScrollHandlers = useScrollAwareTooltipHandlers(
-    scrollStoreRef.current,
-    () => handleTooltipChangeRef.current(null),
-    {trackWheelScroll: false},
-  );
+  const handleFacePress = useCallback((index: number) => {
+    setZoomFaceIndex(current => (current === index ? null : index));
+  }, []);
 
   const faces = analysis?.faces ?? [];
   const fileName = photo?.file.name ?? 'Photo';
@@ -396,18 +277,11 @@ export default function CulledAlbumPhotoDetailScreen({
   ]);
 
   useLayoutEffect(() => {
-    setMainImageReady(false);
-  }, [photoId]);
-
-  useLayoutEffect(() => {
     if (uri) {
       preloadImage(uri).catch(() => undefined);
     }
   }, [uri]);
 
-  const handleMainImageReady = useCallback(() => {
-    setMainImageReady(true);
-  }, []);
   const isSelected = analysis?.selected ?? false;
   const starRating = analysis?.starRating ?? 0;
   const disabled = photo ? isCulledPhotoDisabled(photo) : false;
@@ -463,71 +337,9 @@ export default function CulledAlbumPhotoDetailScreen({
     goToPhoto(nextId);
   }, [goToPhoto, nextId]);
 
-  const handleKeyFacePress = useCallback((index: number) => {
-    setZoomFaceIndex(current => (current === index ? null : index));
-  }, []);
-
-  const handleKeyFacePressRef = useRef(handleKeyFacePress);
-  handleKeyFacePressRef.current = handleKeyFacePress;
-
-  const stableKeyFacePress = useCallback((index: number) => {
-    handleKeyFacePressRef.current(index);
-  }, []);
-
-  const keyFaceRows = useMemo(
-    () => (isMobileLayout ? [] : buildKeyFaceRows(faces)),
-    [faces, isMobileLayout],
-  );
-
-  const renderKeyFaceRow = useCallback(
-    ({item}: ListRenderItemInfo<KeyFaceRow>) => (
-      <KeyFaceGridRow
-        row={item}
-        uri={uri}
-        imageSize={imageSize}
-        zoomFaceIndex={zoomFaceIndex}
-        onFacePress={stableKeyFacePress}
-        onTooltipAnchorChange={handleTooltipChangeRef.current}
-      />
-    ),
-    [imageSize, stableKeyFacePress, uri, zoomFaceIndex],
-  );
-
-  const renderKeyFaceItem = useCallback(
-    ({item: face, index}: ListRenderItemInfo<CullingFace>) => (
-      <KeyFaceSidebarItem
-        cropUri={face.cropUri}
-        uri={face.cropUri ? undefined : uri}
-        boundingBox={face.cropUri ? undefined : face.boundingBox}
-        eyeStatus={face.eyeStatus}
-        focusLevel={face.focusLevel}
-        width={KEY_FACE_ITEM_SIZE}
-        imageSize={face.cropUri ? undefined : imageSize}
-        selected={zoomFaceIndex === index}
-        onPress={() => stableKeyFacePress(index)}
-        onTooltipAnchorChange={handleTooltipChangeRef.current}
-      />
-    ),
-    [imageSize, stableKeyFacePress, uri, zoomFaceIndex],
-  );
-
-  const keyFaceRowKeyExtractor = useCallback(
-    (row: KeyFaceRow) => row.key,
-    [],
-  );
-
-  const keyFaceItemKeyExtractor = useCallback(
-    (_: CullingFace, index: number) => `face-${index}`,
-    [],
-  );
-
-  const getKeyFaceRowLayout = useCallback(
-    (_data: ArrayLike<KeyFaceRow> | null | undefined, index: number) => ({
-      length: KEY_FACE_ITEM_SIZE,
-      offset: KEY_FACE_ROW_HEIGHT * index,
-      index,
-    }),
-    [],
+  const facesPanelPhoto = useMemo(
+    () => (photo ? toFacesPanelPhoto(photo) : null),
+    [photo],
   );
 
   if (!photo || !analysis) {
@@ -553,77 +365,17 @@ export default function CulledAlbumPhotoDetailScreen({
           style={styles.screenRoot}
           onLayout={syncScreenOrigin}
         >
-          <View
-            style={[
-              styles.header,
-              {paddingHorizontal: screenPaddingHorizontal},
-              isMobileLayout && styles.headerMobile,
-            ]}>
-            <View
-              style={[
-                styles.headerLeft,
-                isMobileLayout && styles.headerLeftMobile,
-              ]}>
-              <Text style={styles.fileName} numberOfLines={1}>
-                {fileName}
-              </Text>
-
-              <View style={styles.otherInfoContainer}>
-                <View style={styles.starRatingContainer}>
-                  {[...Array(5)].map((_, index) => {
-                    const filled = starRating > index;
-                    const Icon = filled ? IconStar : IconStarOutlined;
-
-                    return (
-                      <Pressable
-                        key={index}
-                        onPress={() => updateStarRating(index)}
-                        style={[
-                          styles.starButton,
-                          disabled && styles.controlDisabled,
-                        ]}
-                        disabled={disabled}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Rate ${index + 1} stars`}
-                      >
-                        <Icon width={24} height={24} color={colors.accent} />
-                      </Pressable>
-                    );
-                  })}
-                </View>
-
-                <Pressable
-                  onPress={toggleSelection}
-                  style={[
-                    styles.selectionButton,
-                    disabled && styles.controlDisabled,
-                  ]}
-                  disabled={disabled}
-                  accessibilityRole="button"
-                  accessibilityState={{selected: isSelected}}
-                >
-                  {isSelected ? (
-                    <IconCheckCircle width={24} height={24} color={colors.text} />
-                  ) : (
-                    <IconCheckCircleOutlined
-                      width={24}
-                      height={24}
-                      color={colors.text}
-                    />
-                  )}
-                </Pressable>
-              </View>
-            </View>
-
-            <Pressable
-              onPress={handleBack}
-              style={styles.closeButton}
-              accessibilityRole="button"
-              accessibilityLabel="Close photo detail"
-            >
-              <IconClose width={32} height={32} color={colors.text} />
-            </Pressable>
-          </View>
+          <PhotoDetailHeader
+            fileName={fileName}
+            starRating={starRating}
+            picked={isSelected}
+            disabled={disabled}
+            isMobileLayout={isMobileLayout}
+            paddingHorizontal={screenPaddingHorizontal}
+            onRate={updateStarRating}
+            onTogglePick={toggleSelection}
+            onClose={handleBack}
+          />
 
           <ScrollAwareTooltipContext.Provider value={scrollStoreRef.current}>
             <View
@@ -651,7 +403,6 @@ export default function CulledAlbumPhotoDetailScreen({
                     zoomFaceIndex={zoomFaceIndex}
                     lookId={lookDetailReady ? 'original' : photo?.lookId}
                     imageSize={imageSize}
-                    onImageReady={handleMainImageReady}
                     onTooltipAnchorChange={handleTooltipChange}
                   />
                 </PhotoDetailNavigationFrame>
@@ -668,46 +419,14 @@ export default function CulledAlbumPhotoDetailScreen({
                   styles.sidebar,
                   isMobileLayout && styles.sidebarMobile,
                 ]}>
-                <Text style={styles.sidebarTitle}>Key Faces ({faces.length})</Text>
-                {mainImageReady && imageSize ? (
-                  isMobileLayout ? (
-                    <FlatList
-                      {...keyFaceScrollHandlers}
-                      data={faces}
-                      keyExtractor={keyFaceItemKeyExtractor}
-                      renderItem={renderKeyFaceItem}
-                      horizontal
-                      style={styles.keyFaceScroll}
-                      contentContainerStyle={styles.keyFaceGridMobile}
-                      showsHorizontalScrollIndicator
-                      initialNumToRender={6}
-                      maxToRenderPerBatch={6}
-                      windowSize={3}
-                      ItemSeparatorComponent={KeyFaceItemSeparator}
-                    />
-                  ) : (
-                    <FlatList
-                      {...keyFaceScrollHandlers}
-                      data={keyFaceRows}
-                      keyExtractor={keyFaceRowKeyExtractor}
-                      renderItem={renderKeyFaceRow}
-                      style={styles.keyFaceScroll}
-                      contentContainerStyle={styles.keyFaceGrid}
-                      showsVerticalScrollIndicator
-                      initialNumToRender={Math.max(5, keyFaceRows.length)}
-                      maxToRenderPerBatch={3}
-                      windowSize={5}
-                      updateCellsBatchingPeriod={100}
-                      removeClippedSubviews={Platform.OS !== 'windows'}
-                      getItemLayout={getKeyFaceRowLayout}
-                      ItemSeparatorComponent={KeyFaceRowSeparator}
-                    />
-                  )
-                ) : (
-                  <View style={styles.keyFaceLoading}>
-                    <ActivityIndicator size="small" color={colors.accent} />
-                  </View>
-                )}
+                <ScrollView>
+                  <FacesInPhotoPanel
+                    photo={facesPanelPhoto}
+                    variant="viewer"
+                    selectedIndex={zoomFaceIndex}
+                    onFacePress={handleFacePress}
+                  />
+                </ScrollView>
               </View>
             </View>
           </ScrollAwareTooltipContext.Provider>
@@ -764,75 +483,10 @@ const styles = StyleSheet.create({
   screenRoot: {
     flex: 1,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 40,
-    paddingBottom: 24,
-    gap: 16,
-  },
-  headerMobile: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    paddingTop: 16,
-    gap: 12,
-  },
-  headerLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 24,
-    minWidth: 0,
-  },
-  headerLeftMobile: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    gap: 12,
-    width: '100%',
-  },
-  fileName: {
-    flexShrink: 1,
-    fontFamily: fonts.sans,
-    fontSize: 20,
-    fontWeight: 600,
-    color: colors.text,
-  },
-  otherInfoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  starRatingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  starButton: {
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  selectionButton: {
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  controlDisabled: {
-    opacity: 0.5,
-  },
-  closeButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   content: {
     flex: 1,
     flexDirection: 'row',
-    gap: 24,
+    gap: 42,
     paddingBottom: 24,
     minHeight: 0,
   },
@@ -851,51 +505,14 @@ const styles = StyleSheet.create({
     minHeight: 280,
   },
   sidebar: {
-    width: KEY_FACE_SIDEBAR_WIDTH,
+    width: 328,
     minHeight: 0,
-    gap: KEY_FACE_GAP,
     zIndex: 2,
   },
   sidebarMobile: {
     flex: undefined,
     width: '100%',
     minHeight: undefined,
-    gap: 12,
-  },
-  sidebarTitle: {
-    fontFamily: fonts.sans,
-    fontSize: 16,
-    color: colors.text,
-    fontWeight: 600,
-  },
-  keyFaceScroll: {
-    flex: 1,
-  },
-  keyFaceGrid: {
-    paddingBottom: 8,
-  },
-  keyFaceGridMobile: {
-    paddingRight: 0,
-  },
-  keyFaceRow: {
-    flexDirection: 'row',
-    gap: KEY_FACE_GAP,
-  },
-  keyFaceFiller: {
-    width: KEY_FACE_ITEM_SIZE,
-    height: KEY_FACE_ITEM_SIZE,
-  },
-  keyFaceItemSeparator: {
-    width: KEY_FACE_GAP,
-  },
-  keyFaceRowSeparator: {
-    height: KEY_FACE_GAP,
-  },
-  keyFaceLoading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 120,
   },
   tooltipHost: {
     position: 'absolute',

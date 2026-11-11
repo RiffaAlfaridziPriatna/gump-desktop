@@ -5,7 +5,7 @@ import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
 import QuarterCircleOrange from '../../assets/images/upload/orange_quarter_circle.svg';
 import QuarterCircleRed from '../../assets/images/upload/red_quarter_circle.svg';
 
-export function LookPickerDecorations() {
+export function ModalDecorations() {
   return (
     <View
       style={styles.decorations}

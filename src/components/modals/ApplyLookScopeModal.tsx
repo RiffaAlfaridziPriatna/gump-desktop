@@ -9,13 +9,9 @@ import {
   Text,
   View,
 } from 'react-native';
-import CircleBlue from '../../assets/images/upload/blue_circle.svg';
-import HalfCircle from '../../assets/images/upload/half_circle.svg';
-import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
-import QuarterCircleOrange from '../../assets/images/upload/orange_quarter_circle.svg';
-import QuarterCircleRed from '../../assets/images/upload/red_quarter_circle.svg';
 import IconClose from '../../assets/images/icon_close.svg';
 import { focusDesktopNode } from './focusDesktopNode';
+import { ModalDecorations } from './ModalDecorations';
 
 type ApplyLookScopeModalProps = {
   visible: boolean;
@@ -28,37 +24,15 @@ type ApplyLookScopeModalProps = {
 const TITLE = 'Apply this new look to existing photos too?';
 // Figma GumpLight/Grey4; no matching token in colors.ts.
 const BODY_COLOR = '#454545';
+// 20 high text + 12 + 12 = 44 point target without growing the button.
+const TEXT_BUTTON_HIT_SLOP = { top: 12, bottom: 12, left: 0, right: 0 };
+const CLOSE_HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 };
 const HANDLED_BUBBLING = 3;
 
 const escapeKeyDownEvents =
   Platform.OS === 'windows'
     ? [{ code: 'Escape', handledEventPhase: HANDLED_BUBBLING }]
     : [{ key: 'Escape' }];
-
-function Decorations() {
-  return (
-    <View
-      style={styles.decorations}
-      pointerEvents="none"
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-    >
-      <QuarterCircleRed style={styles.quarterRedDecor} width={80} height={80} />
-      <CircleBlue style={styles.circleBlueDecor} width={32} height={32} />
-      <HalfCircle style={styles.halfCircleDecor} width={72} />
-      <QuarterCircleOrange
-        style={styles.quarterOrangeDecor}
-        width={98}
-        height={98}
-      />
-      <CircleLightBlue
-        style={styles.circleLightBlueDecor}
-        width={36}
-        height={36}
-      />
-    </View>
-  );
-}
 
 export function ApplyLookScopeModal({
   visible,
@@ -133,7 +107,7 @@ export function ApplyLookScopeModal({
         onKeyDown={handleKeyDown}
         keyDownEvents={escapeKeyDownEvents}
       >
-        <Decorations />
+        <ModalDecorations />
         <View style={styles.content}>
           <View style={styles.textBlock}>
             <Text style={styles.title} accessibilityRole="header">
@@ -161,6 +135,7 @@ export function ApplyLookScopeModal({
                 pressed && styles.pressed,
               ]}
               onPress={onApplyNewOnly}
+              hitSlop={TEXT_BUTTON_HIT_SLOP}
               accessibilityRole="button"
               accessibilityLabel="New photos only"
             >
@@ -174,7 +149,7 @@ export function ApplyLookScopeModal({
             pressed && styles.pressed,
           ]}
           onPress={onClose}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          hitSlop={CLOSE_HIT_SLOP}
           accessibilityRole="button"
           accessibilityLabel="Close"
         >
@@ -182,7 +157,7 @@ export function ApplyLookScopeModal({
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
           >
-            <IconClose width={20} height={20} color={colors.textDark} />
+            <IconClose width={24} height={24} color={colors.textDark} />
           </View>
         </Pressable>
       </View>
@@ -204,9 +179,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-  },
-  decorations: {
-    ...StyleSheet.absoluteFillObject,
   },
   content: {
     width: 480,
@@ -252,7 +224,6 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
   secondaryButton: {
-    minHeight: 44,
     paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
@@ -269,37 +240,12 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: 'absolute',
-    top: 16,
-    right: 16,
+    top: 24,
+    right: 24,
     zIndex: 3,
-    width: 32,
-    height: 32,
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  halfCircleDecor: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-  },
-  quarterOrangeDecor: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-  },
-  quarterRedDecor: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-  },
-  circleBlueDecor: {
-    position: 'absolute',
-    bottom: 24,
-    left: 24,
-  },
-  circleLightBlueDecor: {
-    position: 'absolute',
-    top: 80,
-    right: 0,
   },
 });

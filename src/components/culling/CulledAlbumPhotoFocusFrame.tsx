@@ -1,9 +1,7 @@
 import {colors} from '@lib/ui/colors';
 import {StyleSheet, View} from 'react-native';
 
-const FRAME_OUTSET = 4;
-
-/** Focus ring around a whole card; overlays the grid gap so layout never shifts. */
+/** Focus ring on the card's own bounds, so it never overlaps a neighbour. */
 export function CulledAlbumPhotoFocusFrame() {
   return <View pointerEvents="none" style={styles.frame} />;
 }
@@ -11,10 +9,10 @@ export function CulledAlbumPhotoFocusFrame() {
 const styles = StyleSheet.create({
   frame: {
     position: 'absolute',
-    top: -FRAME_OUTSET,
-    right: -FRAME_OUTSET,
-    bottom: -FRAME_OUTSET,
-    left: -FRAME_OUTSET,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     borderWidth: 2,
     borderRadius: 6,
     borderColor: colors.blue,

@@ -66,7 +66,7 @@ export function SidebarActionStack({
         accessibilityRole="button"
         accessibilityLabel="Export picked photos">
         <IconExport width={24} height={24} color={colors.accent} />
-        <Text style={styles.buttonText}>Export</Text>
+        <Text style={[styles.buttonText, styles.buttonLabel]}>Export</Text>
       </Pressable>
 
       <Pressable
@@ -79,7 +79,7 @@ export function SidebarActionStack({
         accessibilityHint={editPhotosDisabled ? 'Add photos to edit' : undefined}
         accessibilityLabel="Edit photos">
         <IconWand width={22} height={22} color={colors.accent} />
-        <Text style={styles.buttonText}>Edit Photos</Text>
+        <Text style={[styles.buttonText, styles.buttonLabel]}>Edit Photos</Text>
       </Pressable>
     </View>
   );
@@ -107,6 +107,9 @@ const styles = StyleSheet.create({
     ...sansBoldStyle,
     fontSize: 16,
     color: colors.accent,
+  },
+  buttonLabel: {
+    lineHeight: 25.6,
   },
   buttonDisabled: {
     opacity: 0.4,

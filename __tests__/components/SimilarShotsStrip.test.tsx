@@ -1,6 +1,7 @@
 import React from 'react';
-import {Text} from 'react-native';
+import {StyleSheet, Text, View} from 'react-native';
 import {SimilarShotsStrip} from '../../src/components/culling/SimilarShotsStrip';
+import {fonts} from '../../src/lib/ui/typography';
 import {getByLabel, press, render} from '../helpers/render';
 
 const mockPhotos: Record<string, unknown> = {};
@@ -140,6 +141,127 @@ describe('SimilarShotsStrip', () => {
     expect(mockReportError).toHaveBeenCalledWith(failure, {
       source: 'similar_shots_strip',
       operation: 'toggle_pick',
+    });
+  });
+
+  describe('figma styles', () => {
+    type Styled = {props: {style?: unknown}};
+    const flat = (node: Styled) =>
+      (StyleSheet.flatten(node.props.style as never) ?? {}) as Record<string, unknown>;
+    const views = (view: ReturnType<typeof render>) =>
+      view.renderer.root.findAllByType(View);
+    const viewsWith = (
+      view: ReturnType<typeof render>,
+      match: Record<string, unknown>,
+    ) =>
+      views(view).filter(node => {
+        const style = flat(node);
+        return Object.entries(match).every(([k, v]) => style[k] === v);
+      });
+    const textNode = (view: ReturnType<typeof render>, value: string) =>
+      view.renderer.root
+        .findAllByType(Text)
+        .find(node => node.props.children === value)!;
+
+    it('styles the title row, cards and filename', () => {
+      const {view} = renderStrip();
+      const title = view.renderer.root.findByProps({accessibilityRole: 'header'});
+      expect(flat(title)).toMatchObject({
+        fontFamily: fonts.interSemiBold,
+        fontSize: 14,
+        color: '#FFFFFF',
+      });
+      expect(viewsWith(view, {gap: 10, paddingTop: 28})).toHaveLength(1);
+      expect(viewsWith(view, {flexDirection: 'row', gap: 8})).toHaveLength(1);
+      const cards = viewsWith(view, {
+        width: 140,
+        padding: 1,
+        borderWidth: 2,
+        borderRadius: 8,
+        gap: 6,
+      });
+      expect(cards).toHaveLength(2);
+      expect(
+        viewsWith(view, {width: 134, height: 89, borderRadius: 6}),
+      ).toHaveLength(2);
+      expect(
+        viewsWith(view, {flexDirection: 'row', gap: 4, height: 24}),
+      ).toHaveLength(2);
+      expect(flat(textNode(view, 'IMG_2.jpg'))).toMatchObject({
+        fontFamily: fonts.sans,
+        fontSize: 11,
+        color: '#FFFFFF',
+      });
+    });
+
+    it('draws the blue border only on the current card', () => {
+      const {view} = renderStrip('a');
+      expect(viewsWith(view, {width: 140, borderColor: '#4141FF'})).toHaveLength(1);
+      expect(
+        viewsWith(view, {width: 140, borderColor: 'transparent'}),
+      ).toHaveLength(1);
+      const current = viewsWith(view, {width: 140, borderColor: '#4141FF'})[0];
+      expect(
+        current.findAll(
+          n => n.props.accessibilityLabel === 'Pick IMG_1.jpg',
+        ).length,
+      ).toBeGreaterThan(0);
+    });
+
+    it('styles the pick control for picked and unpicked', () => {
+      const {view} = renderStrip();
+      expect(
+        viewsWith(view, {
+          width: 18,
+          height: 18,
+          borderRadius: 9,
+          borderWidth: 1.5,
+          borderColor: '#FFFFFF',
+        }),
+      ).toHaveLength(1);
+      expect(
+        viewsWith(view, {
+          width: 18,
+          height: 18,
+          borderRadius: 9,
+          backgroundColor: '#FF9632',
+          borderWidth: 0,
+        }),
+      ).toHaveLength(1);
+      expect(viewsWith(view, {width: 24, height: 24})).toHaveLength(2);
+    });
+
+    it('shows the AI badge on blue with icon and text', () => {
+      const {view} = renderStrip();
+      expect(flat(textNode(view, 'AI recommended'))).toMatchObject({
+        fontFamily: fonts.interSemiBold,
+        fontSize: 12,
+        color: '#FFFFFF',
+      });
+      const [badge] = viewsWith(view, {
+        backgroundColor: '#4141FF',
+        borderRadius: 100,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        gap: 4,
+        left: 4,
+        bottom: 4,
+      });
+      expect(badge).toBeDefined();
+      expect(
+        badge.findAll(n => (n.type as unknown as string) === 'SvgMock'),
+      ).toHaveLength(1);
+    });
+  });
+
+  it('makes the pick control focusable for keyboard use and announces state', () => {
+    const {view} = renderStrip();
+    const pick = getByLabel(view.renderer, 'Pick IMG_2.jpg');
+    expect(pick.props.focusable).toBe(true);
+    expect(pick.props.accessibilityRole).toBe('checkbox');
+    expect(pick.props.accessibilityState).toEqual({
+      checked: false,
+      disabled: false,
     });
   });
 });

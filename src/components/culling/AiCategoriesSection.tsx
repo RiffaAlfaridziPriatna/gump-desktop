@@ -5,11 +5,11 @@ import {
 } from '@lib/culling/cullFilterLabels';
 import type {CullFilterKey} from '@lib/culling/cullingUtil';
 import {colors} from '@lib/ui/colors';
-import {fonts} from '@lib/ui/typography';
+import {fonts, sansSemiBoldStyle} from '@lib/ui/typography';
 import type React from 'react';
 import {StyleSheet, Text, View} from 'react-native';
-import Svg, {Path} from 'react-native-svg';
 import type {SvgProps} from 'react-native-svg';
+import IconCheck from '../../assets/images/lucide_check.svg';
 import IconEyeOff from '../../assets/images/lucide_eye_off.svg';
 import IconFocus from '../../assets/images/lucide_focus.svg';
 import IconHelp from '../../assets/images/lucide_circle_help.svg';
@@ -36,7 +36,7 @@ export function AiCategoriesSection({
   onToggleFilter,
 }: AiCategoriesSectionProps) {
   return (
-    <View>
+    <View style={styles.container}>
       <Text style={styles.caption} accessibilityRole="header">
         AI Categories
       </Text>
@@ -54,15 +54,7 @@ export function AiCategoriesSection({
               accessibilityState={{checked}}>
               <View style={[styles.box, checked && styles.boxChecked]}>
                 {checked && (
-                  <Svg width={12} height={12} viewBox="0 0 12 12" fill="none">
-                    <Path
-                      d="M2.5 6.25L5 8.75L9.5 3.75"
-                      stroke={colors.white}
-                      strokeWidth={1.5}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </Svg>
+                  <IconCheck width={12} height={12} color={colors.white} />
                 )}
               </View>
               <Icon width={14} height={14} color={colors.textGray} />
@@ -77,9 +69,9 @@ export function AiCategoriesSection({
 }
 
 const styles = StyleSheet.create({
+  container: {gap: 4},
   caption: {
-    fontFamily: fonts.sans,
-    fontWeight: '600',
+    ...sansSemiBoldStyle,
     fontSize: 16,
     color: colors.white,
     paddingHorizontal: 12,

@@ -1,5 +1,5 @@
 import React from 'react';
-import {Text} from 'react-native';
+import {StyleSheet, Text} from 'react-native';
 import {SidebarActionStack} from '../../src/components/culling/SidebarActionStack';
 import {getByLabel, press, render} from '../helpers/render';
 
@@ -82,5 +82,28 @@ describe('SidebarActionStack', () => {
     const edit = getByLabel(renderer, EDIT);
     expect(edit.props.accessibilityState).toEqual({disabled: true});
     expect(edit.props.accessibilityHint).toBe('Add photos to edit');
+  });
+});
+
+describe('SidebarActionStack Figma values', () => {
+  it('Export and Edit Photos labels have line height 16 x 1.6', () => {
+    const {renderer} = setup();
+    ['Export', 'Edit Photos'].forEach(label => {
+      const node = renderer.root
+        .findAllByType(Text)
+        .find(t => t.props.children === label)!;
+      expect(StyleSheet.flatten(node.props.style)).toMatchObject({
+        fontSize: 16,
+        lineHeight: 25.6,
+      });
+    });
+  });
+
+  it('Add Photos label keeps its own line height', () => {
+    const {renderer} = setup();
+    const node = renderer.root
+      .findAllByType(Text)
+      .find(t => t.props.children === 'Add Photos to Cull')!;
+    expect(StyleSheet.flatten(node.props.style).lineHeight).toBeUndefined();
   });
 });

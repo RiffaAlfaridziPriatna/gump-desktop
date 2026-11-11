@@ -242,6 +242,8 @@ static void RegisterCustomFonts(PCWSTR appDirectory) noexcept {
       L"RedHatDisplay-Regular.ttf",
       L"RedHatDisplay-Medium.ttf",
       L"RedHatDisplay-Bold.ttf",
+      L"RedHatDisplay-SemiBold.ttf",
+      L"Inter-SemiBold.ttf",
   };
 
   const std::filesystem::path fontsDir =

@@ -1,25 +1,18 @@
 import {Modal, ProgressBar} from '@components/ui';
 import {useCloudStoragePreflight} from '@hooks/useCloudStoragePreflight';
 import {useUploadFailureSummary} from '@hooks/useUploadFailureSummary';
-import {
-  bytesToGigabytes,
-  formatStorageSizeGb,
-} from '@lib/culledAlbum/format';
+import {formatGigabytes} from '@lib/export/formatByteSize';
 import {openUpgradePlan} from '@lib/plan/billingLinks';
 import {reportError} from '@lib/observability/reportError';
 import {colors} from '@lib/ui/colors';
-import {fonts, sansBoldStyle} from '@lib/ui/typography';
+import {fonts, sansSemiBoldStyle} from '@lib/ui/typography';
 import {useEffect, useRef, useState} from 'react';
 import {AccessibilityInfo, StyleSheet, Text, View} from 'react-native';
 import {UploadCloudStorageView} from './UploadCloudStorageView';
 import {focusDesktopNode} from './focusDesktopNode';
+import {ModalDecorations} from './ModalDecorations';
 import {UploadCompleteView} from './UploadCompleteView';
 import {UploadBakeDiskFull, UploadFailureFlow} from './UploadFailureFlow';
-import CircleBlue from '../../assets/images/upload/blue_circle.svg';
-import HalfCircle from '../../assets/images/upload/half_circle.svg';
-import CircleLightBlue from '../../assets/images/upload/light_blue_circle.svg';
-import QuarterCircleOrange from '../../assets/images/upload/orange_quarter_circle.svg';
-import QuarterCircleRed from '../../assets/images/upload/red_quarter_circle.svg';
 
 export type UploadSelectedPhase = 'confirm' | 'uploading' | 'complete';
 
@@ -28,6 +21,8 @@ type UploadSelectedModalProps = {
   albumId: string;
   phase: UploadSelectedPhase;
   photoCount: number;
+  /** Photos of this upload already on the server. */
+  uploadedCount?: number;
   uploadSizeGb: number;
   uploadedBytes?: number;
   totalUploadBytes?: number;
@@ -42,34 +37,16 @@ type UploadSelectedModalProps = {
   onRetryStarted: () => void;
 };
 
-function ModalDecor() {
-  return (
-    <>
-      <HalfCircle style={styles.halfCircleDecor} width={72} />
-      <QuarterCircleOrange
-        style={styles.quarterOrangeDecor}
-        width={98}
-        height={98}
-      />
-      <QuarterCircleRed style={styles.quarterRedDecor} width={80} height={80} />
-      <CircleBlue style={styles.circleBlueDecor} width={32} height={32} />
-      <CircleLightBlue
-        style={styles.circleLightBlueDecor}
-        width={36}
-        height={36}
-      />
-    </>
-  );
-}
-
 function UploadingPhase({
   photoCount,
+  uploadedCount,
   uploadProgress,
   uploadedBytes,
   totalUploadBytes,
   isApplyingLook,
 }: {
   photoCount: number;
+  uploadedCount: number;
   uploadProgress: number;
   uploadedBytes: number;
   totalUploadBytes: number;
@@ -78,7 +55,7 @@ function UploadingPhase({
   const percent = Math.round(Math.min(1, Math.max(0, uploadProgress)) * 100);
   const title = isApplyingLook
     ? 'Applying look...'
-    : `Uploading ${photoCount} Photo${photoCount === 1 ? '' : 's'}`;
+    : `Uploading ${photoCount} photo${photoCount === 1 ? '' : 's'}`;
   const subtitle = isApplyingLook
     ? 'Baking looks onto your selected photos before upload.\nPlease keep this window open.'
     : 'Please keep this window open';
@@ -89,8 +66,9 @@ function UploadingPhase({
   useEffect(() => {
     focusDesktopNode(progressRef.current);
   }, []);
-  const uploadedGb = bytesToGigabytes(uploadedBytes);
-  const totalGb = bytesToGigabytes(totalUploadBytes);
+  const sizes = `${formatGigabytes(uploadedBytes)} of ${formatGigabytes(
+    totalUploadBytes,
+  )}`;
 
   return (
     <View style={styles.uploadingContainer}>
@@ -111,9 +89,7 @@ function UploadingPhase({
             min: 0,
             max: 100,
             now: percent,
-            text: `${percent}%, ${formatStorageSizeGb(
-              uploadedGb,
-            )} of ${formatStorageSizeGb(totalGb)}`,
+            text: `${percent}%, ${sizes}`,
           }}>
           <ProgressBar
             progress={uploadProgress}
@@ -124,8 +100,9 @@ function UploadingPhase({
           />
         </View>
         <Text style={styles.uploadProgressMeta}>
-          <Text style={styles.uploadProgressMetaValue}>{percent}%</Text> ·{' '}
-          {formatStorageSizeGb(uploadedGb)} of {formatStorageSizeGb(totalGb)}
+          {`${uploadedCount} of ${photoCount} photo${
+            photoCount === 1 ? '' : 's'
+          } · ${sizes}`}
         </Text>
       </View>
     </View>
@@ -137,9 +114,9 @@ function modalHeightForPhase(
   isExceeded: boolean,
 ): number {
   if (phase === 'uploading') {
-    return 360;
+    return 456;
   }
-  return isExceeded ? 495 : 456;
+  return isExceeded ? 511 : 456;
 }
 
 export function UploadSelectedModal({
@@ -147,6 +124,7 @@ export function UploadSelectedModal({
   albumId,
   phase,
   photoCount,
+  uploadedCount = 0,
   uploadSizeGb,
   uploadedBytes = 0,
   totalUploadBytes = 0,
@@ -200,7 +178,7 @@ export function UploadSelectedModal({
           (phase === 'confirm' || failures.quota > 0),
       )}
       contentStyle={styles.modalContent}>
-      <ModalDecor />
+      <ModalDecorations />
       {phase === 'confirm' && (
         <UploadCloudStorageView
           preflight={preflight}
@@ -224,6 +202,7 @@ export function UploadSelectedModal({
       {phase === 'uploading' && !bakeDiskFull && (
         <UploadingPhase
           photoCount={photoCount}
+          uploadedCount={uploadedCount}
           uploadProgress={uploadProgress}
           uploadedBytes={uploadedBytes}
           totalUploadBytes={totalUploadBytes}
@@ -262,7 +241,7 @@ const styles = StyleSheet.create({
   uploadingContainer: {
     width: 480,
     maxWidth: '100%',
-    gap: 32,
+    gap: 24,
     alignItems: 'center',
   },
   titleBlock: {
@@ -279,7 +258,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontFamily: fonts.sans,
     fontSize: 14,
-    lineHeight: 16 * 1.4,
+    lineHeight: 14 * 1.44,
     color: colors.textMuted,
     textAlign: 'center',
   },
@@ -291,38 +270,9 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   uploadProgressMeta: {
-    fontFamily: fonts.sans,
+    ...sansSemiBoldStyle,
     fontSize: 14,
     color: colors.textMuted,
     textAlign: 'center',
-  },
-  uploadProgressMetaValue: {
-    ...sansBoldStyle,
-    color: colors.textDark,
-  },
-  halfCircleDecor: {
-    position: 'absolute',
-    top: -20,
-    left: -28,
-  },
-  quarterOrangeDecor: {
-    position: 'absolute',
-    top: -24,
-    right: -20,
-  },
-  quarterRedDecor: {
-    position: 'absolute',
-    bottom: -18,
-    right: -10,
-  },
-  circleBlueDecor: {
-    position: 'absolute',
-    bottom: 48,
-    left: 18,
-  },
-  circleLightBlueDecor: {
-    position: 'absolute',
-    top: 72,
-    right: 28,
   },
 });

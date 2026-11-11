@@ -9,8 +9,6 @@ import {
 import {memo} from 'react';
 import {StyleSheet, View} from 'react-native';
 
-export const GRID_GAP = 16;
-
 type CulledAlbumPhotoRowViewProps = Omit<
   CulledAlbumPhotoCardProps,
   'photoId' | 'similarShotCount' | 'isFocused'
@@ -43,7 +41,7 @@ export const CulledAlbumPhotoRowView = memo(
     onStarPress,
   }: CulledAlbumPhotoRowViewProps) {
     return (
-      <View style={[styles.row, {marginBottom: GRID_GAP, gap: GRID_GAP}]}>
+      <View style={styles.row}>
         {row.cells.map(cell => (
           <CulledAlbumPhotoCard
             key={cell.photoId}

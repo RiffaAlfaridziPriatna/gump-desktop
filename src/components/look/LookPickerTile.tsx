@@ -2,7 +2,7 @@ import { LookPreviewImage } from '@components/look/LookPreviewImage';
 import { Pressable } from '@components/ui';
 import type { LookId } from '@lib/look/types';
 import { colors } from '@lib/ui/colors';
-import { fonts, sansBoldStyle } from '@lib/ui/typography';
+import { fonts, sansSemiBoldStyle } from '@lib/ui/typography';
 import type { Ref } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
@@ -94,9 +94,8 @@ const styles = StyleSheet.create({
     color: colors.textDark,
     textAlign: 'center',
   },
-  // No SemiBold font is registered; Bold is the closest.
   labelSelected: {
-    ...sansBoldStyle,
+    ...sansSemiBoldStyle,
   },
   pressed: {
     opacity: 0.8,

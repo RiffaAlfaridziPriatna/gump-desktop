@@ -14,16 +14,26 @@ import {isCulledPhotoDisabled, toCullingPhoto} from '@lib/culledAlbum/types';
 import {resolveGridDisplayUri} from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
+import {
+  CARD_FOOTER_HEIGHT,
+  CARD_INTERNAL_GAP,
+  CARD_PADDING_BOTTOM,
+  CARD_PADDING_HORIZONTAL,
+  CARD_PADDING_TOP,
+  thumbnailWidthForCard,
+} from '@components/culling/culledAlbumGridRows';
 import {forwardRef, memo, useCallback, useRef, type MutableRefObject} from 'react';
 import {Image, StyleSheet, Text, View} from 'react-native';
+import IconPickCheck from '../../assets/images/icon_pick_check.svg';
 
 const STAR_INDICES = [0, 1, 2, 3, 4] as const;
 const STAR_SIZE = 16;
-const STAR_GAP = 2;
+const STAR_GAP = 4;
 const STAR_SLOT_WIDTH = STAR_SIZE + STAR_GAP;
 const STAR_ROW_WIDTH =
   STAR_SIZE * STAR_INDICES.length + STAR_GAP * (STAR_INDICES.length - 1);
-const SELECT_ICON_SIZE = 16;
+const PICK_SIZE = 20;
+const PICK_CHECK_SIZE = 13;
 
 const STAR_RATING_IMAGES = [
   require('../../assets/images/star_rating_0.png'),
@@ -33,9 +43,6 @@ const STAR_RATING_IMAGES = [
   require('../../assets/images/star_rating_4.png'),
   require('../../assets/images/star_rating_5.png'),
 ] as const;
-
-const SELECT_ICON_SELECTED = require('../../assets/images/icon_check_circle.png');
-const SELECT_ICON_UNSELECTED = require('../../assets/images/icon_check_circle_outlined.png');
 
 export type CulledAlbumPhotoCardProps = {
   albumId: string;
@@ -239,10 +246,6 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
     return <View style={[styles.photoCard, {width: cardWidth}]} />;
   }
 
-  const SelectionIcon = isSelected
-    ? SELECT_ICON_SELECTED
-    : SELECT_ICON_UNSELECTED;
-
   return (
     <Pressable
       style={[styles.photoCard, {width: cardWidth}]}
@@ -256,7 +259,7 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
           <CulledAlbumPhotoThumbnail
             albumId={albumId}
             photoId={photoId}
-            width={cardWidth}
+            width={thumbnailWidthForCard(cardWidth)}
             uri={uri}
             thumbnailWidth={file.thumbnailWidth}
             thumbnailHeight={file.thumbnailHeight}
@@ -272,37 +275,35 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
           />
         </View>
         <View style={styles.photoInfoContainer}>
+          <View
+            ref={selectIconRef}
+            collapsable={false}
+            onLayout={updateSelectFrame}
+            style={[styles.selectionButton, disabled && styles.chromeDisabled]}
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants">
+            <View
+              style={[
+                styles.pickCircle,
+                isSelected ? styles.pickCircleSelected : styles.pickCircleEmpty,
+              ]}>
+              {isSelected && (
+                <IconPickCheck width={PICK_CHECK_SIZE} height={PICK_CHECK_SIZE} />
+              )}
+            </View>
+          </View>
+
           <Text style={styles.fileName} numberOfLines={1}>
             {fileName}
           </Text>
 
-          <View style={styles.otherInfoContainer}>
-            <StarRatingRow
-              ref={starRowRef}
-              rating={starRating}
-              disabled={disabled}
-              onLayout={updateStarFrame}
-            />
-
-            <View
-              ref={selectIconRef}
-              collapsable={false}
-              onLayout={updateSelectFrame}
-              style={[
-                styles.selectionButton,
-                disabled && styles.chromeDisabled,
-              ]}
-              pointerEvents="none"
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants">
-              <Image
-                key={isSelected ? 'selected' : 'unselected'}
-                source={SelectionIcon}
-                style={styles.selectionIcon}
-                resizeMode="contain"
-              />
-            </View>
-          </View>
+          <StarRatingRow
+            ref={starRowRef}
+            rating={starRating}
+            disabled={disabled}
+            onLayout={updateStarFrame}
+          />
         </View>
         {isFocused && <CulledAlbumPhotoFocusFrame />}
       </View>
@@ -312,10 +313,15 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
 
 const styles = StyleSheet.create({
   photoCard: {
-    gap: 8,
+    gap: CARD_INTERNAL_GAP,
   },
   photoCardRoot: {
-    gap: 8,
+    gap: CARD_INTERNAL_GAP,
+    backgroundColor: colors.photoCardBackground,
+    borderRadius: 6,
+    paddingTop: CARD_PADDING_TOP,
+    paddingHorizontal: CARD_PADDING_HORIZONTAL,
+    paddingBottom: CARD_PADDING_BOTTOM,
   },
   thumbnailWrapper: {
     position: 'relative',
@@ -323,20 +329,16 @@ const styles = StyleSheet.create({
   photoInfoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    paddingLeft: 2,
+    gap: 4,
+    height: CARD_FOOTER_HEIGHT,
+    paddingRight: 2,
   },
   fileName: {
     flex: 1,
     fontFamily: fonts.sans,
     fontSize: 14,
+    lineHeight: 14,
     color: colors.text,
-  },
-  otherInfoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
   },
   starRatingContainer: {
     width: STAR_ROW_WIDTH,
@@ -356,8 +358,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  selectionIcon: {
-    width: SELECT_ICON_SIZE,
-    height: SELECT_ICON_SIZE,
+  pickCircle: {
+    width: PICK_SIZE,
+    height: PICK_SIZE,
+    borderRadius: PICK_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickCircleEmpty: {
+    borderWidth: 1,
+    borderColor: colors.white,
+  },
+  pickCircleSelected: {
+    backgroundColor: colors.accent,
   },
 });

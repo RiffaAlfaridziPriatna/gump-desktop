@@ -2,12 +2,28 @@ import React from 'react';
 import {Text} from 'react-native';
 import {UploadToast} from '../../src/components/upload/UploadToast';
 import {
+  beginAnalysisQueue,
+  beginLocalImportQueue,
   beginServerUploadQueue,
   finishServerUploadQueue,
   uploadQueueStore,
 } from '../../src/lib/culledAlbum/uploadQueueStore';
 import {render} from '../helpers/render';
 
+let mockAnalysisCounts: {
+  total: number;
+  pending: number;
+  inProgress: number;
+  completed: number;
+  failed: number;
+} | null = null;
+let mockLocalImport: {
+  total: number;
+  pending: number;
+  uploading: number;
+  uploaded: number;
+  failed: number;
+} | null = null;
 const mockPhotos: Array<{id: string; serverUploadStatus: string}> = [];
 
 jest.mock('@context/culledAlbum', () => ({
@@ -20,10 +36,10 @@ jest.mock('@context/culledAlbum', () => ({
     clearCompleted: jest.fn(),
     clearFilenameDuplicates: jest.fn(),
   }),
-  useCulledAlbumAnalysisCounts: () => null,
+  useCulledAlbumAnalysisCounts: () => mockAnalysisCounts,
   useCulledAlbumFilenameDuplicates: () => [],
   useCulledAlbumFilenameDuplicateToastMode: () => null,
-  useCulledAlbumLocalImportProgress: () => null,
+  useCulledAlbumLocalImportProgress: () => mockLocalImport,
   useCulledAlbumServerUploadBatch: () => ({
     batchPhotoIds: mockPhotos.map(p => p.id),
     photos: mockPhotos,
@@ -83,5 +99,70 @@ describe('UploadToast serverUpload completed label', () => {
       state.queues[albumId].serverUpload.failedCount = 1;
     });
     expect(labels()).toContain('Uploaded 4 out of 5 photos');
+  });
+});
+
+describe('UploadToast analyze ETA', () => {
+  afterEach(() => {
+    mockAnalysisCounts = null;
+    uploadQueueStore.setState(() => ({queues: {}}));
+    jest.useRealTimers();
+  });
+
+  function analyzeTexts(): string[] {
+    const {renderer, unmount} = render(
+      <UploadToast mode="analyze" albumId={albumId} />,
+    );
+    const texts = renderer.root
+      .findAllByType(Text)
+      .map(node => String(node.props.children));
+    unmount();
+    return texts;
+  }
+
+  it('hides the estimate before enough photos finished', () => {
+    beginAnalysisQueue(albumId, 100);
+    mockAnalysisCounts = {total: 100, pending: 99, inProgress: 1, completed: 0, failed: 0};
+    expect(analyzeTexts()).toContain('Analyzing 100 photos');
+  });
+
+  it('shows About X min left once the pace is known', () => {
+    jest.useFakeTimers().setSystemTime(0);
+    beginAnalysisQueue(albumId, 1000);
+    mockAnalysisCounts = {total: 1000, pending: 1000, inProgress: 0, completed: 0, failed: 0};
+    const {renderer, unmount, rerender} = render(
+      <UploadToast mode="analyze" albumId={albumId} />,
+    );
+    jest.setSystemTime(10000);
+    mockAnalysisCounts = {total: 1000, pending: 890, inProgress: 0, completed: 110, failed: 0};
+    rerender(<UploadToast mode="analyze" albumId={albumId} />);
+    const texts = renderer.root.findAllByType(Text).map(n => String(n.props.children));
+    unmount();
+    expect(texts.some(t => /· About \d+ min left$/.test(t))).toBe(true);
+  });
+});
+
+describe('UploadToast local import ETA', () => {
+  afterEach(() => {
+    mockLocalImport = null;
+    uploadQueueStore.setState(() => ({queues: {}}));
+    jest.useRealTimers();
+  });
+
+  it('shows About X min left on the local import toast once the pace is known', () => {
+    jest.useFakeTimers().setSystemTime(0);
+    beginLocalImportQueue(albumId, 1000);
+    mockLocalImport = {total: 1000, pending: 1000, uploading: 0, uploaded: 0, failed: 0};
+    const {renderer, unmount, rerender} = render(
+      <UploadToast mode="upload" albumId={albumId} />,
+    );
+    const first = renderer.root.findAllByType(Text).map(n => String(n.props.children));
+    expect(first).toContain('Uploading 1000 photos');
+    jest.setSystemTime(10000);
+    mockLocalImport = {total: 1000, pending: 890, uploading: 0, uploaded: 110, failed: 0};
+    rerender(<UploadToast mode="upload" albumId={albumId} />);
+    const texts = renderer.root.findAllByType(Text).map(n => String(n.props.children));
+    unmount();
+    expect(texts.some(t => /^Uploading 890 photos · About \d+ min left$/.test(t))).toBe(true);
   });
 });

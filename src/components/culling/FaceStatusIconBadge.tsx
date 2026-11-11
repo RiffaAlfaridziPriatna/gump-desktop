@@ -9,12 +9,14 @@ const BADGE_SIZES: Record<
   {badge: number; icon: number}
 > = {
   small: {badge: 16, icon: 10},
-  large: {badge: 28, icon: 16},
+  large: {badge: 32, icon: 16},
 };
 
 type FaceStatusIconBadgeProps = {
   meta: FaceStatusMeta;
   size?: FaceStatusIconBadgeSize;
+  /** Overrides the size preset's icon size. */
+  iconSize?: number;
   onHoverIn?: () => void;
   onHoverOut?: () => void;
 };
@@ -22,11 +24,13 @@ type FaceStatusIconBadgeProps = {
 export function FaceStatusIconBadge({
   meta,
   size = 'small',
+  iconSize: iconSizeOverride,
   onHoverIn,
   onHoverOut,
 }: FaceStatusIconBadgeProps) {
   const {Icon} = meta;
-  const {badge: badgeSize, icon: iconSize} = BADGE_SIZES[size];
+  const {badge: badgeSize, icon: presetIconSize} = BADGE_SIZES[size];
+  const iconSize = iconSizeOverride ?? presetIconSize;
 
   const badge = (
     <View

@@ -28,11 +28,12 @@ import {
   createGetItemLayout,
   GRID_COLUMNS,
   keepKnownPhotos,
+  photoRowHeight,
   sectionsLayoutKey,
   type CulledAlbumGridSection,
   type GridRow,
 } from '@components/culling/culledAlbumGridRows';
-import {CulledAlbumPhotoRowView, GRID_GAP} from '@components/culling/CulledAlbumPhotoRowView';
+import {CulledAlbumPhotoRowView} from '@components/culling/CulledAlbumPhotoRowView';
 import {SimilarShotGroupHeader} from '@components/culling/SimilarShotGroupHeader';
 import {
   useCallback,
@@ -87,9 +88,6 @@ type CulledAlbumPhotoGridProps = {
 };
 
 const COLUMNS = GRID_COLUMNS;
-const THUMBNAIL_ASPECT_RATIO = 3 / 2;
-const CARD_INTERNAL_GAP = 8;
-const CARD_INFO_ROW_HEIGHT = 28;
 const VISIBLE_PADDING = SCROLL_GRID_VISIBLE_PADDING;
 const SCROLL_END_DELAY_MS = 150;
 const SCROLLBAR_GUTTER = 24;
@@ -186,10 +184,7 @@ export function CulledAlbumPhotoGrid({
           containerWidth - (isMobileLayout ? 0 : SCROLLBAR_GUTTER),
         )
       : 0;
-  const cardWidth =
-    gridWidth > GRID_GAP * (COLUMNS - 1)
-      ? (gridWidth - GRID_GAP * (COLUMNS - 1)) / COLUMNS
-      : 0;
+  const cardWidth = gridWidth / COLUMNS;
 
   const lastGoodCardWidthRef = useRef(cardWidth);
   if (cardWidth > 0) {
@@ -197,10 +192,7 @@ export function CulledAlbumPhotoGrid({
   }
   const renderCardWidth =
     cardWidth > 0 ? cardWidth : lastGoodCardWidthRef.current;
-  const thumbnailHeight = renderCardWidth / THUMBNAIL_ASPECT_RATIO;
-  const itemHeight =
-    thumbnailHeight + CARD_INTERNAL_GAP + CARD_INFO_ROW_HEIGHT;
-  const rowHeight = itemHeight + GRID_GAP;
+  const rowHeight = photoRowHeight(renderCardWidth);
   const sectionsRef = useRef(visibleSections);
   sectionsRef.current = visibleSections;
   const layoutKey = sectionsLayoutKey(visibleSections);
@@ -442,6 +434,7 @@ export function CulledAlbumPhotoGrid({
       row.kind === 'header' ? (
         <SimilarShotGroupHeader
           section={visibleSections?.find(s => s.key === row.sectionKey)}
+          isFirst={row.rowIndex === 0}
         />
       ) : (
         <CulledAlbumPhotoRowView

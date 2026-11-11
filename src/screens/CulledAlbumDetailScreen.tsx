@@ -660,24 +660,16 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           )}
         </View>
 
-        <UploadToast mode="analyze" albumId={albumId} />
-      <UploadToast mode="upload" albumId={albumId} />
-        {aiSelectionFlow.status === 'updated' &&
-        aiSelectionFlow.recommendedCount !== null &&
-        aiSelectionFlow.lastAppliedLevel !== null ? (
-          <AiSelectionToast
-            variant="updated"
-            level={aiSelectionFlow.lastAppliedLevel}
-            count={aiSelectionFlow.recommendedCount}
-            onDismiss={aiSelectionFlow.dismiss}
-          />
-        ) : null}
-        {aiSelectionFlow.status === 'failed' ? (
-          <AiSelectionToast
-            variant="failed"
-            onDismiss={aiSelectionFlow.dismiss}
-          />
-        ) : null}
+        <View style={styles.toastColumn} pointerEvents="box-none">
+          {aiSelectionFlow.status === 'failed' ? (
+            <AiSelectionToast
+              variant="failed"
+              onDismiss={aiSelectionFlow.dismiss}
+            />
+          ) : null}
+          <UploadToast mode="analyze" albumId={albumId} />
+          <UploadToast mode="upload" albumId={albumId} />
+        </View>
           </>
         )}
         </View>
@@ -693,6 +685,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           albumId={albumId}
           phase={uploadPhase}
           photoCount={modalPhotoCount}
+          uploadedCount={batchCounts.completed}
           uploadSizeGb={modalUploadSizeGb}
           uploadedBytes={uploadedBytes}
           totalUploadBytes={totalUploadBytes}
@@ -753,6 +746,13 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 }
 
 const styles = StyleSheet.create({
+  toastColumn: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    zIndex: 100,
+    alignItems: 'flex-start',
+  },
   container: {
     flex: 1,
     backgroundColor: colors.background,

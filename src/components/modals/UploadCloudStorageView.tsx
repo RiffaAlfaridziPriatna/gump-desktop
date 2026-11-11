@@ -139,6 +139,7 @@ function renderState(
             variant="primary"
             onPress={onViewCloudPlans}
             autoFocus
+            single
           />
           <PopupButton
             label="Choose fewer photos"
