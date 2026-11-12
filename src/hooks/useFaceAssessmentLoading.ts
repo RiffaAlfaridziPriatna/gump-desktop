@@ -1,9 +1,17 @@
 import {useEffect, useState} from 'react';
 
 // TODO: simulated. Nothing is pending; remove when face assessment is real.
-export const FACE_ASSESSMENT_DELAY_MS = 1000;
+export const FACE_ASSESSMENT_DELAY_MIN_MS = 200;
+export const FACE_ASSESSMENT_DELAY_MAX_MS = 800;
 
-/** True for a fixed delay after `photoId` changes; the timer is cancelled on change. */
+/** Inclusive random delay in `[min, max]` ms. */
+export function sampleFaceAssessmentDelayMs(): number {
+  const span =
+    FACE_ASSESSMENT_DELAY_MAX_MS - FACE_ASSESSMENT_DELAY_MIN_MS + 1;
+  return FACE_ASSESSMENT_DELAY_MIN_MS + Math.floor(Math.random() * span);
+}
+
+/** True for a random delay after `photoId` changes; the timer is cancelled on change. */
 export function useFaceAssessmentLoading(photoId: string | null): boolean {
   const [readyId, setReadyId] = useState<string | null>(null);
 
@@ -13,7 +21,7 @@ export function useFaceAssessmentLoading(photoId: string | null): boolean {
     }
     const timer = setTimeout(
       () => setReadyId(photoId),
-      FACE_ASSESSMENT_DELAY_MS,
+      sampleFaceAssessmentDelayMs(),
     );
     return () => clearTimeout(timer);
   }, [photoId]);

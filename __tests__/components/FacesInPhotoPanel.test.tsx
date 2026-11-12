@@ -1,13 +1,17 @@
 import React from 'react';
 import { act } from 'react-test-renderer';
-import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
+import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import {
   FACES_EMPTY_HINT,
   FacesInPhotoPanel,
+  VIEWER_FACE_HEIGHT,
+  VIEWER_FACE_ROW_GAP,
+  VIEWER_FACES_BODY_MIN_HEIGHT,
+  viewerFacesBodyHeight,
   type FacesInPhotoPanelFace,
   type FacesInPhotoPanelPhoto,
 } from '../../src/components/culling/FacesInPhotoPanel';
-import { FACE_ASSESSMENT_DELAY_MS } from '../../src/hooks/useFaceAssessmentLoading';
+import { FACE_ASSESSMENT_DELAY_MAX_MS } from '../../src/hooks/useFaceAssessmentLoading';
 import { getFacePanelStatus } from '../../src/lib/culling/facePanelStatus';
 import { colors } from '../../src/lib/ui/colors';
 import { fonts } from '../../src/lib/ui/typography';
@@ -42,7 +46,7 @@ function texts(renderer: ReturnType<typeof render>['renderer']) {
 
 function settle() {
   act(() => {
-    jest.advanceTimersByTime(FACE_ASSESSMENT_DELAY_MS);
+    jest.advanceTimersByTime(FACE_ASSESSMENT_DELAY_MAX_MS);
   });
 }
 
@@ -74,16 +78,14 @@ describe('FacesInPhotoPanel', () => {
     const b = photo([face('b', 'open', 'good')], 'p2');
     const { renderer, rerender } = render(<FacesInPhotoPanel photo={a} />);
     act(() => {
-      jest.advanceTimersByTime(FACE_ASSESSMENT_DELAY_MS - 100);
+      jest.advanceTimersByTime(FACE_ASSESSMENT_DELAY_MAX_MS - 100);
     });
     rerender(<FacesInPhotoPanel photo={b} />);
     act(() => {
-      jest.advanceTimersByTime(200);
+      jest.advanceTimersByTime(100);
     });
     expect(texts(renderer)).toContain('Loading face assessment…');
-    act(() => {
-      jest.advanceTimersByTime(FACE_ASSESSMENT_DELAY_MS);
-    });
+    settle();
     expect(texts(renderer)).toContain('Faces in This Photo · 1');
   });
 
@@ -312,6 +314,83 @@ describe('FacesInPhotoPanel viewer variant', () => {
     ]);
     press(buttons[0]);
     expect(onFacePress).toHaveBeenCalledWith(0);
+  });
+
+  it('viewer faces body stays 180 for loading and up to 8 faces', () => {
+    expect(VIEWER_FACES_BODY_MIN_HEIGHT).toBe(
+      VIEWER_FACE_HEIGHT * 2 + VIEWER_FACE_ROW_GAP,
+    );
+    expect(viewerFacesBodyHeight(0)).toBe(180);
+    expect(viewerFacesBodyHeight(1)).toBe(180);
+    expect(viewerFacesBodyHeight(8)).toBe(180);
+    expect(viewerFacesBodyHeight(9)).toBe(
+      VIEWER_FACE_HEIGHT * 3 + VIEWER_FACE_ROW_GAP * 2,
+    );
+
+    const loading = render(
+      <FacesInPhotoPanel
+        variant="viewer"
+        photo={photo([face('a', 'open', 'good')])}
+      />,
+    );
+    const loadingBody = loading.renderer.root
+      .findAllByType(View)
+      .find(v => StyleSheet.flatten(v.props.style)?.minHeight === 180);
+    expect(loadingBody).toBeDefined();
+
+    const settled = render(
+      <FacesInPhotoPanel
+        variant="viewer"
+        photo={photo([face('a', 'open', 'good')])}
+      />,
+    );
+    settle();
+    const grid = settled.renderer.root
+      .findAllByType(View)
+      .find(v => {
+        const style = StyleSheet.flatten(v.props.style) ?? {};
+        return style.minHeight === 180 && style.rowGap === 16;
+      });
+    expect(grid).toBeDefined();
+    const tile = settled.renderer.root
+      .findAllByType(View)
+      .find(v => {
+        const style = StyleSheet.flatten(v.props.style) ?? {};
+        return style.width === 73 && style.height === VIEWER_FACE_HEIGHT;
+      });
+    expect(tile).toBeDefined();
+  });
+
+  it('viewer: Show AI markers switch toggles and is absent in sidebar', () => {
+    const onShowAiMarkersChange = jest.fn();
+    const { renderer } = render(
+      <FacesInPhotoPanel
+        variant="viewer"
+        photo={photo([face('a', 'open', 'good')])}
+        showAiMarkers
+        onShowAiMarkersChange={onShowAiMarkersChange}
+      />,
+    );
+    settle();
+    expect(texts(renderer)).toContain('Show AI markers');
+    const toggle = renderer.root.find(
+      n =>
+        n.props.accessibilityRole === 'switch' &&
+        n.props.accessibilityLabel === 'Show AI markers',
+    );
+    expect(toggle.props.accessibilityState).toEqual({checked: true});
+    press(toggle);
+    expect(onShowAiMarkersChange).toHaveBeenCalledWith(false);
+
+    const sidebar = render(
+      <FacesInPhotoPanel
+        photo={photo([face('a', 'open', 'good')])}
+        showAiMarkers
+        onShowAiMarkersChange={onShowAiMarkersChange}
+      />,
+    );
+    settle();
+    expect(texts(sidebar.renderer)).not.toContain('Show AI markers');
   });
 
   it('sidebar: faces are not pressable', () => {

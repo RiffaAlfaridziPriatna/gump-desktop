@@ -1,4 +1,5 @@
 import {FaceCropAvatar} from '@components/culling/FaceCropAvatar';
+import {ShowAiMarkersToggle} from '@components/culling/ShowAiMarkersToggle';
 import {Pressable} from '@components/ui';
 import type {EyeStatus, FocusLevel} from '@domain/valueObjects/Face';
 import {useFaceAssessmentLoading} from '@hooks/useFaceAssessmentLoading';
@@ -29,6 +30,21 @@ const NO_FACES_TEXT = 'No faces detected.';
 const UNAVAILABLE_TEXT = 'Face assessment unavailable.';
 const CROP_SIZE = 48;
 const VIEWER_CROP_SIZE = 64;
+/** Viewer face tile (crop + label). Two rows + gap = default body height. */
+export const VIEWER_FACE_HEIGHT = 82;
+export const VIEWER_FACE_ROW_GAP = 16;
+export const VIEWER_FACES_PER_ROW = 4;
+/** Default body under the filename: 2 rows × 82 + 16 gap. */
+export const VIEWER_FACES_BODY_MIN_HEIGHT =
+  VIEWER_FACE_HEIGHT * 2 + VIEWER_FACE_ROW_GAP;
+
+export function viewerFacesBodyHeight(faceCount: number): number {
+  if (faceCount <= VIEWER_FACES_PER_ROW * 2) {
+    return VIEWER_FACES_BODY_MIN_HEIGHT;
+  }
+  const rows = Math.ceil(faceCount / VIEWER_FACES_PER_ROW);
+  return rows * VIEWER_FACE_HEIGHT + (rows - 1) * VIEWER_FACE_ROW_GAP;
+}
 
 export type FacesInPhotoPanelVariant = 'sidebar' | 'viewer';
 
@@ -55,6 +71,10 @@ type FacesInPhotoPanelProps = {
   /** Viewer only: tap a face to zoom to it; tapping the selected face again is the caller's toggle. */
   onFacePress?: (index: number) => void;
   selectedIndex?: number | null;
+  /** Viewer only: whether face markers overlay the photo. */
+  showAiMarkers?: boolean;
+  /** Viewer only: toggle for `showAiMarkers`. */
+  onShowAiMarkersChange?: (next: boolean) => void;
 };
 
 function FaceItem({
@@ -189,12 +209,20 @@ function PanelBody({
   selectedIndex: number | null;
   onFacePress?: (index: number) => void;
 }) {
+  const bodyHeight =
+    viewer && photo
+      ? loading
+        ? VIEWER_FACES_BODY_MIN_HEIGHT
+        : viewerFacesBodyHeight(photo.faces.length)
+      : undefined;
+  const bodyStyle = bodyHeight !== undefined ? {minHeight: bodyHeight} : null;
+
   if (!photo) {
     return <Text style={styles.hint}>{FACES_EMPTY_HINT}</Text>;
   }
   if (loading) {
     return (
-      <View style={styles.loadingRow}>
+      <View style={[styles.loadingRow, bodyStyle]}>
         <ActivityIndicator
           accessible={false}
           size="small"
@@ -205,13 +233,21 @@ function PanelBody({
     );
   }
   if (photo.faces.length === 0) {
-    return <Text style={styles.stateText}>{NO_FACES_TEXT}</Text>;
+    return (
+      <View style={bodyStyle}>
+        <Text style={styles.stateText}>{NO_FACES_TEXT}</Text>
+      </View>
+    );
   }
   if (areAllFacesInvalid(photo.faces)) {
-    return <Text style={styles.stateText}>{UNAVAILABLE_TEXT}</Text>;
+    return (
+      <View style={bodyStyle}>
+        <Text style={styles.stateText}>{UNAVAILABLE_TEXT}</Text>
+      </View>
+    );
   }
   return (
-    <View style={styles.grid}>
+    <View style={[styles.grid, viewer && styles.gridViewer, bodyStyle]}>
       {photo.faces.map((face, index) => (
         <FaceItem
           key={`${face.faceId}-${index}`}
@@ -231,6 +267,8 @@ export function FacesInPhotoPanel({
   variant = 'sidebar',
   onFacePress,
   selectedIndex = null,
+  showAiMarkers = true,
+  onShowAiMarkersChange,
 }: FacesInPhotoPanelProps) {
   const viewer = variant === 'viewer';
   const [collapsed, setCollapsed] = useState(false);
@@ -239,6 +277,8 @@ export function FacesInPhotoPanel({
   const Chevron = expanded ? IconChevronUp : IconChevronDown;
   const count = photo && photo.faces.length > 0 ? photo.faces.length : null;
   const announcement = photo && !loading ? getAnnouncement(photo) : null;
+  const showMarkersToggle =
+    viewer && onShowAiMarkersChange !== undefined;
 
   // macOS has no live regions; announce once per settled focus, not on collapse.
   useEffect(() => {
@@ -289,6 +329,15 @@ export function FacesInPhotoPanel({
               onFacePress={viewer ? onFacePress : undefined}
             />
           </View>
+          {showMarkersToggle ? (
+            <>
+              <View style={styles.markersDivider} />
+              <ShowAiMarkersToggle
+                value={showAiMarkers}
+                onChange={onShowAiMarkersChange}
+              />
+            </>
+          ) : null}
         </>
       ) : null}
     </View>
@@ -305,8 +354,14 @@ const styles = StyleSheet.create({
   stateText: {fontFamily: fonts.sans, fontSize: 13, color: colors.white},
   loadingRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
   grid: {flexDirection: 'row', flexWrap: 'wrap', gap: 12},
+  gridViewer: {
+    // Column gap stays 12 (Figma); row gap is 16 so 2×82 + 16 = 180.
+    rowGap: VIEWER_FACE_ROW_GAP,
+    columnGap: 12,
+    gap: undefined,
+  },
   face: {width: 66, alignItems: 'center', gap: 4},
-  faceViewer: {width: 73},
+  faceViewer: {width: 73, height: VIEWER_FACE_HEIGHT},
   cropSelected: {
     borderRadius: 999,
     borderWidth: 2,
@@ -348,5 +403,10 @@ const styles = StyleSheet.create({
   faceLabelWarning: {
     ...interSemiBoldStyle,
     color: cullingStatusColors.warning,
+  },
+  markersDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.divider,
+    marginTop: 4,
   },
 });

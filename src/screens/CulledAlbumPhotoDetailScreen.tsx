@@ -72,6 +72,7 @@ export default function CulledAlbumPhotoDetailScreen({
   const [tooltipWidth, setTooltipWidth] = useState(0);
   const [tooltipHeight, setTooltipHeight] = useState(0);
   const [screenOrigin, setScreenOrigin] = useState({x: 0, y: 0});
+  const [showAiMarkers, setShowAiMarkersState] = useState(true);
 
   const screenRootRef = useRef<View>(null);
   const appliedInitialFaceIndexRef = useRef(false);
@@ -92,6 +93,16 @@ export default function CulledAlbumPhotoDetailScreen({
       }
     },
     [syncScreenOrigin],
+  );
+
+  const setShowAiMarkers = useCallback(
+    (next: boolean) => {
+      setShowAiMarkersState(next);
+      if (!next) {
+        handleTooltipChange(null);
+      }
+    },
+    [handleTooltipChange],
   );
 
   const scrollStoreRef = useRef(createScrollAwareTooltipStore());
@@ -394,6 +405,7 @@ export default function CulledAlbumPhotoDetailScreen({
                   canGoNext={canGoNext}
                   onPrev={goToPreviousPhoto}
                   onNext={goToNextPhoto}
+                  onClose={handleBack}
                   showHoverChevrons={isDesktopPlatform && !isMobileLayout}
                 >
                   <PhotoDetailImageViewer
@@ -403,6 +415,7 @@ export default function CulledAlbumPhotoDetailScreen({
                     zoomFaceIndex={zoomFaceIndex}
                     lookId={lookDetailReady ? 'original' : photo?.lookId}
                     imageSize={imageSize}
+                    showAiMarkers={showAiMarkers}
                     onTooltipAnchorChange={handleTooltipChange}
                   />
                 </PhotoDetailNavigationFrame>
@@ -425,6 +438,8 @@ export default function CulledAlbumPhotoDetailScreen({
                     variant="viewer"
                     selectedIndex={zoomFaceIndex}
                     onFacePress={handleFacePress}
+                    showAiMarkers={showAiMarkers}
+                    onShowAiMarkersChange={setShowAiMarkers}
                   />
                 </ScrollView>
               </View>

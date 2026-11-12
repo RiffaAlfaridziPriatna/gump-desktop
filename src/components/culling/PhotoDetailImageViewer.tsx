@@ -34,6 +34,8 @@ type PhotoDetailImageViewerProps = {
   zoomFaceIndex: number | null;
   lookId?: LookId | null;
   imageSize?: ImageDimensions | null;
+  /** When false, face status badges on the image are hidden. Default true. */
+  showAiMarkers?: boolean;
   onTooltipAnchorChange?: (anchor: KeyFaceTooltipAnchor | null) => void;
   onImageReady?: () => void;
 };
@@ -134,6 +136,7 @@ export function PhotoDetailImageViewer({
   zoomFaceIndex,
   lookId,
   imageSize: imageSizeProp,
+  showAiMarkers = true,
   onTooltipAnchorChange,
   onImageReady,
 }: PhotoDetailImageViewerProps) {
@@ -309,7 +312,12 @@ export function PhotoDetailImageViewer({
     }));
   }, [imageLayout, visibleFaces]);
 
-  const canRenderOverlays = Boolean(uri) && imageDecoded && !loadFailed && imageLayout !== null;
+  const canRenderOverlays =
+    showAiMarkers &&
+    Boolean(uri) &&
+    imageDecoded &&
+    !loadFailed &&
+    imageLayout !== null;
   const showLoadingOverlay = !uri || (!imageDecoded && !loadFailed);
 
   // key forces a remount when the photo changes. Windows Image often keeps
