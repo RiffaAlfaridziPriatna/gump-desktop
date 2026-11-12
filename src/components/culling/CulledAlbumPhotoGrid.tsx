@@ -42,11 +42,13 @@ import {
   useRef,
 } from 'react';
 import {
+  findNodeHandle,
   FlatList,
   ListRenderItemInfo,
   Platform,
   StyleProp,
   StyleSheet,
+  UIManager,
   View,
   ViewStyle,
   ViewToken,
@@ -99,8 +101,38 @@ const IDLE_IMAGE_LOAD_SEED = 24;
 const IDLE_IMAGE_LOAD_PAD_ROWS = 2;
 /** Busy gate pad: tight admission after scroll settles. */
 const BUSY_IMAGE_LOAD_PAD_ROWS = 1;
-/** Above this, shrink idle FlatList window (heavy interactive cards). */
-const LARGE_ALBUM_PHOTO_THRESHOLD = 120;
+
+const isDesktopPlatform =
+  Platform.OS === 'macos' || Platform.OS === 'windows';
+/** Bubbling (3) so Windows marks Escape handled on this focused view. */
+const HANDLED_BUBBLING = 3;
+const escapeKeyDownEvents =
+  Platform.OS === 'windows'
+    ? [{code: 'Escape', handledEventPhase: HANDLED_BUBBLING}]
+    : [{key: 'Escape'}];
+
+/** Prefer UIManager.focus — host `.focus()` can crash macOS via TextInputState. */
+function focusDesktopView(node: View | null) {
+  if (!node || !isDesktopPlatform) {
+    return;
+  }
+  const reactTag = findNodeHandle(node);
+  if (reactTag == null) {
+    return;
+  }
+  if (Platform.OS === 'windows') {
+    try {
+      UIManager.dispatchViewManagerCommand(reactTag, 'focus', []);
+    } catch {
+      // View keyDownEvents still work when the host already has focus.
+    }
+    return;
+  }
+  const focus = (
+    UIManager as typeof UIManager & {focus?: (tag: number) => void}
+  ).focus;
+  focus?.(reactTag);
+}
 
 function photoIdsNeedingThumbnail(
   albumId: string,
@@ -134,9 +166,38 @@ export function CulledAlbumPhotoGrid({
 }: CulledAlbumPhotoGridProps) {
   const hoverStoreRef = useRef(createCulledAlbumPhotoHoverStore());
   const listRef = useRef<FlatList<GridRow>>(null);
+  const keyboardHostRef = useRef<View>(null);
   const scrollEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isScrollActiveRef = useRef(false);
   const onScrollInteractionStartRef = useRef(onScrollInteractionStart);
+  const onClearFocusRef = useRef(onClearFocus);
+  onClearFocusRef.current = onClearFocus;
+  const focusedPhotoIdRef = useRef(focusedPhotoId);
+  focusedPhotoIdRef.current = focusedPhotoId;
+
+  const claimKeyboardFocus = useCallback(() => {
+    focusDesktopView(keyboardHostRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!focusedPhotoId || !isDesktopPlatform) {
+      return;
+    }
+    const frameId = requestAnimationFrame(claimKeyboardFocus);
+    return () => cancelAnimationFrame(frameId);
+  }, [focusedPhotoId, claimKeyboardFocus]);
+
+  const handleKeyDown = useCallback((event: unknown) => {
+    if (!onClearFocusRef.current || !focusedPhotoIdRef.current) {
+      return;
+    }
+    const native = (
+      event as {nativeEvent?: {key?: string; code?: string}}
+    ).nativeEvent;
+    if (native?.key === 'Escape' || native?.code === 'Escape') {
+      onClearFocusRef.current();
+    }
+  }, []);
   const lastPreloadRangeRef = useRef('');
   const lastHydrateRangeRef = useRef('');
   const lastThumbnailRangeRef = useRef('');
@@ -470,17 +531,11 @@ export function CulledAlbumPhotoGrid({
     ],
   );
 
-  const isLargeAlbum = photoIds.length >= LARGE_ALBUM_PHOTO_THRESHOLD;
-  const windowSize = deferHeavyMediaWork
-    ? 3
-    : Platform.OS === 'windows'
-      ? 3
-      : isLargeAlbum
-        ? 4
-        : 7;
-  const maxToRenderPerBatch = deferHeavyMediaWork || isLargeAlbum ? 3 : 6;
-  const updateCellsBatchingPeriod =
-    deferHeavyMediaWork || isLargeAlbum ? 100 : 50;
+  // Heavy interactive cards: always use the tight FlatList profile.
+  const windowSize =
+    deferHeavyMediaWork || Platform.OS === 'windows' ? 3 : 4;
+  const maxToRenderPerBatch = 3;
+  const updateCellsBatchingPeriod = 100;
 
   if (photos.length === 0) {
     return null;
@@ -494,8 +549,14 @@ export function CulledAlbumPhotoGrid({
     <CulledAlbumPhotoHoverContext.Provider value={hoverStoreRef.current}>
       <CulledAlbumImageLoadContext.Provider value={imageLoadStore}>
         <View
+          ref={keyboardHostRef}
           accessible={false}
           style={styles.list}
+          tabIndex={0}
+          focusable
+          enableFocusRing={false}
+          onKeyDown={handleKeyDown}
+          keyDownEvents={escapeKeyDownEvents}
           onStartShouldSetResponder={() => true}
           onResponderRelease={onClearFocus}>
           <FlatList

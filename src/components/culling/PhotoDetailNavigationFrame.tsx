@@ -67,6 +67,8 @@ type Props = {
   canGoNext: boolean;
   onPrev: () => void;
   onNext: () => void;
+  /** Escape closes the photo detail screen (desktop keyboard). */
+  onClose?: () => void;
   /** Hover chevrons are desktop-only; keyboard nav still works when enabled. */
   showHoverChevrons: boolean;
   children: ReactNode;
@@ -91,7 +93,7 @@ function matchesPhotoNavKey(
   return key === 'ArrowRight';
 }
 
-/** Bubbling (3) so Windows marks ArrowLeft/Right handled on this focused view. */
+/** Bubbling (3) so Windows marks keys handled on this focused view. */
 const HANDLED_BUBBLING = 3;
 
 const photoNavKeyDownEvents =
@@ -99,14 +101,16 @@ const photoNavKeyDownEvents =
     ? [
         {code: 'ArrowLeft', handledEventPhase: HANDLED_BUBBLING},
         {code: 'ArrowRight', handledEventPhase: HANDLED_BUBBLING},
+        {code: 'Escape', handledEventPhase: HANDLED_BUBBLING},
       ]
-    : [{key: 'ArrowLeft'}, {key: 'ArrowRight'}];
+    : [{key: 'ArrowLeft'}, {key: 'ArrowRight'}, {key: 'Escape'}];
 
 export function PhotoDetailNavigationFrame({
   canGoPrev,
   canGoNext,
   onPrev,
   onNext,
+  onClose,
   showHoverChevrons,
   children,
 }: Props) {
@@ -119,10 +123,12 @@ export function PhotoDetailNavigationFrame({
   const canGoNextRef = useRef(canGoNext);
   const onPrevRef = useRef(onPrev);
   const onNextRef = useRef(onNext);
+  const onCloseRef = useRef(onClose);
   canGoPrevRef.current = canGoPrev;
   canGoNextRef.current = canGoNext;
   onPrevRef.current = onPrev;
   onNextRef.current = onNext;
+  onCloseRef.current = onClose;
 
   const claimKeyboardFocus = useCallback(() => {
     focusDesktopView(focusRef.current);
@@ -133,13 +139,19 @@ export function PhotoDetailNavigationFrame({
       if (!isFocused) {
         return;
       }
+
+      const nativeEvent = (event as PhotoNavKeyEvent).nativeEvent;
+      if (nativeEvent.key === 'Escape' || nativeEvent.code === 'Escape') {
+        onCloseRef.current?.();
+        return;
+      }
+
       // Windows: arrow keys are handled only by GumpKeyboard → DeviceEventEmitter.
       // Handling them here too advances two photos per keypress.
       if (Platform.OS === 'windows') {
         return;
       }
 
-      const nativeEvent = (event as PhotoNavKeyEvent).nativeEvent;
       if (matchesPhotoNavKey(nativeEvent, 'prev') && canGoPrevRef.current) {
         onPrevRef.current();
         return;

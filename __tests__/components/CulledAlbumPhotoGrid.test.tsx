@@ -1,5 +1,5 @@
 import React from 'react';
-import {FlatList, Text} from 'react-native';
+import {FlatList, Platform, Text} from 'react-native';
 import {CulledAlbumPhotoGrid} from '../../src/components/culling/CulledAlbumPhotoGrid';
 import type {CulledAlbumGridSection} from '../../src/components/culling/culledAlbumGridRows';
 import {render} from '../helpers/render';
@@ -196,11 +196,37 @@ describe('CulledAlbumPhotoGrid empty-area clear', () => {
     expect(onClearFocus).toHaveBeenCalledTimes(1);
   });
 
-  it('has no press handler, focusable or accessible surface', () => {
+  it('has no press handler; keyboard host is focusable for Escape', () => {
     const {wrapper} = findWrapper();
     expect(wrapper.props.onPress).toBeUndefined();
-    expect(wrapper.props.focusable).toBeUndefined();
+    expect(wrapper.props.focusable).toBe(true);
+    expect(wrapper.props.tabIndex).toBe(0);
     expect(wrapper.props.accessible).toBe(false);
+    expect(wrapper.props.keyDownEvents).toEqual(
+      Platform.OS === 'windows'
+        ? [{code: 'Escape', handledEventPhase: 3}]
+        : [{key: 'Escape'}],
+    );
+  });
+
+  it('clears focus on Escape when a photo is focused', () => {
+    const {wrapper} = findWrapper();
+    wrapper.props.onKeyDown({nativeEvent: {key: 'Escape'}});
+    expect(onClearFocus).toHaveBeenCalledTimes(1);
+    onClearFocus.mockClear();
+    wrapper.props.onKeyDown({nativeEvent: {code: 'Escape'}});
+    expect(onClearFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not clear focus on Escape when nothing is focused', () => {
+    const view = render(grid(sections));
+    const wrapper = view.renderer.root.find(
+      n =>
+        typeof n.type === 'string' &&
+        typeof n.props.onResponderRelease === 'function',
+    );
+    wrapper.props.onKeyDown({nativeEvent: {key: 'Escape'}});
+    expect(onClearFocus).not.toHaveBeenCalled();
   });
 
   it('does not clear focus when a card is pressed', () => {
@@ -210,5 +236,51 @@ describe('CulledAlbumPhotoGrid empty-area clear', () => {
     );
     card.props.onCardPress('a0');
     expect(onClearFocus).not.toHaveBeenCalled();
+  });
+});
+
+describe('CulledAlbumPhotoGrid windowSize', () => {
+  const originalOS = Platform.OS;
+
+  afterEach(() => {
+    Platform.OS = originalOS;
+  });
+
+  function listPropsFor(opts: {
+    os: typeof Platform.OS;
+    deferHeavyMediaWork?: boolean;
+  }) {
+    Platform.OS = opts.os;
+    const {renderer} = render(
+      <CulledAlbumPhotoGrid
+        photos={photos}
+        albumId="album"
+        containerWidth={600}
+        isMobileLayout
+        canDeletePhoto={false}
+        deferHeavyMediaWork={opts.deferHeavyMediaWork}
+        onCardPress={onCardPress}
+        onClearFocus={onClearFocus}
+        onOpenDetail={noop}
+        onToggleSelection={noop}
+        onDeletePress={noop}
+        onStarPress={noop}
+      />,
+    );
+    return renderer.root.findByType(FlatList).props;
+  }
+
+  it('uses 4 on idle macOS and 3 when busy or on Windows', () => {
+    expect(listPropsFor({os: 'macos'}).windowSize).toBe(4);
+    expect(listPropsFor({os: 'macos', deferHeavyMediaWork: true}).windowSize).toBe(
+      3,
+    );
+    expect(listPropsFor({os: 'windows'}).windowSize).toBe(3);
+  });
+
+  it('always uses the tight batching profile', () => {
+    const props = listPropsFor({os: 'macos'});
+    expect(props.maxToRenderPerBatch).toBe(3);
+    expect(props.updateCellsBatchingPeriod).toBe(100);
   });
 });
