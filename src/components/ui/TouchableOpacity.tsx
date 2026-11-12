@@ -11,6 +11,7 @@ const macosClickThrough =
 export function TouchableOpacity({
   style,
   disabled,
+  enableFocusRing = false,
   ...rest
 }: TouchableOpacityProps) {
   return (
@@ -19,6 +20,7 @@ export function TouchableOpacity({
       disabled={disabled}
       {...macosClickThrough}
       {...rest}
+      enableFocusRing={enableFocusRing}
     />
   );
 }

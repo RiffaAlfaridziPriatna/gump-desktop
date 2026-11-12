@@ -17,7 +17,12 @@ function resolveStyle(
   return style;
 }
 
-export function Pressable({style, disabled, ...rest}: PressableProps) {
+export function Pressable({
+  style,
+  disabled,
+  enableFocusRing = false,
+  ...rest
+}: PressableProps) {
   return (
     <RNPressable
       style={state => [
@@ -26,6 +31,8 @@ export function Pressable({style, disabled, ...rest}: PressableProps) {
       ]}
       disabled={disabled}
       {...rest}
+      // System focus ring clashes with branded chrome (phase 3 modals/sidebar).
+      enableFocusRing={enableFocusRing}
     />
   );
 }

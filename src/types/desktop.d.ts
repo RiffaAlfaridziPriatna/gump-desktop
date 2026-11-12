@@ -7,9 +7,9 @@ declare module 'react-native' {
   }
 
   interface ViewProps {
-    /** Windows-only: system keyboard/mouse focus rectangle. */
+    /** macOS/Windows: system keyboard focus ring. */
     enableFocusRing?: boolean;
-    /** Windows-only: receive keyboard/controller focus. */
+    /** macOS/Windows: receive keyboard/controller focus. */
     focusable?: boolean;
     tabIndex?: number | 0 | -1;
     onClick?: (event: unknown) => void;
@@ -25,6 +25,11 @@ declare module 'react-native' {
 
   interface PressableProps {
     focusable?: boolean;
+    enableFocusRing?: boolean;
+  }
+
+  interface TouchableOpacityProps {
+    enableFocusRing?: boolean;
   }
 
   interface TextInputProps {
