@@ -3,6 +3,7 @@ import type {TextStyle} from 'react-native';
 export const fonts = {
   serif: 'DM Serif Display',
   sans: 'Red Hat Display',
+  sansMedium: 'Red Hat Display',
   sansBold: 'Red Hat Display',
   sansSemiBold: 'Red Hat Display',
   interSemiBold: 'Inter',
@@ -17,9 +18,15 @@ export const sansBoldStyle = {
   fontWeight: '800',
 } as const satisfies TextStyle;
 
+export const sansMediumStyle = {
+  fontFamily: fonts.sansMedium,
+  fontWeight: '500',
+} as const satisfies TextStyle;
+
+// Match macOS: sansSemiBold ships Medium (OS/2 596), not SemiBold 707.
 export const sansSemiBoldStyle = {
   fontFamily: fonts.sansSemiBold,
-  fontWeight: '600',
+  fontWeight: '500',
 } as const satisfies TextStyle;
 
 export const interSemiBoldStyle = {
