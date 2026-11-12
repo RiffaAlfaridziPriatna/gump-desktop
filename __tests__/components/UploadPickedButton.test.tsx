@@ -39,6 +39,13 @@ describe('UploadPickedButton', () => {
     expect(texts(renderer)).toEqual(['Upload Picked (0)', PICK_HINT]);
   });
 
+  it('hides the pick hint until photos are ready', () => {
+    const {renderer} = render(
+      <UploadPickedButton {...base} pickedCount={0} disabled photosReady={false} />,
+    );
+    expect(texts(renderer)).toEqual(['Upload Picked (0)']);
+  });
+
   it('presses through when enabled', () => {
     const onPress = jest.fn();
     const {renderer} = render(<UploadPickedButton {...base} onPress={onPress} />);

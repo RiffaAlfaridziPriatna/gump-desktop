@@ -1,11 +1,15 @@
 import {Modal, ProgressBar} from '@components/ui';
 import {useCloudStoragePreflight} from '@hooks/useCloudStoragePreflight';
-import {useUploadFailureSummary} from '@hooks/useUploadFailureSummary';
+import {
+  useUploadFailureSummary,
+  type UploadFailureSummary,
+} from '@hooks/useUploadFailureSummary';
+import type {CloudStoragePreflight} from '@lib/culledAlbum/uploadPreflight';
 import {formatGigabytes} from '@lib/export/formatByteSize';
 import {openUpgradePlan} from '@lib/plan/billingLinks';
 import {reportError} from '@lib/observability/reportError';
 import {colors} from '@lib/ui/colors';
-import {fonts, sansSemiBoldStyle} from '@lib/ui/typography';
+import {fonts, sansMediumStyle} from '@lib/ui/typography';
 import {useEffect, useRef, useState} from 'react';
 import {AccessibilityInfo, StyleSheet, Text, View} from 'react-native';
 import {UploadCloudStorageView} from './UploadCloudStorageView';
@@ -30,6 +34,9 @@ type UploadSelectedModalProps = {
   isApplyingLook?: boolean;
   /** Set when applying looks failed for lack of disk space. */
   bakeDiskFull?: {requiredBytes?: number};
+  /** Figma visual-review overrides; skips live preflight/failure hooks. */
+  reviewPreflight?: CloudStoragePreflight;
+  reviewFailures?: UploadFailureSummary;
   onClose: () => void;
   onUploadNow: () => Promise<void>;
   onOpenAlbum: () => void;
@@ -90,7 +97,8 @@ function UploadingPhase({
             max: 100,
             now: percent,
             text: `${percent}%, ${sizes}`,
-          }}>
+          }}
+          enableFocusRing={false}>
           <ProgressBar
             progress={uploadProgress}
             height={9}
@@ -131,19 +139,23 @@ export function UploadSelectedModal({
   uploadProgress = 0,
   isApplyingLook = false,
   bakeDiskFull,
+  reviewPreflight,
+  reviewFailures,
   onClose,
   onUploadNow,
   onOpenAlbum,
   onRetryStarted,
 }: UploadSelectedModalProps) {
   const [starting, setStarting] = useState(false);
-  const failures = useUploadFailureSummary(albumId);
+  const liveFailures = useUploadFailureSummary(albumId);
+  const failures = reviewFailures ?? liveFailures;
   const hasFailures =
     failures.retryable + failures.quota + failures.final > 0;
-  const {preflight, retry} = useCloudStoragePreflight(
-    visible && phase !== 'uploading',
+  const {preflight: livePreflight, retry} = useCloudStoragePreflight(
+    visible && phase !== 'uploading' && reviewPreflight == null,
     phase === 'complete' ? failures.retryBytes : uploadSizeGb * 1024 ** 3,
   );
+  const preflight = reviewPreflight ?? livePreflight;
 
   async function handleViewCloudPlans() {
     try {
@@ -270,7 +282,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   uploadProgressMeta: {
-    ...sansSemiBoldStyle,
+    ...sansMediumStyle,
     fontSize: 14,
     color: colors.textMuted,
     textAlign: 'center',

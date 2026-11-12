@@ -1,6 +1,6 @@
 import { Modal, Pressable, ProgressBar, TouchableOpacity } from '@components/ui';
 import type { CulledAlbumPhoto } from '@lib/culledAlbum/types';
-import { formatByteSize, formatGigabytes } from '@lib/export/formatByteSize';
+import { formatGigabytes } from '@lib/export/formatByteSize';
 import {
   openInFileManager,
   pickExportDirectory,
@@ -30,10 +30,10 @@ import IconCheckCircle from '../../assets/images/icon_check_circle.svg';
 import IconCheckCircle40 from '../../assets/images/icon_check_circle_40.svg';
 import IconChevronDown from '../../assets/images/icon_chevron_down.svg';
 import IconChevronUp from '../../assets/images/icon_chevron_up.svg';
-import IconFolder from '../../assets/images/icon_folder.svg';
 import IconFolderZip from '../../assets/images/icon_folder_zip.svg';
 import IconLock from '../../assets/images/icon_lock.svg';
 
+import type {ExportFigmaReviewSnapshot} from '@lib/culledAlbum/exportFigmaReview';
 import { ExportFailureView } from './ExportFailureView';
 import { ModalDecorations } from './ModalDecorations';
 import { PopupButton, PopupIcon, PopupTitleBlock } from './UploadPopupParts';
@@ -42,6 +42,9 @@ const PROGRESS_TRACK = '#ECECEC';
 
 const SAVE_CANCELLED_MESSAGE =
   'Saving was cancelled. Your export is still ready.';
+
+const TRIAL_ENDED_MESSAGE =
+  'Your trial has ended. You can still export saved selections.';
 
 const EXPORT_FORMAT_OPTIONS: ReadonlyArray<{
   id: ExportFormat;
@@ -55,6 +58,8 @@ type ExportPhotosModalProps = {
   albumName: string;
   selectedPhotos: CulledAlbumPhoto[];
   onClose: () => void;
+  /** Figma visual-review overrides; freezes the modal on a dummy state. */
+  review?: ExportFigmaReviewSnapshot | null;
 };
 
 type FormatExportDropdownProps = {
@@ -187,6 +192,7 @@ export function ExportPhotosModal({
   albumName,
   selectedPhotos,
   onClose,
+  review = null,
 }: ExportPhotosModalProps) {
   const [step, setStep] = useState<ExportPhotosModalStep>('options');
   const [quality, setQuality] = useState<ExportQuality>('compressed');
@@ -208,7 +214,7 @@ export function ExportPhotosModal({
   const prepareRequestIdRef = useRef(0);
 
   useEffect(() => {
-    if (!visible) {
+    if (!visible || review != null) {
       return;
     }
     setStep('options');
@@ -222,14 +228,25 @@ export function ExportPhotosModal({
     setFailureKind(null);
     setExportError(null);
     setSaveCancelled(false);
-  }, [visible]);
+  }, [visible, review]);
+
+  const viewStep = review?.step ?? step;
+  const viewPhotoCount = review?.photoCount ?? photoCount;
+  const viewQuality = review?.quality ?? quality;
+  const viewProgressPercent = review?.progressPercent ?? progressPercent;
+  const viewSaveCancelled = review?.saveCancelled ?? saveCancelled;
+  const viewPreparedExport = review?.preparedExport ?? preparedExport;
+  const viewDownloadedExport = review?.downloadedExport ?? downloadedExport;
+  const viewFailureKind = review?.failureKind ?? failureKind;
+  const viewExportError = review?.exportError ?? exportError;
+  const trialEnded = review?.trialEnded === true;
 
   useEffect(() => {
-    if (step !== 'ready' || !saveCancelled) {
+    if (viewStep !== 'ready' || !viewSaveCancelled) {
       return;
     }
     AccessibilityInfo.announceForAccessibility(SAVE_CANCELLED_MESSAGE);
-  }, [saveCancelled, step]);
+  }, [viewSaveCancelled, viewStep]);
 
   const handleSelectCompressed = useCallback(() => {
     setFormatMenuOpen(false);
@@ -388,26 +405,9 @@ export function ExportPhotosModal({
     runPrepareExport().catch(error => reportError(error, {albumId}));
   }, [albumId, runPrepareExport]);
 
-  const handleDownloadToLaptop = useCallback(() => {
-    runDownload().catch(error => reportError(error, {albumId}));
-  }, [albumId, runDownload]);
-
-  const handleTryAgain = useCallback(() => {
-    if (preparedExport && exportError?.reason !== 'sourceMissing') {
-      runDownload(exportDirectory).catch(error => reportError(error, {albumId}));
-      return;
-    }
-    runPrepareExport().catch(error => reportError(error, {albumId}));
-  }, [
-    albumId,
-    exportDirectory,
-    exportError,
-    preparedExport,
-    runDownload,
-    runPrepareExport,
-  ]);
-
-  const handleChangeSaveLocation = useCallback(() => {
+  const pickDirectoryAndDownload = useCallback(() => {
+    // Figma: "Choose where to save it on your computer" — Save and Change
+    // location both open the same native folder picker.
     pickExportDirectory()
       .then(async picked => {
         if (!picked) {
@@ -427,6 +427,25 @@ export function ExportPhotosModal({
       });
   }, [albumId, runDownload]);
 
+  const handleDownloadToLaptop = pickDirectoryAndDownload;
+
+  const handleTryAgain = useCallback(() => {
+    if (preparedExport && exportError?.reason !== 'sourceMissing') {
+      runDownload(exportDirectory).catch(error => reportError(error, {albumId}));
+      return;
+    }
+    runPrepareExport().catch(error => reportError(error, {albumId}));
+  }, [
+    albumId,
+    exportDirectory,
+    exportError,
+    preparedExport,
+    runDownload,
+    runPrepareExport,
+  ]);
+
+  const handleChangeSaveLocation = pickDirectoryAndDownload;
+
   const handleOpenFolder = useCallback(() => {
     if (!downloadedExport) {
       onClose();
@@ -441,12 +460,13 @@ export function ExportPhotosModal({
       });
   }, [downloadedExport, onClose]);
 
-  const savedCount = preparedExport?.photoCount ?? photoCount;
+  const savedCount =
+    viewPreparedExport?.photoCount ?? viewDownloadedExport?.photoCount ?? viewPhotoCount;
 
   const modalSize =
-    step === 'options'
-      ? { width: 720, height: 520 }
-      : { width: 720, height: 456 };
+    viewStep === 'options'
+      ? {width: 720, height: trialEnded ? 560 : 520}
+      : {width: 720, height: 456};
 
   return (
     <Modal
@@ -454,10 +474,10 @@ export function ExportPhotosModal({
       onClose={onClose}
       width={modalSize.width}
       height={modalSize.height}
-      contentStyle={step === 'options' ? OPTIONS_CONTENT_STYLE : undefined}>
+      contentStyle={viewStep === 'options' ? OPTIONS_CONTENT_STYLE : undefined}>
       <ModalDecorations />
 
-      {step === 'options' && (
+      {viewStep === 'options' && (
         <View style={styles.optionsContent}>
           {formatMenuOpen ? (
             <Pressable
@@ -469,7 +489,7 @@ export function ExportPhotosModal({
           ) : null}
 
           <PopupTitleBlock
-            title={`Export Photos (${photoCount})`}
+            title={`Export Photos (${viewPhotoCount})`}
             subtitle="Saved to your computer. Does not use Gump Cloud storage or download allowance."
           />
 
@@ -478,14 +498,14 @@ export function ExportPhotosModal({
               <QualityOption
                 title="Smaller-file JPG"
                 description="Optimised for sharing."
-                selected={quality === 'compressed'}
+                selected={viewQuality === 'compressed'}
                 onPress={handleSelectCompressed}
               />
               <View style={styles.qualityPaidWrapper}>
                 <QualityOption
                   title="Full-resolution JPG"
                   description="Preserves image dimensions."
-                  selected={quality === 'original'}
+                  selected={viewQuality === 'original'}
                   onPress={handleSelectOriginal}
                 />
               </View>
@@ -497,6 +517,12 @@ export function ExportPhotosModal({
               onToggle={handleToggleFormatMenu}
               onSelect={handleSelectFormat}
             />
+
+            {trialEnded ? (
+              <View style={styles.trialBanner}>
+                <Text style={styles.trialBannerText}>{TRIAL_ENDED_MESSAGE}</Text>
+              </View>
+            ) : null}
           </View>
 
           <PopupButton
@@ -508,46 +534,46 @@ export function ExportPhotosModal({
         </View>
       )}
 
-      {step === 'applyingLook' && (
+      {viewStep === 'applyingLook' && (
         <View style={styles.centeredContent}>
           <PopupTitleBlock
             title="Applying look..."
-            subtitle={`Baking looks onto ${photoCount} selected photos`}
+            subtitle={`Baking looks onto ${viewPhotoCount} selected photos`}
           />
           <View style={styles.progressBlock}>
             <ProgressBar
-              progress={progressPercent / 100}
+              progress={viewProgressPercent / 100}
               height={9}
               trackColor={PROGRESS_TRACK}
             />
-            <Text style={styles.progressLabel}>{progressPercent}%</Text>
+            <Text style={styles.progressLabel}>{viewProgressPercent}%</Text>
           </View>
         </View>
       )}
 
-      {step === 'preparing' && (
+      {viewStep === 'preparing' && (
         <View style={styles.centeredContent}>
           <PopupTitleBlock
             title="Preparing export"
-            subtitle={`Creating ZIP of ${photoCount} photos`}
+            subtitle={`Creating ZIP of ${viewPhotoCount} photos`}
           />
           <View style={styles.progressBlock}>
             <ProgressBar
-              progress={progressPercent / 100}
+              progress={viewProgressPercent / 100}
               height={9}
               trackColor={PROGRESS_TRACK}
             />
-            <Text style={styles.progressLabel}>{progressPercent}%</Text>
+            <Text style={styles.progressLabel}>{viewProgressPercent}%</Text>
           </View>
         </View>
       )}
 
-      {step === 'ready' && preparedExport && (
+      {viewStep === 'ready' && viewPreparedExport && (
         <View style={styles.centeredContent}>
           <PopupTitleBlock
             title="Your export is ready"
             subtitle={
-              saveCancelled
+              viewSaveCancelled
                 ? SAVE_CANCELLED_MESSAGE
                 : 'Choose where to save it on your computer.'
             }
@@ -557,10 +583,10 @@ export function ExportPhotosModal({
               <IconFolderZip width={24} height={24} color={colors.accent} />
             </View>
             <View>
-              <Text style={styles.fileName}>{preparedExport.fileName}</Text>
+              <Text style={styles.fileName}>{viewPreparedExport.fileName}</Text>
               <Text style={styles.fileMeta}>
-                {preparedExport.photoCount} photos  ·{'  '}
-                {formatGigabytes(preparedExport.byteSize)}
+                {viewPreparedExport.photoCount} photos  ·{'  '}
+                {formatGigabytes(viewPreparedExport.byteSize)}
               </Text>
             </View>
           </View>
@@ -568,13 +594,13 @@ export function ExportPhotosModal({
             label="Save to computer"
             variant="primary"
             onPress={handleDownloadToLaptop}
-            autoFocus={saveCancelled}
+            autoFocus={viewSaveCancelled}
             single
           />
         </View>
       )}
-      
-      {step === 'success' && downloadedExport && (
+
+      {viewStep === 'success' && viewDownloadedExport && (
         <View style={styles.centeredContent}>
           <PopupIcon>
             <IconCheckCircle40 width={40} height={40} />
@@ -585,18 +611,6 @@ export function ExportPhotosModal({
               savedCount === 1 ? '' : 's'
             } saved to your computer`}
           />
-          <View style={styles.fileCard}>
-            <View style={styles.fileIcon}>
-              <IconFolder width={24} height={24} color={colors.accent} />
-            </View>
-            <View>
-              <Text style={styles.fileName}>{downloadedExport.fileName}</Text>
-              <Text style={styles.fileMeta}>
-                {formatByteSize(downloadedExport.byteSize)} ·{' '}
-                {downloadedExport.displayPath}
-              </Text>
-            </View>
-          </View>
           <PopupButton
             label="Open folder"
             variant="primary"
@@ -607,12 +621,12 @@ export function ExportPhotosModal({
         </View>
       )}
 
-      {step === 'failed' && (
+      {viewStep === 'failed' && (
         <ExportFailureView
-          reason={exportError?.reason ?? 'unknown'}
-          failedStep={failureKind === 'download' ? 'download' : 'prepare'}
-          requiredBytes={exportError?.requiredBytes}
-          missingCount={exportError?.missingCount}
+          reason={viewExportError?.reason ?? 'unknown'}
+          failedStep={viewFailureKind === 'download' ? 'download' : 'prepare'}
+          requiredBytes={viewExportError?.requiredBytes}
+          missingCount={viewExportError?.missingCount}
           onTryAgain={handleTryAgain}
           onChangeSaveLocation={handleChangeSaveLocation}
           onCancel={onClose}
@@ -644,6 +658,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 24,
     width: 480,
+  },
+  trialBanner: {
+    backgroundColor: '#F8F8F8',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    width: '100%',
+  },
+  trialBannerText: {
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    lineHeight: 14 * 1.3,
+    color: colors.textDark,
   },
   exportOptions: {
     gap: 16,

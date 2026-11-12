@@ -79,7 +79,7 @@ export function makeFakeGumpLocalStorage(
     pickExportDirectory: jest.fn(async () =>
       scenario === 'pickerCancelled'
         ? null
-        : {path: '/fake/picked', displayPath: 'Fake Picked'},
+        : {path: FAKE_DESTINATION_PATH, displayPath: 'Fake Picked'},
     ),
     resolveUniqueZipPath: jest.fn(
       async (directory: string, fileName: string) =>

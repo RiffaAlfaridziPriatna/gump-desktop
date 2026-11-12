@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: colors.white,
     paddingHorizontal: 32,
-    paddingTop: 20,
+    paddingTop: 24,
     paddingBottom: 24,
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },

@@ -65,6 +65,8 @@ import {
   resolveGridDisplayUri,
 } from '@lib/storage/localStorage';
 import {hasInFlightServerUploads} from '@lib/culledAlbum/types';
+import {getExportFigmaReview} from '@lib/culledAlbum/exportFigmaReview';
+import {getUploadFigmaReview} from '@lib/culledAlbum/uploadFigmaReview';
 import {colors} from '@lib/ui/colors';
 import {fonts} from '@lib/ui/typography';
 import {MainStackParamList} from '../app/MainNavigator';
@@ -99,6 +101,8 @@ const CONTENT_COLUMN_GAP = 24;
 export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const {albumId} = route.params;
   const openUploadProgress = route.params.openUploadProgress === true;
+  const figmaReview = getUploadFigmaReview();
+  const exportFigmaReview = getExportFigmaReview();
   const {shellProps, handleBack, handleBackPressIn} = useUploadAwareModalScreen(
     navigation,
     route.params.instant,
@@ -504,6 +508,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     uploaded: cullingHasUploads,
     uploadDisabled: pendingUploadPhotos.length === 0 || cullingBusy,
     uploadIncludesHidden: hasPickedOutsideView(pickedPhotos, gridView.photos),
+    photosReady: !loadingPhotos,
     addPhotosDisabled: cullingBusy,
     exportDisabled: exportPhotoCount === 0,
     editPhotosDisabled: albumPhotos.length === 0,
@@ -605,7 +610,9 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
               }
               setMainContentWidth(width);
             }}>
-            {gridView.photos.length === 0 && !gridView.filter.noResults ? (
+            {!loadingPhotos &&
+            gridView.photos.length === 0 &&
+            !gridView.filter.noResults ? (
               <View style={styles.emptyState}>
                 {selectionFilter !== 'selected' && (
                   <IconNoPhoto width={40} height={40} />
@@ -691,21 +698,36 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         />
 
         <UploadSelectedModal
-          visible={showUploadModal}
-          albumId={albumId}
-          phase={uploadPhase}
-          photoCount={modalPhotoCount}
-          uploadedCount={batchCounts.completed}
-          uploadSizeGb={modalUploadSizeGb}
-          uploadedBytes={uploadedBytes}
-          totalUploadBytes={totalUploadBytes}
-          uploadProgress={uploadProgressValue}
-          isApplyingLook={isApplyingLook}
-          bakeDiskFull={
-            lookBake.status === 'failed' && lookBake.reason === 'diskFull'
-              ? {requiredBytes: lookBake.requiredBytes}
-              : undefined
+          visible={
+            figmaReview
+              ? figmaReview.showModal
+              : showUploadModal
           }
+          albumId={albumId}
+          phase={figmaReview?.phase ?? uploadPhase}
+          photoCount={figmaReview?.photoCount ?? modalPhotoCount}
+          uploadedCount={
+            figmaReview?.uploadedCount ?? batchCounts.completed
+          }
+          uploadSizeGb={figmaReview?.uploadSizeGb ?? modalUploadSizeGb}
+          uploadedBytes={figmaReview?.uploadedBytes ?? uploadedBytes}
+          totalUploadBytes={
+            figmaReview?.totalUploadBytes ?? totalUploadBytes
+          }
+          uploadProgress={
+            figmaReview?.uploadProgress ?? uploadProgressValue
+          }
+          isApplyingLook={
+            figmaReview?.isApplyingLook ?? isApplyingLook
+          }
+          bakeDiskFull={
+            figmaReview?.bakeDiskFull ??
+            (lookBake.status === 'failed' && lookBake.reason === 'diskFull'
+              ? {requiredBytes: lookBake.requiredBytes}
+              : undefined)
+          }
+          reviewPreflight={figmaReview?.preflight}
+          reviewFailures={figmaReview?.failures}
           onClose={handleCloseUploadModal}
           onUploadNow={handleStartUpload}
           onOpenAlbum={handleOpenAlbum}
@@ -713,12 +735,21 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
         />
 
         <ExportPhotosModal
-          visible={showExportModal}
-          photoCount={exportPhotoCount}
+          visible={
+            exportFigmaReview
+              ? exportFigmaReview.showModal
+              : showExportModal
+          }
+          photoCount={
+            exportFigmaReview?.photoCount ?? exportPhotoCount
+          }
           albumId={albumId}
           albumName={albumName}
           selectedPhotos={actionAlbumPhotos}
           onClose={() => setShowExportModal(false)}
+          review={
+            exportFigmaReview?.showModal ? exportFigmaReview : null
+          }
         />
 
         <ApplyLookModal

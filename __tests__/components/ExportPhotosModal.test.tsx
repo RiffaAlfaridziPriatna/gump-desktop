@@ -187,6 +187,15 @@ describe('ExportPhotosModal figma values', () => {
       borderRadius: 22,
       minHeight: 42,
     });
+    // Figma 12975:36530 — Prepare Export is 178 wide, centered (not full-bleed).
+    const prepareStyle = getByLabel(renderer, 'Prepare Export').props.style;
+    expect(
+      StyleSheet.flatten(
+        typeof prepareStyle === 'function'
+          ? prepareStyle({pressed: false})
+          : prepareStyle,
+      ),
+    ).toMatchObject({alignSelf: 'center', flex: 0});
   });
 
   it('renders the preparing step with a 9 high pill bar and a SemiBold percent', async () => {
@@ -223,7 +232,7 @@ describe('ExportPhotosModal figma values', () => {
     ).toMatchObject({width: 38, height: 38, borderRadius: 8});
   });
 
-  it('renders export complete with the count, Open folder and the kept path card', async () => {
+  it('renders export complete with the count and Open folder, without a path card', async () => {
     const {renderer} = await prepare({});
     await pressText(renderer, 'Save to computer');
     const texts = allText(renderer);
@@ -235,16 +244,22 @@ describe('ExportPhotosModal figma values', () => {
       ]),
     );
     expect(texts).not.toContain('Download complete');
-    expect(texts.some(t => t.includes('.zip'))).toBe(true);
+    expect(texts.some(t => t.includes('.zip'))).toBe(false);
     expect(
       renderer.root.findAllByProps({width: 40, height: 40}).length,
     ).toBeGreaterThan(0);
-    const card = viewStyle(
-      renderer,
-      s => s.borderColor === colors.borderLight && s.paddingHorizontal === 24,
+    expect(
+      renderer.root.findAllByType(View).filter(n => {
+        const style = StyleSheet.flatten(n.props.style) ?? {};
+        return (
+          style.borderColor === colors.borderLight &&
+          style.paddingHorizontal === 24
+        );
+      }),
+    ).toHaveLength(0);
+    expect(getByLabel(renderer, 'Open folder').props.accessibilityRole).toBe(
+      'button',
     );
-    expect(card).toMatchObject({borderRadius: 8, paddingVertical: 16, gap: 16});
-    expect(getByLabel(renderer, 'Open folder').props.accessibilityRole).toBe('button');
   });
 });
 
@@ -320,20 +335,15 @@ describe('ExportPhotosModal failure states', () => {
     ]);
   });
 
-  it('returns to the ready view with the cancel message when the picker is cancelled', async () => {
-    const {renderer} = await prepare({export: 'pickerCancelled'});
-    // copyFile succeeds under pickerCancelled, so fail the save by hand.
-    (native.copyFile as jest.Mock).mockRejectedValueOnce(
-      Object.assign(new Error('nope'), {code: 'E_NOT_WRITABLE'}),
-    );
+  it('returns to the ready view with the cancel message when Save picker is cancelled', async () => {
+    const {renderer, fake} = await prepare({export: 'pickerCancelled'});
     await pressText(renderer, 'Save to computer');
-    await pressText(renderer, 'Change save location');
+    expect(fake.pickExportDirectory).toHaveBeenCalled();
+    expect(fake.copyFile).not.toHaveBeenCalled();
     const texts = allText(renderer);
     expect(texts).toContain('Your export is ready');
     expect(texts).toContain('Saving was cancelled. Your export is still ready.');
     expect(texts).toContain('Save to computer');
-    expect(texts).not.toContain("Can't save to this folder");
-    expect(focus).toHaveBeenCalledWith(7);
     expect(announce).toHaveBeenCalledWith(
       'Saving was cancelled. Your export is still ready.',
     );

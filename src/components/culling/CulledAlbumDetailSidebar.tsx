@@ -38,6 +38,7 @@ export type CulledAlbumDetailSidebarProps = {
   uploaded?: boolean;
   uploadDisabled?: boolean;
   uploadIncludesHidden?: boolean;
+  photosReady?: boolean;
   addPhotosDisabled?: boolean;
   exportDisabled?: boolean;
   editPhotosDisabled?: boolean;

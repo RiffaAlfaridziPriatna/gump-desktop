@@ -13,6 +13,7 @@ type SidebarActionStackProps = {
   uploaded?: boolean;
   uploadDisabled?: boolean;
   uploadIncludesHidden?: boolean;
+  photosReady?: boolean;
   addPhotosDisabled?: boolean;
   exportDisabled?: boolean;
   editPhotosDisabled?: boolean;
@@ -28,6 +29,7 @@ export function SidebarActionStack({
   uploaded = false,
   uploadDisabled = false,
   uploadIncludesHidden = false,
+  photosReady = true,
   addPhotosDisabled = false,
   exportDisabled = false,
   editPhotosDisabled = false,
@@ -44,6 +46,7 @@ export function SidebarActionStack({
         uploaded={uploaded}
         disabled={uploadDisabled}
         includesHidden={uploadIncludesHidden}
+        photosReady={photosReady}
         onPress={onUploadSelected}
       />
 

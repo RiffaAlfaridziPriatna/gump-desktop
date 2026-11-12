@@ -97,12 +97,15 @@ export function PopupButton({
       ]}
       onPress={onPress}
       disabled={disabled}
+      // Keep keyboard focus (autoFocus) without the system blue focus ring.
+      enableFocusRing={false}
       hitSlop={variant === 'text' ? TEXT_BUTTON_HIT_SLOP : undefined}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={accessibilityHint}
       accessibilityState={{disabled: Boolean(disabled)}}>
       <Text
+        numberOfLines={1}
         style={[
           styles.label,
           variant === 'primary' && styles.primaryLabel,
@@ -128,13 +131,13 @@ export const popupStyles = StyleSheet.create({
   buttonRow: {
     flexDirection: 'row',
     gap: 12,
-    width: 456,
+    width: 480,
     maxWidth: '100%',
     justifyContent: 'center',
   },
   buttonColumn: {
     gap: 12,
-    width: 456,
+    width: 480,
     maxWidth: '100%',
     alignItems: 'center',
   },
@@ -163,6 +166,7 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
+    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -170,7 +174,9 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 24,
     backgroundColor: colors.accent,
-    paddingHorizontal: 32,
+    // 16 keeps long dual-row labels (e.g. "Change save location") unclipped;
+    // Figma uses 32 but RN Bold measures wider in equal flex halves.
+    paddingHorizontal: 16,
     paddingVertical: 8,
   },
   secondary: {
@@ -178,7 +184,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     borderColor: colors.accent,
-    paddingHorizontal: 32,
+    paddingHorizontal: 16,
     paddingVertical: 8,
   },
   textButton: {
@@ -186,6 +192,8 @@ const styles = StyleSheet.create({
   },
   single: {
     flex: 0,
+    alignSelf: 'center',
+    paddingHorizontal: 32,
   },
   dimmed: {
     opacity: 0.8,
@@ -194,6 +202,8 @@ const styles = StyleSheet.create({
     ...sansBoldStyle,
     fontSize: 16,
     lineHeight: 16 * 1.6,
+    textAlign: 'center',
+    flexShrink: 1,
   },
   primaryLabel: {
     color: colors.white,

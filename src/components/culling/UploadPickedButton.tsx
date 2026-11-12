@@ -16,6 +16,8 @@ type UploadPickedButtonProps = {
   uploaded: boolean;
   disabled: boolean;
   includesHidden: boolean;
+  /** False while album photos are still loading — hides the zero-pick hint to avoid flicker. */
+  photosReady?: boolean;
   onPress: () => void;
 };
 
@@ -24,6 +26,7 @@ export function UploadPickedButton({
   uploaded,
   disabled,
   includesHidden,
+  photosReady = true,
   onPress,
 }: UploadPickedButtonProps) {
   const label = uploaded ? 'Uploaded' : `Upload Picked (${pickedCount})`;
@@ -36,7 +39,9 @@ export function UploadPickedButton({
   const note = uploaded
     ? null
     : pickedCount === 0
-      ? PICK_PHOTOS_HINT
+      ? photosReady
+        ? PICK_PHOTOS_HINT
+        : null
       : includesHidden
         ? 'Upload includes picked photos outside this view.'
         : null;
