@@ -1,14 +1,15 @@
 import {Pressable} from '@components/ui';
 import {colors} from '@lib/ui/colors';
 import {interSemiBoldStyle, sansSemiBoldStyle} from '@lib/ui/typography';
-import {StyleSheet, Text, View} from 'react-native';
-import IconCheck from '../../assets/images/lucide_check.svg';
+import {Image, StyleSheet, Text, View} from 'react-native';
 import IconClose from '../../assets/images/icon_close.svg';
 import IconStar from '../../assets/images/icon_star.svg';
 import IconStarOutlined from '../../assets/images/icon_star_outlined.svg';
 
 export const PICK_LABEL = 'Pick for upload';
 export const PICKED_LABEL = 'Picked';
+const PICK_CHECK_IMAGE = require('../../assets/images/icon_pick_check_512.png');
+const PICK_CHECK_SIZE = 13;
 
 type PhotoDetailHeaderProps = {
   fileName: string;
@@ -66,14 +67,22 @@ export function PhotoDetailHeader({
 
           <Pressable
             onPress={onTogglePick}
-            style={[styles.pick, disabled && styles.disabled]}
+            style={[
+              styles.pick,
+              picked ? styles.pickPicked : styles.pickIdle,
+              disabled && styles.disabled,
+            ]}
             disabled={disabled}
             accessibilityRole="button"
             accessibilityLabel={picked ? PICKED_LABEL : PICK_LABEL}
             accessibilityState={{selected: picked, disabled}}>
             <View style={[styles.circle, picked && styles.circlePicked]}>
               {picked ? (
-                <IconCheck width={11} height={11} color={colors.white} />
+                <Image
+                  source={PICK_CHECK_IMAGE}
+                  style={styles.pickCheck}
+                  resizeMode="contain"
+                />
               ) : null}
             </View>
             <Text style={styles.pickLabel}>
@@ -149,9 +158,16 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 14,
     paddingVertical: 8,
+    borderRadius: 100,
+  },
+  // Figma 12975:54676 — unpicked: 1px #4A4A4A ring, no fill.
+  pickIdle: {
     borderWidth: 1,
     borderColor: '#4A4A4A',
-    borderRadius: 100,
+  },
+  // Figma 12975:55711 — picked: fill #242424, no ring.
+  pickPicked: {
+    backgroundColor: '#242424',
   },
   circle: {
     width: 20,
@@ -163,6 +179,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   circlePicked: {backgroundColor: colors.accent, borderWidth: 0},
+  pickCheck: {
+    width: PICK_CHECK_SIZE,
+    height: PICK_CHECK_SIZE,
+    tintColor: colors.white,
+  },
   pickLabel: {
     ...interSemiBoldStyle,
     fontSize: 14,

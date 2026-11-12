@@ -1,5 +1,5 @@
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {Image, StyleSheet, Text, View} from 'react-native';
 import {SimilarShotGroupHeader} from '../../src/components/culling/SimilarShotGroupHeader';
 import {
   GROUP_GAP,
@@ -10,9 +10,6 @@ import {
 } from '../../src/components/culling/culledAlbumGridRows';
 import {fonts} from '../../src/lib/ui/typography';
 import {render} from '../helpers/render';
-
-const svgIcons = (r: ReturnType<typeof render>['renderer']) =>
-  r.root.findAll(n => (n.type as {displayName?: string}).displayName === 'SvgMock');
 
 describe('SimilarShotGroupHeader', () => {
   it('renders group header with hidden layers icon, announced as header', () => {
@@ -26,9 +23,12 @@ describe('SimilarShotGroupHeader', () => {
     expect(text.props.numberOfLines).toBe(1);
     expect(text.props.accessibilityLabel).toBe('Group 1, 3 shots, 2 picked');
     expect(text.props.children).toBe('Group 1 · 3 shots · 2 picked');
-    const [icon] = svgIcons(renderer);
-    expect([icon?.props.width, icon?.props.height]).toEqual([14.2344, 14.2223]);
-    expect(svgIcons(renderer)).toHaveLength(1);
+    const icons = renderer.root.findAllByType(Image);
+    expect(icons).toHaveLength(1);
+    expect(StyleSheet.flatten(icons[0]?.props.style)).toMatchObject({
+      width: 14.2344,
+      height: 14.2223,
+    });
   });
 
   it('renders plain header without icon', () => {
@@ -39,7 +39,7 @@ describe('SimilarShotGroupHeader', () => {
     expect(text.props.accessibilityRole).toBe('header');
     expect(text.props.accessibilityLabel).toBe('Other matching photos');
     expect(text.props.children).toBe('Other matching photos');
-    expect(svgIcons(renderer)).toHaveLength(0);
+    expect(renderer.root.findAllByType(Image)).toHaveLength(0);
   });
 
   it('draws the Figma bar: #1e1e1e, radius 8, padding 16 x 10, height 37, gap 8', () => {

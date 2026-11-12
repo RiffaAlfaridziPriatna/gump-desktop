@@ -1,7 +1,6 @@
 import {colors} from '@lib/ui/colors';
 import {interSemiBoldStyle} from '@lib/ui/typography';
-import {StyleSheet, Text, View} from 'react-native';
-import IconLayers from '../../assets/images/lucide_layers.svg';
+import {Image, StyleSheet, Text, View} from 'react-native';
 import {
   GROUP_GAP,
   HEADER_BAR_GAP,
@@ -14,6 +13,8 @@ export const HEADER_ICON_SIZE = 16;
 /** lucide_layers glyph size inside a 16 box (Figma inset 8.33% plus stroke). */
 export const HEADER_LAYERS_WIDTH = 14.2344;
 export const HEADER_LAYERS_HEIGHT = 14.2223;
+
+const LAYERS_IMAGE = require('../../assets/images/lucide_layers_512.png');
 
 type SimilarShotGroupHeaderProps = {
   section?: Pick<CulledAlbumGridSection, 'title' | 'subtitle' | 'isGroup'>;
@@ -44,10 +45,10 @@ export function SimilarShotGroupHeader({
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
             style={styles.icon}>
-            <IconLayers
-              width={HEADER_LAYERS_WIDTH}
-              height={HEADER_LAYERS_HEIGHT}
-              color={colors.white}
+            <Image
+              source={LAYERS_IMAGE}
+              style={styles.layersIcon}
+              resizeMode="contain"
             />
           </View>
         )}
@@ -84,6 +85,11 @@ const styles = StyleSheet.create({
     height: HEADER_ICON_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  layersIcon: {
+    width: HEADER_LAYERS_WIDTH,
+    height: HEADER_LAYERS_HEIGHT,
+    tintColor: colors.white,
   },
   title: {
     ...interSemiBoldStyle,

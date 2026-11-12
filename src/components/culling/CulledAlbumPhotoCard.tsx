@@ -23,8 +23,7 @@ import {
   thumbnailWidthForCard,
 } from '@components/culling/culledAlbumGridRows';
 import {forwardRef, memo, useCallback, useRef, type MutableRefObject} from 'react';
-import {Image, StyleSheet, Text, View} from 'react-native';
-import IconPickCheck from '../../assets/images/icon_pick_check.svg';
+import {Image, Platform, StyleSheet, Text, View} from 'react-native';
 
 const STAR_INDICES = [0, 1, 2, 3, 4] as const;
 const STAR_SIZE = 16;
@@ -43,6 +42,7 @@ const STAR_RATING_IMAGES = [
   require('../../assets/images/star_rating_4.png'),
   require('../../assets/images/star_rating_5.png'),
 ] as const;
+const PICK_CHECK_IMAGE = require('../../assets/images/icon_pick_check_512.png');
 
 export type CulledAlbumPhotoCardProps = {
   albumId: string;
@@ -76,17 +76,19 @@ const StarRatingRow = memo(
     ref,
   ) {
     const clamped = Math.min(5, Math.max(0, Math.round(rating)));
+    // Windows needs a remount to refresh bitmap chrome; macOS remounts cost scroll.
+    const imageKey = Platform.OS === 'windows' ? clamped : undefined;
     return (
       <View
         ref={ref}
-        collapsable={false}
+        collapsable={onLayout == null}
         onLayout={onLayout}
         pointerEvents="none"
         style={[styles.starRatingContainer, disabled && styles.chromeDisabled]}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants">
         <Image
-          key={clamped}
+          key={imageKey}
           source={STAR_RATING_IMAGES[clamped]}
           style={styles.starRatingImage}
           resizeMode="contain"
@@ -289,14 +291,20 @@ export const CulledAlbumPhotoCard = memo(function CulledAlbumPhotoCard({
                 isSelected ? styles.pickCircleSelected : styles.pickCircleEmpty,
               ]}>
               {isSelected && (
-                <IconPickCheck width={PICK_CHECK_SIZE} height={PICK_CHECK_SIZE} />
+                <Image
+                  source={PICK_CHECK_IMAGE}
+                  style={styles.pickCheck}
+                  resizeMode="contain"
+                />
               )}
             </View>
           </View>
 
-          <Text style={styles.fileName} numberOfLines={1}>
-            {fileName}
-          </Text>
+          <View style={styles.fileNameSlot}>
+            <Text style={styles.fileName} numberOfLines={1}>
+              {fileName}
+            </Text>
+          </View>
 
           <StarRatingRow
             ref={starRowRef}
@@ -333,16 +341,21 @@ const styles = StyleSheet.create({
     height: CARD_FOOTER_HEIGHT,
     paddingRight: 2,
   },
-  fileName: {
+  fileNameSlot: {
     flex: 1,
+    height: CARD_FOOTER_HEIGHT,
+    justifyContent: 'center',
+    minWidth: 0,
+  },
+  fileName: {
     fontFamily: fonts.sans,
     fontSize: 14,
-    lineHeight: 14,
+    lineHeight: 16,
     color: colors.text,
   },
   starRatingContainer: {
     width: STAR_ROW_WIDTH,
-    height: STAR_SIZE,
+    height: CARD_FOOTER_HEIGHT,
     justifyContent: 'center',
   },
   starRatingImage: {
@@ -371,5 +384,10 @@ const styles = StyleSheet.create({
   },
   pickCircleSelected: {
     backgroundColor: colors.accent,
+  },
+  pickCheck: {
+    width: PICK_CHECK_SIZE,
+    height: PICK_CHECK_SIZE,
+    tintColor: colors.white,
   },
 });

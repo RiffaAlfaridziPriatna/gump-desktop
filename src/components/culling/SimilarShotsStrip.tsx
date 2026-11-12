@@ -7,12 +7,13 @@ import {reportError} from '@lib/observability/reportError';
 import {resolveGridDisplayUri} from '@lib/storage/localStorage';
 import {colors} from '@lib/ui/colors';
 import {fonts, interSemiBoldStyle} from '@lib/ui/typography';
-import {ScrollView, StyleSheet, Text, View} from 'react-native';
-import IconCheck from '../../assets/images/lucide_check.svg';
+import {Image, ScrollView, StyleSheet, Text, View} from 'react-native';
 import IconLayers from '../../assets/images/lucide_layers.svg';
 import IconSparkles from '../../assets/images/lucide_sparkles.svg';
 
 const THUMBNAIL_WIDTH = 134;
+const PICK_CHECK_IMAGE = require('../../assets/images/icon_pick_check_512.png');
+const PICK_CHECK_SIZE = 12;
 
 type SimilarShotsStripProps = {
   albumId: string;
@@ -90,7 +91,11 @@ function SimilarShotMember({
         >
           <View style={[styles.pickCircle, picked && styles.pickCirclePicked]}>
             {picked ? (
-              <IconCheck width={11} height={11} color={colors.white} />
+              <Image
+                source={PICK_CHECK_IMAGE}
+                style={styles.pickCheck}
+                resizeMode="contain"
+              />
             ) : null}
           </View>
         </Pressable>
@@ -197,6 +202,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pickCirclePicked: {backgroundColor: colors.accent, borderWidth: 0},
+  pickCheck: {
+    width: PICK_CHECK_SIZE,
+    height: PICK_CHECK_SIZE,
+    tintColor: colors.white,
+  },
   name: {
     flex: 1,
     fontFamily: fonts.sans,

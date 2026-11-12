@@ -1,9 +1,7 @@
 import {Pressable} from '@components/ui';
 import {colors} from '@lib/ui/colors';
 import {interSemiBoldStyle} from '@lib/ui/typography';
-import {StyleSheet, Text, View} from 'react-native';
-import IconChevronRight from '../../assets/images/lucide_chevron_right.svg';
-import IconLayers from '../../assets/images/lucide_layers.svg';
+import {Image, StyleSheet, Text, View} from 'react-native';
 
 export const CHIP_BACKGROUND = 'rgba(19,20,21,0.75)';
 export const CHIP_HEIGHT = 23;
@@ -11,6 +9,9 @@ export const CHIP_ICON_SIZE = 12;
 /** lucide_layers glyph size inside a 12 box (Figma inset 8.33% plus stroke). */
 export const CHIP_LAYERS_WIDTH = 10.6783;
 export const CHIP_LAYERS_HEIGHT = 10.6692;
+
+const LAYERS_IMAGE = require('../../assets/images/lucide_layers_512.png');
+const CHEVRON_IMAGE = require('../../assets/images/lucide_chevron_right_512.png');
 
 type SimilarShotsBadgeProps = {
   count: number;
@@ -31,17 +32,17 @@ export function SimilarShotsBadge({count, onPress}: SimilarShotsBadgeProps) {
         focusable
         accessibilityLabel={`${count} similar shots, open viewer`}>
         <View style={styles.icon}>
-          <IconLayers
-            width={CHIP_LAYERS_WIDTH}
-            height={CHIP_LAYERS_HEIGHT}
-            color={colors.white}
+          <Image
+            source={LAYERS_IMAGE}
+            style={styles.layersIcon}
+            resizeMode="contain"
           />
         </View>
         <Text style={styles.label}>{`${count} similar shots`}</Text>
-        <IconChevronRight
-          width={CHIP_ICON_SIZE}
-          height={CHIP_ICON_SIZE}
-          color={colors.white}
+        <Image
+          source={CHEVRON_IMAGE}
+          style={styles.chevronIcon}
+          resizeMode="contain"
         />
       </Pressable>
     </View>
@@ -72,6 +73,16 @@ const styles = StyleSheet.create({
     height: CHIP_ICON_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  layersIcon: {
+    width: CHIP_LAYERS_WIDTH,
+    height: CHIP_LAYERS_HEIGHT,
+    tintColor: colors.white,
+  },
+  chevronIcon: {
+    width: CHIP_ICON_SIZE,
+    height: CHIP_ICON_SIZE,
+    tintColor: colors.white,
   },
   label: {
     ...interSemiBoldStyle,

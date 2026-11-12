@@ -1,5 +1,5 @@
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {Image, StyleSheet, Text, View} from 'react-native';
 import {
   PhotoDetailHeader,
   PICKED_LABEL,
@@ -66,7 +66,7 @@ describe('PhotoDetailHeader', () => {
     expect(row).toBeDefined();
   });
 
-  it('draws the pick pill: border, radius, padding, gap, 20 circle', () => {
+  it('draws the idle pick pill: border, radius, padding, gap, 20 circle', () => {
     const {view} = renderHeader();
     const pill = getByLabel(view.renderer, PICK_LABEL);
     expect(flat(pill)).toMatchObject({
@@ -77,6 +77,7 @@ describe('PhotoDetailHeader', () => {
       paddingVertical: 8,
       gap: 8,
     });
+    expect(flat(pill).backgroundColor).toBeUndefined();
     expect(flat(textNode(view, PICK_LABEL))).toMatchObject({
       fontFamily: fonts.interSemiBold,
       fontSize: 14,
@@ -88,7 +89,7 @@ describe('PhotoDetailHeader', () => {
     expect(flat(circle)).toMatchObject({borderWidth: 1.5});
   });
 
-  it('shows Picked with selected state and toggles on press', () => {
+  it('shows Picked with #242424 fill and toggles on press', () => {
     const {view, onTogglePick} = renderHeader(true);
     const pill = getByLabel(view.renderer, PICKED_LABEL);
     expect(pill.props.accessibilityRole).toBe('button');
@@ -96,14 +97,27 @@ describe('PhotoDetailHeader', () => {
       selected: true,
       disabled: false,
     });
+    expect(flat(pill)).toMatchObject({
+      backgroundColor: '#242424',
+      borderRadius: 100,
+    });
+    expect(flat(pill).borderWidth).toBeUndefined();
     expect(textNode(view, PICKED_LABEL)).toBeDefined();
+    const check = pill.findByType(Image);
+    expect(flat(check)).toMatchObject({
+      width: 13,
+      height: 13,
+      tintColor: '#FFFFFF',
+    });
     press(pill);
     expect(onTogglePick).toHaveBeenCalledTimes(1);
   });
 
-  it('exposes unpicked as not selected and ignores press when disabled', () => {
+  it('exposes unpicked as Pick for upload, no check image, ignores press when disabled', () => {
     const {view, onTogglePick} = renderHeader(false, true);
     const pill = getByLabel(view.renderer, PICK_LABEL);
+    expect(textNode(view, PICK_LABEL)).toBeDefined();
+    expect(pill.findAllByType(Image)).toHaveLength(0);
     expect(pill.props.accessibilityState).toEqual({
       selected: false,
       disabled: true,

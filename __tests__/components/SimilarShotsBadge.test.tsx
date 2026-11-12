@@ -1,5 +1,5 @@
 import React from 'react';
-import {StyleSheet, Text} from 'react-native';
+import {Image, StyleSheet, Text} from 'react-native';
 import {SimilarShotsBadge} from '../../src/components/culling/SimilarShotsBadge';
 import {fonts} from '../../src/lib/ui/typography';
 import {getAllByRole, render} from '../helpers/render';
@@ -29,8 +29,13 @@ describe('SimilarShotsBadge', () => {
     expect(row).toMatchObject({left: 8, bottom: 8});
     const label = StyleSheet.flatten(renderer.root.findByType(Text).props.style);
     expect(label).toMatchObject({fontFamily: fonts.interSemiBold, fontSize: 12, color: '#FFFFFF'});
-    const icons = renderer.root.findAll(n => (n.type as {displayName?: string}).displayName === 'SvgMock');
-    expect(icons.map(i => [i.props.width, i.props.height])).toEqual([
+    const icons = renderer.root.findAllByType(Image);
+    expect(
+      icons.map(i => {
+        const style = StyleSheet.flatten(i.props.style);
+        return [style.width, style.height];
+      }),
+    ).toEqual([
       [10.6783, 10.6692],
       [12, 12],
     ]);

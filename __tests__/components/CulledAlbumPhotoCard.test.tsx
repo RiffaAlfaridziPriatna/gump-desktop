@@ -1,5 +1,5 @@
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {Image, StyleSheet, Text, View} from 'react-native';
 import TestRenderer, {act} from 'react-test-renderer';
 import {CulledAlbumPhotoCard} from '../../src/components/culling/CulledAlbumPhotoCard';
 import {CulledAlbumPhotoFocusFrame} from '../../src/components/culling/CulledAlbumPhotoFocusFrame';
@@ -228,8 +228,16 @@ describe('CulledAlbumPhotoCard Figma shell and footer', () => {
     };
     const {view} = renderCard(undefined, true);
     const root = view.renderer.root;
-    const label = root.findByType(Text);
-    const footer = label.parent as TestRenderer.ReactTestInstance;
+    const label = root
+      .findAllByType(Text)
+      .find(t => t.props.children === 'IMG_1.jpg') as TestRenderer.ReactTestInstance;
+    let footer = label.parent as TestRenderer.ReactTestInstance | null;
+    while (footer && flat(footer).gap !== 4) {
+      footer = footer.parent as TestRenderer.ReactTestInstance | null;
+    }
+    if (!footer) {
+      throw new Error('photo footer row not found');
+    }
     const card = root.findAllByType(View).find(
       v => flat(v).backgroundColor === colors.photoCardBackground,
     ) as TestRenderer.ReactTestInstance;
@@ -254,11 +262,30 @@ describe('CulledAlbumPhotoCard Figma shell and footer', () => {
   it('footer: height 28, gap 4, padding right 2, order pick, name, stars', () => {
     const {footer, label} = rootOf(false);
     expect(flat(footer)).toMatchObject({height: 28, gap: 4, paddingRight: 2});
-    const kids = footer.children as TestRenderer.ReactTestInstance[];
-    expect(kids[1]).toBe(label);
+    const kids = (
+      footer.children as Array<TestRenderer.ReactTestInstance | string>
+    ).filter(
+      (child): child is TestRenderer.ReactTestInstance =>
+        typeof child !== 'string',
+    );
+    expect(kids).toHaveLength(3);
+    expect(kids[1].findByType(Text)).toBe(label);
     expect(flat(kids[0])).toMatchObject({width: 28, height: 28});
-    expect(flat(kids[2].findAllByType(View)[0])).toMatchObject({width: 96, height: 16});
-    expect(flat(label)).toMatchObject({fontSize: 14, color: colors.text});
+    expect(flat(kids[1])).toMatchObject({
+      flex: 1,
+      height: 28,
+      justifyContent: 'center',
+    });
+    expect(flat(kids[2].findAllByType(View)[0])).toMatchObject({
+      width: 96,
+      height: 28,
+      justifyContent: 'center',
+    });
+    expect(flat(label)).toMatchObject({
+      fontSize: 14,
+      lineHeight: 16,
+      color: colors.text,
+    });
   });
 
   it('pick control: empty is a 1px white ring, picked is filled orange', () => {
@@ -277,6 +304,12 @@ describe('CulledAlbumPhotoCard Figma shell and footer', () => {
       backgroundColor: '#FF9632',
     });
     expect(flat(pickedCircle as TestRenderer.ReactTestInstance).borderWidth).toBeUndefined();
+    const check = pickedCircle?.findByType(Image);
+    expect(flat(check as TestRenderer.ReactTestInstance)).toMatchObject({
+      width: 13,
+      height: 13,
+      tintColor: colors.white,
+    });
   });
 
   it('focus frame sits on the card bounds, 2px blue, radius 6', () => {
@@ -323,6 +356,11 @@ describe('CulledAlbumPhotoCard Figma shell and footer', () => {
       borderRadius: 100,
       top: 12,
       right: 11.67,
+    });
+    expect(StyleSheet.flatten(del.findByType(Image).props.style)).toMatchObject({
+      width: 24,
+      height: 24,
+      tintColor: colors.text,
     });
   });
 });

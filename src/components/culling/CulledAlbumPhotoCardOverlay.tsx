@@ -2,8 +2,9 @@ import {PhotoAiBadges} from '@components/culling/PhotoAiBadges';
 import {Pressable} from '@components/ui';
 import type {CulledAlbumPhoto} from '@lib/culledAlbum/types';
 import {colors} from '@lib/ui/colors';
-import {StyleSheet} from 'react-native';
-import IconTrash from '../../assets/images/icon_trash.svg';
+import {Image, StyleSheet} from 'react-native';
+
+const TRASH_IMAGE = require('../../assets/images/icon_trash_512.png');
 
 type CulledAlbumPhotoCardOverlayProps = {
   photoId: string;
@@ -34,7 +35,11 @@ export function CulledAlbumPhotoCardOverlay({
           }}
           accessibilityRole="button"
           accessibilityLabel={`Delete ${fileName}`}>
-          <IconTrash width={24} height={24} color={colors.text} />
+          <Image
+            source={TRASH_IMAGE}
+            style={styles.trashIcon}
+            resizeMode="contain"
+          />
         </Pressable>
       )}
       <PhotoAiBadges
@@ -57,5 +62,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background + '66',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  trashIcon: {
+    width: 24,
+    height: 24,
+    tintColor: colors.text,
   },
 });
