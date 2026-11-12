@@ -1,18 +1,19 @@
+import { ContainedLookImage } from '@components/look/ContainedLookImage';
 import { LookCompareToggle } from '@components/look/LookCompareToggle';
 import { LookPickerTile } from '@components/look/LookPickerTile';
-import { LookPreviewImage } from '@components/look/LookPreviewImage';
 import { focusDesktopNode } from '@components/modals/focusDesktopNode';
 import { getLookLabel, LOOK_CATALOG } from '@lib/look/lookCatalog';
-import type { LookId } from '@lib/look/types';
+import { hasAppliedLook, type LookId } from '@lib/look/types';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansSemiBoldStyle } from '@lib/ui/typography';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Platform,
   StyleSheet,
   Text,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 
 type LookPickerBodyProps = {
@@ -53,12 +54,22 @@ export function LookPickerBody({
 }: LookPickerBodyProps) {
   const tileRefs = useRef<Record<string, View | null>>({});
   const pendingFocusRef = useRef(false);
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
 
   const openFocusedRef = useRef<string | null>(null);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   const currentRef = useRef(currentLookId);
   currentRef.current = currentLookId;
+
+  const handlePreviewLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setPreviewSize(current =>
+      current.width === width && current.height === height
+        ? current
+        : { width, height },
+    );
+  }, []);
 
   // The ui Modal mounts its content one commit after `visible` flips, so focus
   // from the tile ref callback too, once the current tile exists.
@@ -121,28 +132,37 @@ export function LookPickerBody({
 
   return (
     <View style={styles.body}>
-      <View style={styles.preview}>
+      <View style={styles.preview} onLayout={handlePreviewLayout}>
         <View
           style={StyleSheet.absoluteFill}
           accessible
           accessibilityRole="image"
           accessibilityLabel={
-            showAfter
+            showAfter && hasAppliedLook(selectedLookId)
               ? `Preview, ${getLookLabel(selectedLookId)}`
               : 'Preview, original photo'
           }
         >
-          {previewUri ? (
-            <LookPreviewImage
+          {previewUri && previewSize.width > 0 && previewSize.height > 0 ? (
+            <ContainedLookImage
               uri={previewUri}
-              lookId={showAfter ? selectedLookId : 'original'}
-              style={styles.previewPhoto}
+              width={previewSize.width}
+              height={previewSize.height}
+              lookId={
+                showAfter && hasAppliedLook(selectedLookId)
+                  ? selectedLookId
+                  : 'original'
+              }
+              isTransparent={false}
+              borderRadius={0}
             />
           ) : null}
         </View>
-        <View style={styles.toggle}>
-          <LookCompareToggle showAfter={showAfter} onChange={handleToggle} />
-        </View>
+        {hasAppliedLook(selectedLookId) ? (
+          <View style={styles.toggle}>
+            <LookCompareToggle showAfter={showAfter} onChange={handleToggle} />
+          </View>
+        ) : null}
       </View>
       <Text
         style={styles.caption}
@@ -191,11 +211,7 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     aspectRatio: 312 / 212,
     backgroundColor: colors.cardGrayLight,
-  },
-  previewPhoto: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
+    overflow: 'hidden',
   },
   toggle: {
     position: 'absolute',

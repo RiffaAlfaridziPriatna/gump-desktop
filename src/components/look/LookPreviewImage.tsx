@@ -1,4 +1,7 @@
-import {bakeLookPreviewUri} from '@lib/look/bakeLook';
+import {
+  bakeLookPreviewUri,
+  getCachedLookPreviewUri,
+} from '@lib/look/bakeLook';
 import {hasAppliedLook, type LookId} from '@lib/look/types';
 import {getErrorMessage} from '@lib/observability';
 import {memo, useEffect, useState} from 'react';
@@ -29,8 +32,8 @@ const PREVIEW_DEBOUNCE_MS = 90;
 
 /**
  * In-app look preview via the same native .cube LUT bake used for Export/Upload.
- * When a look is applied, holds gray (renders nothing) until the baked URI is
- * ready — never paints the ungraded source first (avoids original→look flash).
+ * First paint of a look holds gray until bake is ready. Later toggles keep the
+ * previous frame (e.g. Before) until After arrives — clearing caused flicker.
  */
 export const LookPreviewImage = memo(function LookPreviewImage({
   uri,
@@ -42,9 +45,12 @@ export const LookPreviewImage = memo(function LookPreviewImage({
 }: LookPreviewImageProps) {
   const bakeUri = bakeSourceUri || uri;
   const needsLookBake = Boolean(bakeUri) && hasAppliedLook(lookId);
-  const [displayUri, setDisplayUri] = useState(() =>
-    needsLookBake ? '' : uri,
-  );
+  const [displayUri, setDisplayUri] = useState(() => {
+    if (!needsLookBake) {
+      return uri;
+    }
+    return getCachedLookPreviewUri(bakeUri, lookId!) ?? '';
+  });
 
   useEffect(() => {
     if (!uri || !hasAppliedLook(lookId)) {
@@ -52,8 +58,13 @@ export const LookPreviewImage = memo(function LookPreviewImage({
       return;
     }
 
-    // Hold empty until bake finishes — do not show ungraded source.
-    setDisplayUri('');
+    const cached = getCachedLookPreviewUri(bakeUri, lookId);
+    if (cached) {
+      setDisplayUri(cached);
+      return;
+    }
+
+    // Keep the current frame until bake finishes (Before→After, look switch).
     let cancelled = false;
     const timer = setTimeout(() => {
       bakeLookPreviewUri(bakeUri, lookId)

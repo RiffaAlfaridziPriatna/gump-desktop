@@ -38,6 +38,7 @@ export function LookCompareToggle({
             accessibilityState={{ selected }}
           >
             <Text
+              numberOfLines={1}
               style={[
                 styles.label,
                 selected ? styles.labelSelected : styles.labelIdle,
@@ -58,21 +59,24 @@ const styles = StyleSheet.create({
     gap: 6,
     width: 140,
   },
+  // Idle border is always on so width stays stable; selected uses a matching
+  // border so "Before" does not wrap when unselected (border ate 2px before).
   segment: {
     width: 67,
     borderRadius: 24,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   segmentIdle: {
     paddingVertical: 3,
-    borderWidth: 1,
     borderColor: colors.white,
   },
   segmentSelected: {
-    paddingVertical: 5,
+    paddingVertical: 4,
     backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   label: {
     fontFamily: fonts.sans,

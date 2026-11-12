@@ -2,7 +2,6 @@ import React from 'react';
 import { AccessibilityInfo, Text } from 'react-native';
 import { act } from 'react-test-renderer';
 import { getByLabel, press, render } from '../helpers/render';
-import { LookPreviewImage } from '../../src/components/look/LookPreviewImage';
 import { focusDesktopNode } from '../../src/components/modals/focusDesktopNode';
 import { ApplyLookModal } from '../../src/components/modals/ApplyLookModal';
 
@@ -13,6 +12,15 @@ jest.mock('../../src/components/modals/focusDesktopNode', () => ({
 jest.mock('../../src/components/look/LookPreviewImage', () => ({
   LookPreviewImage: () => null,
 }));
+
+jest.mock('../../src/components/look/ContainedLookImage', () => {
+  const ReactNative = require('react-native');
+  return {
+    ContainedLookImage: (props: Record<string, unknown>) => (
+      <ReactNative.View testID="contained-look-image" {...props} />
+    ),
+  };
+});
 
 const photo = {
   file: { thumbnailUri: 'file:///thumb.jpg', uri: 'file:///m.jpg' },
@@ -90,9 +98,21 @@ describe('ApplyLookModal', () => {
 
   it('Before shows the original, After shows the selected look', () => {
     const { renderer } = mount();
-    // The big preview renders before the tiles.
+    const preview = getByLabel(renderer, 'Preview, Clean Natural');
+    const frame = preview.parent;
+    if (!frame?.props.onLayout) {
+      throw new Error('preview frame missing onLayout');
+    }
+    act(() => {
+      frame.props.onLayout({
+        nativeEvent: { layout: { x: 0, y: 0, width: 480, height: 326 } },
+      });
+    });
+    // Main preview is the contain-fit image with isTransparent={false}.
     const previewLook = () =>
-      renderer.root.findAllByType(LookPreviewImage)[0]!.props.lookId;
+      renderer.root.findAllByProps({ testID: 'contained-look-image' }).find(
+        node => node.props.isTransparent === false,
+      )!.props.lookId;
     press(getByLabel(renderer, 'Before'));
     expect(getByLabel(renderer, 'Before').props.accessibilityState).toEqual({
       selected: true,
@@ -100,6 +120,21 @@ describe('ApplyLookModal', () => {
     expect(previewLook()).toBe('original');
     press(getByLabel(renderer, 'After'));
     expect(previewLook()).toBe('cleanNatural');
+  });
+
+  it('hides Before/After when Original is selected', () => {
+    const { renderer } = mount({ currentLookId: 'original' });
+    expect(
+      renderer.root.findAll(
+        node => node.props.accessibilityRole === 'tablist',
+      ),
+    ).toHaveLength(0);
+    expect(
+      renderer.root.findAll(node => node.props.accessibilityLabel === 'Before'),
+    ).toHaveLength(0);
+    press(getByLabel(renderer, 'Clean Natural'));
+    expect(getByLabel(renderer, 'Before')).toBeTruthy();
+    expect(getByLabel(renderer, 'After')).toBeTruthy();
   });
 
   it('calls onClose from Cancel and Close, and Escape', () => {

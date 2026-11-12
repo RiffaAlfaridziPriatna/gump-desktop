@@ -181,6 +181,20 @@ export async function ensureLookDetail(
   };
 }
 
+/** Sync peek of an already-baked in-app look preview (avoids Before→After blank). */
+export function getCachedLookPreviewUri(
+  sourceUri: string,
+  lookId: LookId,
+): string | undefined {
+  if (!sourceUri || !hasAppliedLook(lookId)) {
+    return undefined;
+  }
+  const settings = QUALITY_SETTINGS.preview;
+  return previewUriCache.get(
+    previewCacheKey(sourceUri, lookId, settings.maxPixelSize),
+  );
+}
+
 /** Display preview using the same native .cube LUT bake path as export (smaller pixel budget). */
 export async function bakeLookPreviewUri(
   sourceUri: string,

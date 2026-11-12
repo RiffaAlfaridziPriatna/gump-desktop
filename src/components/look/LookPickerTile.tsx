@@ -1,10 +1,15 @@
-import { LookPreviewImage } from '@components/look/LookPreviewImage';
+import { ContainedLookImage } from '@components/look/ContainedLookImage';
 import { Pressable } from '@components/ui';
 import type { LookId } from '@lib/look/types';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansSemiBoldStyle } from '@lib/ui/typography';
-import type { Ref } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState, type Ref } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 
 type LookPickerTileProps = {
   lookId: LookId;
@@ -25,6 +30,16 @@ export function LookPickerTile({
   onSelect,
   focusRef,
 }: LookPickerTileProps) {
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const handleImageLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setImageSize(prev =>
+      prev.width === width && prev.height === height
+        ? prev
+        : { width, height },
+    );
+  }, []);
+
   return (
     <Pressable
       // The ui wrapper forwards unknown props; React 19 passes ref as a prop.
@@ -42,14 +57,19 @@ export function LookPickerTile({
     >
       <View
         style={styles.image}
+        onLayout={handleImageLayout}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        <LookPreviewImage
-          uri={previewUri}
-          lookId={lookId}
-          style={styles.photo}
-        />
+        {previewUri && imageSize.width > 0 && imageSize.height > 0 ? (
+          <ContainedLookImage
+            uri={previewUri}
+            width={imageSize.width}
+            height={imageSize.height}
+            lookId={lookId}
+            borderRadius={4}
+          />
+        ) : null}
       </View>
       <Text style={[styles.label, selected && styles.labelSelected]}>
         {current ? `${label} · Current` : label}
@@ -82,11 +102,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     overflow: 'hidden',
     backgroundColor: colors.cardGrayLight,
-  },
-  photo: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
   },
   label: {
     fontFamily: fonts.sans,

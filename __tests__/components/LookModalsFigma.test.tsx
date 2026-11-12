@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text } from 'react-native';
+import { act } from 'react-test-renderer';
 import { getByLabel, render } from '../helpers/render';
 import { AlbumLookStatus } from '../../src/components/culling/AlbumLookStatus';
 import { LookCompareToggle } from '../../src/components/look/LookCompareToggle';
@@ -14,6 +15,14 @@ jest.mock('../../src/components/modals/focusDesktopNode', () => ({
 jest.mock('../../src/components/look/LookPreviewImage', () => ({
   LookPreviewImage: () => null,
 }));
+jest.mock('../../src/components/look/ContainedLookImage', () => {
+  const ReactNative = require('react-native');
+  return {
+    ContainedLookImage: (props: Record<string, unknown>) => (
+      <ReactNative.View testID="contained-look-image" {...props} />
+    ),
+  };
+});
 jest.mock('../../src/lib/storage/localStorage', () => ({
   isUsableThumbnailUri: (uri?: string) => Boolean(uri),
   isUsableDetailUri: () => false,
@@ -100,10 +109,86 @@ describe('look modals to Figma', () => {
     });
   });
 
-  it('toggle: Before line height 1.6, After 1.4', () => {
+  it('toggle: Before line height 1.6, After 1.4, single line', () => {
     const { renderer } = render(<LookCompareToggle showAfter onChange={jest.fn()} />);
-    expect(styleOf(textNode(renderer, 'Before')).lineHeight).toBeCloseTo(14 * 1.6);
-    expect(styleOf(textNode(renderer, 'After')).lineHeight).toBeCloseTo(14 * 1.4);
+    const before = textNode(renderer, 'Before');
+    const after = textNode(renderer, 'After');
+    expect(styleOf(before).lineHeight).toBeCloseTo(14 * 1.6);
+    expect(styleOf(after).lineHeight).toBeCloseTo(14 * 1.4);
+    expect(before.props.numberOfLines).toBe(1);
+    expect(after.props.numberOfLines).toBe(1);
+    const beforeChip = styleOf(
+      before.parent as unknown as Styled,
+    );
+    const afterChip = styleOf(after.parent as unknown as Styled);
+    expect(beforeChip.borderWidth).toBe(1);
+    expect(afterChip.borderWidth).toBe(1);
+    expect(beforeChip.paddingHorizontal).toBe(10);
+  });
+
+  it('picker: preview and tiles use ContainedLookImage after layout (no stretch squash)', () => {
+    const { renderer } = render(
+      <ApplyLookModal
+        visible
+        albumName="A"
+        previewPhoto={photo}
+        currentLookId="cleanNatural"
+        onUseLook={jest.fn()}
+        onClose={jest.fn()}
+      />,
+    );
+    const preview = getByLabel(renderer, 'Preview, Clean Natural');
+    const frame = preview.parent;
+    if (!frame?.props.onLayout) {
+      throw new Error('preview frame missing onLayout');
+    }
+    act(() => {
+      frame.props.onLayout({
+        nativeEvent: { layout: { x: 0, y: 0, width: 480, height: 326 } },
+      });
+    });
+    const tileLabels = [
+      'Original',
+      'Clean Natural, current look',
+      'Warm Romantic',
+      'Film Mood',
+    ];
+    act(() => {
+      for (const label of tileLabels) {
+        const tile = getByLabel(renderer, label);
+        const imageFrame = tile.findAll(
+          node => typeof node.props.onLayout === 'function',
+        )[0];
+        imageFrame?.props.onLayout({
+          nativeEvent: { layout: { x: 0, y: 0, width: 106, height: 70 } },
+        });
+      }
+    });
+    const images = renderer.root.findAllByProps({
+      testID: 'contained-look-image',
+    });
+    const previewImage = images.find(
+      node => node.props.isTransparent === false,
+    );
+    expect(previewImage?.props).toMatchObject({
+      uri: 'file:///t.jpg',
+      width: 480,
+      height: 326,
+      lookId: 'cleanNatural',
+      isTransparent: false,
+    });
+    const tileByLook = Object.fromEntries(
+      images
+        .filter(node => node.props.isTransparent !== false)
+        .map(node => [node.props.lookId, node.props]),
+    );
+    expect(Object.keys(tileByLook).sort()).toEqual([
+      'cleanNatural',
+      'filmMood',
+      'original',
+      'warmRomantic',
+    ]);
+    expect(tileByLook.original).toMatchObject({ width: 106, height: 70 });
   });
 
   it('status: label Red Hat SemiBold, Change Inter SemiBold orange', () => {
