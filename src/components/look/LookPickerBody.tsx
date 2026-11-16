@@ -1,12 +1,16 @@
 import { ContainedLookImage } from '@components/look/ContainedLookImage';
 import { LookCompareToggle } from '@components/look/LookCompareToggle';
-import { LookPickerTile } from '@components/look/LookPickerTile';
+import {
+  LookImportErrorBanner,
+  type LookImportError,
+} from '@components/look/LookImportErrorBanner';
+import { LookPickerTiles } from '@components/look/LookPickerTiles';
 import { focusDesktopNode } from '@components/modals/focusDesktopNode';
 import { getLookLabel, LOOK_CATALOG } from '@lib/look/lookCatalog';
-import { hasAppliedLook, type LookId } from '@lib/look/types';
+import { hasAppliedLook, type CustomLook, type LookId } from '@lib/look/types';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansSemiBoldStyle } from '@lib/ui/typography';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Platform,
@@ -22,6 +26,9 @@ type LookPickerBodyProps = {
   currentLookId: LookId;
   selectedLookId: LookId;
   showAfter: boolean;
+  customLook?: CustomLook | null;
+  importError?: LookImportError | null;
+  onUploadPreset?: () => void;
   onSelectLook: (lookId: LookId) => void;
   onShowAfterChange: (showAfter: boolean) => void;
 };
@@ -49,6 +56,9 @@ export function LookPickerBody({
   currentLookId,
   selectedLookId,
   showAfter,
+  customLook,
+  importError,
+  onUploadPreset,
   onSelectLook,
   onShowAfterChange,
 }: LookPickerBodyProps) {
@@ -61,6 +71,16 @@ export function LookPickerBody({
   visibleRef.current = visible;
   const currentRef = useRef(currentLookId);
   currentRef.current = currentLookId;
+
+  const customName = customLook?.name;
+  const hasCustom = customLook != null;
+  const lookIds = useMemo<LookId[]>(
+    () => [
+      ...LOOK_CATALOG.map(look => look.id),
+      ...(hasCustom ? ['custom' as const] : []),
+    ],
+    [hasCustom],
+  );
 
   const handlePreviewLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
@@ -110,12 +130,22 @@ export function LookPickerBody({
       if (step === 0) {
         return;
       }
-      const index = LOOK_CATALOG.findIndex(look => look.id === selectedLookId);
-      const count = LOOK_CATALOG.length;
+      const index = lookIds.indexOf(selectedLookId);
+      const count = lookIds.length;
       pendingFocusRef.current = true;
-      onSelectLook(LOOK_CATALOG[(index + step + count) % count]!.id);
+      onSelectLook(lookIds[(index + step + count) % count]!);
     },
-    [onSelectLook, selectedLookId],
+    [lookIds, onSelectLook, selectedLookId],
+  );
+
+  const handleTileRef = useCallback(
+    (lookId: LookId, node: View | null) => {
+      tileRefs.current[lookId] = node;
+      if (node && lookId === currentRef.current) {
+        focusCurrentTile();
+      }
+    },
+    [focusCurrentTile],
   );
 
   const handleToggle = useCallback(
@@ -123,11 +153,11 @@ export function LookPickerBody({
       onShowAfterChange(nextShowAfter);
       AccessibilityInfo.announceForAccessibility(
         nextShowAfter
-          ? `Showing after, ${getLookLabel(selectedLookId)}`
+          ? `Showing after, ${getLookLabel(selectedLookId, customName)}`
           : 'Showing before, original photo',
       );
     },
-    [onShowAfterChange, selectedLookId],
+    [onShowAfterChange, selectedLookId, customName],
   );
 
   return (
@@ -139,7 +169,7 @@ export function LookPickerBody({
           accessibilityRole="image"
           accessibilityLabel={
             showAfter && hasAppliedLook(selectedLookId)
-              ? `Preview, ${getLookLabel(selectedLookId)}`
+              ? `Preview, ${getLookLabel(selectedLookId, customName)}`
               : 'Preview, original photo'
           }
         >
@@ -178,25 +208,18 @@ export function LookPickerBody({
         onKeyDown={handleTilesKeyDown}
         keyDownEvents={arrowKeyDownEvents}
       >
-        {LOOK_CATALOG.map(look => (
-          <LookPickerTile
-            key={look.id}
-            lookId={look.id}
-            label={look.label}
-            previewUri={previewUri}
-            selected={look.id === selectedLookId}
-            current={look.id === currentLookId}
-            onSelect={onSelectLook}
-            focusRef={node => {
-              tileRefs.current[look.id] = node;
-              if (node && look.id === currentRef.current) {
-                focusCurrentTile();
-              }
-            }}
-          />
-        ))}
+        <LookPickerTiles
+          previewUri={previewUri}
+          currentLookId={currentLookId}
+          selectedLookId={selectedLookId}
+          customLook={customLook}
+          onSelectLook={onSelectLook}
+          onUploadPreset={onUploadPreset}
+          onTileRef={handleTileRef}
+        />
       </View>
       <Text style={styles.note}>{NOTE}</Text>
+      {importError ? <LookImportErrorBanner error={importError} /> : null}
     </View>
   );
 }
@@ -209,7 +232,8 @@ const styles = StyleSheet.create({
   },
   preview: {
     alignSelf: 'stretch',
-    aspectRatio: 312 / 212,
+    // Figma preview height; the picker is wider than 480 so no aspect ratio.
+    height: 326,
     backgroundColor: colors.cardGrayLight,
     overflow: 'hidden',
   },
@@ -226,7 +250,6 @@ const styles = StyleSheet.create({
   },
   tiles: {
     alignSelf: 'stretch',
-    flexDirection: 'row',
     gap: 8,
   },
   note: {
