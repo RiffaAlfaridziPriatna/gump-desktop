@@ -13,7 +13,7 @@ import {
 import {captureAppEvent} from '@lib/observability/posthogClient';
 import {reportError} from '@lib/observability/reportError';
 import {createStateStore} from '@lib/react/state';
-import {isLookId, type LookId} from '@lib/look/types';
+import {isLookId, type CustomLook, type LookId} from '@lib/look/types';
 import {
   DEFAULT_AI_SELECTION_LEVEL,
   isAiSelectionLevel,
@@ -615,6 +615,39 @@ export async function setAlbumDefaultLook(
     }
   });
   await persistAlbum(albumId);
+}
+
+/**
+ * Replaces the album's user preset and persists. On a persist failure the
+ * previous preset is restored and the error rethrown. Returns the previous one.
+ */
+export async function setAlbumCustomLook(
+  albumId: string,
+  customLook: CustomLook,
+): Promise<CustomLook | null> {
+  const album = getAlbumFromState(albumId);
+  if (!album) {
+    throw new Error('Album not found');
+  }
+  const previous = album.customLook ?? null;
+  culledAlbumStore.setState(state => {
+    const entry = state.albums[albumId];
+    if (entry) {
+      entry.customLook = customLook;
+    }
+  });
+  try {
+    await persistAlbum(albumId);
+  } catch (error) {
+    culledAlbumStore.setState(state => {
+      const entry = state.albums[albumId];
+      if (entry) {
+        entry.customLook = previous;
+      }
+    });
+    throw error;
+  }
+  return previous;
 }
 
 export async function setAlbumAiSelectionLevel(

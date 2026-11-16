@@ -3,7 +3,8 @@ import {
   derivePhotoFlags,
   normalizeCullFilters,
 } from '@lib/culling/cullingUtil';
-import {isLookId, type LookId} from '@lib/look/types';
+import {parseCustomLook} from '@domain/valueObjects/LookFinishing';
+import {isLookId, type CustomLook, type LookId} from '@lib/look/types';
 import {
   DEFAULT_AI_SELECTION_LEVEL,
   isAiSelectionLevel,
@@ -145,6 +146,8 @@ export type CulledAlbum = {
   nextPhotoBatchId: number;
   /** Look stamped on new photos; unknown or missing reads as original. */
   defaultLookId: LookId;
+  /** The album's one user preset (.xmp or .cube); missing reads as none. */
+  customLook?: CustomLook | null;
   /** Applied AI selection level; unknown or missing reads as balanced. */
   aiSelectionLevel: AiSelectionLevel;
   /**
@@ -521,6 +524,7 @@ export function normalizePersistedAlbum(album: CulledAlbum): CulledAlbum {
   album.defaultLookId = isLookId(album.defaultLookId)
     ? album.defaultLookId
     : 'original';
+  album.customLook = parseCustomLook(album.customLook);
   album.aiSelectionLevel = isAiSelectionLevel(album.aiSelectionLevel)
     ? album.aiSelectionLevel
     : DEFAULT_AI_SELECTION_LEVEL;
