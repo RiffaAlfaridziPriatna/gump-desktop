@@ -2235,8 +2235,62 @@ uint32_t GrainHash(uint32_t x, uint32_t y) {
   return n ^ (n >> 16);
 }
 
+// Slider units (Lightroom) plus GUMP fields; values arrive from JS already clamped by
+// ParseLookFinishing. vignetteFeather is 0..100.
+struct LookFinishingParams {
+  float texture = 0, clarity = 0, dehaze = 0;
+  float vignetteAmount = 0, vignetteMidpoint = 50, vignetteFeather = 50;
+  float grainAmount = 0, grainSize = 25, grainRoughness = 50;
+  float warmNudge = 0, settleNudge = 0;
+  bool vignetteFrameEllipse = false;
+};
+
+float LookFinishingField(
+    const winrtRN::JSValueObject &object,
+    const char *key,
+    float lo,
+    float hi,
+    float fallback) {
+  const auto it = object.find(key);
+  if (it == object.end()) {
+    return fallback;
+  }
+  const auto type = it->second.Type();
+  if (type != winrtRN::JSValueType::Double && type != winrtRN::JSValueType::Int64) {
+    return fallback;
+  }
+  const double value = it->second.AsDouble();
+  if (!std::isfinite(value)) {
+    return fallback;
+  }
+  return std::clamp(static_cast<float>(value), lo, hi);
+}
+
+std::optional<LookFinishingParams> ParseLookFinishing(const winrtRN::JSValue &value) {
+  if (value.Type() != winrtRN::JSValueType::Object) {
+    return std::nullopt;
+  }
+  const auto &object = value.AsObject();
+  LookFinishingParams p;
+  p.texture = LookFinishingField(object, "texture", -100, 100, 0);
+  p.clarity = LookFinishingField(object, "clarity", -100, 100, 0);
+  p.dehaze = LookFinishingField(object, "dehaze", -100, 100, 0);
+  p.vignetteAmount = LookFinishingField(object, "vignetteAmount", -100, 100, 0);
+  p.vignetteMidpoint = LookFinishingField(object, "vignetteMidpoint", 0, 100, 50);
+  p.vignetteFeather = LookFinishingField(object, "vignetteFeather", 0, 100, 50);
+  p.grainAmount = LookFinishingField(object, "grainAmount", 0, 100, 0);
+  p.grainSize = LookFinishingField(object, "grainSize", 0, 100, 25);
+  p.grainRoughness = LookFinishingField(object, "grainRoughness", 0, 100, 50);
+  p.warmNudge = LookFinishingField(object, "warmNudge", 0, 1, 0);
+  p.settleNudge = LookFinishingField(object, "settleNudge", 0, 1, 0);
+  const auto ellipse = object.find("vignetteFrameEllipse");
+  p.vignetteFrameEllipse = ellipse != object.end() &&
+      ellipse->second.Type() == winrtRN::JSValueType::Boolean && ellipse->second.AsBoolean();
+  return p;
+}
+
 void ApplyLookFinishingBgra(
-    const std::string &lookId,
+    const LookFinishingParams &finishing,
     uint8_t *destData,
     int width,
     int height,
@@ -2247,43 +2301,19 @@ void ApplyLookFinishingBgra(
     return;
   }
 
-  float texture = 0, clarity = 0, dehaze = 0;
-  float vigAmount = 0, vigMidpoint = 50, vigFeather = 0.75f;
-  float grainAmount = 0, grainSize = 25, grainRough = 45;
-  float warmNudge = 0, settleNudge = 0;
-  float darken = 0, blueCrush = 0;
-  bool vigFrameEllipse = false;
-  if (lookId == "warmRomantic") {
-    texture = -5;
-    clarity = -8;
-    dehaze = -3;
-    vigAmount = -8;
-    vigMidpoint = 45;
-    grainAmount = 10;
-    grainSize = 25;
-    grainRough = 45;
-    warmNudge = 0.045f;
-    settleNudge = 0.035f;
-  } else if (lookId == "cleanNatural") {
-    texture = -5;
-    clarity = -5;
-  } else if (lookId == "filmMood") {
-    // Cube = curve70 + warm + pull20. Frame ellipse vignette matches FM_latest_03b.
-    texture = -3;
-    clarity = 0;
-    dehaze = 0;
-    vigAmount = -30;
-    vigMidpoint = 40;
-    vigFeather = 0.75f;
-    vigFrameEllipse = true;
-    grainAmount = 0;
-    warmNudge = 0.0f;
-    settleNudge = 0.0f;
-    blueCrush = 0.0f;
-    darken = 0.0f;
-  } else {
-    return;
-  }
+  const float texture = finishing.texture;
+  const float clarity = finishing.clarity;
+  const float dehaze = finishing.dehaze;
+  const float vigAmount = finishing.vignetteAmount;
+  const float vigMidpoint = finishing.vignetteMidpoint;
+  const float vigFeather = finishing.vignetteFeather / 100.0f;
+  const float grainAmount = finishing.grainAmount;
+  const float grainSize = finishing.grainSize;
+  const float grainRough = finishing.grainRoughness;
+  const float warmNudge = finishing.warmNudge;
+  const float settleNudge = finishing.settleNudge;
+  const float darken = 0, blueCrush = 0;
+  const bool vigFrameEllipse = finishing.vignetteFrameEllipse;
 
   std::vector<uint8_t> bgra(static_cast<size_t>(height) * static_cast<size_t>(stride));
   for (int y = 0; y < height; ++y) {
@@ -2645,6 +2675,7 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
     const std::filesystem::path &sourcePath,
     const std::filesystem::path &destPath,
     const std::string &lookId,
+    const std::optional<LookFinishingParams> &finishing,
     float intensityPercent,
     uint32_t maxPixelSize,
     float jpegQuality) {
@@ -2731,10 +2762,9 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
       }
     }
 
-    if ((lookId == "warmRomantic" || lookId == "cleanNatural" || lookId == "filmMood") &&
-        intensityT > 0.0f) {
+    if (finishing.has_value() && intensityT > 0.0f) {
       ApplyLookFinishingBgra(
-          lookId,
+          *finishing,
           destData,
           pixels.width,
           pixels.height,
@@ -2778,11 +2808,13 @@ void GumpLocalStorage::ApplyLook(
     double intensity,
     double maxPixelSize,
     double jpegQuality,
+    winrtRN::JSValue finishing,
     ReactPromiseJS &&promise) noexcept {
   RunAsync(
       [sourceUri = std::move(sourceUri),
        destPath = std::move(destPath),
        lookId = std::move(lookId),
+       finishingParams = ParseLookFinishing(finishing),
        intensity,
        maxPixelSize,
        jpegQuality]() {
@@ -2807,6 +2839,7 @@ void GumpLocalStorage::ApplyLook(
             sourcePath,
             std::filesystem::path(ToWide(destPath)),
             resolvedLookId,
+            finishingParams,
             intensityPercent,
             maxPixelSize > 0 ? static_cast<uint32_t>(maxPixelSize) : kDetailMaxPixelSize,
             jpegQuality > 0 ? static_cast<float>(jpegQuality) : kDetailJpegQuality);

@@ -1,4 +1,4 @@
-import type {LookDefinition, LookId} from './types';
+import type {LookDefinition, LookId, NativeLookFinishing} from './types';
 
 /**
  * Apply Look catalog. Grade source of truth is the Lightroom-trained .cube
@@ -17,16 +17,61 @@ export const LOOK_CATALOG: readonly LookDefinition[] = [
     id: 'cleanNatural',
     label: 'Clean Natural',
     lutName: 'cleanNatural',
+    finishing: {
+      texture: -5,
+      clarity: -5,
+      dehaze: 0,
+      vignetteAmount: 0,
+      vignetteMidpoint: 50,
+      vignetteFeather: 75,
+      vignetteRoundness: 0,
+      grainAmount: 0,
+      grainSize: 25,
+      grainRoughness: 45,
+      warmNudge: 0,
+      settleNudge: 0,
+      vignetteFrameEllipse: false,
+    },
   },
   {
     id: 'warmRomantic',
     label: 'Warm Romantic',
     lutName: 'warmRomantic',
+    finishing: {
+      texture: -5,
+      clarity: -8,
+      dehaze: -3,
+      vignetteAmount: -8,
+      vignetteMidpoint: 45,
+      vignetteFeather: 75,
+      vignetteRoundness: 0,
+      grainAmount: 10,
+      grainSize: 25,
+      grainRoughness: 45,
+      warmNudge: 0.045,
+      settleNudge: 0.035,
+      vignetteFrameEllipse: false,
+    },
   },
   {
     id: 'filmMood',
     label: 'Film Mood',
     lutName: 'filmMood',
+    finishing: {
+      texture: -3,
+      clarity: 0,
+      dehaze: 0,
+      vignetteAmount: -30,
+      vignetteMidpoint: 40,
+      vignetteFeather: 75,
+      vignetteRoundness: 0,
+      grainAmount: 0,
+      grainSize: 25,
+      grainRoughness: 45,
+      warmNudge: 0,
+      settleNudge: 0,
+      vignetteFrameEllipse: true,
+    },
   },
 ] as const;
 
@@ -54,4 +99,11 @@ export function resolveLookLutName(lookId: LookId): string | null {
     return null;
   }
   return getLookDefinition(lookId).lutName ?? lookId;
+}
+
+/** Finishing for the native bake; undefined (original, custom) means none. */
+export function resolveLookFinishing(
+  lookId: LookId,
+): NativeLookFinishing | undefined {
+  return getLookDefinition(lookId).finishing;
 }

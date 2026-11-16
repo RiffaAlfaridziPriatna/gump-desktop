@@ -3620,13 +3620,26 @@ RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
   return data;
 }
 
-/// Presence/Effects that a 3D LUT cannot carry. Amounts mirror Lightroom Develop
-/// at preset Amount 100; scaled by look intensity.
+static CGFloat GumpLookFinishingValue(NSDictionary *finishing, NSString *key, CGFloat lo, CGFloat hi, CGFloat fallback)
+{
+  id raw = finishing[key];
+  if (![raw isKindOfClass:[NSNumber class]]) {
+    return fallback;
+  }
+  const double value = [raw doubleValue];
+  if (!isfinite(value)) {
+    return fallback;
+  }
+  return MAX(lo, MIN(hi, (CGFloat)value));
+}
+
+/// Presence/Effects that a 3D LUT cannot carry. Values come from JS (lookCatalog)
+/// as Lightroom slider units plus GUMP fields; scaled by look intensity.
 - (CIImage *)applyLookFinishingToImage:(CIImage *)image
-                                lookId:(NSString *)lookId
+                             finishing:(NSDictionary *)finishing
                              intensity:(CGFloat)intensityPercent
 {
-  if (image == nil || lookId.length == 0) {
+  if (image == nil || finishing == nil) {
     return image;
   }
   const CGFloat t = MAX(0.0, MIN(1.0, intensityPercent / 100.0));
@@ -3635,51 +3648,20 @@ RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
   }
 
   // LR Presence / Effects (spatial). Tone/WB/HSL live in the cube.
-  CGFloat texture = 0, clarity = 0, dehaze = 0;
-  CGFloat vigAmount = 0, vigMidpoint = 50, vigFeather = 0.75;
-  CGFloat grainAmount = 0, grainSize = 25, grainRough = 45;
-  CGFloat warmNudge = 0, settleNudge = 0;
-  CGFloat darken = 0, blueCrush = 0;
-  BOOL vigFrameEllipse = NO;
-  BOOL known = NO;
-  if ([lookId isEqualToString:@"warmRomantic"]) {
-    known = YES;
-    texture = -5;
-    clarity = -8;
-    dehaze = -3;
-    vigAmount = -8;
-    vigMidpoint = 45;
-    grainAmount = 10;
-    grainSize = 25;
-    grainRough = 45;
-    warmNudge = 0.045;
-    settleNudge = 0.035;
-  } else if ([lookId isEqualToString:@"cleanNatural"]) {
-    known = YES;
-    texture = -5;
-    clarity = -5;
-    dehaze = 0;
-    vigAmount = 0;
-    grainAmount = 0;
-  } else if ([lookId isEqualToString:@"filmMood"]) {
-    known = YES;
-    // Cube = curve70 + warm + pull20. Pair with frame-ellipse vig −30 (FM_latest_03b).
-    texture = -3;
-    clarity = 0;
-    dehaze = 0;
-    vigAmount = -30;
-    vigMidpoint = 40;
-    vigFeather = 0.75;
-    vigFrameEllipse = YES;
-    grainAmount = 0;
-    warmNudge = 0;
-    settleNudge = 0;
-    blueCrush = 0;
-    darken = 0;
-  }
-  if (!known) {
-    return image;
-  }
+  CGFloat texture = GumpLookFinishingValue(finishing, @"texture", -100, 100, 0);
+  CGFloat clarity = GumpLookFinishingValue(finishing, @"clarity", -100, 100, 0);
+  CGFloat dehaze = GumpLookFinishingValue(finishing, @"dehaze", -100, 100, 0);
+  CGFloat vigAmount = GumpLookFinishingValue(finishing, @"vignetteAmount", -100, 100, 0);
+  CGFloat vigMidpoint = GumpLookFinishingValue(finishing, @"vignetteMidpoint", 0, 100, 50);
+  CGFloat vigFeather = GumpLookFinishingValue(finishing, @"vignetteFeather", 0, 100, 50) / 100.0;
+  CGFloat grainAmount = GumpLookFinishingValue(finishing, @"grainAmount", 0, 100, 0);
+  CGFloat grainSize = GumpLookFinishingValue(finishing, @"grainSize", 0, 100, 25);
+  CGFloat grainRough = GumpLookFinishingValue(finishing, @"grainRoughness", 0, 100, 50);
+  CGFloat warmNudge = GumpLookFinishingValue(finishing, @"warmNudge", 0, 1, 0);
+  CGFloat settleNudge = GumpLookFinishingValue(finishing, @"settleNudge", 0, 1, 0);
+  const CGFloat darken = 0, blueCrush = 0;
+  id rawFrameEllipse = finishing[@"vignetteFrameEllipse"];
+  const BOOL vigFrameEllipse = [rawFrameEllipse isKindOfClass:[NSNumber class]] && [rawFrameEllipse boolValue];
 
   CIImage *current = image;
   const CGRect bounds = image.extent;
@@ -3922,6 +3904,7 @@ RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
 - (NSString *)applyLookLutFromPath:(NSString *)sourcePath
                             toPath:(NSString *)destPath
                             lookId:(NSString *)lookId
+                         finishing:(NSDictionary *)finishing
                          intensity:(CGFloat)intensityPercent
                       maxPixelSize:(NSUInteger)maxPixelSize
                        jpegQuality:(CGFloat)jpegQuality
@@ -4008,11 +3991,9 @@ RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
     }
   }
 
-  if (intensityPercent > 0.0 &&
-      ([lookId isEqualToString:@"warmRomantic"] || [lookId isEqualToString:@"cleanNatural"] ||
-       [lookId isEqualToString:@"filmMood"])) {
+  if (intensityPercent > 0.0 && finishing != nil) {
     CIImage *finished = [self applyLookFinishingToImage:output
-                                                 lookId:lookId
+                                              finishing:finishing
                                               intensity:intensityPercent];
     if (finished != nil) {
       output = finished;
@@ -4067,6 +4048,7 @@ RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
                   intensity:(nonnull NSNumber *)intensity
                   maxPixelSize:(nonnull NSNumber *)maxPixelSize
                   jpegQuality:(nonnull NSNumber *)jpegQuality
+                  finishing:(NSDictionary *)finishing
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 {
@@ -4088,6 +4070,7 @@ RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
           [self applyLookLutFromPath:sourcePath
                               toPath:destPath
                               lookId:lookId ?: @"original"
+                           finishing:[finishing isKindOfClass:[NSDictionary class]] ? finishing : nil
                            intensity:intensity.doubleValue
                         maxPixelSize:maxPixelSize.unsignedIntegerValue
                          jpegQuality:jpegQuality.doubleValue
