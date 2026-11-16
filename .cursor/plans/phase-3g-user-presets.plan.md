@@ -20,7 +20,7 @@ todos:
     status: completed
   - id: s9f
     content: Native - preset file picker, LUT file write, bake from absolute LUT path
-    status: pending
+    status: completed
   - id: s9g
     content: Import flow - pick, read, parse, convert, write, replace album preset, typed errors and logging
     status: pending
@@ -217,12 +217,12 @@ Branch: base from `feat/phase-3`.
   JS bridge: `src/lib/storage/localStorage.ts`, `src/lib/media/filePicker.ts`.
 - **Rules:** each revision writes a new file name (`custom-<revision>.cube`), so the Windows path cache stays valid.
 - **Mirror:** `pickImages` (`GumpFilePicker.mm:119`), absolute-path check near `GumpLocalStorage.mm:3438`, `ApplyLook` (`GumpLocalStorage.cpp:2774`).
-- **Open:** fix the macOS keyword-as-data parse (H1) in native too, or rely on canonical files only.
+- **Open (resolved, user 2026-11-16):** harden native too. Both parsers skip keyword lines, require exactly n³ rows, size 2..65, file ≤ 32 MB; a custom LUT that fails rejects `ELOOK_LUT_PARSE`.
 - **Acceptance:**
-  - [ ] `lutPath` outside `culling-albums` rejects
-  - [ ] `fileName` with `/`, `\` or `..` rejects
-  - [ ] Picker cancel resolves null, no error
-  - [ ] Built-ins still bake as before
+  - [x] `lutPath` outside `culling-albums` rejects. macOS guard proven in a standalone driver on the extracted code (outside, symlink file and dir escape, `..`, relative, sibling prefix, root itself → reject; missing → `ELOOK_LUT_MISSING`). Windows by code only, not built
+  - [x] `fileName` with `/`, `\` or `..` rejects (also `.`; Windows also `:`). macOS driver-proven; Windows by code only
+  - [x] Picker cancel resolves null, no error. JS bridge tested; native by code only (macOS builds, picker not clicked)
+  - [x] Built-ins still bake as before. macOS: old vs new parser yields byte-identical cube data for all 3 built-ins (driver), `lutPath` null keeps the bundled path, Debug app builds. No in-app bake vs golden JPEGs; Windows not built
 - **Out of scope:** parsing (s9c), engine (s9d), JS flow (s9g).
 - **Gate:** S, R
 
