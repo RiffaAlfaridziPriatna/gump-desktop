@@ -23,10 +23,10 @@ todos:
     status: completed
   - id: s9g
     content: Import flow - pick, read, parse, convert, write, replace album preset, typed errors and logging
-    status: pending
+    status: completed
   - id: s9h
     content: Bake path - custom LUT path, finishing and revision in bake, preview and detail cache keys
-    status: pending
+    status: completed
   - id: s9i
     content: Picker UI - Upload preset tile, custom tile, error banner (presentational)
     status: completed
@@ -236,13 +236,14 @@ Branch: base from `feat/phase-3`.
 - **Scope:** `src/lib/look/importAlbumPreset.ts`: pick → read text (`fetch(file://)`) → `.xmp`: `parseXmpPreset` → `buildLut` + `splitFinishing`; `.cube`: `parseCube` → `writeAlbumLookFile` → store action replaces `album.customLook` → delete the old revision file. Hook `src/hooks/useImportAlbumPreset.ts` returns `{importPreset, status, error: 'unsupported' | 'unreadable' | null}`.
 - **Rules:** any failure keeps the previous preset and look ("Your album look hasn't changed"). Each failure goes to `reportError` with reason, extension and size; no file content or full path. Ignored `.xmp` fields are logged once per import. Native read or write failure maps to `unreadable`. Cancel is not an error.
 - **Mirror:** `useAlbumLookFlow.ts`, `setAlbumDefaultLook` store action.
-- **Open:** "New photos only" after a replace: photos that keep `lookId: 'custom'` re-bake with the new preset at upload, because one preset file exists. Accept, or keep old revisions while referenced?
+- **Open (resolved, user 2026-11-16):** re-bake with the new preset. One preset file per album; every `'custom'` photo bakes with the latest preset, the old revision file is deleted after a replace. (Keeping old revisions was considered and dropped: per-photo revision pin, ~10 files.)
 - **Acceptance:**
-  - [ ] Valid `.xmp` and `.cube` set `customLook` with the file-name label and a new revision
-  - [ ] Unsupported and unreadable keep the old preset and return the matching error
-  - [ ] Old revision file deleted after a successful replace
-  - [ ] Every failure logged once, no swallowed error
+  - [x] Valid `.xmp` and `.cube` set `customLook` with the file-name label and a new revision (Jest, mocked native; no real-file import in the app)
+  - [x] Unsupported and unreadable keep the old preset and return the matching error
+  - [x] Old revision file deleted after a successful replace (via `deleteLocalPhotoFile`; Jest only)
+  - [x] Every failure logged once, no swallowed error (a persist failure is logged by `persistAlbum`; `reportError` dedupes the same object)
 - **Out of scope:** UI, cache keys.
+- **Done (2026-11-16, W5):** commit 722e37a. Store album carries `customLook` (`types.ts` normalize, `storage.ts` both directions); store action `setAlbumCustomLook` rolls back on persist failure and returns the previous preset. `src/lib/look/customLookFile.ts` holds the file name, revision and path helpers. Logs carry albumId, extension, size, step, reason; no parser detail (it can quote file content), no path. Ignored `.xmp` fields go to PostHog `look_preset_fields_ignored` once per import. Hook keeps `error` until the next non-cancelled import; a concurrent call resolves `cancelled`. The import does not change `defaultLookId`; selecting the custom tile after the first upload is s9j. Tests: `importAlbumPreset`, `setAlbumCustomLook`, `useImportAlbumPreset`.
 - **Gate:** R
 
 ### s9h. Bake path for the custom look [W5, parallel: s9g]
@@ -254,10 +255,11 @@ Branch: base from `feat/phase-3`.
 - **Scope:** `bakeLook.ts`, `uploadLookBake.ts`: for `'custom'` pass `lutPath` (album id + revision) and `customLook.finishing`. Cache keys and bake file names (`previewCacheKey`, `lookDetailCacheKey`, `resolveBakeDestinationPath`) include the revision for `'custom'`.
 - **Mirror:** `lookDetailCacheKey` and `isLookDetailCurrent` in `bakeLook.ts`.
 - **Acceptance:**
-  - [ ] Built-in look keys unchanged (existing tests pass)
-  - [ ] Custom keys change when the revision changes
-  - [ ] Missing preset for a `'custom'` photo bakes as original and reports
+  - [x] Built-in look keys unchanged (existing tests pass, plus an explicit key and file-name test)
+  - [x] Custom keys change when the revision changes
+  - [x] Missing preset for a `'custom'` photo bakes as original and reports
 - **Out of scope:** import, UI.
+- **Done (2026-11-16, W5):** commit a5bba14. `bakePhotoLook`, `bakeLooksForPhotos`, `ensureLookDetail`, `getCachedLookPreviewUri`, `bakeLookPreviewUri` take an optional `CustomLookSource` (`{albumId, customLook}`); `uploadLookBake` passes it from the store. Key part for custom is `custom-<revision>`; built-ins keep the bare id. `.cube` path derives from the photo/thumb path (`culling-albums/<albumId>/looks/custom-<revision>.cube`, shortcut: JS has no root API). Finishing via `toNativeFinishing` (frame ellipse). Preview bake moved to `bakeLookPreview.ts` (bakeLook.ts would pass 300 lines). `photoNeedsLookBake` is now true for `'custom'`. Handoff to s9j: export (`prepareExport.ts`) and the detail screen / picker preview do not pass `CustomLookSource` yet, so a custom photo exports as original with a report; `hasAppliedLook('custom')` stays false for the UI. Not verified: in-app bake of a real preset (app not run), Windows.
 - **Gate:** R
 
 ### s9i. Picker UI: Upload preset, custom tile, error banner [W3, parallel: s9d, s9e]
