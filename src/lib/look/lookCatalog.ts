@@ -38,7 +38,14 @@ export function getLookDefinition(lookId: LookId): LookDefinition {
   return LOOK_BY_ID.get(lookId) ?? LOOK_CATALOG[0]!;
 }
 
-export function getLookLabel(lookId: LookId): string {
+/** 'custom' is labelled with the album's preset name; built-ins come from the catalog. */
+export function getLookLabel(
+  lookId: LookId,
+  customLookName?: string | null,
+): string {
+  if (lookId === 'custom') {
+    return customLookName || 'Custom';
+  }
   return getLookDefinition(lookId).label;
 }
 

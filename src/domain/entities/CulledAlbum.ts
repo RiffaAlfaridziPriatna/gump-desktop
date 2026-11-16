@@ -1,4 +1,5 @@
-import {isLookId, type LookId} from '../valueObjects/Look';
+import {resolveLookId, type LookId} from '../valueObjects/Look';
+import {parseCustomLook, requireCustomLook, type CustomLook} from '../valueObjects/LookFinishing';
 import {
   DEFAULT_AI_SELECTION_LEVEL,
   isAiSelectionLevel,
@@ -52,7 +53,8 @@ export class CulledAlbum {
   private _cullingHasUploads: boolean;
   private _nextFaceClusterId: number;
   private _nextPhotoBatchId: number;
-  private _defaultLookId: LookId;
+  private _defaultLookId: LookId = 'original';
+  private _customLook: CustomLook | null;
   private _aiSelectionLevel: AiSelectionLevel;
   private _totalPhotos: number;
   private _totalStorage: number;
@@ -76,6 +78,7 @@ export class CulledAlbum {
     nextFaceClusterId?: number;
     nextPhotoBatchId?: number;
     defaultLookId?: unknown;
+    customLook?: unknown;
     aiSelectionLevel?: unknown;
     totalPhotos?: number;
     totalStorage?: number;
@@ -103,9 +106,8 @@ export class CulledAlbum {
       data.nextPhotoBatchId >= 1
         ? data.nextPhotoBatchId
         : 1;
-    this._defaultLookId = isLookId(data.defaultLookId)
-      ? data.defaultLookId
-      : 'original';
+    this._customLook = parseCustomLook(data.customLook);
+    this.setDefaultLookId(data.defaultLookId);
     this._aiSelectionLevel = isAiSelectionLevel(data.aiSelectionLevel)
       ? data.aiSelectionLevel
       : DEFAULT_AI_SELECTION_LEVEL;
@@ -137,6 +139,9 @@ export class CulledAlbum {
 
   get defaultLookId(): LookId {
     return this._defaultLookId;
+  }
+  get customLook(): CustomLook | null {
+    return this._customLook;
   }
 
   get aiSelectionLevel(): AiSelectionLevel {
@@ -216,7 +221,11 @@ export class CulledAlbum {
   }
 
   setDefaultLookId(lookId: unknown): void {
-    this._defaultLookId = isLookId(lookId) ? lookId : 'original';
+    this._defaultLookId = resolveLookId(lookId, this._customLook !== null);
+  }
+
+  replaceCustomLook(customLook: CustomLook): void {
+    this._customLook = requireCustomLook(customLook);
   }
 
   setAiSelectionLevel(level: unknown): void {
@@ -249,6 +258,7 @@ export class CulledAlbum {
       nextFaceClusterId: this._nextFaceClusterId,
       nextPhotoBatchId: this._nextPhotoBatchId,
       defaultLookId: this._defaultLookId,
+      customLook: this._customLook,
       aiSelectionLevel: this._aiSelectionLevel,
       totalPhotos: this._totalPhotos,
       totalStorage: this._totalStorage,
@@ -275,6 +285,7 @@ export class CulledAlbum {
       nextFaceClusterId: data.nextFaceClusterId,
       nextPhotoBatchId: data.nextPhotoBatchId,
       defaultLookId: data.defaultLookId,
+      customLook: data.customLook,
       aiSelectionLevel: data.aiSelectionLevel,
       totalPhotos: data.totalPhotos,
       totalStorage: data.totalStorage,
