@@ -1,4 +1,4 @@
-import {getPhotoById} from '@lib/culledAlbum/store';
+import {getAlbum, getPhotoById} from '@lib/culledAlbum/store';
 import {
   bakeLooksForPhotos,
   photoNeedsLookBake,
@@ -227,6 +227,7 @@ export async function bakeLooksForUploadBatch(
         session.status = 'baking';
         emit(albumId);
       },
+      {albumId, customLook: getAlbum(albumId)?.customLook ?? null},
     );
     const fileByPhotoId = new Map<string, BakedUploadFile>();
     for (const [photoId, baked] of bakedByPhotoId) {

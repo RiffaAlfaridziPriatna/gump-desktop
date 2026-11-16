@@ -7,7 +7,7 @@ import {LookPreviewImage} from '../src/components/look/LookPreviewImage';
 const mockBakeLookPreviewUri = jest.fn();
 const mockGetCachedLookPreviewUri = jest.fn();
 
-jest.mock('../src/lib/look/bakeLook', () => ({
+jest.mock('../src/lib/look/bakeLookPreview', () => ({
   bakeLookPreviewUri: (...args: unknown[]) => mockBakeLookPreviewUri(...args),
   getCachedLookPreviewUri: (...args: unknown[]) =>
     mockGetCachedLookPreviewUri(...args),

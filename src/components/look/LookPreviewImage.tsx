@@ -1,7 +1,7 @@
 import {
   bakeLookPreviewUri,
   getCachedLookPreviewUri,
-} from '@lib/look/bakeLook';
+} from '@lib/look/bakeLookPreview';
 import {hasAppliedLook, type LookId} from '@lib/look/types';
 import {getErrorMessage} from '@lib/observability';
 import {memo, useEffect, useState} from 'react';

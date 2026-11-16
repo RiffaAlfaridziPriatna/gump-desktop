@@ -1,4 +1,8 @@
 import type {CulledAlbumPhoto} from '@lib/culledAlbum/types';
+import {
+  resolveCustomLookBake,
+  type CustomLookSource,
+} from '@lib/look/customLookFile';
 import {resolveLookFinishing} from '@lib/look/lookCatalog';
 import {
   LOOK_BAKE_INTENSITY,
@@ -10,7 +14,10 @@ import {
   applyLookToJpeg,
   getLocalFileByteSize,
 } from '@lib/storage/localStorage';
+import {reportError} from '@lib/observability/reportError';
 import type {FileAsset} from '@services/upload/types';
+
+export type {CustomLookSource} from '@lib/look/customLookFile';
 
 export const LOOK_BAKE_CONCURRENCY = 4;
 export const LOOK_PREVIEW_MAX_PIXEL_SIZE = 960;
@@ -32,7 +39,7 @@ export type BakedLookResult = {
   size: number;
 };
 
-const QUALITY_SETTINGS: Record<
+export const QUALITY_SETTINGS: Record<
   BakeLookQuality,
   {maxPixelSize: number; jpegQuality: number}
 > = {
@@ -41,9 +48,7 @@ const QUALITY_SETTINGS: Record<
   preview: {maxPixelSize: LOOK_PREVIEW_MAX_PIXEL_SIZE, jpegQuality: 0.88},
 };
 
-const previewUriCache = new Map<string, string>();
-
-function stripUnsafeFileNameChars(value: string): string {
+export function stripUnsafeFileNameChars(value: string): string {
   let result = '';
   for (const char of value) {
     const code = char.charCodeAt(0);
@@ -55,17 +60,18 @@ function stripUnsafeFileNameChars(value: string): string {
   return result || 'photo';
 }
 
-function previewCacheKey(
-  sourceUri: string,
-  lookId: LookId,
-  maxPixelSize: number,
-): string {
-  return `${sourceUri}|${lookId}|${LOOK_BAKE_INTENSITY}|${maxPixelSize}`;
+/** Built-ins keep their bare id so existing keys and bake files stay valid. */
+export function lookKeyPart(lookId: LookId, revision?: string): string {
+  return lookId === 'custom' ? `custom-${revision ?? ''}` : lookId;
+}
+
+export function hasBakeableLook(lookId: LookId, revision?: string): boolean {
+  return hasAppliedLook(lookId) || (lookId === 'custom' && !!revision);
 }
 
 /** Cache key stored on FileAsset.lookDetailKey for a 4096 look bake. */
-export function lookDetailCacheKey(lookId: LookId): string {
-  return `${lookId}|${LOOK_BAKE_INTENSITY}|${LOOK_DETAIL_MAX_PIXEL_SIZE}`;
+export function lookDetailCacheKey(lookId: LookId, revision?: string): string {
+  return `${lookKeyPart(lookId, revision)}|${LOOK_BAKE_INTENSITY}|${LOOK_DETAIL_MAX_PIXEL_SIZE}`;
 }
 
 export function isUsableLookDetailUri(
@@ -77,67 +83,77 @@ export function isUsableLookDetailUri(
 export function isLookDetailCurrent(
   file: Pick<FileAsset, 'lookDetailUri' | 'lookDetailKey'>,
   lookId: LookId,
+  revision?: string,
 ): boolean {
-  if (!hasAppliedLook(lookId)) {
+  if (!hasBakeableLook(lookId, revision)) {
     return false;
   }
   if (!isUsableLookDetailUri(file.lookDetailUri) || !file.lookDetailKey) {
     return false;
   }
-  return file.lookDetailKey === lookDetailCacheKey(lookId);
+  return file.lookDetailKey === lookDetailCacheKey(lookId, revision);
 }
 
+/** True for 'custom' too: a photo whose album lost its preset reports and bakes as original. */
 export function photoNeedsLookBake(photo: CulledAlbumPhoto): boolean {
-  return hasAppliedLook(photo.lookId);
+  return hasAppliedLook(photo.lookId) || photo.lookId === 'custom';
 }
 
 export async function resolveBakeDestinationPath(
   photo: CulledAlbumPhoto,
   quality: BakeLookQuality,
+  revision?: string,
 ): Promise<string> {
   const staging = await ensureExportStagingDirectory();
   const settings = QUALITY_SETTINGS[quality];
   const safeId = stripUnsafeFileNameChars(photo.photoId);
-  const fileName = `${safeId}-${photo.lookId}-${LOOK_BAKE_INTENSITY}-${settings.maxPixelSize}.jpg`;
+  const fileName = `${safeId}-${lookKeyPart(photo.lookId, revision)}-${LOOK_BAKE_INTENSITY}-${settings.maxPixelSize}.jpg`;
   const separator = staging.path.includes('\\') ? '\\' : '/';
   return `${staging.path}${separator}looks${separator}${fileName}`;
 }
 
-async function resolvePreviewDestinationPath(
-  sourceUri: string,
-  lookId: LookId,
-): Promise<string> {
-  const staging = await ensureExportStagingDirectory();
-  const settings = QUALITY_SETTINGS.preview;
-  const hash = stripUnsafeFileNameChars(
-    sourceUri.replace(/[^a-zA-Z0-9]+/g, '').slice(-48) || 'preview',
-  );
-  const fileName = `preview-${hash}-${lookId}-${LOOK_BAKE_INTENSITY}-${settings.maxPixelSize}.jpg`;
-  const separator = staging.path.includes('\\') ? '\\' : '/';
-  return `${staging.path}${separator}looks${separator}${fileName}`;
+function originalResult(photo: CulledAlbumPhoto): BakedLookResult {
+  return {photoId: photo.photoId, uri: photo.file.uri, size: photo.file.size};
 }
 
+/** `custom` is the album's preset; required for a 'custom' photo to bake with it. */
 export async function bakePhotoLook(
   photo: CulledAlbumPhoto,
   quality: BakeLookQuality = 'compressed',
+  custom?: CustomLookSource,
 ): Promise<BakedLookResult> {
   if (!photoNeedsLookBake(photo)) {
-    return {
+    return originalResult(photo);
+  }
+  const customBake =
+    photo.lookId === 'custom'
+      ? resolveCustomLookBake(photo.file.uri, custom)
+      : null;
+  if (photo.lookId === 'custom' && !customBake) {
+    reportError(new Error('Custom look photo without an album preset'), {
+      source: 'bake_look',
+      albumId: custom?.albumId ?? null,
       photoId: photo.photoId,
-      uri: photo.file.uri,
-      size: photo.file.size,
-    };
+    });
+    return originalResult(photo);
   }
 
   const settings = QUALITY_SETTINGS[quality];
-  const destPath = await resolveBakeDestinationPath(photo, quality);
+  const destPath = await resolveBakeDestinationPath(
+    photo,
+    quality,
+    customBake?.revision,
+  );
   const baked = await applyLookToJpeg({
     sourceUri: photo.file.uri,
     destPath,
-    lookId: photo.lookId as LookId,
+    lookId: photo.lookId,
     maxPixelSize: settings.maxPixelSize,
     jpegQuality: settings.jpegQuality,
-    finishing: resolveLookFinishing(photo.lookId as LookId),
+    finishing: customBake
+      ? customBake.finishing
+      : resolveLookFinishing(photo.lookId),
+    lutPath: customBake?.lutPath,
   });
 
   if (!baked.uri) {
@@ -163,72 +179,27 @@ export async function bakePhotoLook(
  */
 export async function ensureLookDetail(
   photo: CulledAlbumPhoto,
+  custom?: CustomLookSource,
 ): Promise<{lookDetailUri: string | null; lookDetailKey: string | null}> {
-  if (!hasAppliedLook(photo.lookId)) {
+  const revision =
+    photo.lookId === 'custom' ? custom?.customLook?.revision : undefined;
+  if (!hasBakeableLook(photo.lookId, revision)) {
     return {lookDetailUri: null, lookDetailKey: null};
   }
 
-  const key = lookDetailCacheKey(photo.lookId);
-  if (isLookDetailCurrent(photo.file, photo.lookId)) {
+  const key = lookDetailCacheKey(photo.lookId, revision);
+  if (isLookDetailCurrent(photo.file, photo.lookId, revision)) {
     return {
       lookDetailUri: photo.file.lookDetailUri!,
       lookDetailKey: key,
     };
   }
 
-  const baked = await bakePhotoLook(photo, 'compressed');
+  const baked = await bakePhotoLook(photo, 'compressed', custom);
   return {
     lookDetailUri: baked.uri,
     lookDetailKey: key,
   };
-}
-
-/** Sync peek of an already-baked in-app look preview (avoids Before→After blank). */
-export function getCachedLookPreviewUri(
-  sourceUri: string,
-  lookId: LookId,
-): string | undefined {
-  if (!sourceUri || !hasAppliedLook(lookId)) {
-    return undefined;
-  }
-  const settings = QUALITY_SETTINGS.preview;
-  return previewUriCache.get(
-    previewCacheKey(sourceUri, lookId, settings.maxPixelSize),
-  );
-}
-
-/** Display preview using the same native .cube LUT bake path as export (smaller pixel budget). */
-export async function bakeLookPreviewUri(
-  sourceUri: string,
-  lookId: LookId,
-): Promise<string> {
-  if (!sourceUri || !hasAppliedLook(lookId)) {
-    return sourceUri;
-  }
-
-  const settings = QUALITY_SETTINGS.preview;
-  const key = previewCacheKey(sourceUri, lookId, settings.maxPixelSize);
-  const cached = previewUriCache.get(key);
-  if (cached) {
-    return cached;
-  }
-
-  const destPath = await resolvePreviewDestinationPath(sourceUri, lookId);
-  const baked = await applyLookToJpeg({
-    sourceUri,
-    destPath,
-    lookId,
-    maxPixelSize: settings.maxPixelSize,
-    jpegQuality: settings.jpegQuality,
-    finishing: resolveLookFinishing(lookId),
-  });
-
-  if (!baked.uri) {
-    throw new Error('Failed to bake look preview');
-  }
-
-  previewUriCache.set(key, baked.uri);
-  return baked.uri;
 }
 
 async function mapPool<T, R>(
@@ -266,6 +237,7 @@ export async function bakeLooksForPhotos(
   photos: CulledAlbumPhoto[],
   quality: BakeLookQuality = 'compressed',
   onProgress?: (progress: BakeLookProgress) => void,
+  custom?: CustomLookSource,
 ): Promise<Map<string, BakedLookResult>> {
   const resultByPhotoId = new Map<string, BakedLookResult>();
   const needingBake = photos.filter(photoNeedsLookBake);
@@ -281,7 +253,7 @@ export async function bakeLooksForPhotos(
   const baked = await mapPool(
     needingBake,
     LOOK_BAKE_CONCURRENCY,
-    async photo => bakePhotoLook(photo, quality),
+    async photo => bakePhotoLook(photo, quality, custom),
     (completed, bakeTotal) => {
       onProgress?.({
         completed,

@@ -17,11 +17,8 @@ import {
   domainPhotoToLegacy,
   legacyPhotoToDomain,
 } from '@lib/culledAlbum/photoMapper';
-import {
-  bakeLookPreviewUri,
-  bakePhotoLook,
-  lookDetailCacheKey,
-} from '@lib/look/bakeLook';
+import {bakePhotoLook, lookDetailCacheKey} from '@lib/look/bakeLook';
+import {bakeLookPreviewUri} from '@lib/look/bakeLookPreview';
 import {LOOK_BAKE_INTENSITY} from '@lib/look/types';
 import {makeCulledAlbumPhoto, makeUploadFile} from './helpers/fixtures';
 

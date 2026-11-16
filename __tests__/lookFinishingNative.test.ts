@@ -17,7 +17,8 @@ jest.mock('@lib/export/nativeExport', () => ({
   ensureExportStagingDirectory: async () => ({path: '/staging'}),
 }));
 
-import {bakeLookPreviewUri, bakePhotoLook} from '@lib/look/bakeLook';
+import {bakePhotoLook} from '@lib/look/bakeLook';
+import {bakeLookPreviewUri} from '@lib/look/bakeLookPreview';
 import {resolveLookFinishing} from '@lib/look/lookCatalog';
 import {applyLookToJpeg} from '@lib/storage/localStorage';
 import {makeCulledAlbumPhoto} from './helpers/fixtures';

@@ -1,3 +1,5 @@
+import {toNativeFinishing} from '@lib/look/developToLut';
+import type {CustomLook, NativeLookFinishing} from '@lib/look/types';
 import {normalizeNativeFileUri} from '@lib/storage/localStorage';
 
 const CULLING_ALBUMS_DIR = 'culling-albums';
@@ -37,4 +39,42 @@ export function customLookFilePath(
     return null;
   }
   return `${path.slice(0, index + marker.length)}looks/${customLookFileName(revision)}`;
+}
+
+/** What a `'custom'` bake needs from the album; `customLook` null = no preset. */
+export type CustomLookSource = {albumId: string; customLook: CustomLook | null};
+
+export type CustomLookBake = {
+  revision: string;
+  lutPath: string;
+  finishing?: NativeLookFinishing;
+};
+
+/**
+ * Native inputs for a `'custom'` bake of a file inside the album folder.
+ * Null when the album has no preset (the caller bakes as original and reports).
+ */
+export function resolveCustomLookBake(
+  albumFileUri: string,
+  source: CustomLookSource | undefined,
+): CustomLookBake | null {
+  const customLook = source?.customLook;
+  if (!source || !customLook) {
+    return null;
+  }
+  const lutPath = customLookFilePath(
+    albumFileUri,
+    source.albumId,
+    customLook.revision,
+  );
+  if (!lutPath) {
+    throw new Error('Custom look source file is outside the album folder');
+  }
+  return {
+    revision: customLook.revision,
+    lutPath,
+    finishing: customLook.finishing
+      ? toNativeFinishing(customLook.finishing)
+      : undefined,
+  };
 }

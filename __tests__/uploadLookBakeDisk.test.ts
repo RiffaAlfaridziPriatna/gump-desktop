@@ -29,6 +29,7 @@ jest.mock('@lib/observability/reportError', () => ({
 }));
 jest.mock('@lib/culledAlbum/store', () => ({
   getPhotoById: (_albumId: string, photoId: string) => mockPhotos[photoId],
+  getAlbum: () => null,
 }));
 jest.mock('@lib/look/bakeLook', () => ({
   photoNeedsLookBake: (photo: {lookId?: string}) => Boolean(photo.lookId),
