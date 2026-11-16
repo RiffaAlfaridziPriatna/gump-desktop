@@ -1,14 +1,14 @@
 import { clamp } from './developCurve';
 import type { DevelopSettings } from './developSettings';
 
-// Spike strengths (s9a K0); GUMP's own guesses, not Adobe's.
+// s9a joint-fit constants (without baseChroma 1.09, which would break identity); GUMP's own, not Adobe's.
 const K = {
-  hueDeg: 30,
-  hslSat: 1,
-  hslLum: 0.25,
-  vib: 0.6,
-  split: 0.25,
-  grade: 0.25,
+  hueDeg: 45.286030769348145,
+  hslSat: 1.1737067699432373,
+  hslLum: 0.27841387316584587,
+  vib: 0.5125050544738771,
+  split: 0.27192211151123047,
+  grade: 0.43435680866241455,
 };
 
 const HUE_CENTERS = [0, 30, 60, 120, 180, 240, 270, 300];

@@ -1,15 +1,15 @@
 import { buildCurve, clamp } from './developCurve';
 import type { DevelopSettings } from './developSettings';
 
-// Spike strengths (s9a K0); GUMP's own guesses, not Adobe's.
+// s9a joint-fit constants (without baseChroma 1.09, which would break identity); GUMP's own, not Adobe's.
 const K = {
-  temp: 0.004,
+  temp: 0.05487670898437502,
   tint: 0.003,
-  contrast: 0.5,
-  highlights: 0.25,
-  shadows: 0.25,
-  whites: 0.15,
-  blacks: 0.15,
+  contrast: 0.5061264038085938,
+  highlights: 0.07029533386230469,
+  shadows: 0.13759732246398926,
+  whites: 0.6027374267578125,
+  blacks: 0.15, // K0: the fitted -0.179 inverts the Blacks slider direction
 };
 
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
