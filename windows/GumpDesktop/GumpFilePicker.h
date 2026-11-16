@@ -11,6 +11,10 @@ struct GumpFilePicker {
   REACT_METHOD(PickImages, L"pickImages");
   void PickImages(
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(PickLookPresetFile, L"pickLookPresetFile");
+  void PickLookPresetFile(
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
 };
 
 } // namespace GumpDesktop

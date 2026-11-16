@@ -4,10 +4,13 @@ import {NativeModules} from 'react-native';
 import {launchImageLibrary, Asset} from 'react-native-image-picker';
 import {isDesktopPlatform, isMobilePlatform} from '@lib/system/platform';
 
+export type LookPresetFile = {uri: string; name: string; size: number};
+
 type NativeFilePickerModule = {
   pickImages: () => Promise<
     Array<{uri: string; name: string; size: number; type: string}>
   >;
+  pickLookPresetFile?: () => Promise<LookPresetFile | null>;
 };
 
 const NativeFilePicker = NativeModules.GumpFilePicker as
@@ -53,3 +56,10 @@ export async function pickImages(): Promise<FileAsset[]> {
   throw new Error('Image picker is not available on this platform.');
 }
 
+/** Single `.xmp` / `.cube` file; null when the user cancels. */
+export async function pickLookPresetFile(): Promise<LookPresetFile | null> {
+  if (isDesktopPlatform() && NativeFilePicker?.pickLookPresetFile) {
+    return NativeFilePicker.pickLookPresetFile();
+  }
+  throw new Error('Preset picker is not available on this platform.');
+}

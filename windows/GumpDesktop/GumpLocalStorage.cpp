@@ -18,6 +18,7 @@
 #include <MemoryBuffer.h>
 #include <Shellapi.h>
 #include <shobjidl.h>
+#include <cctype>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -156,12 +157,16 @@ std::filesystem::path PathFromUri(std::string_view uri) {
   return path;
 }
 
-std::filesystem::path CullingAlbumDirectory(std::string_view albumId) {
+std::filesystem::path CullingAlbumsRootDirectory() {
   PWSTR localAppData = nullptr;
   SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppData);
   std::filesystem::path base(localAppData);
   CoTaskMemFree(localAppData);
-  return base / "Gump" / "culling-albums" / std::filesystem::path(ToWide(albumId));
+  return base / "Gump" / "culling-albums";
+}
+
+std::filesystem::path CullingAlbumDirectory(std::string_view albumId) {
+  return CullingAlbumsRootDirectory() / std::filesystem::path(ToWide(albumId));
 }
 
 std::filesystem::path ThumbnailDirectory(std::string_view albumId) {
@@ -2499,7 +2504,16 @@ std::optional<std::filesystem::path> ResolveLookCubePath(const std::string &look
 
 std::optional<LookCubeLut> LoadCubeLut(const std::filesystem::path &path);
 
+// Mirrors macOS kGumpMaxCubeFileBytes: 65^3 rows fit well under this.
+constexpr uintmax_t kMaxCubeFileBytes = 32ULL * 1024ULL * 1024ULL;
+constexpr size_t kMaxCubeValues = 65U * 65U * 65U * 3U;
+
 std::optional<LookCubeLut> LoadCubeLutUncached(const std::filesystem::path &path) {
+  std::error_code sizeEc;
+  const auto fileBytes = std::filesystem::file_size(path, sizeEc);
+  if (sizeEc || fileBytes > kMaxCubeFileBytes) {
+    return std::nullopt;
+  }
   std::ifstream input(path, std::ios::binary);
   if (!input.is_open()) {
     return std::nullopt;
@@ -2507,16 +2521,18 @@ std::optional<LookCubeLut> LoadCubeLutUncached(const std::filesystem::path &path
   LookCubeLut lut;
   std::string line;
   while (std::getline(input, line)) {
+    line.erase(0, line.find_first_not_of(" \t"));
     if (line.empty() || line[0] == '#') {
-      continue;
-    }
-    if (line.rfind("TITLE", 0) == 0 || line.rfind("DOMAIN_", 0) == 0) {
       continue;
     }
     if (line.rfind("LUT_3D_SIZE", 0) == 0) {
       std::istringstream sizeStream(line);
       std::string label;
       sizeStream >> label >> lut.size;
+      continue;
+    }
+    // Any other keyword (TITLE, DOMAIN_*, LUT_3D_INPUT_RANGE) is metadata, never a data row.
+    if (std::isalpha(static_cast<unsigned char>(line[0]))) {
       continue;
     }
     std::istringstream valueStream(line);
@@ -2529,16 +2545,19 @@ std::optional<LookCubeLut> LoadCubeLutUncached(const std::filesystem::path &path
     lut.rgb.push_back(r);
     lut.rgb.push_back(g);
     lut.rgb.push_back(b);
+    if (lut.rgb.size() > kMaxCubeValues) {
+      return std::nullopt;
+    }
   }
-  if (lut.size <= 1) {
+  // Mirrors macOS: CIColorCube caps at 65; surplus rows mean a shifted lattice.
+  if (lut.size <= 1 || lut.size > 65) {
     return std::nullopt;
   }
   const size_t expected = static_cast<size_t>(lut.size) * static_cast<size_t>(lut.size) *
                           static_cast<size_t>(lut.size) * 3U;
-  if (lut.rgb.size() < expected) {
+  if (lut.rgb.size() != expected) {
     return std::nullopt;
   }
-  lut.rgb.resize(expected);
   return lut;
 }
 
@@ -2675,6 +2694,7 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
     const std::filesystem::path &sourcePath,
     const std::filesystem::path &destPath,
     const std::string &lookId,
+    const std::optional<std::filesystem::path> &lutPath,
     const std::optional<LookFinishingParams> &finishing,
     float intensityPercent,
     uint32_t maxPixelSize,
@@ -2689,13 +2709,17 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
   const bool applyLut = lookId != "original" && intensityPercent > 0.0f;
   std::optional<LookCubeLut> lut;
   if (applyLut) {
-    const auto cubePath = ResolveLookCubePath(lookId);
+    const auto cubePath = lutPath.has_value() ? lutPath : ResolveLookCubePath(lookId);
     if (!cubePath.has_value()) {
       throw std::runtime_error(
           "Look LUT (.cube) is missing next to the app (Assets/Looks)");
     }
-    lut = LoadCubeLut(*cubePath);
+    // Custom LUTs skip the cache: each revision has its own path and is baked rarely.
+    lut = lutPath.has_value() ? LoadCubeLutUncached(*cubePath) : LoadCubeLut(*cubePath);
     if (!lut.has_value()) {
+      if (lutPath.has_value()) {
+        throw ExportFailure("ELOOK_LUT_PARSE", "Look LUT file could not be parsed");
+      }
       throw std::runtime_error(
           "Apply look could not parse Look LUT (.cube) file");
     }
@@ -2799,7 +2823,81 @@ std::optional<std::filesystem::path> ApplyLookLutToPath(
   return destPath;
 }
 
+// One path segment: no separators, parent reference or drive/stream colon.
+bool IsSafePathSegment(const std::string &segment) {
+  return !segment.empty() && segment != "." && segment.find_first_of("/\\:") == std::string::npos &&
+         segment.find("..") == std::string::npos && segment.find('\0') == std::string::npos;
+}
+
+// Canonical lutPath when it sits inside culling-albums after resolving links; throws otherwise.
+std::filesystem::path ResolveLutPathInsideAlbums(const std::string &lutPathUtf8) {
+  if (lutPathUtf8.find('\0') != std::string::npos) {
+    throw ExportFailure("EINVAL", "Look LUT must be inside the album storage");
+  }
+  const std::filesystem::path raw(ToWide(lutPathUtf8));
+  for (const auto &part : raw) {
+    if (part == L"..") {
+      throw ExportFailure("EINVAL", "Look LUT must be inside the album storage");
+    }
+  }
+  if (!raw.is_absolute()) {
+    throw ExportFailure("EINVAL", "Look LUT must be inside the album storage");
+  }
+  std::error_code ec;
+  const auto root = std::filesystem::canonical(CullingAlbumsRootDirectory(), ec);
+  if (ec) {
+    throw ExportFailure("ELOOK_LUT_MISSING", "Look LUT file is missing");
+  }
+  const auto resolved = std::filesystem::canonical(raw, ec);
+  if (ec) {
+    throw ExportFailure("ELOOK_LUT_MISSING", "Look LUT file is missing");
+  }
+  const auto [rootEnd, pathEnd] =
+      std::mismatch(root.begin(), root.end(), resolved.begin(), resolved.end());
+  if (rootEnd != root.end() || pathEnd == resolved.end()) {
+    throw ExportFailure("EINVAL", "Look LUT must be inside the album storage");
+  }
+  return resolved;
+}
+
 } // namespace
+
+void GumpLocalStorage::WriteAlbumLookFile(
+    std::string albumId,
+    std::string fileName,
+    std::string text,
+    ReactPromiseJS &&promise) noexcept {
+  RunAsync(
+      [albumId = std::move(albumId), fileName = std::move(fileName), text = std::move(text)]() {
+        if (!IsSafePathSegment(albumId) || !IsSafePathSegment(fileName)) {
+          throw ExportFailure("EINVAL", "Album id and file name must be plain names");
+        }
+        const auto looksDir = CullingAlbumDirectory(albumId) / L"looks";
+        std::filesystem::create_directories(looksDir);
+        const auto destPath = looksDir / std::filesystem::path(ToWide(fileName));
+        auto tempPath = destPath;
+        tempPath += L".tmp";
+        {
+          std::ofstream output(tempPath, std::ios::binary | std::ios::trunc);
+          output.write(text.data(), static_cast<std::streamsize>(text.size()));
+          output.close();
+          if (!output) {
+            std::error_code removeEc;
+            std::filesystem::remove(tempPath, removeEc);
+            throw std::runtime_error("Write look file failed");
+          }
+        }
+        std::error_code renameEc;
+        std::filesystem::rename(tempPath, destPath, renameEc);
+        if (renameEc) {
+          std::error_code removeEc;
+          std::filesystem::remove(tempPath, removeEc);
+          throw std::filesystem::filesystem_error("Write look file failed", renameEc);
+        }
+        return winrtRN::JSValue(ToUtf8(destPath.wstring()));
+      },
+      std::move(promise));
+}
 
 void GumpLocalStorage::ApplyLook(
     std::string sourceUri,
@@ -2809,15 +2907,22 @@ void GumpLocalStorage::ApplyLook(
     double maxPixelSize,
     double jpegQuality,
     winrtRN::JSValue finishing,
+    winrtRN::JSValue lutPath,
     ReactPromiseJS &&promise) noexcept {
   RunAsync(
       [sourceUri = std::move(sourceUri),
        destPath = std::move(destPath),
        lookId = std::move(lookId),
        finishingParams = ParseLookFinishing(finishing),
+       lutPathUtf8 = lutPath.Type() == winrtRN::JSValueType::String ? lutPath.AsString()
+                                                                     : std::string{},
        intensity,
        maxPixelSize,
        jpegQuality]() {
+        std::optional<std::filesystem::path> resolvedLutPath;
+        if (!lutPathUtf8.empty()) {
+          resolvedLutPath = ResolveLutPathInsideAlbums(lutPathUtf8);
+        }
         const auto sourcePath = PathFromUri(sourceUri);
         if (sourcePath.empty() || !std::filesystem::exists(sourcePath)) {
           throw ExportFailure("E_SOURCE_MISSING", "Source file is missing", 1);
@@ -2829,7 +2934,7 @@ void GumpLocalStorage::ApplyLook(
         const std::string resolvedLookId = lookId.empty() ? "original" : lookId;
         const float intensityPercent = static_cast<float>(intensity);
         if (resolvedLookId != "original" && intensityPercent > 0.0f &&
-            !ResolveLookCubePath(resolvedLookId).has_value()) {
+            !resolvedLutPath.has_value() && !ResolveLookCubePath(resolvedLookId).has_value()) {
           throw std::runtime_error(
               "Look LUT (.cube) is missing next to the app (Assets/Looks). "
               "Rebuild or reinstall GUMP Desktop.");
@@ -2839,6 +2944,7 @@ void GumpLocalStorage::ApplyLook(
             sourcePath,
             std::filesystem::path(ToWide(destPath)),
             resolvedLookId,
+            resolvedLutPath,
             finishingParams,
             intensityPercent,
             maxPixelSize > 0 ? static_cast<uint32_t>(maxPixelSize) : kDetailMaxPixelSize,

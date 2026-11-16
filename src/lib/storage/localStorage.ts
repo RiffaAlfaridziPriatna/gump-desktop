@@ -65,7 +65,13 @@ type NativeLocalStorageModule = {
     maxPixelSize: number,
     jpegQuality: number,
     finishing: NativeLookFinishing | null,
+    lutPath: string | null,
   ) => Promise<{uri: string | null; path?: string | null; size?: number | null}>;
+  writeAlbumLookFile?: (
+    albumId: string,
+    fileName: string,
+    text: string,
+  ) => Promise<string>;
 };
 
 const NativeLocalStorage = NativeModules.GumpLocalStorage as
@@ -412,6 +418,8 @@ export async function applyLookToJpeg(options: {
   maxPixelSize: number;
   jpegQuality: number;
   finishing?: NativeLookFinishing;
+  /** Absolute `.cube` path inside culling-albums (custom look); native rejects anything else. */
+  lutPath?: string;
 }): Promise<ApplyLookNativeResult> {
   if (!hasNativeLocalStorage() || !NativeLocalStorage?.applyLook) {
     throw new Error(
@@ -427,6 +435,7 @@ export async function applyLookToJpeg(options: {
     options.maxPixelSize,
     options.jpegQuality,
     options.finishing ?? null,
+    options.lutPath ?? null,
   );
 
   const size =
@@ -439,6 +448,23 @@ export async function applyLookToJpeg(options: {
     path: result.path ?? null,
     size,
   };
+}
+
+/**
+ * Writes `text` to `culling-albums/<albumId>/looks/<fileName>` and returns the absolute path.
+ * Native rejects `EINVAL` when either segment holds a separator or `..`.
+ */
+export async function writeAlbumLookFile(
+  albumId: string,
+  fileName: string,
+  text: string,
+): Promise<string> {
+  if (!hasNativeLocalStorage() || !NativeLocalStorage?.writeAlbumLookFile) {
+    throw new Error(
+      'Album look file write is not available. Build the app with GumpLocalStorage writeAlbumLookFile.',
+    );
+  }
+  return NativeLocalStorage.writeAlbumLookFile(albumId, fileName, text);
 }
 
 /** Byte length of a local file URI (used when native bake omits size). */

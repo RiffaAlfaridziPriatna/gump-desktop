@@ -118,16 +118,18 @@ static const NSUInteger kGumpScrfdAnalysisMaxPixelSize =
     (NSUInteger)FaceDetection::kAnalysisMaxPixelSize;
 static const NSUInteger kFaceCropOutputPixelSize = MediaDerivatives::kFaceCropOutputPixelSize;
 
-- (NSString *)cullingAlbumDirectory:(NSString *)albumId
+- (NSString *)cullingAlbumsRootDirectory
 {
   NSURL *appSupport =
       [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory
                                              inDomains:NSUserDomainMask]
           .firstObject;
-  NSURL *dir = [[appSupport URLByAppendingPathComponent:@"Gump/culling-albums" isDirectory:YES]
-      URLByAppendingPathComponent:albumId
-                      isDirectory:YES];
-  return dir.path;
+  return [appSupport URLByAppendingPathComponent:@"Gump/culling-albums" isDirectory:YES].path;
+}
+
+- (NSString *)cullingAlbumDirectory:(NSString *)albumId
+{
+  return [[self cullingAlbumsRootDirectory] stringByAppendingPathComponent:albumId];
 }
 
 - (NSString *)pathFromUri:(NSString *)uri
@@ -3491,12 +3493,20 @@ RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
   return path;
 }
 
+static const unsigned long long kGumpMaxCubeFileBytes = 32ULL * 1024ULL * 1024ULL;
+
 - (NSData *)colorCubeDataFromCubePath:(NSString *)cubePath
                             intensity:(CGFloat)intensityPercent
                             dimension:(NSInteger *)outDimension
                            smoothPasses:(NSInteger)smoothPasses
                     highlightSoftAmount:(CGFloat)highlightSoftAmount
 {
+  // 65^3 rows fit well under this; bigger files are not a supported cube.
+  NSNumber *cubeBytes =
+      [[NSFileManager defaultManager] attributesOfItemAtPath:cubePath error:nil][NSFileSize];
+  if (cubeBytes == nil || cubeBytes.unsignedLongLongValue > kGumpMaxCubeFileBytes) {
+    return nil;
+  }
   NSString *contents = [NSString stringWithContentsOfFile:cubePath
                                                  encoding:NSUTF8StringEncoding
                                                     error:nil];
@@ -3511,14 +3521,15 @@ RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
     if (line.length == 0 || [line hasPrefix:@"#"]) {
       continue;
     }
-    if ([line hasPrefix:@"TITLE"] || [line hasPrefix:@"DOMAIN_"]) {
-      continue;
-    }
     if ([line hasPrefix:@"LUT_3D_SIZE"]) {
       NSArray *parts = [line componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
       if (parts.count >= 2) {
         size = [parts[1] integerValue];
       }
+      continue;
+    }
+    // Any other keyword (TITLE, DOMAIN_*, LUT_3D_INPUT_RANGE) is metadata, never a data row.
+    if ([[NSCharacterSet letterCharacterSet] characterIsMember:[line characterAtIndex:0]]) {
       continue;
     }
     NSArray *parts = [line componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
@@ -3538,7 +3549,8 @@ RCT_EXPORT_METHOD(getFreeDiskSpace:(NSString *)path
   }
 
   const NSInteger expected = size * size * size * 3;
-  if (size <= 1 || values.count < (NSUInteger)expected) {
+  // CIColorCube ignores sizes above 65; surplus rows mean a shifted lattice.
+  if (size <= 1 || size > 65 || values.count != (NSUInteger)expected) {
     return nil;
   }
 
@@ -3901,9 +3913,43 @@ static CGFloat GumpLookFinishingValue(NSDictionary *finishing, NSString *key, CG
   return current;
 }
 
+static NSString *const GumpLookLutParseErrorDomain = @"GumpLookLutParse";
+
+// One path segment: no separators, no parent reference.
+static BOOL GumpIsSafePathSegment(NSString *segment)
+{
+  return segment.length > 0 && ![segment isEqualToString:@"."] &&
+         [segment rangeOfString:@"/"].location == NSNotFound &&
+         [segment rangeOfString:@"\\"].location == NSNotFound &&
+         [segment rangeOfString:@".."].location == NSNotFound;
+}
+
+// Real path of lutPath when it sits inside root after resolving symlinks; nil otherwise.
+static NSString *GumpRealPathInsideRoot(NSString *path, NSString *root, BOOL *outMissing)
+{
+  *outMissing = NO;
+  if (![path hasPrefix:@"/"] || [path.pathComponents containsObject:@".."]) {
+    return nil;
+  }
+  char resolvedRoot[PATH_MAX];
+  char resolvedPath[PATH_MAX];
+  if (realpath(root.fileSystemRepresentation, resolvedRoot) == NULL ||
+      realpath(path.fileSystemRepresentation, resolvedPath) == NULL) {
+    *outMissing = YES;
+    return nil;
+  }
+  NSString *rootString = [NSString stringWithUTF8String:resolvedRoot];
+  NSString *pathString = [NSString stringWithUTF8String:resolvedPath];
+  if (![pathString hasPrefix:[rootString stringByAppendingString:@"/"]]) {
+    return nil;
+  }
+  return pathString;
+}
+
 - (NSString *)applyLookLutFromPath:(NSString *)sourcePath
                             toPath:(NSString *)destPath
                             lookId:(NSString *)lookId
+                           lutPath:(NSString *)lutPath
                          finishing:(NSDictionary *)finishing
                          intensity:(CGFloat)intensityPercent
                       maxPixelSize:(NSUInteger)maxPixelSize
@@ -3956,7 +4002,7 @@ static CGFloat GumpLookFinishingValue(NSDictionary *finishing, NSString *key, CG
   const CGRect renderRect = input.extent;
 
   if (![lookId isEqualToString:@"original"] && intensityPercent > 0.0) {
-    NSString *cubePath = [self lookCubePathForId:lookId];
+    NSString *cubePath = lutPath.length > 0 ? lutPath : [self lookCubePathForId:lookId];
     NSInteger dimension = 0;
     // Film Mood curve70+warm+pull20 cube is already smooth — skip lattice smooth.
     const NSInteger smoothPasses = 0;
@@ -3968,6 +4014,9 @@ static CGFloat GumpLookFinishingValue(NSDictionary *finishing, NSString *key, CG
                                     highlightSoftAmount:highlightSoft];
     if (cubeData == nil || dimension <= 1) {
       CGColorSpaceRelease(srgb);
+      if (lutPath.length > 0 && outError != NULL) {
+        *outError = [NSError errorWithDomain:GumpLookLutParseErrorDomain code:0 userInfo:nil];
+      }
       return nil;
     }
     CIFilter *filter = [CIFilter filterWithName:@"CIColorCubeWithColorSpace"];
@@ -4049,11 +4098,29 @@ RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
                   maxPixelSize:(nonnull NSNumber *)maxPixelSize
                   jpegQuality:(nonnull NSNumber *)jpegQuality
                   finishing:(NSDictionary *)finishing
+                  lutPath:(NSString *)lutPath
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 {
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     @try {
+      NSString *resolvedLutPath = nil;
+      if ([lutPath isKindOfClass:[NSString class]] && lutPath.length > 0) {
+        BOOL lutMissing = NO;
+        resolvedLutPath =
+            GumpRealPathInsideRoot(lutPath, [self cullingAlbumsRootDirectory], &lutMissing);
+        if (resolvedLutPath == nil) {
+          dispatch_async(dispatch_get_main_queue(), ^{
+            if (lutMissing) {
+              reject(@"ELOOK_LUT_MISSING", @"Look LUT file is missing", nil);
+            } else {
+              reject(@"EINVAL", @"Look LUT must be inside the album storage", nil);
+            }
+          });
+          return;
+        }
+      }
+
       NSString *sourcePath = [self pathFromUri:sourceUri];
       if (sourcePath.length == 0 ||
           ![[NSFileManager defaultManager] fileExistsAtPath:sourcePath]) {
@@ -4070,6 +4137,7 @@ RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
           [self applyLookLutFromPath:sourcePath
                               toPath:destPath
                               lookId:lookId ?: @"original"
+                             lutPath:resolvedLutPath
                            finishing:[finishing isKindOfClass:[NSDictionary class]] ? finishing : nil
                            intensity:intensity.doubleValue
                         maxPixelSize:maxPixelSize.unsignedIntegerValue
@@ -4085,6 +4153,11 @@ RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
               bakeError != nil
                   ? [NSString stringWithFormat:@"Apply look failed (%@ %ld)", bakeError.domain, (long)bakeError.code]
                   : @"Apply look failed";
+          if (bakeCode == nil &&
+              [bakeError.domain isEqualToString:GumpLookLutParseErrorDomain]) {
+            reject(@"ELOOK_LUT_PARSE", @"Look LUT file could not be parsed", nil);
+            return;
+          }
           GumpRejectExport(reject, bakeCode ?: @"ELOOK", detail, 0);
         } else if (generatedPath.length > 0) {
           NSDictionary *attributes =
@@ -4105,6 +4178,48 @@ RCT_EXPORT_METHOD(applyLook:(NSString *)sourceUri
             @"ELOOK",
             [NSString stringWithFormat:@"Apply look failed (%@)", exception.name],
             0);
+      });
+    }
+  });
+}
+
+RCT_EXPORT_METHOD(writeAlbumLookFile:(NSString *)albumId
+                  fileName:(NSString *)fileName
+                  text:(NSString *)text
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    @try {
+      if (!GumpIsSafePathSegment(albumId) || !GumpIsSafePathSegment(fileName) ||
+          ![text isKindOfClass:[NSString class]]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          reject(@"EINVAL", @"Album id and file name must be plain names", nil);
+        });
+        return;
+      }
+      NSString *looksDir =
+          [[self cullingAlbumDirectory:albumId] stringByAppendingPathComponent:@"looks"];
+      NSString *destPath = [looksDir stringByAppendingPathComponent:fileName];
+      NSError *error = nil;
+      BOOL ok = [[NSFileManager defaultManager] createDirectoryAtPath:looksDir
+                                          withIntermediateDirectories:YES
+                                                           attributes:nil
+                                                                error:&error] &&
+                [text writeToFile:destPath
+                       atomically:YES
+                         encoding:NSUTF8StringEncoding
+                            error:&error];
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (!ok) {
+          GumpRejectExportError(reject, error, @"ELOOK", @"Write look file failed");
+          return;
+        }
+        resolve(destPath);
+      });
+    } @catch (NSException *exception) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        reject(@"EUNKNOWN", exception.reason, nil);
       });
     }
   });

@@ -148,6 +148,14 @@ struct GumpLocalStorage {
       double maxPixelSize,
       double jpegQuality,
       winrt::Microsoft::ReactNative::JSValue finishing,
+      winrt::Microsoft::ReactNative::JSValue lutPath,
+      winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
+
+  REACT_METHOD(WriteAlbumLookFile, L"writeAlbumLookFile");
+  void WriteAlbumLookFile(
+      std::string albumId,
+      std::string fileName,
+      std::string text,
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
 
   REACT_METHOD(StartAnalysis, L"startAnalysis");

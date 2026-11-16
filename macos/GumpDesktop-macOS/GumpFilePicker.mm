@@ -169,4 +169,40 @@ RCT_EXPORT_METHOD(pickImages:(RCTPromiseResolveBlock)resolve
   });
 }
 
+RCT_EXPORT_METHOD(pickLookPresetFile:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    panel.canChooseFiles = YES;
+    panel.canChooseDirectories = NO;
+    panel.allowsMultipleSelection = NO;
+    panel.allowsOtherFileTypes = NO;
+    NSMutableArray<UTType *> *types = [NSMutableArray array];
+    for (NSString *extension in @[ @"xmp", @"cube" ]) {
+      UTType *type = [UTType typeWithFilenameExtension:extension];
+      if (type != nil) {
+        [types addObject:type];
+      }
+    }
+    panel.allowedContentTypes = types;
+
+    [panel beginWithCompletionHandler:^(NSInteger result) {
+      NSURL *url = panel.URLs.firstObject;
+      if (result != NSModalResponseOK || url.path == nil) {
+        resolve([NSNull null]);
+        return;
+      }
+      GumpRetainSecurityScopedFileURL(url);
+      NSDictionary *attributes =
+          [[NSFileManager defaultManager] attributesOfItemAtPath:url.path error:nil];
+      resolve(@{
+        @"uri" : [NSString stringWithFormat:@"file://%@", url.path],
+        @"name" : url.lastPathComponent ?: @"preset",
+        @"size" : attributes[NSFileSize] ?: @(0),
+      });
+    }];
+  });
+}
+
 @end

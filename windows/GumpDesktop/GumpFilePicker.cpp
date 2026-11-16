@@ -128,4 +128,48 @@ void GumpFilePicker::PickImages(
   }
 }
 
+void GumpFilePicker::PickLookPresetFile(
+    winrtRN::ReactPromise<winrtRN::JSValue> &&promise) noexcept {
+  try {
+    wchar_t fileBuffer[MAX_PATH * 4] = {};
+    static constexpr wchar_t filter[] = L"Presets (*.xmp;*.cube)\0*.xmp;*.cube\0";
+
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = GetActiveWindow();
+    ofn.lpstrFilter = filter;
+    ofn.nFilterIndex = 1;
+    ofn.lpstrFile = fileBuffer;
+    ofn.nMaxFile = static_cast<DWORD>(sizeof(fileBuffer) / sizeof(fileBuffer[0]));
+    ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    ofn.lpstrTitle = L"Select preset";
+
+    if (!GetOpenFileNameW(&ofn)) {
+      const DWORD dialogError = CommDlgExtendedError();
+      if (dialogError != 0) {
+        promise.Reject(winrtRN::ReactError{
+            "Error", "Preset picker failed (error " + std::to_string(dialogError) + ")"});
+        return;
+      }
+      promise.Resolve(winrtRN::JSValue(nullptr));
+      return;
+    }
+
+    const std::filesystem::path fsPath(fileBuffer);
+    std::error_code sizeError;
+    const auto size = std::filesystem::file_size(fsPath, sizeError);
+
+    winrtRN::JSValueObject fileObj;
+    fileObj["uri"] = ToUtf8(fsPath.wstring());
+    fileObj["name"] = ToUtf8(fsPath.filename().wstring());
+    fileObj["size"] = sizeError ? 0.0 : static_cast<double>(size);
+    promise.Resolve(std::move(fileObj));
+  } catch (const winrt::hresult_error &e) {
+    promise.Reject(
+        winrtRN::ReactError{"Error", winrt::to_string(e.message())});
+  } catch (...) {
+    promise.Reject("Unknown native error");
+  }
+}
+
 } // namespace GumpDesktop
