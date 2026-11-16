@@ -1,6 +1,7 @@
 import { Pressable } from '@components/ui';
 import { colors } from '@lib/ui/colors';
 import { fonts } from '@lib/ui/typography';
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 type UploadPresetTileProps = {
@@ -10,10 +11,18 @@ type UploadPresetTileProps = {
 const LABEL = 'Upload preset';
 
 export function UploadPresetTile({ onPress }: UploadPresetTileProps) {
+  const [focused, setFocused] = useState(false);
   return (
     <Pressable
-      style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.tile,
+        focused && styles.tileFocused,
+        pressed && styles.pressed,
+      ]}
       onPress={onPress}
+      disabled={!onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       accessibilityRole="button"
       accessibilityLabel={LABEL}
     >
@@ -42,6 +51,10 @@ const styles = StyleSheet.create({
     gap: 6,
     alignItems: 'center',
   },
+  // Same accent border as the selected LookPickerTile.
+  tileFocused: {
+    borderColor: colors.accent,
+  },
   image: {
     alignSelf: 'stretch',
     aspectRatio: 171 / 114,
@@ -49,7 +62,7 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderColor: colors.borderLight,
     borderRadius: 4,
-    backgroundColor: colors.cardGrayLight,
+    backgroundColor: colors.cardGrayPlaceholder,
     alignItems: 'center',
     justifyContent: 'center',
   },

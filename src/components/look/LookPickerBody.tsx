@@ -2,7 +2,7 @@ import { ContainedLookImage } from '@components/look/ContainedLookImage';
 import { LookCompareToggle } from '@components/look/LookCompareToggle';
 import {
   LookImportErrorBanner,
-  type LookImportError,
+  type LookImportFailure,
 } from '@components/look/LookImportErrorBanner';
 import { LookPickerTiles } from '@components/look/LookPickerTiles';
 import { focusDesktopNode } from '@components/modals/focusDesktopNode';
@@ -27,7 +27,7 @@ type LookPickerBodyProps = {
   selectedLookId: LookId;
   showAfter: boolean;
   customLook?: CustomLook | null;
-  importError?: LookImportError | null;
+  importError?: LookImportFailure | null;
   onUploadPreset?: () => void;
   onSelectLook: (lookId: LookId) => void;
   onShowAfterChange: (showAfter: boolean) => void;
@@ -201,25 +201,25 @@ export function LookPickerBody({
       >
         {CAPTION}
       </Text>
-      <View
-        style={styles.tiles}
-        accessibilityRole="radiogroup"
-        accessibilityLabel={CAPTION}
+      <LookPickerTiles
+        previewUri={previewUri}
+        currentLookId={currentLookId}
+        selectedLookId={selectedLookId}
+        customLook={customLook}
+        groupLabel={CAPTION}
         onKeyDown={handleTilesKeyDown}
         keyDownEvents={arrowKeyDownEvents}
-      >
-        <LookPickerTiles
-          previewUri={previewUri}
-          currentLookId={currentLookId}
-          selectedLookId={selectedLookId}
-          customLook={customLook}
-          onSelectLook={onSelectLook}
-          onUploadPreset={onUploadPreset}
-          onTileRef={handleTileRef}
-        />
-      </View>
+        onSelectLook={onSelectLook}
+        onUploadPreset={onUploadPreset}
+        onTileRef={handleTileRef}
+      />
       <Text style={styles.note}>{NOTE}</Text>
-      {importError ? <LookImportErrorBanner error={importError} /> : null}
+      {importError ? (
+        <LookImportErrorBanner
+          key={importError.id}
+          error={importError.reason}
+        />
+      ) : null}
     </View>
   );
 }
@@ -247,10 +247,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 14 * 1.2,
     color: colors.textDark,
-  },
-  tiles: {
-    alignSelf: 'stretch',
-    gap: 8,
   },
   note: {
     alignSelf: 'stretch',

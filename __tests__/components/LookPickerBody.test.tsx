@@ -1,4 +1,5 @@
 import React from 'react';
+import { AccessibilityInfo } from 'react-native';
 import { act } from 'react-test-renderer';
 import { LookPickerBody } from '../../src/components/look/LookPickerBody';
 import type { LookId } from '../../src/lib/look/types';
@@ -17,10 +18,17 @@ const getAllByRole = (
   role: string,
 ) =>
   renderer.root.findAll(
-    node => typeof node.type === 'string' && node.props.accessibilityRole === role,
+    node =>
+      typeof node.type === 'string' && node.props.accessibilityRole === role,
   );
 
 type Props = React.ComponentProps<typeof LookPickerBody>;
+
+beforeEach(() => {
+  jest
+    .spyOn(AccessibilityInfo, 'announceForAccessibility')
+    .mockImplementation();
+});
 
 const customLook = { name: 'Moody Film', revision: 'r1', finishing: null };
 
@@ -116,11 +124,46 @@ describe('LookPickerBody custom look and import error', () => {
     expect(selected).toEqual(['original']);
   });
 
+  it('keeps Upload preset outside the radiogroup', () => {
+    const { renderer } = mount({ customLook });
+    const group = renderer.root.find(
+      node => node.props.accessibilityRole === 'radiogroup',
+    );
+    expect(
+      group.findAll(n => n.props.accessibilityLabel === 'Upload preset'),
+    ).toHaveLength(0);
+    expect(getByLabel(renderer, 'Upload preset')).toBeTruthy();
+  });
+
+  it('announces a repeated failure with the same reason when id changes', () => {
+    const announce = AccessibilityInfo.announceForAccessibility as jest.Mock;
+    const message = "Unsupported file format. Your album look hasn't changed.";
+    const { rerender, props } = mount({
+      importError: { reason: 'unsupported', id: 1 },
+    });
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenLastCalledWith(message);
+    rerender(
+      <LookPickerBody
+        {...props}
+        importError={{ reason: 'unsupported', id: 1 }}
+      />,
+    );
+    expect(announce).toHaveBeenCalledTimes(1);
+    rerender(
+      <LookPickerBody
+        {...props}
+        importError={{ reason: 'unsupported', id: 2 }}
+      />,
+    );
+    expect(announce).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     ['unsupported', "Unsupported file format. Your album look hasn't changed."],
     ['unreadable', "This file can't be read. Your album look hasn't changed."],
   ] as const)('shows the %s banner', (importError, message) => {
-    const { renderer } = mount({ importError });
+    const { renderer } = mount({ importError: { reason: importError, id: 1 } });
     expect(getAllByRole(renderer, 'alert')[0]!.props.accessibilityLabel).toBe(
       message,
     );

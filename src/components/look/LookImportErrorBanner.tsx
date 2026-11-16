@@ -1,10 +1,14 @@
 import type { ParseFailure } from '@lib/look/cubeParser';
 import { colors } from '@lib/ui/colors';
 import { fonts } from '@lib/ui/typography';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect } from 'react';
+import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import IconError from '../../assets/images/icon_error_info.svg';
 
 export type LookImportError = ParseFailure['reason'];
+
+/** One failed import. The parent bumps `id` per failure so a repeat of the same reason is announced again. */
+export type LookImportFailure = { reason: LookImportError; id: number };
 
 type LookImportErrorBannerProps = {
   error: LookImportError;
@@ -16,6 +20,11 @@ const MESSAGES: Record<LookImportError, string> = {
 };
 
 export function LookImportErrorBanner({ error }: LookImportErrorBannerProps) {
+  // macOS ignores role alert and liveRegion; Windows uses them. Mount per failure (keyed by id).
+  useEffect(() => {
+    AccessibilityInfo.announceForAccessibility(MESSAGES[error]);
+  }, [error]);
+
   return (
     <View
       style={styles.banner}

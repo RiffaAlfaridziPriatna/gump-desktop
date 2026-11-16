@@ -2,7 +2,7 @@ import { LookPickerTile } from '@components/look/LookPickerTile';
 import { UploadPresetTile } from '@components/look/UploadPresetTile';
 import { getLookLabel, LOOK_CATALOG } from '@lib/look/lookCatalog';
 import type { CustomLook, LookId } from '@lib/look/types';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type ViewProps } from 'react-native';
 
 export const TILE_WIDTH = 114;
 
@@ -11,6 +11,9 @@ type LookPickerTilesProps = {
   currentLookId: LookId;
   selectedLookId: LookId;
   customLook: CustomLook | null | undefined;
+  groupLabel: string;
+  onKeyDown: ViewProps['onKeyDown'];
+  keyDownEvents: ViewProps['keyDownEvents'];
   onSelectLook: (lookId: LookId) => void;
   onUploadPreset?: () => void;
   onTileRef: (lookId: LookId, node: View | null) => void;
@@ -21,6 +24,9 @@ export function LookPickerTiles({
   currentLookId,
   selectedLookId,
   customLook,
+  groupLabel,
+  onKeyDown,
+  keyDownEvents,
   onSelectLook,
   onUploadPreset,
   onTileRef,
@@ -39,21 +45,50 @@ export function LookPickerTiles({
   );
 
   return (
-    <>
-      <View style={styles.row}>
-        {LOOK_CATALOG.map(look => renderTile(look.id, look.label))}
+    <View style={styles.root}>
+      <View
+        style={styles.group}
+        accessibilityRole="radiogroup"
+        accessibilityLabel={groupLabel}
+        onKeyDown={onKeyDown}
+        keyDownEvents={keyDownEvents}
+      >
+        <View style={styles.row}>
+          {LOOK_CATALOG.map(look => renderTile(look.id, look.label))}
+          <View style={styles.slot} />
+        </View>
+        {customLook ? (
+          <View style={styles.customSlot}>
+            {renderTile('custom', getLookLabel('custom', customLook.name))}
+          </View>
+        ) : null}
+      </View>
+      {/* Sibling of the radiogroup (a button, not a radio), overlaid on the row-1 slot. */}
+      <View style={styles.upload}>
         <UploadPresetTile onPress={onUploadPreset} />
       </View>
-      {customLook ? (
-        <View style={styles.customSlot}>
-          {renderTile('custom', getLookLabel('custom', customLook.name))}
-        </View>
-      ) : null}
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    alignSelf: 'stretch',
+  },
+  group: {
+    alignSelf: 'stretch',
+    gap: 8,
+  },
+  slot: {
+    flex: 1,
+  },
+  upload: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: TILE_WIDTH,
+    flexDirection: 'row',
+  },
   row: {
     alignSelf: 'stretch',
     flexDirection: 'row',
