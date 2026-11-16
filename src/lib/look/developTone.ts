@@ -43,8 +43,10 @@ export function buildToneAxes(
     buildCurve(s.toneCurve.green),
     buildCurve(s.toneCurve.blue),
   ];
-  // GUMP approximation: white balance as linear-light channel gains (R/B opposed, G for tint).
-  const wb = [1 + K.temp * t * 25, 1 - K.tint * ti * 25, 1 - K.temp * t * 25];
+  // GUMP approximation: white balance as linear-light channel gains (R/B opposed, G for tint; exponential so gains stay positive).
+  const kt = (K.temp * 25) / Math.LN2;
+  const kg = (K.tint * 25) / Math.LN2;
+  const wb = [2 ** (kt * t), 2 ** (-kg * ti), 2 ** (-kt * t)];
 
   // GUMP approximation: contrast S-curve and highlights/shadows/whites/blacks as global zone curves.
   const tone = (x: number) => {

@@ -41,7 +41,8 @@ export type ColorParams = {
   tintActive: boolean;
 };
 
-const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+// NaN-safe: NaN fails both comparisons and maps to 0.
+const clamp01 = (x: number) => (x >= 0 ? (x <= 1 ? x : 1) : 0);
 
 function sector(h: number): [number, number] {
   const hp = (((h % 360) + 360) % 360) / 60;
@@ -124,7 +125,11 @@ function applyHsl(r: number, g: number, b: number, p: ColorParams): boolean {
   if (h < 0) {
     h += 360;
   }
-  let s = d / (1 - Math.abs(2 * l0 - 1));
+  const denom = 1 - Math.abs(2 * l0 - 1);
+  if (denom <= 1e-12) {
+    return false;
+  }
+  let s = d / denom;
   // GUMP approximation: HSL bands blend linearly between neighbouring hue centers.
   let i = 0;
   let t = 0;
@@ -146,6 +151,7 @@ function applyHsl(r: number, g: number, b: number, p: ColorParams): boolean {
   const l = l0 + K.hslLum * dl * s * (1 - Math.abs(2 * l0 - 1));
   // GUMP approximation: saturation scales chroma; vibrance favours low-saturation colors.
   s *= 1 + p.saturation;
+  s = clamp01(s);
   s *= 1 + K.vib * p.vibrance * (1 - s);
   hslToRgb(h + dh * K.hueDeg, clamp01(s), clamp01(l));
   return true;
@@ -178,7 +184,7 @@ export function applyColor(data: Float64Array, p: ColorParams): void {
       const ws =
         clamp01(1 - lum - p.balance * 0.5) ** 2 * p.shadowAmount * K.split;
       const wh =
-        clamp01(lum - p.balance * 0.5) ** 2 * p.highlightAmount * K.split;
+        clamp01(lum + p.balance * 0.5) ** 2 * p.highlightAmount * K.split;
       const wm = 4 * lum * (1 - lum) * p.midAmount * K.grade;
       r += ws * p.shadowTint[0] + wh * p.highlightTint[0] + wm * p.midTint[0];
       g += ws * p.shadowTint[1] + wh * p.highlightTint[1] + wm * p.midTint[1];
