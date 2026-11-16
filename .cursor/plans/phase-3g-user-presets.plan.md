@@ -14,10 +14,10 @@ todos:
     status: completed
   - id: s9d
     content: Develop-to-LUT engine (per-pixel crs settings to canonical .cube) with tests
-    status: pending
+    status: completed
   - id: s9e
     content: Native finishing takes parameters instead of hardcoded look ids; built-ins unchanged
-    status: pending
+    status: completed
   - id: s9f
     content: Native - preset file picker, LUT file write, bake from absolute LUT path
     status: pending
@@ -29,7 +29,7 @@ todos:
     status: pending
   - id: s9i
     content: Picker UI - Upload preset tile, custom tile, error banner (presentational)
-    status: pending
+    status: completed
   - id: s9j
     content: Wire import into ApplyLookModal, scope modal and look status labels
     status: pending
@@ -177,12 +177,12 @@ Branch: base from `feat/phase-3`.
 - **Scope:** `src/lib/look/developToLut.ts` (split per stage if over 300 lines, for example `developTone.ts`, `developColor.ts`): `buildLut(settings: DevelopSettings, size = 33): string` evaluates, per lattice point in sRGB: white balance shift (Temperature/Tint as incremental values for JPEG), Exposure2012, Contrast2012, Highlights/Shadows/Whites/Blacks2012 as global curves, ParametricCurve, ToneCurvePV2012 (master, red, green, blue), HSL 8 bands, Vibrance, Saturation, SplitToning and ColorGrade. Returns canonical `.cube` text. `splitFinishing(settings): LookFinishing | null` extracts the spatial fields.
 - **Rules:** field list and order come from the s9a verdict. Formulas are GUMP approximations, documented per stage in one line. Default settings produce an identity LUT.
 - **Mirror:** none (first engine); s9a prototype.
-- **Open:** exact field list (blocked on s9a).
+- **Open:** resolved by the s9a verdict ("Fields that ship").
 - **Acceptance:**
-  - [ ] Default settings give an identity LUT (max error ≤ 1/1023)
-  - [ ] Each field moves the expected channel in the expected direction (one test per field)
-  - [ ] Output parses with `parseCube`
-  - [ ] 33-point build within the s9a time bar in Jest
+  - [x] Default settings give an identity LUT (max error ≤ 1/1023)
+  - [x] Each field moves the expected channel in the expected direction (one test per field)
+  - [x] Output parses with `parseCube`
+  - [x] 33-point build within the s9a time bar in Jest (Release Hermes and Windows not measured)
 - **Out of scope:** spatial effects (s9e), file IO.
 - **Gate:** R
 
@@ -196,8 +196,8 @@ Branch: base from `feat/phase-3`.
 - **Rules:** built-in looks render byte-identical before and after on both platforms. Missing `finishing` = none. Look-specific extras without a Lightroom slider (warm nudge, settle nudge, frame-ellipse vignette) stay in the parameter object as GUMP fields.
 - **Mirror:** current switch blocks at `.mm:3645` and `.cpp:2256`.
 - **Acceptance:**
-  - [ ] Built-ins byte-identical on macOS and Windows (golden JPEGs from before the change)
-  - [ ] Finishing values from JS reach native and clamp to range
+  - [ ] Built-ins byte-identical on macOS and Windows (golden JPEGs from before the change). macOS finishing stage byte-identical in a standalone old-vs-new driver (3 looks x 3 photos); full bake pipeline and Windows not verified
+  - [ ] Finishing values from JS reach native and clamp to range. JS side tested; native clamp by code only, not run
   - [ ] Both platforms build; `npm test` and `npm run test:windows` pass
 - **Out of scope:** LUT path, picker.
 - **Gate:** R
@@ -269,12 +269,12 @@ Branch: base from `feat/phase-3`.
 - **Scope:** read Figma `12975:56273`, `12975:59170`, `12975:56784`, `12975:57299` with `get_design_context` first. New `src/components/look/UploadPresetTile.tsx` and `src/components/look/LookImportErrorBanner.tsx`. `LookPickerBody.tsx` (241 lines) takes `customLook`, `onUploadPreset`, `importError`; tile list moves to a new `LookPickerTiles.tsx` if the body would pass 300 lines. Arrow-key order: Original, 3 looks, custom (Upload preset is a button, not a radio).
 - **Rules:** messages verbatim: "Unsupported file format. Your album look hasn't changed." and "This file can't be read. Your album look hasn't changed." Banner under the note text, above "Use this look". Row 1 five tiles; custom tile in row 2 under Upload preset.
 - **Mirror:** `LookPickerTile.tsx`, 3f s8j spacing.
-- **Open:** wider dialog to keep Figma tile width (≈114 px) instead of ≈90 px at the current 480 px content width. Default keeps the Figma dialog width.
+- **Open:** resolved (user, 2026-11-16): widen the dialog so tiles keep the Figma width (842 px dialog, 602 px content). A first upload selects the new custom tile, like a replace.
 - **Acceptance:**
-  - [ ] Matches the four frames at 1440×900 except the agreed five-tile row
-  - [ ] Banner announced to screen readers
-  - [ ] Upload preset reachable by keyboard with an accessibility label
-  - [ ] Every new or touched file ≤300 lines
+  - [ ] Matches the four frames at 1440×900 except the agreed five-tile row. Measured values match Figma; no rendered visual diff yet
+  - [x] Banner announced to screen readers
+  - [x] Upload preset reachable by keyboard with an accessibility label
+  - [x] Every new or touched file ≤300 lines
 - **Out of scope:** import logic, modal wiring.
 - **Gate:** A, R
 
@@ -376,4 +376,3 @@ The leave-one-out fails: with 2 references the constants overfit and do not gene
 - `.lrtemplate`, profile `.xmp` (creative profiles, `crs:RGBTable`), masks, lens corrections, sharpening, noise reduction.
 - Per-photo exposure and white balance adaptation (Aftershoot-style); revisit after s9a H6.
 - Rebuilding the 3 built-in looks as `.xmp` through the engine: separate refactor, needs the user's go.
-- Wider Edit Photos dialog: waits for the user's call in s9i Open.
