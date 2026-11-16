@@ -1,3 +1,4 @@
+import {parseCustomLook} from '@domain/valueObjects/LookFinishing';
 import {setAlbumCustomLook} from '@lib/culledAlbum/store';
 import {parseCube} from '@lib/look/cubeParser';
 import {
@@ -6,6 +7,7 @@ import {
 } from '@lib/look/customLookFile';
 import {buildLut, splitFinishing} from '@lib/look/developToLut';
 import type {CustomLook, LookFinishing} from '@lib/look/types';
+import {whenUploadLookBakeReady} from '@lib/look/uploadLookBake';
 import {parseXmpPreset} from '@lib/look/xmpParser';
 import {pickLookPresetFile} from '@lib/media/filePicker';
 import {captureAppEvent} from '@lib/observability/posthogClient';
@@ -137,22 +139,30 @@ export async function importAlbumPreset(
     const text = await readPresetText(file.uri);
     step = 'parse';
     const preset = buildPreset(extension, text, albumId);
-    const revision = createCustomLookRevision();
+    // Same rule the album applies on load, so the saved preset survives a restart.
+    const customLook = parseCustomLook({
+      name: base,
+      revision: createCustomLookRevision(),
+      finishing: preset.finishing,
+    });
+    if (!customLook) {
+      throw new PresetImportError('unsupported', 'Preset file name is empty');
+    }
     step = 'write';
     writtenPath = await writeAlbumLookFile(
       albumId,
-      customLookFileName(revision),
+      customLookFileName(customLook.revision),
       preset.lutText,
     );
-    const customLook: CustomLook = {
-      name: base,
-      revision,
-      finishing: preset.finishing,
-    };
     step = 'save';
     const previous = await setAlbumCustomLook(albumId, customLook);
     if (previous) {
-      await deleteReplacedFile(writtenPath, revision, previous, albumId);
+      const newPath = writtenPath;
+      // An upload bake in flight read the old preset; keep its file until it ends.
+      // shortcut: clearUploadLookBake drops the listener, leaving the old file until album delete.
+      whenUploadLookBakeReady(albumId, () => {
+        deleteReplacedFile(newPath, customLook.revision, previous, albumId);
+      });
     }
     return {status: 'imported', customLook};
   } catch (error) {

@@ -2,6 +2,7 @@ import {readFileSync} from 'fs';
 import {join} from 'path';
 import {setAlbumCustomLook} from '../src/lib/culledAlbum/store';
 import {importAlbumPreset} from '../src/lib/look/importAlbumPreset';
+import {whenUploadLookBakeReady} from '../src/lib/look/uploadLookBake';
 import {pickLookPresetFile} from '../src/lib/media/filePicker';
 import {captureAppEvent} from '../src/lib/observability/posthogClient';
 import {reportError} from '../src/lib/observability/reportError';
@@ -12,6 +13,9 @@ import {
 
 jest.mock('../src/lib/culledAlbum/store', () => ({
   setAlbumCustomLook: jest.fn(),
+}));
+jest.mock('../src/lib/look/uploadLookBake', () => ({
+  whenUploadLookBakeReady: jest.fn(),
 }));
 jest.mock('../src/lib/media/filePicker', () => ({
   pickLookPresetFile: jest.fn(),
@@ -52,6 +56,7 @@ const write = writeAlbumLookFile as jest.Mock;
 const save = setAlbumCustomLook as jest.Mock;
 const remove = deleteLocalPhotoFile as jest.Mock;
 const report = reportError as jest.Mock;
+const whenReady = whenUploadLookBakeReady as jest.Mock;
 
 function givenFile(name: string, text: string, size = text.length): void {
   pick.mockResolvedValue({uri: `file:///picked/${name}`, name, size});
@@ -69,6 +74,10 @@ beforeEach(() => {
   );
   save.mockResolvedValue(null);
   remove.mockResolvedValue(undefined);
+  whenReady.mockImplementation((_album: string, onReady: () => void) => {
+    onReady();
+    return () => undefined;
+  });
 });
 
 describe('importAlbumPreset', () => {
@@ -109,6 +118,39 @@ describe('importAlbumPreset', () => {
     expect(remove).toHaveBeenCalledWith(
       `${LOOKS_DIR}custom-${first.revision}.cube`,
     );
+  });
+
+  it('keeps the old file until a running upload bake ends', async () => {
+    givenFile('a.cube', IDENTITY_CUBE);
+    const previous = {name: 'old', revision: 'old1', finishing: null};
+    save.mockResolvedValueOnce(previous);
+    let onReady: () => void = () => undefined;
+    whenReady.mockImplementationOnce((_album: string, callback: () => void) => {
+      onReady = callback;
+      return () => undefined;
+    });
+    await expect(importAlbumPreset(ALBUM)).resolves.toMatchObject({
+      status: 'imported',
+    });
+    expect(whenReady).toHaveBeenCalledWith(ALBUM, expect.any(Function));
+    expect(remove).not.toHaveBeenCalled();
+    onReady();
+    expect(remove).toHaveBeenCalledWith(`${LOOKS_DIR}custom-old1.cube`);
+  });
+
+  it('rejects a whitespace-only file name before writing', async () => {
+    givenFile('   .cube', IDENTITY_CUBE);
+    const result = await importAlbumPreset(ALBUM);
+    expect(result).toEqual({status: 'failed', reason: 'unsupported'});
+    expect(write).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(report).toHaveBeenCalledTimes(1);
+  });
+
+  it('trims the label', async () => {
+    givenFile(' Warm .cube', IDENTITY_CUBE);
+    await importAlbumPreset(ALBUM);
+    expect(save.mock.calls[0][1].name).toBe('Warm');
   });
 
   it('returns cancelled without logging when the picker is dismissed', async () => {
