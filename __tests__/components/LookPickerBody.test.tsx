@@ -1,5 +1,5 @@
 import React from 'react';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, StyleSheet } from 'react-native';
 import { act } from 'react-test-renderer';
 import { LookPickerBody } from '../../src/components/look/LookPickerBody';
 import type { LookId } from '../../src/lib/look/types';
@@ -167,5 +167,23 @@ describe('LookPickerBody custom look and import error', () => {
     expect(getAllByRole(renderer, 'alert')[0]!.props.accessibilityLabel).toBe(
       message,
     );
+  });
+});
+
+describe('LookPickerBody upload tile height', () => {
+  it('sizes the Upload preset slot to the measured row-1 height', () => {
+    const { renderer } = mount();
+    const byTestId = (id: string) =>
+      renderer.root.find(
+        node => typeof node.type === 'string' && node.props.testID === id,
+      );
+    act(() => {
+      byTestId('look-picker-row-1').props.onLayout({
+        nativeEvent: { layout: { height: 121 } },
+      });
+    });
+    expect(
+      StyleSheet.flatten(byTestId('upload-preset-slot').props.style).height,
+    ).toBe(121);
   });
 });

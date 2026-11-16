@@ -6,6 +6,7 @@ import { MAX_LUT_SIZE, MIN_LUT_SIZE } from './cubeParser';
 import { applyColor, buildColorParams } from './developColor';
 import type { DevelopSettings } from './developSettings';
 import { buildToneAxes } from './developTone';
+import type { NativeLookFinishing } from './types';
 
 /**
  * Evaluates the per-pixel develop fields over an sRGB lattice and returns
@@ -69,4 +70,19 @@ export function splitFinishing(
     grainSize: grain.size,
     grainRoughness: grain.frequency,
   });
+}
+
+/**
+ * Native finishing for a custom preset. Lightroom's post-crop vignette follows
+ * the frame, hence the frame ellipse; vignetteRoundness is not read natively.
+ */
+export function toNativeFinishing(
+  finishing: LookFinishing,
+): NativeLookFinishing {
+  return {
+    ...finishing,
+    warmNudge: 0,
+    settleNudge: 0,
+    vignetteFrameEllipse: true,
+  };
 }

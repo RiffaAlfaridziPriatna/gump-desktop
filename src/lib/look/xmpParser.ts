@@ -178,6 +178,12 @@ export function parseXmpPreset(text: string): XmpParseResult {
     }
   }
 
+  // Native finishing draws only a darkening vignette, so a white one is dropped.
+  if (settings.vignette.amount > 0) {
+    settings.vignette.amount = 0;
+    ignored.add('PostCropVignetteAmount');
+  }
+
   const changed =
     JSON.stringify(settings) !== JSON.stringify(defaultSettings());
   if (!changed) {

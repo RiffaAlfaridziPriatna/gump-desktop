@@ -95,3 +95,19 @@ describe('parseXmpPreset hardening', () => {
     );
   });
 });
+
+describe('positive post-crop vignette', () => {
+  it('drops a white vignette and reports it as ignored', () => {
+    const {settings, ignored} = ok(
+      xmp(['crs:PostCropVignetteAmount="30"', 'crs:Clarity2012="10"']),
+    );
+    expect(settings.vignette.amount).toBe(0);
+    expect(ignored).toContain('PostCropVignetteAmount');
+  });
+
+  it('keeps a darkening vignette', () => {
+    const {settings, ignored} = ok(xmp(['crs:PostCropVignetteAmount="-30"']));
+    expect(settings.vignette.amount).toBe(-30);
+    expect(ignored).not.toContain('PostCropVignetteAmount');
+  });
+});
