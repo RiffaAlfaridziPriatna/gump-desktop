@@ -1,5 +1,5 @@
 import {defaultSettings} from '@lib/look/developSettings';
-import {splitFinishing} from '@lib/look/developToLut';
+import {splitFinishing, toNativeFinishing} from '@lib/look/developToLut';
 
 describe('splitFinishing', () => {
   it('returns null when no spatial effect is set', () => {
@@ -31,5 +31,22 @@ describe('splitFinishing', () => {
     const s = defaultSettings();
     s.texture = 500;
     expect(splitFinishing(s)?.texture).toBe(100);
+  });
+});
+
+describe('toNativeFinishing', () => {
+  it('adds GUMP fields with no nudges and a frame-ellipse vignette', () => {
+    const s = defaultSettings();
+    s.vignette = {amount: -30, midpoint: 40, feather: 60, roundness: 0};
+    const finishing = splitFinishing(s);
+    if (!finishing) {
+      throw new Error('expected finishing');
+    }
+    expect(toNativeFinishing(finishing)).toEqual({
+      ...finishing,
+      warmNudge: 0,
+      settleNudge: 0,
+      vignetteFrameEllipse: true,
+    });
   });
 });
