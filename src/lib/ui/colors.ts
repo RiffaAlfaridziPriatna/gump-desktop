@@ -11,6 +11,7 @@ export const colors = {
   cardBackgroundSecondary: '#1E1E1E',
   photoCardBackground: '#161718',
   cardGrayLight: '#F8F8F8',
+  cardGrayPlaceholder: '#F5F5F5',
 
   // Borders
   border: '#2C2D2F',

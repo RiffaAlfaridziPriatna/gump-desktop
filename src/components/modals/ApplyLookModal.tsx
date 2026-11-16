@@ -82,7 +82,7 @@ export function ApplyLookModal({
     <Modal
       visible={visible}
       onClose={onClose}
-      width={720}
+      width={842}
       height={803}
       showCloseButton={false}
       contentStyle={styles.modalContent}
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   content: {
-    width: 480,
+    width: 602,
     alignItems: 'center',
     gap: 24,
   },
