@@ -1,7 +1,7 @@
 import {FileAsset} from '@services/upload/types';
 import {NativeDetectedFace} from '@lib/culledAlbum/types';
 import {describeFileUri} from '@lib/observability/serializeError';
-import {LOOK_BAKE_INTENSITY} from '@lib/look/types';
+import {LOOK_BAKE_INTENSITY, type NativeLookFinishing} from '@lib/look/types';
 import {wrapError} from '@lib/observability/AppError';
 import {NativeModules, Platform} from 'react-native';
 
@@ -64,6 +64,7 @@ type NativeLocalStorageModule = {
     intensity: number,
     maxPixelSize: number,
     jpegQuality: number,
+    finishing: NativeLookFinishing | null,
   ) => Promise<{uri: string | null; path?: string | null; size?: number | null}>;
 };
 
@@ -410,6 +411,7 @@ export async function applyLookToJpeg(options: {
   lookId: string;
   maxPixelSize: number;
   jpegQuality: number;
+  finishing?: NativeLookFinishing;
 }): Promise<ApplyLookNativeResult> {
   if (!hasNativeLocalStorage() || !NativeLocalStorage?.applyLook) {
     throw new Error(
@@ -424,6 +426,7 @@ export async function applyLookToJpeg(options: {
     LOOK_BAKE_INTENSITY,
     options.maxPixelSize,
     options.jpegQuality,
+    options.finishing ?? null,
   );
 
   const size =

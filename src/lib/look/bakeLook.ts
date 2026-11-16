@@ -1,4 +1,5 @@
 import type {CulledAlbumPhoto} from '@lib/culledAlbum/types';
+import {resolveLookFinishing} from '@lib/look/lookCatalog';
 import {
   LOOK_BAKE_INTENSITY,
   hasAppliedLook,
@@ -136,6 +137,7 @@ export async function bakePhotoLook(
     lookId: photo.lookId as LookId,
     maxPixelSize: settings.maxPixelSize,
     jpegQuality: settings.jpegQuality,
+    finishing: resolveLookFinishing(photo.lookId as LookId),
   });
 
   if (!baked.uri) {
@@ -218,6 +220,7 @@ export async function bakeLookPreviewUri(
     lookId,
     maxPixelSize: settings.maxPixelSize,
     jpegQuality: settings.jpegQuality,
+    finishing: resolveLookFinishing(lookId),
   });
 
   if (!baked.uri) {

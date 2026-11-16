@@ -147,6 +147,7 @@ struct GumpLocalStorage {
       double intensity,
       double maxPixelSize,
       double jpegQuality,
+      winrt::Microsoft::ReactNative::JSValue finishing,
       winrt::Microsoft::ReactNative::ReactPromise<winrt::Microsoft::ReactNative::JSValue> &&promise) noexcept;
 
   REACT_METHOD(StartAnalysis, L"startAnalysis");
