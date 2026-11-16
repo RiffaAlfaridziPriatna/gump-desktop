@@ -2,6 +2,7 @@ import { LookPickerTile } from '@components/look/LookPickerTile';
 import { UploadPresetTile } from '@components/look/UploadPresetTile';
 import { getLookLabel, LOOK_CATALOG } from '@lib/look/lookCatalog';
 import type { CustomLook, LookId } from '@lib/look/types';
+import { useState } from 'react';
 import { StyleSheet, View, type ViewProps } from 'react-native';
 
 export const TILE_WIDTH = 114;
@@ -31,6 +32,7 @@ export function LookPickerTiles({
   onUploadPreset,
   onTileRef,
 }: LookPickerTilesProps) {
+  const [rowHeight, setRowHeight] = useState<number | undefined>(undefined);
   const renderTile = (lookId: LookId, label: string) => (
     <LookPickerTile
       key={lookId}
@@ -53,7 +55,11 @@ export function LookPickerTiles({
         onKeyDown={onKeyDown}
         keyDownEvents={keyDownEvents}
       >
-        <View style={styles.row}>
+        <View
+          style={styles.row}
+          testID="look-picker-row-1"
+          onLayout={e => setRowHeight(e.nativeEvent.layout.height)}
+        >
           {LOOK_CATALOG.map(look => renderTile(look.id, look.label))}
           <View style={styles.slot} />
         </View>
@@ -64,7 +70,10 @@ export function LookPickerTiles({
         ) : null}
       </View>
       {/* Sibling of the radiogroup (a button, not a radio), overlaid on the row-1 slot. */}
-      <View style={styles.upload}>
+      <View
+        style={[styles.upload, { height: rowHeight }]}
+        testID="upload-preset-slot"
+      >
         <UploadPresetTile onPress={onUploadPreset} />
       </View>
     </View>
