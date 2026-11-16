@@ -3660,7 +3660,8 @@ static CGFloat GumpLookFinishingValue(NSDictionary *finishing, NSString *key, CG
   CGFloat warmNudge = GumpLookFinishingValue(finishing, @"warmNudge", 0, 1, 0);
   CGFloat settleNudge = GumpLookFinishingValue(finishing, @"settleNudge", 0, 1, 0);
   const CGFloat darken = 0, blueCrush = 0;
-  const BOOL vigFrameEllipse = [finishing[@"vignetteFrameEllipse"] boolValue];
+  id rawFrameEllipse = finishing[@"vignetteFrameEllipse"];
+  const BOOL vigFrameEllipse = [rawFrameEllipse isKindOfClass:[NSNumber class]] && [rawFrameEllipse boolValue];
 
   CIImage *current = image;
   const CGRect bounds = image.extent;
