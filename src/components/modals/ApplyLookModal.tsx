@@ -139,6 +139,7 @@ export function ApplyLookModal({
       onClose={onClose}
       width={842}
       height={803}
+      fit="clamp"
       showCloseButton={false}
       contentStyle={styles.modalContent}
     >

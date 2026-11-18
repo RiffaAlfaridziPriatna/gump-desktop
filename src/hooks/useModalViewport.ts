@@ -39,6 +39,7 @@ export function useModalViewport(active: boolean, design: ModalDesignSize) {
       design.width,
       design.height,
       design.decorativeHeight,
+      design.fit,
       viewportWidth,
       viewportHeight,
     ],

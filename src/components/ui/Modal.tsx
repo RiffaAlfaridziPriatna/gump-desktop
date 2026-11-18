@@ -37,6 +37,7 @@ type ModalProps = {
   children: ReactNode;
   decorative?: React.ComponentType<ModalDecorativeProps>;
   decorativeHeight?: number;
+  fit?: ModalDesignSize['fit'];
   showCloseButton?: boolean;
   contentStyle?: ViewStyle;
 };
@@ -49,6 +50,7 @@ function toModalDesign(props: ModalBodyCardProps): ModalDesignSize {
     width: props.width,
     height: props.height,
     decorativeHeight: props.decorativeHeight,
+    fit: props.fit,
   };
 }
 

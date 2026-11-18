@@ -6,6 +6,11 @@ export type ModalDesignSize = {
   width?: number;
   height?: number;
   decorativeHeight?: number;
+  /**
+   * 'scale' (default) shrinks width and height together to fit the viewport.
+   * 'clamp' caps each axis on its own; for cards whose content scrolls.
+   */
+  fit?: 'scale' | 'clamp';
 };
 
 export type ResolvedModalSize = {
@@ -29,6 +34,14 @@ export function resolveModalSize(
     return {
       width: Math.min(designWidth, maxWidth),
       height: undefined,
+      decorativeHeight: design.decorativeHeight,
+    };
+  }
+
+  if (design.fit === 'clamp') {
+    return {
+      width: Math.min(designWidth, maxWidth),
+      height: Math.min(design.height, maxHeight),
       decorativeHeight: design.decorativeHeight,
     };
   }
