@@ -14,7 +14,7 @@ import {captureAppEvent} from '@lib/observability/posthogClient';
 import {reportError} from '@lib/observability/reportError';
 import {
   deleteLocalPhotoFile,
-  normalizeNativeFileUri,
+  readLocalTextFile,
   writeAlbumLookFile,
 } from '@lib/storage/localStorage';
 
@@ -47,14 +47,6 @@ function splitFileName(fileName: string): {base: string; extension: string} {
     base: fileName.slice(0, dot),
     extension: fileName.slice(dot + 1).toLowerCase(),
   };
-}
-
-async function readPresetText(uri: string): Promise<string> {
-  const response = await fetch(normalizeNativeFileUri(uri));
-  if (!response.ok) {
-    throw new Error(`Preset read failed (${response.status})`);
-  }
-  return response.text();
 }
 
 function buildPreset(
@@ -136,7 +128,7 @@ export async function importAlbumPreset(
       throw new PresetImportError('unreadable', 'Preset is larger than 16 MB');
     }
     step = 'read';
-    const text = await readPresetText(file.uri);
+    const text = await readLocalTextFile(file.uri, file.size);
     step = 'parse';
     const preset = buildPreset(extension, text, albumId);
     // Same rule the album applies on load, so the saved preset survives a restart.

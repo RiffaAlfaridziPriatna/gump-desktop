@@ -72,6 +72,11 @@ type NativeLocalStorageModule = {
     fileName: string,
     text: string,
   ) => Promise<string>;
+  readFileSlice?: (
+    uri: string,
+    start: number,
+    end: number,
+  ) => Promise<{data: string; size: number}>;
 };
 
 const NativeLocalStorage = NativeModules.GumpLocalStorage as
@@ -465,6 +470,35 @@ export async function writeAlbumLookFile(
     );
   }
   return NativeLocalStorage.writeAlbumLookFile(albumId, fileName, text);
+}
+
+/** Decodes base64 UTF-8 bytes (BOM dropped, like fetch().text()); throws URIError on invalid UTF-8. */
+export function decodeBase64Utf8(base64: string): string {
+  const binary = globalThis.atob(base64);
+  let percentEncoded = '';
+  for (let i = 0; i < binary.length; i++) {
+    percentEncoded += `%${binary.charCodeAt(i).toString(16).padStart(2, '0')}`;
+  }
+  return decodeURIComponent(percentEncoded).replace(/^﻿/, '');
+}
+
+/**
+ * Reads a small local text file as UTF-8. Native first: Windows pickers return
+ * raw `C:\...` paths, which `fetch` cannot read.
+ */
+export async function readLocalTextFile(
+  uri: string,
+  byteSize: number,
+): Promise<string> {
+  if (NativeLocalStorage?.readFileSlice) {
+    const result = await NativeLocalStorage.readFileSlice(uri, 0, byteSize);
+    return decodeBase64Utf8(result.data);
+  }
+  const response = await fetch(normalizeNativeFileUri(uri));
+  if (!response.ok) {
+    throw new Error(`Local file read failed (${response.status})`);
+  }
+  return response.text();
 }
 
 /** Byte length of a local file URI (used when native bake omits size). */

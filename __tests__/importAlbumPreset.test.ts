@@ -8,6 +8,7 @@ import {captureAppEvent} from '../src/lib/observability/posthogClient';
 import {reportError} from '../src/lib/observability/reportError';
 import {
   deleteLocalPhotoFile,
+  readLocalTextFile,
   writeAlbumLookFile,
 } from '../src/lib/storage/localStorage';
 
@@ -30,6 +31,7 @@ jest.mock('../src/lib/storage/localStorage', () => ({
   ...jest.requireActual('../src/lib/storage/localStorage'),
   writeAlbumLookFile: jest.fn(),
   deleteLocalPhotoFile: jest.fn(),
+  readLocalTextFile: jest.fn(),
 }));
 
 const ALBUM = 'album-1';
@@ -57,14 +59,11 @@ const save = setAlbumCustomLook as jest.Mock;
 const remove = deleteLocalPhotoFile as jest.Mock;
 const report = reportError as jest.Mock;
 const whenReady = whenUploadLookBakeReady as jest.Mock;
+const read = readLocalTextFile as jest.Mock;
 
 function givenFile(name: string, text: string, size = text.length): void {
   pick.mockResolvedValue({uri: `file:///picked/${name}`, name, size});
-  global.fetch = jest.fn().mockResolvedValue({
-    ok: true,
-    status: 200,
-    text: () => Promise.resolve(text),
-  }) as never;
+  read.mockResolvedValue(text);
 }
 
 beforeEach(() => {
@@ -105,6 +104,20 @@ describe('importAlbumPreset', () => {
     expect(write.mock.calls[0][2]).toContain('LUT_3D_SIZE 33\n');
     expect(save.mock.calls[0][1].name).toBe('Film');
     expect(save.mock.calls[0][1].finishing).not.toBeNull();
+  });
+
+  it('reads a raw Windows picker path through the local file reader', async () => {
+    const uri = 'C:\\Users\\me\\Downloads\\Presetpro - Beautiful Sunrise.xmp';
+    pick.mockResolvedValue({
+      uri,
+      name: 'Presetpro - Beautiful Sunrise.xmp',
+      size: 1234,
+    });
+    read.mockResolvedValue(XMP);
+    const result = await importAlbumPreset(ALBUM);
+    expect(result.status).toBe('imported');
+    expect(read).toHaveBeenCalledWith(uri, 1234);
+    expect(save.mock.calls[0][1].name).toBe('Presetpro - Beautiful Sunrise');
   });
 
   it('gives each import a new revision and deletes the replaced file', async () => {
@@ -189,7 +202,7 @@ describe('importAlbumPreset', () => {
     givenFile('big.cube', IDENTITY_CUBE, 16 * 1024 * 1024 + 1);
     const result = await importAlbumPreset(ALBUM);
     expect(result).toEqual({status: 'failed', reason: 'unreadable'});
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
   });
 
   it('maps a native write failure to unreadable', async () => {
