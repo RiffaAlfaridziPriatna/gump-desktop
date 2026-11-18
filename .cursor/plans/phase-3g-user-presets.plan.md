@@ -370,7 +370,8 @@ The leave-one-out fails: with 2 references the constants overfit and do not gene
 
 **Cleanup.**
 - Done: the symlink `~/Library/Application Support/Gump/spike-preset` (needed because the Debug build is not sandboxed) was removed; the app and Metro were stopped.
-- Left: container folder `~/Library/Containers/com.gump.cullyourphotos/Data/Library/Application Support/Gump/spike-preset` holds the test cubes, photo copies and bakes. Delete it with the branch.
+- Done (2026-11-16): container folder `~/Library/Containers/com.gump.cullyourphotos/Data/Library/Application Support/Gump/spike-preset` deleted.
+- Left: worktree `.claude/worktrees/modest-shamir-edad60`, branches `spike/preset-import` and `claude/modest-shamir-edad60`. They hold the uncommitted prototype (`src/app/spike/`) that s9d mirrors. Delete them after s9d is done (user decision 2026-11-16).
 
 ## Do not start
 
