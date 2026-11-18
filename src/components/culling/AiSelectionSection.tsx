@@ -137,7 +137,7 @@ export function AiSelectionSection({
               accessibilityState={{ selected, disabled: updating }}
             >
               <Text
-                style={[styles.segmentText, selected && styles.segmentTextSel]}
+                style={styles.segmentText}
               >
                 {LEVEL_LABELS[level]}
               </Text>
@@ -196,9 +196,10 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
   segments: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // Fixed height + tight lineHeight: a tall line box sinks text on Windows.
   segment: {
+    height: 30,
     paddingHorizontal: 12,
-    paddingVertical: 3,
     borderRadius: 24,
     borderWidth: 1,
     borderColor: colors.white,
@@ -206,18 +207,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   segmentSelected: {
-    paddingVertical: 5,
     borderWidth: 0,
     backgroundColor: colors.accent,
   },
   segmentText: {
     fontFamily: fonts.sans,
     fontSize: 14,
-    lineHeight: 22.4,
+    lineHeight: 18,
     color: colors.white,
     textAlign: 'center',
   },
-  segmentTextSel: { lineHeight: 19.6 },
   help: { fontFamily: fonts.sans, fontSize: 13, color: colors.white },
   button: {
     height: 40,

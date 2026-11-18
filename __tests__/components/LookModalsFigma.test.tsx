@@ -115,18 +115,21 @@ describe('look modals to Figma', () => {
     });
   });
 
-  it('toggle: Before line height 1.6, After 1.4, single line', () => {
+  // Figma chips are ~30 high (1.6 / 1.4 line height + padding); a fixed height
+  // with one tight line height keeps that size and centers text on Windows.
+  it('toggle: both chips 30 high, centered, single line', () => {
     const { renderer } = render(<LookCompareToggle showAfter onChange={jest.fn()} />);
     const before = textNode(renderer, 'Before');
     const after = textNode(renderer, 'After');
-    expect(styleOf(before).lineHeight).toBeCloseTo(14 * 1.6);
-    expect(styleOf(after).lineHeight).toBeCloseTo(14 * 1.4);
+    expect(styleOf(before).lineHeight).toBe(styleOf(after).lineHeight);
     expect(before.props.numberOfLines).toBe(1);
     expect(after.props.numberOfLines).toBe(1);
     const beforeChip = styleOf(
       before.parent as unknown as Styled,
     );
     const afterChip = styleOf(after.parent as unknown as Styled);
+    expect(beforeChip).toMatchObject({ height: 30, justifyContent: 'center' });
+    expect(afterChip).toMatchObject({ height: 30, justifyContent: 'center' });
     expect(beforeChip.borderWidth).toBe(1);
     expect(afterChip.borderWidth).toBe(1);
     expect(beforeChip.paddingHorizontal).toBe(10);

@@ -37,13 +37,7 @@ export function LookCompareToggle({
             accessibilityLabel={segment.label}
             accessibilityState={{ selected }}
           >
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.label,
-                selected ? styles.labelSelected : styles.labelIdle,
-              ]}
-            >
+            <Text numberOfLines={1} style={styles.label}>
               {segment.label}
             </Text>
           </Pressable>
@@ -61,8 +55,10 @@ const styles = StyleSheet.create({
   },
   // Idle border is always on so width stays stable; selected uses a matching
   // border so "Before" does not wrap when unselected (border ate 2px before).
+  // Fixed height + tight lineHeight: a tall line box sinks text on Windows.
   segment: {
     width: 67,
+    height: 30,
     borderRadius: 24,
     paddingHorizontal: 10,
     borderWidth: 1,
@@ -70,24 +66,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   segmentIdle: {
-    paddingVertical: 3,
     borderColor: colors.white,
   },
   segmentSelected: {
-    paddingVertical: 4,
     backgroundColor: colors.accent,
     borderColor: colors.accent,
   },
   label: {
     fontFamily: fonts.sans,
     fontSize: 14,
+    lineHeight: 18,
     color: colors.white,
-  },
-  labelIdle: {
-    lineHeight: 14 * 1.6,
-  },
-  labelSelected: {
-    lineHeight: 14 * 1.4,
   },
   pressed: {
     opacity: 0.8,
