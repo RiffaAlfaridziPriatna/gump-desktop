@@ -14,6 +14,7 @@
 #include "../../cpp/analysis/SharedJpegDecode.h"
 
 #include <ShlObj.h>
+#include <appmodel.h>
 #include <combaseapi.h>
 #include <MemoryBuffer.h>
 #include <Shellapi.h>
@@ -2829,6 +2830,36 @@ bool IsSafePathSegment(const std::string &segment) {
          segment.find("..") == std::string::npos && segment.find('\0') == std::string::npos;
 }
 
+bool IsRunningAsPackagedApp() noexcept {
+  UINT32 length = 0;
+  return GetCurrentPackageFullName(&length, nullptr) != APPMODEL_ERROR_NO_PACKAGE;
+}
+
+// MSIX redirects new AppData files to the package's LocalCache\Local, while an
+// existing unpackaged culling-albums folder still canonicalizes to the real
+// AppData path. A LUT can sit under either, so both canonical roots count.
+std::vector<std::filesystem::path> CanonicalAlbumRoots() {
+  std::vector<std::filesystem::path> roots;
+  std::error_code ec;
+  auto root = std::filesystem::canonical(CullingAlbumsRootDirectory(), ec);
+  if (!ec) {
+    roots.push_back(std::move(root));
+  }
+  if (IsRunningAsPackagedApp()) {
+    const std::filesystem::path cache(ApplicationData::Current().LocalCacheFolder().Path().c_str());
+    auto redirected = std::filesystem::canonical(cache / L"Local" / L"Gump" / L"culling-albums", ec);
+    if (!ec) {
+      roots.push_back(std::move(redirected));
+    }
+  }
+  return roots;
+}
+
+bool IsStrictlyInside(const std::filesystem::path &root, const std::filesystem::path &path) {
+  const auto [rootEnd, pathEnd] = std::mismatch(root.begin(), root.end(), path.begin(), path.end());
+  return rootEnd == root.end() && pathEnd != path.end();
+}
+
 // Canonical lutPath when it sits inside culling-albums after resolving links; throws otherwise.
 std::filesystem::path ResolveLutPathInsideAlbums(const std::string &lutPathUtf8) {
   if (lutPathUtf8.find('\0') != std::string::npos) {
@@ -2843,21 +2874,21 @@ std::filesystem::path ResolveLutPathInsideAlbums(const std::string &lutPathUtf8)
   if (!raw.is_absolute()) {
     throw ExportFailure("EINVAL", "Look LUT must be inside the album storage");
   }
-  std::error_code ec;
-  const auto root = std::filesystem::canonical(CullingAlbumsRootDirectory(), ec);
-  if (ec) {
+  const auto roots = CanonicalAlbumRoots();
+  if (roots.empty()) {
     throw ExportFailure("ELOOK_LUT_MISSING", "Look LUT file is missing");
   }
+  std::error_code ec;
   const auto resolved = std::filesystem::canonical(raw, ec);
   if (ec) {
     throw ExportFailure("ELOOK_LUT_MISSING", "Look LUT file is missing");
   }
-  const auto [rootEnd, pathEnd] =
-      std::mismatch(root.begin(), root.end(), resolved.begin(), resolved.end());
-  if (rootEnd != root.end() || pathEnd == resolved.end()) {
-    throw ExportFailure("EINVAL", "Look LUT must be inside the album storage");
+  for (const auto &root : roots) {
+    if (IsStrictlyInside(root, resolved)) {
+      return resolved;
+    }
   }
-  return resolved;
+  throw ExportFailure("EINVAL", "Look LUT must be inside the album storage");
 }
 
 } // namespace
