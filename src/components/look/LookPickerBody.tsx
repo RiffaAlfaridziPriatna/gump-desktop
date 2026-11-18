@@ -6,8 +6,9 @@ import {
 } from '@components/look/LookImportErrorBanner';
 import { LookPickerTiles } from '@components/look/LookPickerTiles';
 import { focusDesktopNode } from '@components/modals/focusDesktopNode';
+import { hasBakeableLook } from '@lib/look/bakeLook';
 import { getLookLabel, LOOK_CATALOG } from '@lib/look/lookCatalog';
-import { hasAppliedLook, type CustomLook, type LookId } from '@lib/look/types';
+import type { CustomLook, LookId } from '@lib/look/types';
 import { colors } from '@lib/ui/colors';
 import { fonts, sansSemiBoldStyle } from '@lib/ui/typography';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -74,6 +75,7 @@ export function LookPickerBody({
 
   const customName = customLook?.name;
   const hasCustom = customLook != null;
+  const selectedBakeable = hasBakeableLook(selectedLookId, customLook?.revision);
   const lookIds = useMemo<LookId[]>(
     () => [
       ...LOOK_CATALOG.map(look => look.id),
@@ -120,6 +122,29 @@ export function LookPickerBody({
       focusDesktopNode(tileRefs.current[selectedLookId] ?? null);
     }
   }, [selectedLookId]);
+
+  // A new preset (first upload or replace) arrives selected; move focus to its
+  // tile and say so. Selection and the stored preset can land in either order.
+  const customRevision = customLook?.revision;
+  const handledRevisionRef = useRef(customRevision);
+  useEffect(() => {
+    if (!visible) {
+      handledRevisionRef.current = customRevision;
+      return;
+    }
+    if (
+      selectedLookId !== 'custom' ||
+      !customRevision ||
+      customRevision === handledRevisionRef.current
+    ) {
+      return;
+    }
+    handledRevisionRef.current = customRevision;
+    focusDesktopNode(tileRefs.current.custom ?? null);
+    AccessibilityInfo.announceForAccessibility(
+      `${getLookLabel('custom', customName)} preset added and selected`,
+    );
+  }, [visible, selectedLookId, customRevision, customName]);
 
   const handleTilesKeyDown = useCallback(
     (event: unknown) => {
@@ -168,7 +193,7 @@ export function LookPickerBody({
           accessible
           accessibilityRole="image"
           accessibilityLabel={
-            showAfter && hasAppliedLook(selectedLookId)
+            showAfter && selectedBakeable
               ? `Preview, ${getLookLabel(selectedLookId, customName)}`
               : 'Preview, original photo'
           }
@@ -179,7 +204,7 @@ export function LookPickerBody({
               width={previewSize.width}
               height={previewSize.height}
               lookId={
-                showAfter && hasAppliedLook(selectedLookId)
+                showAfter && selectedBakeable
                   ? selectedLookId
                   : 'original'
               }
@@ -188,7 +213,7 @@ export function LookPickerBody({
             />
           ) : null}
         </View>
-        {hasAppliedLook(selectedLookId) ? (
+        {selectedBakeable ? (
           <View style={styles.toggle}>
             <LookCompareToggle showAfter={showAfter} onChange={handleToggle} />
           </View>

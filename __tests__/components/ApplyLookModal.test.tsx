@@ -5,6 +5,10 @@ import { getByLabel, press, render } from '../helpers/render';
 import { focusDesktopNode } from '../../src/components/modals/focusDesktopNode';
 import { ApplyLookModal } from '../../src/components/modals/ApplyLookModal';
 
+jest.mock('../../src/lib/look/importAlbumPreset', () => ({
+  importAlbumPreset: jest.fn(),
+}));
+
 jest.mock('../../src/components/modals/focusDesktopNode', () => ({
   focusDesktopNode: jest.fn(),
 }));
@@ -36,7 +40,9 @@ type Props = React.ComponentProps<typeof ApplyLookModal>;
 function mount(overrides: Partial<Props> = {}) {
   const props: Props = {
     visible: true,
+    albumId: 'album-1',
     albumName: 'Summer Wedding',
+    customLook: null,
     previewPhoto: photo,
     currentLookId: 'cleanNatural',
     onUseLook: jest.fn(),

@@ -13,6 +13,7 @@ const mockNative: {current: ReturnType<typeof makeFakeGumpLocalStorage>} = {
 };
 const mockReportError = jest.fn();
 const mockBake = jest.fn();
+const mockNeedsBake = jest.fn((_photo: unknown) => false);
 
 jest.mock('react-native', () => ({
   Platform: {OS: 'macos'},
@@ -32,7 +33,7 @@ jest.mock('@lib/observability/reportError', () => ({
 }));
 jest.mock('@lib/look/bakeLook', () => ({
   bakeLooksForPhotos: (...args: unknown[]) => mockBake(...args),
-  photoNeedsLookBake: () => false,
+  photoNeedsLookBake: (item: unknown) => mockNeedsBake(item),
 }));
 jest.mock('@lib/storage/localStorage', () => ({
   ensureDetail: jest.fn(),
@@ -75,6 +76,33 @@ const prepared = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockNative.current = makeFakeGumpLocalStorage();
+});
+
+describe('prepareSelectedPhotosExport custom look', () => {
+  const customLook = {revision: 'r2', name: 'Moody Film'};
+
+  it.each([
+    ['the album preset', customLook, customLook],
+    ['null without a preset', undefined, null],
+  ])('passes %s to the bake', async (_name, given, expected) => {
+    mockNeedsBake.mockReturnValueOnce(true);
+    mockBake.mockResolvedValueOnce(new Map());
+    await expect(
+      prepareSelectedPhotosExport({
+        albumId: 'album-1',
+        albumName: 'Album',
+        photos: [photo('a', MB)],
+        quality: 'original',
+        customLook: given as never,
+      }),
+    ).resolves.toBeDefined();
+    expect(mockBake).toHaveBeenCalledWith(
+      [expect.objectContaining({photoId: 'a'})],
+      'original',
+      expect.any(Function),
+      {albumId: 'album-1', customLook: expected},
+    );
+  });
 });
 
 describe('prepareSelectedPhotosExport preflight', () => {

@@ -9,6 +9,10 @@ import { ApplyLookScopeModal } from '../../src/components/modals/ApplyLookScopeM
 import IconClose from '../../src/assets/images/icon_close.svg';
 import { fonts, interSemiBoldStyle } from '../../src/lib/ui/typography';
 
+jest.mock('../../src/lib/look/importAlbumPreset', () => ({
+  importAlbumPreset: jest.fn(),
+}));
+
 jest.mock('../../src/components/modals/focusDesktopNode', () => ({
   focusDesktopNode: jest.fn(),
 }));
@@ -65,7 +69,9 @@ describe('look modals to Figma', () => {
     const { renderer } = render(
       <ApplyLookModal
         visible
+        albumId="album-1"
         albumName="A"
+        customLook={null}
         previewPhoto={photo}
         currentLookId="cleanNatural"
         onUseLook={jest.fn()}
@@ -130,7 +136,9 @@ describe('look modals to Figma', () => {
     const { renderer } = render(
       <ApplyLookModal
         visible
+        albumId="album-1"
         albumName="A"
+        customLook={null}
         previewPhoto={photo}
         currentLookId="cleanNatural"
         onUseLook={jest.fn()}

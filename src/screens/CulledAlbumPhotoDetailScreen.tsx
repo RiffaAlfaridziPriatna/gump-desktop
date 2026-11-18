@@ -5,7 +5,8 @@ import {PhotoDetailImageViewer} from '@components/culling/PhotoDetailImageViewer
 import {PhotoDetailNavigationFrame} from '@components/culling/PhotoDetailNavigationFrame';
 import {SimilarShotsStrip} from '@components/culling/SimilarShotsStrip';
 import {UploadAwareModalShell} from '@components/navigation/UploadAwareModalShell';
-import {useCulledAlbumPhoto} from '@context/culledAlbum';
+import {AlbumCustomLookContext} from '@context/albumCustomLook';
+import {useCulledAlbumPhoto, useCulledAlbumStore} from '@context/culledAlbum';
 import {useUploadAwareModalScreen} from '@hooks/useUploadAwareModalScreen';
 import {usePhotoNavigation} from '@hooks/usePhotoNavigation';
 import {toFacesPanelPhoto} from '@lib/culling/facesPanelPhoto';
@@ -27,9 +28,9 @@ import {useImageDimensions} from '@hooks/useImageDimensions';
 import {preloadImage} from '@lib/media/imagePreload';
 import {
   ensureLookDetail,
+  hasBakeableLook,
   isLookDetailCurrent,
 } from '@lib/look/bakeLook';
-import {hasAppliedLook} from '@lib/look/types';
 import {
   ensureDetail,
   isUsableDetailUri,
@@ -63,6 +64,15 @@ export default function CulledAlbumPhotoDetailScreen({
   // Live per-photo subscription (same path as CulledAlbumPhotoCard) so star /
   // selection edits from the album grid stay in sync after in-place store updates.
   const photo = useCulledAlbumPhoto(albumId, photoId);
+  const customLook = useCulledAlbumStore(
+    state => state.albums[albumId]?.customLook ?? null,
+  );
+  const customLookSource = useMemo(
+    () => ({albumId, customLook}),
+    [albumId, customLook],
+  );
+  const lookRevision =
+    photo?.lookId === 'custom' ? customLook?.revision : undefined;
   const analysis =
     photo?.analysisStatus === 'analyzed' ? toCullingPhoto(photo) : null;
   const [zoomFaceIndex, setZoomFaceIndex] = useState<number | null>(() =>
@@ -135,8 +145,8 @@ export default function CulledAlbumPhotoDetailScreen({
     if (!photo) {
       return '';
     }
-    if (hasAppliedLook(photo.lookId)) {
-      return isLookDetailCurrent(photo.file, photo.lookId)
+    if (hasBakeableLook(photo.lookId, lookRevision)) {
+      return isLookDetailCurrent(photo.file, photo.lookId, lookRevision)
         ? photo.file.lookDetailUri!
         : '';
     }
@@ -149,7 +159,8 @@ export default function CulledAlbumPhotoDetailScreen({
   const photoLookDetailUri = photo?.file.lookDetailUri;
   const photoLookDetailKey = photo?.file.lookDetailKey;
   const photoLookId = photo?.lookId;
-  const lookApplied = hasAppliedLook(photoLookId);
+  const lookApplied =
+    photoLookId != null && hasBakeableLook(photoLookId, lookRevision);
   const lookDetailReady =
     lookApplied &&
     photoLookId != null &&
@@ -159,6 +170,7 @@ export default function CulledAlbumPhotoDetailScreen({
         lookDetailKey: photoLookDetailKey,
       },
       photoLookId,
+      lookRevision,
     );
 
   // Layout phase so uri and photoId stay in sync before paint. A deferred
@@ -205,7 +217,7 @@ export default function CulledAlbumPhotoDetailScreen({
     }
 
     let cancelled = false;
-    ensureLookDetail(photo)
+    ensureLookDetail(photo, customLookSource)
       .then(async result => {
         if (cancelled || !result.lookDetailUri || !result.lookDetailKey) {
           return;
@@ -222,13 +234,16 @@ export default function CulledAlbumPhotoDetailScreen({
         syncPhotoFromStore(albumId, photoId);
         setUri(lookDetailUri);
       })
-      .catch(() => undefined);
+      .catch(error => {
+        reportError(error, {step: 'ensureLookDetail', albumId, photoId});
+      });
 
     return () => {
       cancelled = true;
     };
   }, [
     albumId,
+    customLookSource,
     lookApplied,
     lookDetailReady,
     photo,
@@ -408,23 +423,27 @@ export default function CulledAlbumPhotoDetailScreen({
                   onClose={handleBack}
                   showHoverChevrons={isDesktopPlatform && !isMobileLayout}
                 >
-                  <PhotoDetailImageViewer
-                    uri={uri}
-                    photoId={photoId}
-                    faces={faces}
-                    zoomFaceIndex={zoomFaceIndex}
-                    lookId={lookDetailReady ? 'original' : photo?.lookId}
-                    imageSize={imageSize}
-                    showAiMarkers={showAiMarkers}
-                    onTooltipAnchorChange={handleTooltipChange}
-                  />
+                  <AlbumCustomLookContext.Provider value={customLookSource}>
+                    <PhotoDetailImageViewer
+                      uri={uri}
+                      photoId={photoId}
+                      faces={faces}
+                      zoomFaceIndex={zoomFaceIndex}
+                      lookId={lookDetailReady ? 'original' : photo?.lookId}
+                      imageSize={imageSize}
+                      showAiMarkers={showAiMarkers}
+                      onTooltipAnchorChange={handleTooltipChange}
+                    />
+                  </AlbumCustomLookContext.Provider>
                 </PhotoDetailNavigationFrame>
-                <SimilarShotsStrip
-                  albumId={albumId}
-                  photoId={photoId}
-                  onOpenPhoto={goToPhoto}
-                  onToggleSelection={toggleMemberSelection}
-                />
+                <AlbumCustomLookContext.Provider value={customLookSource}>
+                  <SimilarShotsStrip
+                    albumId={albumId}
+                    photoId={photoId}
+                    onOpenPhoto={goToPhoto}
+                    onToggleSelection={toggleMemberSelection}
+                  />
+                </AlbumCustomLookContext.Provider>
               </View>
 
               <View

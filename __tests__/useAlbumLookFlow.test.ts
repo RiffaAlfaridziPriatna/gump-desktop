@@ -42,6 +42,19 @@ describe('useAlbumLookFlow', () => {
       .mockImplementation(() => {});
   });
 
+  it('labels and announces the custom look by its preset name', async () => {
+    const hook = renderHook(() => useAlbumLookFlow('a1', true, 'Moody Film'));
+    act(() => hook.result.current.openFromEdit());
+    act(() => hook.result.current.chooseLook('custom'));
+    expect(hook.result.current.chosenLookLabel).toBe('Moody Film');
+    act(() => hook.result.current.applyAll());
+    expect(mockApply).toHaveBeenCalledWith('a1', 'custom', 'allPhotos');
+    await flush();
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      'Look: Moody Film applied',
+    );
+  });
+
   it('applies to all photos, reports completed and announces', async () => {
     const {hook, editNode} = setup();
     act(() => hook.result.current.openFromEdit());

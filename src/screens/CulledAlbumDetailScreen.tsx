@@ -23,6 +23,7 @@ import {selectPreviewPhoto} from '@lib/culledAlbum/selectPreviewPhoto';
 import {getLookLabel} from '@lib/look/lookCatalog';
 import {FileAsset} from '@services/upload/types';
 import {UploadToast} from '@components/upload/UploadToast';
+import {AlbumCustomLookContext} from '@context/albumCustomLook';
 import {
   useCulledAlbumActions,
   useCulledAlbumPhoto,
@@ -161,7 +162,16 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showAddPhotosModal, setShowAddPhotosModal] = useState(false);
   const [mainContentWidth, setMainContentWidth] = useState(0);
-  const lookFlow = useAlbumLookFlow(albumId, albumPhotos.length > 0);
+  const customLook = albumRecord?.customLook ?? null;
+  const customLookSource = useMemo(
+    () => ({albumId, customLook}),
+    [albumId, customLook],
+  );
+  const lookFlow = useAlbumLookFlow(
+    albumId,
+    albumPhotos.length > 0,
+    customLook?.name,
+  );
   const defaultLookId = albumRecord?.defaultLookId ?? 'original';
   const aiSelectionFlow = useAiSelectionFlow(
     albumId,
@@ -178,7 +188,9 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
     [draftLevel, status, setDraftLevel, update],
   );
   const statusLookLabel =
-    defaultLookId !== 'original' ? getLookLabel(defaultLookId) : undefined;
+    defaultLookId !== 'original'
+      ? getLookLabel(defaultLookId, customLook?.name)
+      : undefined;
   const isBlockingModalOpen =
     photoToDelete !== null ||
     showUploadModal ||
@@ -624,26 +636,28 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
                 </Text>
               </View>
             ) : (
-              <CulledAlbumGridWithSummary
-                {...gridView}
-                albumId={albumId}
-                containerWidth={layoutWidth}
-                isMobileLayout={isMobileLayout}
-                canDeletePhoto={canDeletePhoto}
-                hoverEnabled={!isBlockingModalOpen && !cullingBusy}
-                deferHeavyMediaWork={cullingBusy}
-                contentContainerStyle={[
-                  styles.grid,
-                  isMobileLayout && styles.gridMobile,
-                ]}
-                focusedPhotoId={focusedPhotoId}
-                onCardPress={handleCardPress}
-                onClearFocus={clearFocus}
-                onOpenDetail={handleOpenPhotoDetail}
-                onToggleSelection={toggleSelection}
-                onDeletePress={handleDeletePhotoPress}
-                onStarPress={updateStarRating}
-              />
+              <AlbumCustomLookContext.Provider value={customLookSource}>
+                <CulledAlbumGridWithSummary
+                  {...gridView}
+                  albumId={albumId}
+                  containerWidth={layoutWidth}
+                  isMobileLayout={isMobileLayout}
+                  canDeletePhoto={canDeletePhoto}
+                  hoverEnabled={!isBlockingModalOpen && !cullingBusy}
+                  deferHeavyMediaWork={cullingBusy}
+                  contentContainerStyle={[
+                    styles.grid,
+                    isMobileLayout && styles.gridMobile,
+                  ]}
+                  focusedPhotoId={focusedPhotoId}
+                  onCardPress={handleCardPress}
+                  onClearFocus={clearFocus}
+                  onOpenDetail={handleOpenPhotoDetail}
+                  onToggleSelection={toggleSelection}
+                  onDeletePress={handleDeletePhotoPress}
+                  onStarPress={updateStarRating}
+                />
+              </AlbumCustomLookContext.Provider>
             )}
           </View>
           {!isMobileLayout && (
@@ -746,6 +760,7 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
           albumId={albumId}
           albumName={albumName}
           selectedPhotos={actionAlbumPhotos}
+          customLook={customLook}
           onClose={() => setShowExportModal(false)}
           review={
             exportFigmaReview?.showModal ? exportFigmaReview : null
@@ -754,7 +769,9 @@ export default function CulledAlbumDetailScreen({navigation, route}: Props) {
 
         <ApplyLookModal
           visible={lookFlow.pickerVisible}
+          albumId={albumId}
           albumName={albumName}
+          customLook={customLook}
           previewPhoto={previewPhoto}
           currentLookId={defaultLookId}
           onUseLook={lookFlow.chooseLook}

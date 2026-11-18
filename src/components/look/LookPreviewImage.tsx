@@ -1,8 +1,10 @@
+import {useAlbumCustomLookSource} from '@context/albumCustomLook';
+import {hasBakeableLook} from '@lib/look/bakeLook';
 import {
   bakeLookPreviewUri,
   getCachedLookPreviewUri,
 } from '@lib/look/bakeLookPreview';
-import {hasAppliedLook, type LookId} from '@lib/look/types';
+import type {LookId} from '@lib/look/types';
 import {getErrorMessage} from '@lib/observability';
 import {memo, useEffect, useState} from 'react';
 import {
@@ -44,21 +46,25 @@ export const LookPreviewImage = memo(function LookPreviewImage({
   onError,
 }: LookPreviewImageProps) {
   const bakeUri = bakeSourceUri || uri;
-  const needsLookBake = Boolean(bakeUri) && hasAppliedLook(lookId);
+  const albumCustom = useAlbumCustomLookSource();
+  const custom = lookId === 'custom' ? albumCustom : undefined;
+  const lookBakeable =
+    lookId != null && hasBakeableLook(lookId, custom?.customLook?.revision);
+  const needsLookBake = Boolean(bakeUri) && lookBakeable;
   const [displayUri, setDisplayUri] = useState(() => {
     if (!needsLookBake) {
       return uri;
     }
-    return getCachedLookPreviewUri(bakeUri, lookId!) ?? '';
+    return getCachedLookPreviewUri(bakeUri, lookId!, custom) ?? '';
   });
 
   useEffect(() => {
-    if (!uri || !hasAppliedLook(lookId)) {
+    if (!uri || !lookBakeable || lookId == null) {
       setDisplayUri(uri);
       return;
     }
 
-    const cached = getCachedLookPreviewUri(bakeUri, lookId);
+    const cached = getCachedLookPreviewUri(bakeUri, lookId, custom);
     if (cached) {
       setDisplayUri(cached);
       return;
@@ -67,7 +73,7 @@ export const LookPreviewImage = memo(function LookPreviewImage({
     // Keep the current frame until bake finishes (Before→After, look switch).
     let cancelled = false;
     const timer = setTimeout(() => {
-      bakeLookPreviewUri(bakeUri, lookId)
+      bakeLookPreviewUri(bakeUri, lookId, custom)
         .then(bakedUri => {
           if (!cancelled && bakedUri) {
             setDisplayUri(bakedUri);
@@ -93,7 +99,7 @@ export const LookPreviewImage = memo(function LookPreviewImage({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [bakeUri, lookId, uri]);
+  }, [bakeUri, custom, lookBakeable, lookId, uri]);
 
   if (!uri || !displayUri) {
     return null;

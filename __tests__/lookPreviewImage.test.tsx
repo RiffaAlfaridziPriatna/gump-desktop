@@ -3,6 +3,7 @@ import {Image} from 'react-native';
 import {act} from 'react-test-renderer';
 import {render} from './helpers/render';
 import {LookPreviewImage} from '../src/components/look/LookPreviewImage';
+import {AlbumCustomLookContext} from '../src/context/albumCustomLook';
 
 const mockBakeLookPreviewUri = jest.fn();
 const mockGetCachedLookPreviewUri = jest.fn();
@@ -74,5 +75,74 @@ describe('LookPreviewImage Before/After flicker', () => {
       'file:///baked-cached.jpg',
     );
     expect(mockBakeLookPreviewUri).not.toHaveBeenCalled();
+  });
+});
+
+describe('LookPreviewImage custom look', () => {
+  const source = {
+    albumId: 'album-1',
+    customLook: {revision: 'r1', name: 'Moody Film'},
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+    mockGetCachedLookPreviewUri.mockReturnValue(undefined);
+    mockBakeLookPreviewUri.mockResolvedValue('file:///baked-custom.jpg');
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('bakes with the album preset from context', async () => {
+    const {renderer} = render(
+      <AlbumCustomLookContext.Provider value={source as never}>
+        <LookPreviewImage uri="file:///thumb.jpg" lookId="custom" />
+      </AlbumCustomLookContext.Provider>,
+    );
+    await act(async () => {
+      jest.advanceTimersByTime(90);
+    });
+    expect(mockBakeLookPreviewUri).toHaveBeenCalledWith(
+      'file:///thumb.jpg',
+      'custom',
+      source,
+    );
+    expect(renderer.root.findByType(Image).props.source.uri).toBe(
+      'file:///baked-custom.jpg',
+    );
+  });
+
+  it('shows the original without a preset and does not bake', async () => {
+    const {renderer} = render(
+      <AlbumCustomLookContext.Provider
+        value={{albumId: 'album-1', customLook: null}}>
+        <LookPreviewImage uri="file:///thumb.jpg" lookId="custom" />
+      </AlbumCustomLookContext.Provider>,
+    );
+    await act(async () => {
+      jest.advanceTimersByTime(90);
+    });
+    expect(mockBakeLookPreviewUri).not.toHaveBeenCalled();
+    expect(renderer.root.findByType(Image).props.source.uri).toBe(
+      'file:///thumb.jpg',
+    );
+  });
+
+  it('does not pass the preset to a built-in look bake', async () => {
+    render(
+      <AlbumCustomLookContext.Provider value={source as never}>
+        <LookPreviewImage uri="file:///thumb.jpg" lookId="filmMood" />
+      </AlbumCustomLookContext.Provider>,
+    );
+    await act(async () => {
+      jest.advanceTimersByTime(90);
+    });
+    expect(mockBakeLookPreviewUri).toHaveBeenCalledWith(
+      'file:///thumb.jpg',
+      'filmMood',
+      undefined,
+    );
   });
 });

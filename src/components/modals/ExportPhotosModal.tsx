@@ -1,5 +1,6 @@
 import { Modal, Pressable, ProgressBar, TouchableOpacity } from '@components/ui';
 import type { CulledAlbumPhoto } from '@lib/culledAlbum/types';
+import type { CustomLook } from '@lib/look/types';
 import { formatGigabytes } from '@lib/export/formatByteSize';
 import {
   openInFileManager,
@@ -57,6 +58,7 @@ type ExportPhotosModalProps = {
   albumId: string;
   albumName: string;
   selectedPhotos: CulledAlbumPhoto[];
+  customLook?: CustomLook | null;
   onClose: () => void;
   /** Figma visual-review overrides; freezes the modal on a dummy state. */
   review?: ExportFigmaReviewSnapshot | null;
@@ -191,6 +193,7 @@ export function ExportPhotosModal({
   albumId,
   albumName,
   selectedPhotos,
+  customLook = null,
   onClose,
   review = null,
 }: ExportPhotosModalProps) {
@@ -301,6 +304,7 @@ export function ExportPhotosModal({
         albumName,
         photos: selectedPhotos,
         quality,
+        customLook,
         onProgress: progress => {
           if (prepareRequestIdRef.current !== requestId) {
             return;
@@ -345,7 +349,7 @@ export function ExportPhotosModal({
         durationMs: Date.now() - startedAt,
       });
     }
-  }, [albumId, albumName, looksNeedBake, quality, selectedPhotos]);
+  }, [albumId, albumName, customLook, looksNeedBake, quality, selectedPhotos]);
 
   const runDownload = useCallback(
     async (directory?: ExportDirectoryInfo | null) => {

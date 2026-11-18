@@ -289,11 +289,13 @@ Branch: base from `feat/phase-3`.
 - **Scope:** `ApplyLookModal.tsx` (243 lines) uses `useImportAlbumPreset`; on success the custom tile is selected. Figma `12975:59170` shows it unselected after a first upload; the user decision covers only replacing the active preset (inferred for first upload, confirm). Error clears on the next tile select or upload. `ApplyLookScopeModal`, `AlbumLookStatus` and `useAlbumLookFlow` show the custom name.
 - **Mirror:** current `onUseLook` path in `useAlbumLookFlow.ts`.
 - **Acceptance:**
-  - [ ] Upload `.xmp` and `.cube`, select, "Use this look", scope popup works end to end on macOS and Windows
-  - [ ] Error state leaves the selected tile and album look unchanged
-  - [ ] Status line and scope text use the preset name
-  - [ ] typecheck, lint, test, test:windows pass
+  - [ ] Upload `.xmp` and `.cube`, select, "Use this look", scope popup works end to end on macOS and Windows (Jest covers import → select → onUseLook('custom') → scope label; macOS build runs; in-app click-through pending; Windows not built)
+  - [x] Error state leaves the selected tile and album look unchanged (Jest `ApplyLookModalImport`; store side in s9g tests)
+  - [x] Status line and scope text use the preset name (Jest `useAlbumLookFlow` scope label + announcement; status line uses the same `getLookLabel(id, name)` in the screen, no screen test)
+  - [x] typecheck, lint, test, test:windows pass (typecheck 0; lint 29 errors / 71 warnings = baseline; Jest 1025/1026, windows 1024/1026, failures = baseline UploadSelectedModal + typography)
 - **Out of scope:** remove control.
+- **Scope extended (user, 2026-11-16):** also close the W5 handoff gaps: custom preview in picker tiles, big preview with Before/After, grid thumbnails and photo detail; export bakes with the album preset. Mockup approved before the change.
+- **Done (2026-11-16, W6, uncommitted):** `ApplyLookModal` takes `albumId` + `customLook`, calls `useImportAlbumPreset`; success selects `'custom'` and `LookPickerBody` focuses the new tile and announces "<name> preset added and selected"; failure shows the s9i banner (unexpected rejection reported and shown as unreadable); banner clears on tile select, next upload and reopen. Preset reaches previews through `src/context/albumCustomLook.tsx` (value derived by the screen, so grid cells do not subscribe to culledAlbumStore); `LookPreviewImage` and `LookPickerBody` use `hasBakeableLook`. Detail screen bakes with revision + source and now reports `ensureLookDetail` failures. Export: `ExportPhotosModal` → `prepareSelectedPhotosExport({customLook})`. Labels: `useAlbumLookFlow(albumId, hasPhotos, customLookName)`, status line via `getLookLabel(id, name)`. `hasAppliedLook` unchanged (still built-ins only). Tests: `ApplyLookModalImport`, `lookPreviewImage` custom, `useAlbumLookFlow` custom label, `prepareExportDisk` custom look. macOS Debug build succeeded and the app launched against the worktree bundle; click-through e2e not done yet (no computer use in the session). Open Lows: Upload tile has no busy/disabled state while importing; Upload sits after the radiogroup in tab order (pre-existing); banner may double-read on Windows (pre-existing); preview bake failure only `console.warn` (pre-existing); PostHog ignored-field names and native error messages may carry user text (pre-existing, s9g).
 - **Gate:** A, R (group)
 
 ## Spike result (s9a, 2026-11-16)

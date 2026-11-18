@@ -15,7 +15,11 @@ type Trigger = 'edit' | 'change';
  * Picker -> scope popup -> background apply. Logic only: the screen renders
  * the modals from the returned flags. The chosen look is transient UI state.
  */
-export function useAlbumLookFlow(albumId: string, hasPhotos: boolean) {
+export function useAlbumLookFlow(
+  albumId: string,
+  hasPhotos: boolean,
+  customLookName?: string | null,
+) {
   const [step, setStep] = useState<Step>('idle');
   const [chosenLook, setChosenLook] = useState<LookId>('original');
   const triggerRef = useRef<Trigger>('edit');
@@ -98,7 +102,7 @@ export function useAlbumLookFlow(albumId: string, hasPhotos: boolean) {
             return;
           }
           AccessibilityInfo.announceForAccessibility(
-            `Look: ${getLookLabel(lookId)} applied`,
+            `Look: ${getLookLabel(lookId, customLookName)} applied`,
           );
         })
         .catch(error => {
@@ -110,7 +114,7 @@ export function useAlbumLookFlow(albumId: string, hasPhotos: boolean) {
           });
         });
     },
-    [albumId, chosenLook],
+    [albumId, chosenLook, customLookName],
   );
   const applyAll = useCallback(() => apply('allPhotos'), [apply]);
   const applyNewOnly = useCallback(() => apply('newPhotosOnly'), [apply]);
@@ -118,7 +122,7 @@ export function useAlbumLookFlow(albumId: string, hasPhotos: boolean) {
   return {
     pickerVisible: step === 'picker',
     scopeVisible: step === 'scope',
-    chosenLookLabel: getLookLabel(chosenLook),
+    chosenLookLabel: getLookLabel(chosenLook, customLookName),
     openFromEdit,
     openFromChange,
     chooseLook,

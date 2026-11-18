@@ -1,6 +1,7 @@
 import {ensureDetail, isUsableDetailUri} from '@lib/storage/localStorage';
 import type {CulledAlbumPhoto} from '@lib/culledAlbum/types';
 import {bakeLooksForPhotos, photoNeedsLookBake} from '@lib/look/bakeLook';
+import type {CustomLook} from '@lib/look/types';
 import {reportError} from '@lib/observability/reportError';
 import {
   DISK_SPACE_MARGIN_BYTES,
@@ -161,6 +162,8 @@ export type PrepareExportOptions = {
   albumName: string;
   photos: CulledAlbumPhoto[];
   quality: ExportQuality;
+  /** Album preset for `'custom'` photos; null bakes them as original and reports. */
+  customLook?: CustomLook | null;
   onProgress?: (progress: PrepareExportProgress) => void;
 };
 
@@ -199,7 +202,8 @@ async function buildExportZip(
   options: PrepareExportOptions,
   stagingPath: string,
 ): Promise<PreparedExport> {
-  const {albumId, albumName, photos, quality, onProgress} = options;
+  const {albumId, albumName, photos, quality, customLook, onProgress} =
+    options;
   const total = photos.length;
   const rawEntries: ExportZipEntry[] = [];
 
@@ -217,6 +221,7 @@ async function buildExportZip(
           phase: 'applyingLook',
         });
       },
+      {albumId, customLook: customLook ?? null},
     );
     for (const [photoId, baked] of bakedByPhotoId) {
       bakedUriByPhotoId.set(photoId, baked.uri);
