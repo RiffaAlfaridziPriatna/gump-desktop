@@ -9,6 +9,7 @@ import {getErrorMessage} from '@lib/observability';
 import {memo, useEffect, useState} from 'react';
 import {
   Image,
+  Platform,
   type ImageErrorEventData,
   type ImageLoadEventData,
   type ImageStyle,
@@ -107,6 +108,8 @@ export const LookPreviewImage = memo(function LookPreviewImage({
 
   return (
     <Image
+      // XAML Image kept the old bitmap when source switched back (Before stuck).
+      key={Platform.OS === 'windows' ? displayUri : undefined}
       source={{uri: displayUri}}
       style={style}
       onLoad={onLoad}

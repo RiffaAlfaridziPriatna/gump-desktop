@@ -1,5 +1,5 @@
 import React from 'react';
-import {Image} from 'react-native';
+import {Image, Platform} from 'react-native';
 import {act} from 'react-test-renderer';
 import {render} from './helpers/render';
 import {LookPreviewImage} from '../src/components/look/LookPreviewImage';
@@ -75,6 +75,22 @@ describe('LookPreviewImage Before/After flicker', () => {
       'file:///baked-cached.jpg',
     );
     expect(mockBakeLookPreviewUri).not.toHaveBeenCalled();
+  });
+
+  it('remounts the Image on Windows when After switches back to Before', () => {
+    mockGetCachedLookPreviewUri.mockReturnValue('file:///baked-cached.jpg');
+    const {renderer, rerender} = render(
+      <LookPreviewImage uri="file:///thumb.jpg" lookId="cleanNatural" />,
+    );
+    const after = renderer.root.findByType(Image);
+    rerender(<LookPreviewImage uri="file:///thumb.jpg" lookId="original" />);
+    const before = renderer.root.findByType(Image);
+    expect(before.props.source.uri).toBe('file:///thumb.jpg');
+    if (Platform.OS === 'windows') {
+      expect(before).not.toBe(after);
+    } else {
+      expect(before).toBe(after);
+    }
   });
 });
 
